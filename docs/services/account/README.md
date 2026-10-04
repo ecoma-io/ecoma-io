@@ -1,0 +1,28 @@
+# Account
+
+`account` là deploy unit giữ **bằng chứng đăng nhập** và mọi UI liên quan tài khoản trong bounded context `identity`. Bổ sung `auth` (authorization server, API-only) — cùng context, hai database riêng.
+
+```text
+account.ecoma.io  (Nuxt UI + BFF: account · login · consent)
+   └──► db-account     users · profile · email · credential · MFA/passkey · session · preference · privacy
+
+              ▲                    ▲
+              └── back-channel xác minh session (account đẩy sang auth) ──┘
+                                    ▼
+                    db-auth      (grant · token — account đọc qua contract, không đọc DB)
+```
+
+Ranh giới context tại system level → [`docs/overview/01-architecture.md`](../../overview/01-architecture.md) §2.1 · rule Nx cho `scope:identity` → [`docs/overview/05-code-architecture.md`](../../overview/05-code-architecture.md) §6.3.
+
+## Hiện trạng
+
+`account` render `Hello world!` (`apps/account/app/app.vue`). **Chưa có** schema, database, binding, login hay consent UI. `db-account` là **target đã chốt, chưa provision** — greenfield, không có `db-identity` để kế thừa.
+
+## Documents
+
+| Document                                         | Nội dung                                                                                           |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| [`01-architecture.md`](./01-architecture.md)     | Boundary, data model `db-account`, session/cookie security, contract, vòng đời account, invariants |
+| [`02-requirements.md`](./02-requirements.md)     | FR/NFR/SR/CR có ID, non-goals, threat model, privacy/compliance, acceptance matrix                 |
+| [`03-operations.md`](./03-operations.md)         | Deployment, binding, role & migration, monitoring, alerting, failure modes, restore, runbook       |
+| [`04-implementation.md`](./04-implementation.md) | Trạng thái triển khai, phát hiện chặn về Service Binding, phần còn chưa có                         |

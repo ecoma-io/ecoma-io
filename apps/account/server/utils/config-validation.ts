@@ -1,0 +1,126 @@
+/**
+ * Validate cấu hình runtime của app `account` — **fail closed**.
+ *
+ * ## Vì sao validate request đầu chứ không phải ở từng call site, cũng không ở init
+ *
+ * `03-operations.md` §8 nói rõ failure mode của identity: khi `db-account` không
+ * trả lời được thì **không phát hành**, không có degraded path. Cùng nguyên tắc đó
+ * áp cho config: một Worker nhận traffic với config thiếu secret thì mọi request
+ * `/internal/**` đã đi vào một đường **không xác thực được** mà không ai biết —
+ * nên phải ném, không có degraded path.
+ *
+ * Nhưng **không** validate ở module-init: trên Workers preset, Nitro build ra
+ * module với `createNitroApp()` chạy top-level trong `index.mjs`, trong khi secret
+ * của Worker chỉ được nối vào runtime config ở request. Validate ở init đọc một
+ * config chưa có secret và `throw` ⇒ module không load được ⇒ kể cả deployment
+ * **đúng** cũng chết. {@link lazyConfigValidator} giữ fail-closed ở request đầu.
+ *
+ * ⚠️ **Không có fallback giá trị rỗng.** Thiếu biến ⇒ `throw`. Một internal HMAC
+ * secret rỗng thì `verifyRequest` chạy trơn và **chấp nhận mọi chữ ký** — đúng cái
+ * kiểu hỏng mà SR-010 cấm. Vì vậy "cho chạy được với secret rỗng" không phải là
+ * degrade an toàn, nó là tắt xác thực.
+ *
+ * ## Vì sao file này tách khỏi `server/plugins/config.ts`
+ *
+ * Plugin Nitro gọi `defineNitroPlugin` ở **module scope**, nên bất kỳ ai import
+ * plugin đó đều chạy lệnh đó — và `defineNitroPlugin` là auto-import của Nitro,
+ * không tồn tại ngoài runtime Nitro. Đặt hàm validate vào đó nghĩa là không có cách
+ * nào test nó mà không dựng cả runtime. Tách ra đây giữ validate thuần (test được
+ * trực tiếp, không cần stub) và giữ plugin làm lớp glue.
+ */
+
+import { MAX_SKEW_SECONDS, MIN_SKEW_SECONDS } from '@ecoma-io/identity-contracts';
+
+/** Độ dài tối thiểu của internal HMAC secret, tính bằng ký tự. */
+const MIN_INTERNAL_HMAC_SECRET_LENGTH = 32;
+
+/** Phần `runtimeConfig` mà app đọc (không kể `public`). */
+export interface AccountRuntimeConfig {
+  internalHmacSecret?: unknown;
+  internalAuthSkewSeconds?: unknown;
+}
+
+/**
+ * Validate config của app `account`.
+ *
+ * Ném {@link Error} khi thiếu hoặc sai; trả `undefined` khi hợp lệ. Hàm thuần,
+ * không đọc `process.env` — nhận object làm tham số để test được trực tiếp, và để
+ * `runtimeConfig` của Nuxt là nguồn duy nhất cho config (không có chỗ nào trong code
+ * tự đọc `process.env` và đi vòng qua đường đó).
+ */
+export function validateAccountConfig(config: AccountRuntimeConfig): void {
+  const secret = config.internalHmacSecret;
+
+  if (typeof secret !== 'string' || secret.length === 0) {
+    throw new Error(
+      'Thiếu NUXT_INTERNAL_HMAC_SECRET. Worker internal contract không chạy được ' +
+        'không có secret: envelope HMAC phải fail closed, không có fallback rỗng.',
+    );
+  }
+
+  if (secret.length < MIN_INTERNAL_HMAC_SECRET_LENGTH) {
+    // Chỉ nêu **ngưỡng**, không nêu độ dài thật của secret: message này đọc được
+    // trong log của platform, và độ dài secret là thông tin hữu ích cho attacker.
+    throw new Error(
+      `NUXT_INTERNAL_HMAC_SECRET phải dài ít nhất ${MIN_INTERNAL_HMAC_SECRET_LENGTH} ký tự.`,
+    );
+  }
+
+  const skew = config.internalAuthSkewSeconds;
+  if (skew !== undefined && skew !== null) {
+    // Rỗng (`''` từ `runtimeConfig`) là "chưa đặt" và được bỏ qua để mặc định của
+    // `identity-contracts` là nguồn duy nhất — tránh hai nguồn sự thật cho một luật.
+    if (
+      skew !== '' &&
+      (typeof skew !== 'number' || !Number.isInteger(skew) || skew < MIN_SKEW_SECONDS)
+    ) {
+      throw new Error(`NUXT_INTERNAL_AUTH_SKEW_SECONDS phải là số nguyên >= ${MIN_SKEW_SECONDS}.`);
+    }
+    // Trần là **hằng giao thức** của lib (`MAX_SKEW_SECONDS`), không phải ngưỡng cục bộ:
+    // nếu `account` nhận một skew mà `auth` từ chối, hai service chạy hai cửa sổ khác nhau
+    // và bên rộng hơn quyết định thời gian sống thật của cửa sổ replay. Kiểm ở đây để lỗi
+    // hiện ra lúc validate chứ không âm thầm nới cửa sổ.
+    if (typeof skew === 'number' && Number.isInteger(skew) && skew > MAX_SKEW_SECONDS) {
+      throw new Error(`NUXT_INTERNAL_AUTH_SKEW_SECONDS vượt trần ${MAX_SKEW_SECONDS} giây.`);
+    }
+  }
+}
+
+/**
+ * Validator **trì hoãn** tới lần request đầu tiên — vẫn fail closed, nhưng không
+ * nữa ở mức module-init.
+ *
+ * ## Vì sao không validate lúc plugin Nitro khởi tạo
+ *
+ * Trên Workers preset, Nitro build ra module với `createNitroApp()` chạy ở
+ * **top-level** của `index.mjs` — tức Worker module load là chạy plugin. Nhưng
+ * secret của Worker (`wrangler secret`) được Nitro nối vào runtime config ở
+ * **request** (env của Workers không tồn tại ở module scope của module Worker
+ * theo cùng cách). Validate ở init vì thế đọc một runtime config **chưa có
+ * secret** và `throw` ⇒ module không load được ⇒ Worker chết ngay cả khi
+ * deployment cấu hình **đúng** — fail-closed sai chỗ, biến một cấu hình đúng
+ * thành một Worker không bao giờ phục vụ.
+ *
+ * Trì hoãn sang request đầu giữ nguyên bản chất fail-closed: request đầu tiên
+ * chạm vào config thiếu **vẫn** ném (500 từ hook request, và riêng contract
+ * internal vẫn 401 `no_secret` ở middleware — hai lớp độc lập). Flag được set
+ * **chỉ sau khi** validate đi qua: ném ở giữa thì cờ chưa set, request sau thử
+ * lại và vẫn fail — không có đường "thử một lần rồi cho qua".
+ *
+ * @param readConfig Đọc runtime config theo event của request hiện tại (Nitro
+ *   auto-import `useRuntimeConfig` cần event trên Workers).
+ * @returns Hàm ensure gọi trên mỗi request; đắt nhất một boolean check khi đã
+ *   hợp lệ.
+ */
+export function lazyConfigValidator(
+  readConfig: (event: unknown) => AccountRuntimeConfig,
+): (event: unknown) => void {
+  let validated = false;
+  return (event: unknown): void => {
+    if (validated) {
+      return;
+    }
+    validateAccountConfig(readConfig(event));
+    validated = true;
+  };
+}

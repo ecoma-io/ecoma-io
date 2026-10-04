@@ -1,0 +1,42 @@
+{
+  // API-only Worker của bounded context `identity`: sẽ sở hữu endpoint protocol
+  // OAuth 2.0/OIDC. KHÔNG có UI — không Nuxt, không Vue, không trang login hay
+  // consent. Phần UI và BFF (kể cả login và consent UI) thuộc deploy unit
+  // `account` (`apps/account`, Worker `ecoma-account`).
+  // Reference: docs/overview/01-architecture.md §2.
+  //
+  // `nodejs_compat` được khai báo TƯỜNG MINH, không phải vì `auth` nới lỏng
+  // ranh giới `runtime:edge`: `compatibility_date` 2026-10-05 đã tự bật Node
+  // compat cho Worker này từ trước, nên Worker vốn đã có `node:buffer`,
+  // `node:events`. Driver PostgreSQL (`postgres`) cần chúng, còn `jose` thì
+  // không — `jose` vẫn là thư viện JOSE duy nhất và không import `node:*`.
+  //
+  // Ranh giới thật của `runtime:edge` KHÔNG phải "không có Node API" mà là:
+  // không phụ thuộc filesystem, không phụ thuộc process, không dùng API mà
+  // Cloudflare Workers không cung cấp. `.oxlintrc.json` chặn import trực tiếp
+  // Node builtin trong project `runtime:edge`; driver được phép dùng qua
+  // lớp adapter trong `libs/identity-auth-infrastructure`, không import thẳng
+  // trong `apps/auth`.
+  //
+  // Worker identity lâu dài — PR không tạo Worker mới, Preview chạy dưới
+  // identity này. Reference: docs/overview/02-delivery.md §5.
+  //
+  // `db-auth` là database của `auth` (xem docs/services/auth/01-architecture.md
+  // §2 và §3). Hyperdrive binding khai báo ở đây chỉ là chỗ dành; binding thật
+  // được `wrangler` tạo cùng với `db-auth` và không tồn tại ở PR này, nên
+  // không có `id` nào được ghim — Worker fail-closed khi thiếu binding.
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "ecoma-auth",
+  "main": "dist/main.js",
+  "compatibility_date": "2026-10-05",
+  "compatibility_flags": ["nodejs_compat"],
+  // KHÔNG có `routes`/`hostname` ở đây. `auth.ecoma.io` là hostname DỰ KIẾN
+  // khi service được implement; custom domain khai báo cùng staging/production
+  // như `home` (apps/home/wrangler.jsonc), chưa provision trong PR này.
+  "observability": {
+    "enabled": true,
+  },
+  "dev": {
+    "port": 4203,
+  },
+}
