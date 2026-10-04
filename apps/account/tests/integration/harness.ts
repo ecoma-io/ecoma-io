@@ -1,0 +1,394 @@
+/**
+ * Testcontainers + PostgreSQL thật cho integration test của `db-account`.
+ *
+ * ⚠️ Docker **không** phải phụ thuộc cứng. Một CI runner không có Docker phải
+ * **skip** suite, không được fail — nếu không thì `nx affected -t test` đỏ vì
+ * một thứ nó không cài, và người đọc sẽ tưởng schema sai. Vì vậy mọi thứ Docker ở
+ * đây đều nằm sau dynamic import và `describe.skipIf` bọc ngoài cùng.
+ */
+
+import { createHash } from 'node:crypto';
+import { readFileSync, readdirSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+import { applyAllMigrations } from '../../db/apply.mts';
+import { ACCOUNT_DATABASE, AUTH_DATABASE } from '../../db/migrate.mts';
+
+/**
+ * Image PostgreSQL: 17 là major hiện hành; alpine để pull nhanh trên CI.
+ *
+ * `gen_random_uuid()` là core từ PostgreSQL 13 nên image này có sẵn — không
+ * cần extension nào cho mặc định của `security_events.event_id`, và `0001`
+ * không cài thêm gì. `dblink` và `postgres_fdw` thì **không** được cài ở đây
+ * dưới bất kỳ hình thức nào (NFR-002b).
+ */
+const POSTGRES_IMAGE = 'postgres:17-alpine';
+
+/**
+ * Cổng PostgreSQL **trong container**. Không phải cổng host: testcontainers ánh
+ * xạ sang một cổng host ngẫu nhiên và `getMappedPort` đọc cổng đó. Con số này
+ * chỉ cần khác `5432` để không lẫn với một PostgreSQL local.
+ *
+ * ⚠️ Truyền nó vào `withExposedPorts` bằng **varargs**. `withExposedPorts` nhận
+ * `...ports`, nên truyền một mảng (`[POSTGRES_PORT]`) đẩy chính cái mảng vào vị
+ * trí `port`, và `getContainerPort` trả `port.container` là `undefined` — lỗi
+ * của Docker daemon là `invalid port 'undefined'`, tức là hỏng **trước** khi
+ * container kịp chạy, và trông như "Docker hỏng" thay vì "sai API".
+ */
+const POSTGRES_PORT = 5_432;
+
+const SUPERUSER = 'ecoma_test_superuser';
+const SUPERUSER_PASSWORD = 'ecoma_test_superuser_pw';
+const ROLE_PASSWORD = 'ecoma_test_role_pw';
+
+type Client = import('pg').Client;
+type Pool = import('pg').Pool;
+
+export interface AccountDatabase {
+  readonly host: string;
+  readonly port: number;
+  readonly superuserPassword: string;
+  readonly rolePassword: string;
+  /** Client superuser cho các assertion về grant và ACL. */
+  connect(): Promise<Client>;
+  /** Client đã `SET ROLE ecoma_account_runtime` — đúng credential Worker dùng. */
+  asRuntime(): Promise<Client>;
+  /** Client đã `SET ROLE ecoma_account_migrator`. */
+  asMigrator(): Promise<Client>;
+  /**
+   * Mở một client mới bằng **credential thật** của role (không `SET ROLE`), để
+   * kiểm chứng ranh giới ở tầng kết nối chứ không chỉ ở `has_database_privilege`.
+   */
+  connectAsRuntime(): Promise<Client>;
+  /**
+   * `pg.Pool` bằng credential thật của runtime role — đúng kiểu mà
+   * `server/utils/db.ts` nhận (`selectAccountStatus`, `recordNonce`). Caller
+   * tự `end()` pool sau khi dùng.
+   */
+  createRuntimePool(): Promise<Pool>;
+  /** Xoá sạch dữ liệu giữa các test mà không đụng DDL, grant hay extension. */
+  truncateData(): Promise<void>;
+  stop(): Promise<void>;
+}
+
+async function pgModule(): Promise<typeof import('pg')> {
+  // `pg` là CJS nên default interop là đường lấy `Client` đúng ở cả Node lẫn
+  // ESM. Trả về namespace (`typeof import('pg')`) chứ không phải `module.default`:
+  // kiểu của `default` thiếu `PG`, nên `typeof import('pg')` là chữ ký đúng.
+  const module = await import('pg');
+  return module;
+}
+
+/**
+ * Biến môi trường mang kết quả probe từ `globalSetup` sang từng worker.
+ *
+ * Vitest chạy mỗi spec file trong một worker riêng với globalThis/module graph
+ * riêng (pool `forks`, isolate) — cache ở module scope hay `globalThis` vì thế
+ * vẫn probe **một lần mỗi file**, đúng cái đo được trước đây (2 file ⇒ 2 probe).
+ * `globalSetup` chạy **một lần** trong main process trước khi worker khởi động,
+ * và worker kế thừa `process.env` khi được fork — nên biến môi trường là kênh
+ * duy nhất đáng tin để "một probe cho cả lần chạy".
+ */
+const DOCKER_PROBE_ENV = 'ECOMA_ACCOUNT_DOCKER_PROBE';
+
+/**
+ * Docker có dùng được không — probe một lần mỗi lần chạy vitest.
+ *
+ * Probe bằng **chính** container PostgreSQL mà test sẽ dùng, chứ không bằng một
+ * lệnh Docker rẻ tiền: một runner không có Docker daemon thì `docker info` vẫn
+ * có thể trả 0 (chỉ thiếu socket), và probe đó sẽ cho một `describe` "3 skipped"
+ * rồi đỏ ở `beforeAll`. Tốn vài giây cho lần đầu, nhưng nó loại được đúng cái
+ * nguy hiểm nhất: một suite báo skip vì hạ tầng, không phải vì hành vi.
+ *
+ * Khi probe thất bại:
+ * - In một cảnh báo tiếng Anh (một lần mỗi lần chạy) nêu rõ bao nhiêu suite sẽ
+ *   bị skip — skip im lặng với exit 0 mới là thứ che mất test.
+ * - Nếu `ACCOUNT_REQUIRE_DOCKER=1` (CI đặt biến này) thì **ném lỗi** thay vì
+ *   trả `false`: runner REQUIRE Docker thì vắng Docker là sự cố, không phải
+ *   lý do để bỏ qua một nửa suite.
+ */
+export function probeDocker(): Promise<boolean> {
+  const flag = process.env[DOCKER_PROBE_ENV];
+  if (flag === 'available') {
+    return Promise.resolve(true);
+  }
+  if (flag === 'unavailable') {
+    return Promise.resolve(false);
+  }
+  // Fallback khi được gọi ngoài pipeline vitest có `globalSetup` (chạy tay,
+  // vitest khác config): probe tại chỗ và vẫn đăng ký kết quả cho caller sau.
+  const cache = globalThis as DockerProbeCache;
+  cache.ecomaAccountDockerProbe ??= runDockerProbe();
+  return cache.ecomaAccountDockerProbe;
+}
+
+interface DockerProbeCache {
+  ecomaAccountDockerProbe?: Promise<boolean>;
+}
+
+async function runDockerProbe(): Promise<boolean> {
+  let container: { stop(): Promise<unknown> } | undefined;
+  let available = false;
+  try {
+    const { PostgreSqlContainer } = await import('@testcontainers/postgresql');
+    container = await new PostgreSqlContainer(POSTGRES_IMAGE)
+      .withExposedPorts(POSTGRES_PORT)
+      .withStartupTimeout(120_000)
+      .start();
+    available = true;
+  } catch {
+    available = false;
+  } finally {
+    // `.catch(() => {})` chứ không phải block rỗng: `stop()` là cleanup và có
+    // thể tự nó ném, nuốt lỗi ở đây để lỗi **thật** của probe không bị che.
+    await container?.stop().catch(() => undefined);
+  }
+
+  process.env[DOCKER_PROBE_ENV] = available ? 'available' : 'unavailable';
+  if (available) {
+    return true;
+  }
+
+  const suiteCount = countProbeGuardedSuites();
+  // Cảnh báo tiếng Anh vì nó là output của tooling trên CI, không phải prose
+  // trong code (xem AGENTS.md — console output giữ tiếng Anh).
+  console.warn(
+    `Docker is unavailable: the ${suiteCount} integration suite(s) guarded by probeDocker will be SKIPPED and this run still exits 0. ` +
+      'Set ACCOUNT_REQUIRE_DOCKER=1 to turn the skipped suites into a hard failure.',
+  );
+  if (process.env['ACCOUNT_REQUIRE_DOCKER'] === '1') {
+    throw new Error(
+      'ACCOUNT_REQUIRE_DOCKER=1 but the Docker probe failed; refusing to skip the integration suites.',
+    );
+  }
+  return false;
+}
+
+/**
+ * Đếm số file spec trong `tests/integration` gọi `probeDocker` — con số cảnh
+ * báo phải khớp thực tế, và đếm từ nguồn thay vì hard-code (hard-code thì thêm
+ * một spec mới là cảnh báo nói dối).
+ */
+function countProbeGuardedSuites(): number {
+  return readdirSync(import.meta.dirname)
+    .filter((entry) => entry.endsWith('.spec.ts'))
+    .filter((entry) =>
+      readFileSync(resolve(import.meta.dirname, entry), 'utf8').includes('probeDocker'),
+    ).length;
+}
+
+/**
+ * Apply mọi file migration, theo thứ tự tên file, vào database đã có sẵn.
+ *
+ * Tách riêng khỏi `startAccountDatabase` để test "apply lại là no-op" gọi lại
+ * được đúng hàm mà lần apply đầu đã gọi — nếu có hai đường code cho cùng một việc
+ * thì "repeatable" chỉ chứng minh cho một trong hai.
+ *
+ * ⚠️ Đây chỉ là **dải băng** gọi {@link applyAllMigrations} (`db/apply.mts`) —
+ * đúng hàm mà CLI `db:migrate` chạy, gồm cả advisory lock và GUC. Viết lại vòng
+ * apply ở đây (điều đã từng xảy ra) là tạo một runner thứ hai không có lock:
+ * test "repeatable" xanh với bản sao trong khi runner production hỏng.
+ *
+ * ⚠️ Client truyền vào đây phải là **migrator**, không phải superuser. Xem
+ * `provision()` để biết vì sao đó là điều kiện để test có ý nghĩa.
+ */
+export async function applyMigrations(client: Client): Promise<void> {
+  await applyAllMigrations(client);
+}
+
+/**
+ * Provisioning **step 1** (`03-operations.md` §3.2), làm bằng superuser —
+ * đúng vai trò admin/owner, không phải migration.
+ *
+ * ⚠️ Ba việc này **không** nằm trong `db/migrations/`, và đó là phát hiện từ
+ * chạy thật chứ không phải suy ra:
+ *
+ *  1. `CREATE ROLE … LOGIN` — `0001` có guard tạo role, nhưng `NOCREATEROLE` có
+ *     nghĩa là migrator **không** tự tạo được chính nó. Role phải do admin tạo.
+ *  2. `GRANT CREATE ON DATABASE` — `CREATE SCHEMA` cần nó, PostgreSQL không cấp
+ *     cho `PUBLIC`, và migrator không sở hữu database nên không tự cấp được.
+ *  3. `CREATE DATABASE db-auth` — để `REVOKE CONNECT` trong `0002` có đối tượng
+ *     thật.
+ *
+ * Bỏ bước 1 hoặc 2 thì `apply.ts` dừng ở `0001` với `permission denied`; bỏ bước
+ * 3 thì AC-012 pass vì lý do sai (guard bỏ qua chứ không phải chặn thật).
+ */
+async function provision(superuser: Client): Promise<void> {
+  await superuser.query(`CREATE DATABASE "${AUTH_DATABASE}"`);
+  await superuser.query(
+    `CREATE ROLE ecoma_account_migrator LOGIN PASSWORD '${ROLE_PASSWORD}' ` +
+      `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`,
+  );
+  // Runtime role có thể để `0002` tạo vì `0002` chạy bởi migrator… mà migrator
+  // `NOCREATEROLE`. Nên nó cũng phải do admin tạo — xem `roles.spec.ts`.
+  await superuser.query(
+    `CREATE ROLE ecoma_account_runtime LOGIN PASSWORD '${ROLE_PASSWORD}' ` +
+      `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`,
+  );
+  await superuser.query(
+    `GRANT CONNECT, CREATE, TEMPORARY ON DATABASE "${ACCOUNT_DATABASE}" TO ecoma_account_migrator`,
+  );
+  // ⚠️ Chặn chéo **phải** do owner làm, không phải bởi migration: `REVOKE CONNECT
+  // ON DATABASE db-auth` cần quyền sở hữu `db-auth`, mà migrator không có và
+  // không được có. Chạy nó bằng migrator chỉ in `WARNING: no privileges could be
+  // revoked` rồi để `CONNECT` nguyên — xem giải thích dài trong
+  // `0002_roles_and_grants.sql`.
+  await superuser.query(`REVOKE CONNECT ON DATABASE "${AUTH_DATABASE}" FROM PUBLIC`);
+  await superuser.query(`REVOKE CONNECT ON DATABASE "${AUTH_DATABASE}" FROM ecoma_account_runtime`);
+}
+
+/**
+ * Dựng container PostgreSQL, tạo `db-auth`, apply migration, rồi trả về handle.
+ *
+ * ⚠️ `reuse` **không** bật. Mỗi run cần một container sạch: các test assert trên
+ * trạng thái database (số bảng, ACL, extension đã cài) chứ không chỉ trên dữ liệu
+ * mình tạo, và container bị tái sử dụng mang theo trạng thái của run trước.
+ *
+ * `db-auth` được tạo **trước** khi apply. Đó không phải chi tiết trang trí: nếu
+ * database đích chưa tồn tại thì guard trong `0002` bỏ qua, và AC-012 sẽ pass vì
+ * lý do sai.
+ *
+ * ⚠️ Apply **ở đây**, không để mỗi spec tự apply: `0002` có `REVOKE` ở tầng
+ * cluster, nên nhiều container song song sẽ chặn lẫn nhau. Một container cho cả
+ * suite thì các spec chỉ lo việc của mình.
+ */
+export async function startAccountDatabase(): Promise<AccountDatabase> {
+  const { PostgreSqlContainer } = await import('@testcontainers/postgresql');
+
+  const container = await new PostgreSqlContainer(POSTGRES_IMAGE)
+    .withDatabase(ACCOUNT_DATABASE)
+    .withUsername(SUPERUSER)
+    .withPassword(SUPERUSER_PASSWORD)
+    .withExposedPorts(POSTGRES_PORT)
+    .withStartupTimeout(120_000)
+    .start();
+
+  try {
+    const host = container.getHost();
+    const port = container.getMappedPort(POSTGRES_PORT);
+
+    const open = async (options: {
+      user: string;
+      password: string;
+      database: string;
+    }): Promise<Client> => {
+      const { Client: PgClient } = await pgModule();
+      const client = new PgClient({ host, port, ...options });
+      await client.connect();
+      return client;
+    };
+
+    const connect = (): Promise<Client> =>
+      open({ user: SUPERUSER, password: SUPERUSER_PASSWORD, database: ACCOUNT_DATABASE });
+
+    const connectAsMigrator = (): Promise<Client> =>
+      open({
+        user: 'ecoma_account_migrator',
+        password: ROLE_PASSWORD,
+        database: ACCOUNT_DATABASE,
+      });
+
+    const superuser = await connect();
+
+    await provision(superuser);
+
+    // Apply bằng **credential migrator thật**, không phải `SET ROLE` từ superuser:
+    // `SET ROLE` không kiểm chứng được quyền **kết nối thật**, và nó giấu đúng cái
+    // lỗi mà `provision()` ở trên chú ý — migrator thiếu `CREATE` sẽ chết ngay ở
+    // `CREATE SCHEMA`, nhưng `SET ROLE` thì không.
+    //
+    // GUC `ecoma.auth_database` do `applyMigrations` tự `SET` trên chính connection
+    // đó, nên không cần `ALTER ROLE … IN DATABASE … SET` (và đặt ở connection
+    // superuser cũng vô nghĩa: nó không áp dụng sang connection của migrator).
+    const migrator = await connectAsMigrator();
+    try {
+      await applyMigrations(migrator);
+    } finally {
+      await migrator.end();
+    }
+    await superuser.end();
+
+    const asRole = async (
+      role: 'ecoma_account_runtime' | 'ecoma_account_migrator',
+    ): Promise<Client> => {
+      const client = await connect();
+      await client.query(`SET ROLE ${role}`);
+      return client;
+    };
+
+    const createRuntimePool = async (): Promise<Pool> => {
+      // Pool bằng credential **thật** của runtime role (không `SET ROLE`): các
+      // hàm trong `server/utils/db.ts` nhận `Pool` và Worker cũng kết nối bằng
+      // credential thật qua Hyperdrive — `SET ROLE` sẽ giấu đúng lỗi thiếu quyền
+      // ở tầng kết nối.
+      const { Pool: PgPool } = await pgModule();
+      return new PgPool({
+        host,
+        port,
+        user: 'ecoma_account_runtime',
+        password: ROLE_PASSWORD,
+        database: ACCOUNT_DATABASE,
+      });
+    };
+
+    const truncateData = async (): Promise<void> => {
+      // `TRUNCATE` của `db-account`, không đụng DDL, grant hay extension.
+      const client = await connect();
+      try {
+        await client.query(
+          `TRUNCATE account.login_handoffs, account.security_events,
+                  account.account_outbox_events, account.account_sessions, account.users`,
+        );
+      } finally {
+        await client.end();
+      }
+    };
+
+    return {
+      host,
+      port,
+      superuserPassword: SUPERUSER_PASSWORD,
+      rolePassword: ROLE_PASSWORD,
+      connect,
+      asRuntime: () => asRole('ecoma_account_runtime'),
+      asMigrator: () => asRole('ecoma_account_migrator'),
+      connectAsRuntime: () =>
+        open({
+          user: 'ecoma_account_runtime',
+          password: ROLE_PASSWORD,
+          database: ACCOUNT_DATABASE,
+        }),
+      createRuntimePool,
+      truncateData,
+      // `stop()` trả về container đã dừng, còn interface khai báo `Promise<void>` —
+      // bọc lại để không lộ chi tiết của testcontainers ra ngoài.
+      stop: async () => {
+        await container.stop();
+      },
+    };
+  } catch (error) {
+    // Dọn container khi setup ném: `afterAll` chỉ gọi `db?.stop()` khi `db`
+    // đã được gán, nên exception ở giữa để lại container chạy mãi và tích
+    // luỹ qua các lần chạy lại — đúng kiểu rò mà review chỉ ra.
+    await container.stop().catch(() => undefined);
+    throw error;
+  }
+}
+
+/**
+ * Hash một chuỗi bằng SHA-256 ở tầng ứng dụng.
+ *
+ * Test chỉ cần chứng minh *cột lưu trữ khác giá trị cookie*, nên thuật toán nào
+ * không quan trọng. Cột trong schema không ràng buộc thuật toán — đó là lựa chọn
+ * của tầng ứng dụng, và đổi thuật toán không được phá dữ liệu cũ.
+ */
+export function hashIdentifier(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+/** Vòng hết hạn lệch vài phút, đủ để không đụng ràng buộc `expires_at > created_at`. */
+export function futureInstant(): Date {
+  return new Date(Date.now() + 300_000);
+}
+
+export { ACCOUNT_DATABASE, AUTH_DATABASE, POSTGRES_IMAGE, SUPERUSER };
