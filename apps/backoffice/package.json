@@ -1,0 +1,86 @@
+{
+  "name": "@ecoma-io/backoffice",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "@ecoma-io/ui-app-shell": "workspace:*",
+    "@ecoma-io/ui-ecoma-logo": "workspace:*"
+  },
+  "devDependencies": {
+    "@nuxtjs/i18n": "10.6.0",
+    "@vite-pwa/assets-generator": "1.0.4",
+    "@vite-pwa/nuxt": "1.1.1"
+  },
+  "nx": {
+    "tags": [
+      "type:composition",
+      "scope:backoffice",
+      "runtime:edge"
+    ],
+    "targets": {
+      "deploy": {
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "build"
+        ],
+        "options": {
+          "forwardAllArgs": false,
+          "command": "npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/backoffice"
+        },
+        "configurations": {
+          "staging": {
+            "command": "npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/backoffice --lane staging"
+          },
+          "production": {
+            "command": "npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/backoffice --lane production"
+          }
+        }
+      },
+      "nuxt-prepare": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "apps/backoffice",
+          "command": "npx nuxt prepare"
+        }
+      },
+      "typecheck": {
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "^typecheck",
+          "nuxt-prepare"
+        ],
+        "cache": true,
+        "inputs": [
+          "default",
+          "{workspaceRoot}/tsconfig.base.json",
+          {
+            "externalDependencies": [
+              "vue-tsc"
+            ]
+          }
+        ],
+        "options": {
+          "cwd": "apps/backoffice",
+          "command": "npx nuxt typecheck"
+        },
+        "//": [
+          "Ghi đè target `typecheck` mặc định của plugin @nx/js (echo no-op),",
+          "mirror đúng cách apps/home đã làm: Nuxt sinh `.nuxt/tsconfig.*.json`",
+          "với `noEmit: true`, còn target mặc định chạy `tsc --build",
+          "--emitDeclarationOnly` — hai option xung đột (TS5069), và trước",
+          "nuxt-prepare thì các file đó chưa tồn tại (TS5083). `nuxt typecheck`",
+          "(vue-tsc qua @nuxt/cli) là đường đúng: hiểu project references Nuxt 4,",
+          "dùng đúng các `.nuxt/tsconfig.*.json`, và bắt được lỗi type thật.",
+          "Bị bỏ sót cho đến khi lockfile thay đổi làm `nx affected` gồm cả",
+          "project này — target chỉ pass ở dạng bị plugin tắt (no-op), runner",
+          "sạch sẽ hard-fail TS5083 khi tập affected mở rộng."
+        ]
+      },
+      "test": {
+        "dependsOn": [
+          "nuxt-prepare"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "@ecoma-io/ui-ecoma-logo",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./src/index.ts",
+  "nx": {
+    "tags": [
+      "type:application",
+      "scope:shared",
+      "runtime:universal"
+    ]
+  }
+}

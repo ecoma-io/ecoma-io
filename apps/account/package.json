@@ -1,0 +1,113 @@
+{
+  "name": "@ecoma-io/account",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "@ecoma-io/identity-contracts": "workspace:*",
+    "@ecoma-io/identity-domain": "workspace:*",
+    "@ecoma-io/transactional-mail-contracts": "workspace:*",
+    "@simplewebauthn/server": "14.0.3",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "12.2.1",
+    "@types/pg": "^8.23.1",
+    "testcontainers": "12.2.1"
+  },
+  "nx": {
+    "tags": [
+      "type:composition",
+      "scope:identity",
+      "runtime:edge"
+    ],
+    "targets": {
+      "deploy": {
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "build"
+        ],
+        "options": {
+          "forwardAllArgs": false,
+          "command": "npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/account"
+        },
+        "configurations": {
+          "staging": {
+            "command": "npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/account --lane staging"
+          },
+          "production": {
+            "command": "npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/account --lane production"
+          }
+        }
+      },
+      "nuxt-prepare": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "apps/account",
+          "command": "npx nuxt prepare"
+        }
+      },
+      "test": {
+        "dependsOn": [
+          "build",
+          "nuxt-prepare"
+        ]
+      },
+      "db:migrate": {
+        "executor": "nx:run-commands",
+        "cache": false,
+        "options": {
+          "cwd": "apps/account",
+          "command": "npx tsx --tsconfig tsconfig.db.json db/apply.mts"
+        }
+      },
+      "test-integration": {
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "build",
+          "nuxt-prepare"
+        ],
+        "options": {
+          "cwd": "apps/account",
+          "command": "npx vitest run tests/integration"
+        }
+      },
+      "typecheck-db": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "apps/account",
+          "command": "npx tsc --noEmit -p tsconfig.db.json"
+        }
+      },
+      "typecheck": {
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "^typecheck",
+          "nuxt-prepare"
+        ],
+        "cache": true,
+        "inputs": [
+          "default",
+          "{workspaceRoot}/tsconfig.base.json",
+          {
+            "externalDependencies": [
+              "vue-tsc"
+            ]
+          }
+        ],
+        "options": {
+          "cwd": "apps/account",
+          "command": "npx nuxt typecheck"
+        },
+        "//": [
+          "Ghi de target `typecheck` mac dinh cua plugin @nx/js (echo no-op),",
+          "mirror dung cach apps/home lam: Nuxt sinh `.nuxt/tsconfig.*.json`",
+          "voi `noEmit: true`, con target mac dinh chay `tsc --build",
+          "`--emitDeclarationOnly` - hai option xung dot (TS5069), va truoc",
+          "nuxt-prepare thi cac file do chua ton tai (TS5083). `nuxt typecheck`",
+          "(vue-tsc qua @nuxt/cli) la duong dung: hieu project references Nuxt 4,",
+          "dung dung cac `.nuxt/tsconfig.*.json`, va bat duoc loi type that."
+        ]
+      }
+    }
+  }
+}

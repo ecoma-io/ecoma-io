@@ -1,0 +1,25 @@
+{
+  "name": "@ecoma-io/transactional-mail-infrastructure",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": {
+      "@ecoma-io/source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@ecoma-io/transactional-mail-application": "workspace:*",
+    "@ecoma-io/transactional-mail-contracts": "workspace:*"
+  },
+  "nx": {
+    "tags": [
+      "type:infrastructure",
+      "scope:messaging",
+      "runtime:edge"
+    ]
+  }
+}

@@ -1,0 +1,127 @@
+import { defineNuxtConfig } from 'nuxt/config';
+import tailwindcss from '@tailwindcss/vite';
+
+import { BACKOFFICE_DATA_MODE_DISABLED } from './app/backoffice-data/data-mode';
+import {
+  DEFAULT_BACKOFFICE_LOCALE,
+  BACKOFFICE_LOCALE_DEFINITIONS,
+} from './app/i18n/locale-registry';
+
+// https://nuxt.com/docs/api/configuration/nuxt-config
+export default defineNuxtConfig({
+  compatibilityDate: '2026-10-05',
+  workspaceDir: '../../',
+  devtools: { enabled: true },
+  devServer: {
+    host: '0.0.0.0',
+    port: 4201,
+  },
+  // Gating dữ liệu backoffice — E1 (`docs` issue #256).
+  //
+  // `backofficeDataMode` là **công tắc duy nhất** quyết định mock có được dùng
+  // hay không. Giá trị mặc định ở đây là `BACKOFFICE_DATA_MODE_DISABLED`
+  // (`'disabled'`): khi không có cấu hình deployment nào áp vào, app fail closed
+  // và vào trạng thái "không khả dụng" thay vì phục vụ fixture. Dùng hằng thay vì
+  // viết lại literal để tập giá trị hợp lệ chỉ được khai ở `data-mode.ts`.
+  //
+  // Giá trị runtime đến từ biến môi trường `NITRO_PUBLIC_BACKOFFICE_DATA_MODE`
+  // (Nitro `applyEnv` phủ lên giá trị build-time dưới đây), khai tường minh cho
+  // từng env trong `wrangler.jsonc` — `vars` không inherit giữa các env.
+  // Local dev: đặt biến này trong `.env` (đã gitignore) hoặc truyền khi chạy
+  // `nx serve @ecoma-io/backoffice`.
+  //
+  // Khai ở `nuxt.config.ts` (không phải `nitro.config.ts`) vì đây là khoá
+  // `public` được đọc ở phía app: cùng nguồn với payload `runtimeConfig.public`
+  // mà client hydrate, nên SSR và client không thể lệch nhau.
+  runtimeConfig: {
+    public: {
+      backofficeDataMode: BACKOFFICE_DATA_MODE_DISABLED,
+    },
+  },
+  typescript: {
+    typeCheck: true,
+    tsConfig: {
+      extends: '../../../tsconfig.base.json',
+    },
+  },
+  imports: {
+    autoImport: true,
+  },
+  alias: {
+    '@ecoma-io/ui-app-shell': new URL('../../libs/ui-app-shell/src/index.ts', import.meta.url)
+      .pathname,
+    '@ecoma-io/ui-ecoma-logo': new URL('../../libs/ui-ecoma-logo/src/index.ts', import.meta.url)
+      .pathname,
+  },
+  css: ['~/assets/css/styles.css'],
+  vite: {
+    resolve: { tsconfigPaths: true },
+    server: { allowedHosts: true },
+    plugins: [tailwindcss()],
+  },
+  modules: ['@vite-pwa/nuxt', '@nuxt/fonts', '@nuxtjs/i18n'],
+  fonts: {
+    defaults: {
+      weights: [300, 400, 500, 600, 700, 800],
+    },
+  },
+  i18n: {
+    strategy: 'no_prefix',
+    detectBrowserLanguage: false,
+    defaultLocale: DEFAULT_BACKOFFICE_LOCALE,
+    locales: BACKOFFICE_LOCALE_DEFINITIONS.map(({ code, language, label }) => ({
+      code,
+      language,
+      name: label,
+    })),
+    restructureDir: 'app/i18n',
+    vueI18n: './vue-i18n.config.ts',
+  },
+  pwa: {
+    registerType: 'prompt',
+    workbox: {
+      globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+      runtimeCaching: [
+        {
+          urlPattern: /^\/api\/.*/iu,
+          handler: 'NetworkOnly',
+        },
+        {
+          urlPattern: /^https:\/\/.*\.api\..*/iu,
+          handler: 'NetworkOnly',
+        },
+        {
+          urlPattern: /\/_nuxt\/.*\.(js|css)/iu,
+          handler: 'CacheFirst',
+          options: {
+            cacheName: 'nuxt-assets',
+            expiration: {
+              maxEntries: 100,
+              maxAgeSeconds: 60 * 60 * 24 * 30,
+            },
+          },
+        },
+      ],
+    },
+    manifest: {
+      name: 'Ecoma Backoffice',
+      short_name: 'Backoffice',
+      description: 'Ecoma backoffice application',
+      start_url: '/',
+      scope: '/',
+      display: 'standalone',
+      background_color: '#ffffff',
+      theme_color: '#111827',
+      icons: [
+        {
+          src: '/favicon.ico',
+          sizes: '48x48',
+          type: 'image/x-icon',
+        },
+      ],
+    },
+    devOptions: {
+      enabled: false,
+    },
+  },
+});

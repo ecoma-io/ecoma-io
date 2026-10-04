@@ -1,0 +1,33 @@
+{
+  // API-only Worker của bounded context `pact-broker`: phục vụ Pact Broker
+  // protocol (HAL) cho Pact CLI và dashboard BFF. KHÔNG có UI — dashboard
+  // thuộc deploy unit `pact-broker-app` (`apps/pact-broker-app`, Nuxt BFF).
+  //
+  // `nodejs_compat` khai báo TƯỜNG MINH: driver PostgreSQL (`pg`) cần
+  // `node:buffer`, `node:events`, `node:stream` khi chạy qua Hyperdrive.
+  // Ranh giới `runtime:edge` giữ nguyên như `auth`: không filesystem, không
+  // process, không API ngoài những gì Workers cung cấp.
+  //
+  // Hyperdrive binding `DB` chỉ là chỗ dành: database `db-pact-broker` chưa
+  // được provision, nên không có `id` thật nào được ghim. Worker fail-closed
+  // khi thiếu binding (xem src/config.ts). Migration KHÔNG chạy qua binding
+  // này — chúng chạy từ CI runner bằng chuỗi kết nối trực tiếp (docs/services/
+  // pact-broker/03-operations.md §2), vì Hyperdrive không hỗ trợ advisory lock.
+  //
+  // KHÔNG có deploy target/staging/production env ở đây: `tools/delivery` đã
+  // bị gỡ khỏi main (commit f68105b), provisioning là việc tiếp theo ngoài
+  // phạm vi. Wrangler env `staging`/`production` sẽ thêm khi provision.
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "ecoma-pact-broker-api",
+  "main": "dist/main.js",
+  "compatibility_date": "2026-10-05",
+  "compatibility_flags": ["nodejs_compat"],
+  // KHÔNG có `routes`/`hostname`: hostname dự kiến `pact.ecoma.io` nhưng chưa
+  // provision. Custom domain khai báo cùng staging/production khi provision.
+  "observability": {
+    "enabled": true,
+  },
+  "dev": {
+    "port": 4204,
+  },
+}

@@ -1,0 +1,24 @@
+{
+  "name": "@ecoma-io/transactional-mailer-job-infrastructure",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": {
+      "@ecoma-io/source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@ecoma-io/transactional-mailer-job-application": "workspace:*"
+  },
+  "nx": {
+    "tags": [
+      "type:infrastructure",
+      "scope:messaging",
+      "runtime:edge"
+    ]
+  }
+}
