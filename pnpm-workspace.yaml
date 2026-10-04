@@ -1,0 +1,22 @@
+packages:
+  - 'apps/*'
+  - 'tools/*'
+  - 'docs'
+autoInstallPeers: true
+
+# pnpm >= 11 không còn đọc `only-built-dependencies` trong `.npmrc`; danh sách
+# build script được phép chạy khai báo ở đây, và chỉ ở đây.
+#
+# Thiếu một package ở đây ⇒ `pnpm install` exit code 1 với
+# ERR_PNPM_IGNORED_BUILDS, nên thêm package mới có postinstall là phải bổ sung
+# ở đây luôn.
+allowBuilds:
+  nx: true
+  '@parcel/watcher': true
+  '@scarf/scarf': true
+  esbuild: true
+  lefthook: true
+  protobufjs: true
+  unrs-resolver: true
+  workerd: true
+  sharp: true

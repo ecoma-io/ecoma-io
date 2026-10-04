@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "importHelpers": true,
+    "isolatedModules": true,
+    "lib": ["es2022"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "noEmitOnError": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "es2022",
+    "customConditions": ["@ecoma-io/source"],
+    "paths": {
+      "@ecoma-io/i18n-public": ["./libs/i18n-public/src/index.ts"],
+      "@ecoma-io/layout-public": ["./libs/layout-public/src/index.ts"]
+    }
+  }
+}

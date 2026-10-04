@@ -1,0 +1,21 @@
+{
+  // Deploy unit Workers cho Nx remote cache.
+  //
+  // Docs quy định `cache` là stateless Cloudflare Worker data plane, stream
+  // artifact tới object storage qua S3-compatible API, không buffer toàn bộ
+  // artifact trong memory. Reference: docs/services/cache/01-architecture.md.
+  //
+  // Worker identity lâu dài — PR không tạo Worker mới, Preview chạy dưới
+  // identity này. Reference: docs/overview/02-delivery.md §5.
+  //
+  // KHÔNG bật `nodejs_compat`: `cache` mang tag `runtime:edge`, và
+  // .oxlintrc.json chặn import Node.js builtin trong mọi project
+  // `runtime:edge`. Flag đó chỉ dành cho Nuxt apps, xem apps/*/wrangler.jsonc.
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "ecoma-cache",
+  "main": "dist/main.js",
+  "compatibility_date": "2026-10-05",
+  "observability": {
+    "enabled": true,
+  },
+}

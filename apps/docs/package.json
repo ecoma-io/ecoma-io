@@ -1,0 +1,41 @@
+{
+  "name": "@ecoma-io/docs",
+  "version": "0.0.1",
+  "private": true,
+  "nx": {
+    "tags": [
+      "type:web",
+      "scope:docs",
+      "runtime:edge"
+    ],
+    "targets": {
+      "deploy": {
+        "executor": "nx:run-commands",
+        "defaultConfiguration": "production",
+        "dependsOn": [
+          "build"
+        ],
+        "options": {
+          "cwd": "apps/docs",
+          "command": "npx wrangler deploy --config wrangler.jsonc"
+        },
+        "configurations": {
+          "development": {},
+          "production": {}
+        }
+      },
+      "nuxt-prepare": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "apps/docs",
+          "command": "npx nuxt prepare"
+        }
+      },
+      "test": {
+        "dependsOn": [
+          "nuxt-prepare"
+        ]
+      }
+    }
+  }
+}

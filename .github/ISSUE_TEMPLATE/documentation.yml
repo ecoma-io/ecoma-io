@@ -1,0 +1,38 @@
+name: Tài liệu
+description: Thiếu, sai hoặc cần cải thiện tài liệu trong docs/ hoặc README
+labels: [documentation]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Viết issue bằng tiếng Việt; giữ nguyên file path và technical term.
+        Quy tắc tài liệu: docs/AGENTS.md.
+
+  - type: input
+    id: path
+    attributes:
+      label: Tài liệu liên quan
+      description: Đường dẫn file (giữ nguyên, không dịch).
+      placeholder: 'Ví dụ: docs/overview/02-delivery.md'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Loại vấn đề
+      options:
+        - Sai sự thật (không khớp code/behavior hiện tại)
+        - Thiếu (chưa được ghi)
+        - Không rõ / dễ hiểu nhầm
+        - Lạc đề / sai phạm vi tài liệu
+    validations:
+      required: true
+
+  - type: textarea
+    id: detail
+    attributes:
+      label: Chi tiết
+      description: Cái gì sai/thiếu, nên ghi thêm gì, nguồn tham chiếu (nếu có).
+    validations:
+      required: true

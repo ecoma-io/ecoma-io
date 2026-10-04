@@ -1,0 +1,27 @@
+commit-msg:
+  commands:
+    'lint commit message':
+      run: npx commitlint --edit {1}
+
+pre-commit:
+  commands:
+    'secret leaks scan':
+      run: docker run --rm --interactive -v "$PWD:/repo" --workdir /repo zricethezav/gitleaks:v8.30.1 git --staged --no-banner --redact --verbose --exit-code 2
+    'format':
+      glob: '*.{js,jsx,mjs,cjs,ts,tsx,mts,cts,vue,json,jsonc,css,scss,html,md,yml,yaml}'
+      run: npx oxfmt --write --no-error-on-unmatched-pattern {staged_files}
+      stage_fixed: true
+    'lint':
+      glob: '*.{js,jsx,ts,tsx,mts,cts,mjs,cjs,vue}'
+      run: npx oxlint --fix --no-error-on-unmatched-pattern {staged_files}
+      stage_fixed: true
+
+pre-push:
+  parallel: true
+  commands:
+    'secret leaks scan':
+      run: docker run --rm --interactive -v "$PWD:/repo" --workdir /repo zricethezav/gitleaks:v8.30.1 git --staged --no-banner --redact --verbose --exit-code 2
+    lint:
+      run: npx nx affected --target=lint --base=origin/HEAD
+    test:
+      run: npx nx affected --target=test --base=origin/HEAD

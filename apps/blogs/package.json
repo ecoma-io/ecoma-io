@@ -1,0 +1,41 @@
+{
+  "name": "@ecoma-io/blogs",
+  "version": "0.0.1",
+  "private": true,
+  "nx": {
+    "tags": [
+      "type:web",
+      "scope:public",
+      "runtime:edge"
+    ],
+    "targets": {
+      "deploy": {
+        "executor": "nx:run-commands",
+        "defaultConfiguration": "production",
+        "dependsOn": [
+          "build"
+        ],
+        "options": {
+          "cwd": "apps/blogs",
+          "command": "npx wrangler deploy --config wrangler.jsonc"
+        },
+        "configurations": {
+          "development": {},
+          "production": {}
+        }
+      },
+      "nuxt-prepare": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "apps/blogs",
+          "command": "npx nuxt prepare"
+        }
+      },
+      "test": {
+        "dependsOn": [
+          "nuxt-prepare"
+        ]
+      }
+    }
+  }
+}

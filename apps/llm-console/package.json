@@ -1,0 +1,45 @@
+{
+  "name": "@ecoma-io/llm-console",
+  "version": "0.0.1",
+  "private": true,
+  "devDependencies": {
+    "@vite-pwa/assets-generator": "1.0.1",
+    "@vite-pwa/nuxt": "1.1.1"
+  },
+  "nx": {
+    "tags": [
+      "type:web",
+      "scope:console",
+      "runtime:edge"
+    ],
+    "targets": {
+      "deploy": {
+        "executor": "nx:run-commands",
+        "defaultConfiguration": "production",
+        "dependsOn": [
+          "build"
+        ],
+        "options": {
+          "cwd": "apps/llm-console",
+          "command": "npx wrangler deploy --config wrangler.jsonc"
+        },
+        "configurations": {
+          "development": {},
+          "production": {}
+        }
+      },
+      "nuxt-prepare": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "apps/llm-console",
+          "command": "npx nuxt prepare"
+        }
+      },
+      "test": {
+        "dependsOn": [
+          "nuxt-prepare"
+        ]
+      }
+    }
+  }
+}

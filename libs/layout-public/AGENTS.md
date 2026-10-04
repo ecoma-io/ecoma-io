@@ -1,0 +1,10 @@
+# layout-public Instructions
+
+- The application name and the public mount are **separate**. `blogs` is served at `/blog`, `api-reference` at `/docs/api`.
+- Locale placement is owned by `i18n-public`. Consume it; do not re-decide the ordering here.
+- Every URL built here is locale-first. `locale = 'vi', mount = '/blog'` yields `/vi/blog`, never `/blog/vi`.
+- Never special-case an application. Adding a mount is a data change, not a branch.
+- A mount matches only on a full segment boundary, so `/blogging` never falls into `blog`.
+- Resolve mounts deepest-first so a nested mount such as `/docs/api` wins over `/docs`.
+- Never construct a public URL by string concatenation — build it through this library.
+- `PUBLIC_MOUNTS` is ordered for correct matching; use `PUBLIC_MOUNTS_IN_DECLARATION_ORDER` for display.

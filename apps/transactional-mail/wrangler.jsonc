@@ -1,0 +1,50 @@
+{
+  // Control plane của mail bounded context: nhận internal API, giữ domain state
+  // (template, message metadata, delivery intent, domain config) trong D1 `mail`,
+  // và publish Mail Command sang Queue qua transactional outbox.
+  //
+  // Reference: docs/services/transactional-mail/01-architecture.md,
+  // docs/overview/01-architecture.md (service map `transactional-mail`),
+  // docs/overview/03-operations.md §11.4.
+  //
+  // KHÔNG bật `nodejs_compat`: project mang tag `runtime:edge` và
+  // .oxlintrc.json chặn import Node.js builtin trong mọi project `runtime:edge`.
+  //
+  // KHÔNG có `routes`/`hostname` public — service chỉ có internal API,
+  // gọi qua Service Binding từ Worker cùng account (overview `01` §5.4).
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "ecoma-transactional-mail",
+  "main": "dist/main.js",
+  "compatibility_date": "2026-10-05",
+  "observability": {
+    "enabled": true,
+  },
+
+  // D1 `mail` — authoritative storage của control plane (invariant: mỗi service
+  // một D1, không service nào khác đọc database này). Binding `mail` khớp
+  // track D1 ở docs/overview/02-delivery.md §3.
+  //
+  // `database_id` cố ý KHÔNG khai báo ở đây: chưa provisioning. Giá trị được
+  // điền sau khi chạy `wrangler d1 create mail` (lấy output database_id) —
+  // xem docs/services/transactional-mail/03-operations.md §2.
+  "d1_databases": [
+    {
+      "binding": "mail",
+      "database_name": "mail",
+    },
+  ],
+
+  // Producer của Queue `ecoma-mail-delivery` (tên Queue suy từ tiền lệ
+  // `ecoma-push-delivery` — convention-derived, xem 01-architecture.md §6).
+  // Consumer + DLQ khai báo ở apps/transactional-mailer-job/wrangler.jsonc.
+  // KHÔNG có trigger cron ở đây: cơ chế gọi Outbox Publisher chưa chốt
+  // (overview `03` mục 10) — publish đi qua POST /internal/outbox/publish.
+  "queues": {
+    "producers": [
+      {
+        "queue": "ecoma-mail-delivery",
+        "binding": "QUEUE",
+      },
+    ],
+  },
+}

@@ -1,0 +1,136 @@
+{
+  "name": "@ecoma-io/push-notification",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {},
+  "nx": {
+    "tags": [
+      "type:service",
+      "scope:notifications",
+      "runtime:edge"
+    ],
+    "targets": {
+      "deploy": {
+        "executor": "nx:run-commands",
+        "defaultConfiguration": "production",
+        "dependsOn": [
+          "build"
+        ],
+        "options": {
+          "cwd": "apps/push-notification",
+          "command": "npx wrangler deploy --config wrangler.jsonc"
+        },
+        "configurations": {
+          "development": {},
+          "production": {}
+        }
+      },
+      "build": {
+        "executor": "@nx/esbuild:esbuild",
+        "outputs": [
+          "{options.outputPath}"
+        ],
+        "defaultConfiguration": "production",
+        "options": {
+          "platform": "neutral",
+          "outputPath": "apps/push-notification/dist",
+          "format": [
+            "esm"
+          ],
+          "bundle": true,
+          "main": "apps/push-notification/src/main.ts",
+          "tsConfig": "apps/push-notification/tsconfig.app.json",
+          "assets": [
+            "apps/push-notification/src/assets"
+          ],
+          "esbuildOptions": {
+            "sourcemap": true,
+            "outExtension": {
+              ".js": ".js"
+            },
+            "conditions": [
+              "workerd",
+              "worker",
+              "browser"
+            ]
+          }
+        },
+        "configurations": {
+          "development": {},
+          "production": {
+            "esbuildOptions": {
+              "sourcemap": false,
+              "outExtension": {
+                ".js": ".js"
+              },
+              "conditions": [
+                "workerd",
+                "worker",
+                "browser"
+              ]
+            }
+          }
+        }
+      },
+      "prune-lockfile": {
+        "dependsOn": [
+          "build"
+        ],
+        "cache": true,
+        "executor": "@nx/js:prune-lockfile",
+        "inputs": [
+          "default",
+          "^default",
+          "{workspaceRoot}/pnpm-workspace.yaml",
+          "{workspaceRoot}/package.json",
+          {
+            "runtime": "node -e \"try{console.log('pnpm major '+require('child_process').execSync('pnpm --version',{stdio:['ignore','pipe','ignore']}).toString().trim().split('.')[0])}catch{console.log('pnpm major unavailable')}\""
+          }
+        ],
+        "outputs": [
+          "{workspaceRoot}/apps/push-notification/dist/package.json",
+          "{workspaceRoot}/apps/push-notification/dist/pnpm-lock.yaml",
+          "{workspaceRoot}/apps/push-notification/dist/pnpm-workspace.yaml",
+          "{workspaceRoot}/apps/push-notification/dist/patches",
+          "{workspaceRoot}/apps/push-notification/dist/local_path_modules"
+        ],
+        "options": {
+          "buildTarget": "build"
+        }
+      },
+      "copy-workspace-modules": {
+        "dependsOn": [
+          "build"
+        ],
+        "cache": true,
+        "outputs": [
+          "{workspaceRoot}/apps/push-notification/dist/workspace_modules"
+        ],
+        "executor": "@nx/js:copy-workspace-modules",
+        "options": {
+          "buildTarget": "build"
+        }
+      },
+      "prune": {
+        "dependsOn": [
+          "prune-lockfile",
+          "copy-workspace-modules"
+        ],
+        "executor": "nx:noop"
+      },
+      "serve": {
+        "continuous": true,
+        "executor": "nx:run-commands",
+        "defaultConfiguration": "development",
+        "dependsOn": [
+          "build"
+        ],
+        "options": {
+          "cwd": "apps/push-notification",
+          "command": "npx wrangler dev --config wrangler.jsonc"
+        },
+        "configurations": {}
+      }
+    }
+  }
+}

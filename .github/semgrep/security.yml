@@ -1,0 +1,134 @@
+# Nhóm rule dữ liệu nhạy cảm: enforce invariant quan sát được (observability)
+# trong AGENTS.md — "Observability must not become a serving-path dependency;
+# never log prompt/response bodies" — và rò rỉ secret qua response. Đây là
+# phần Semgrep nhận trách nhiệm mà CodeQL và Gitleaks KHÔNG đảm nhận:
+#
+#   - Gitleaks tìm secret ở dạng LITERAL trong Git. Một giá trị được đọc từ
+#     environment rồi in ra log hoặc trả về client không phải literal nên nó
+#     nằm ngoài phạm vi Gitleaks hoàn toàn.
+#   - CodeQL analizes injection/flow generic trên JS/TS, nhưng không biết danh
+#     sáchfield nào của repository này được coi là dữ liệu nhạy cảm theo
+#     AGENTS.md (prompt, response, authorization, cookie, token, secret,
+#     apiKey, accessToken, refreshToken, password) và danh sách được phép
+#     in ra (userId, requestId).
+#
+# Quan hệ với `no-console` của .oxlintrc.json — KHÔNG phải là duplicate:
+#   - oxlint cấm MỌI `console.*` trong `apps/**` và `libs/**`, nhưng nó không
+#     nhìn được GIÁ TRỊ được in; và nó được bật lại (off) cho `tools/**`.
+#   - Rule này nhìn được giá trị, và đây là guard DUY NHẤT trong `tools/**`
+#     nơi `no-console` bị tắt có chủ đích.
+#   Nghĩa là hai rule đi theo hai trục khác nhau: oxlint = "không có console ở
+#   đây", Semgrep = "không có dữ liệu nhạy cảm trong console ở đâu cũng được".
+#
+# `mode: taint` — nguồn là identifier/field có tên khớp threat model, sink là
+# nơi giá trị rời khỏi process. `metavariable-regex` bám ĐẦU chuỗi trên
+# semgrep 1.176.1 nên mọi regex dưới đây đều anchor bằng `^` và `(?i:…)` theo
+# nhóm (Str không nhận cờ `(?i)` trần).
+#
+# Fixture: security.test.ts.
+rules:
+  - id: security-sensitive-value-logged
+    languages: [typescript]
+    severity: ERROR
+    mode: taint
+    message: >-
+      A value named like sensitive data is written to a log sink. The
+      repository's observability invariant is absolute: never log prompt or
+      response bodies, and never log credentials — a run log is readable by
+      anyone with read access and survives far longer than the value's
+      lifetime. Log `userId`/`requestId` and an opaque reference instead; the
+      identifier is what correlates a trace, not the payload. Note that
+      `no-console` in .oxlintrc.json already bans `console.*` outright under
+      `apps/**` and `libs/**` — this rule is the guard for the places that
+      ban is deliberately lifted (`tools/**`) and for the value itself, which
+      lint cannot see.
+    metadata:
+      category: security
+      confidence: MEDIUM
+      cwe:
+        - 'CWE-532: Insertion of Sensitive Information into Log File'
+      owasp:
+        - 'A09:2021 - Security Logging and Monitoring Failures'
+        - 'A09:2025 - Logging and Alerting Failures'
+      references:
+        - https://cwe.mitre.org/data/definitions/532.html
+      technology:
+        - typescript
+      subcategory:
+        - vuln
+      likelihood: MEDIUM
+      impact: HIGH
+    pattern-sources:
+      # Hai nhánh tách rời là có chủ đích, và chúng khác nhau ĐÚNG MỘT từ:
+      # `response`. Biến trần `response` trong repository này là một `Response`
+      # của fetch/h3 — `response.status`, `await response.json()` là đọc metadata
+      # của HTTP, không phải đọc body của LLM — và chính pattern đó đã đo ra 7
+      # FP trên apps/*/server/api/greet.spec.ts. Body chỉ được nhận diện qua
+      # tên nói rõ nó là body (`responseBody`, `x.response`), chứ không qua
+      # `response` trần.
+      - patterns:
+          - pattern: $SENSITIVE
+          - metavariable-regex:
+              metavariable: $SENSITIVE
+              regex: '^(?i:(?:prompt|prompts|prompt_?body|response_?body|authorization|cookies?|tokens?|secrets?|api_?keys?|access_?tokens?|refresh_?tokens?|passwords?|credentials?))([_.\-]|$)'
+      - patterns:
+          - pattern: $OWNER.$SENSITIVE
+          - metavariable-regex:
+              metavariable: $SENSITIVE
+              regex: '^(?i:(?:prompt|prompts|prompt_?body|response_?body|responses?|authorization|cookies?|tokens?|secrets?|api_?keys?|access_?tokens?|refresh_?tokens?|passwords?|credentials?))([_.\-]|$)'
+    pattern-sinks:
+      - pattern-either:
+          - pattern: console.$METHOD($...ARGS)
+          - pattern: process.stdout.write($...ARGS)
+          - pattern: process.stderr.write($...ARGS)
+
+  - id: security-sensitive-value-in-http-response
+    languages: [typescript]
+    severity: ERROR
+    mode: taint
+    message: >-
+      A value named like sensitive data reaches a response. Returning it puts
+      the credential or the prompt/response body on the wire, into the client,
+      and into every intermediate cache and access log between here and the
+      caller — the same exposure as logging it, but to a strictly wider
+      audience. Return an opaque reference (`userId`, `requestId`) and let the
+      holder of the secret prove possession of it on a separate path.
+    metadata:
+      category: security
+      confidence: MEDIUM
+      cwe:
+        - 'CWE-200: Exposure of Sensitive Information to an Unauthorized Actor'
+      owasp:
+        - 'A01:2021 - Broken Access Control'
+        - 'A04:2021 - Insecure Design'
+      references:
+        - https://cwe.mitre.org/data/definitions/200.html
+      technology:
+        - typescript
+      subcategory:
+        - vuln
+      likelihood: MEDIUM
+      impact: HIGH
+    pattern-sources:
+      # Hai nhánh tách rời là có chủ đích, và chúng khác nhau ĐÚNG MỘT từ:
+      # `response`. Biến trần `response` trong repository này là một `Response`
+      # của fetch/h3 — `response.status`, `await response.json()` là đọc metadata
+      # của HTTP, không phải đọc body của LLM — và chính pattern đó đã đo ra 7
+      # FP trên apps/*/server/api/greet.spec.ts. Body chỉ được nhận diện qua
+      # tên nói rõ nó là body (`responseBody`, `x.response`), chứ không qua
+      # `response` trần.
+      - patterns:
+          - pattern: $SENSITIVE
+          - metavariable-regex:
+              metavariable: $SENSITIVE
+              regex: '^(?i:(?:prompt|prompts|prompt_?body|response_?body|authorization|cookies?|tokens?|secrets?|api_?keys?|access_?tokens?|refresh_?tokens?|passwords?|credentials?))([_.\-]|$)'
+      - patterns:
+          - pattern: $OWNER.$SENSITIVE
+          - metavariable-regex:
+              metavariable: $SENSITIVE
+              regex: '^(?i:(?:prompt|prompts|prompt_?body|response_?body|responses?|authorization|cookies?|tokens?|secrets?|api_?keys?|access_?tokens?|refresh_?tokens?|passwords?|credentials?))([_.\-]|$)'
+    pattern-sinks:
+      - pattern-either:
+          - pattern: return $VALUE
+          - pattern: new Response($VALUE, ...)
+          - pattern: json($VALUE, ...)

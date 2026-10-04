@@ -1,0 +1,46 @@
+name: Yêu cầu tính năng
+description: Đề xuất capability mới hoặc thay đổi behavior hiện tại
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Viết issue bằng tiếng Việt; giữ nguyên file path, error code, technical term.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Vấn đề
+      description: Vấn đề hoặc nhu cầu mà tính năng này giải quyết — ai bị ảnh hưởng, tại sao cần.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Đề xuất
+      description: Hướng giải pháp đề xuất (nếu đã có); bỏ trống nếu chỉ mới nêu vấn đề.
+
+  - type: input
+    id: scope
+    attributes:
+      label: Scope
+      description: 'Nx project / service liên quan (nếu biết) — vd: identity, transactional-mail.'
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Tiêu chí chấp nhận
+      description: Điều kiện để biết tính năng đã hoàn thành.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Ràng buộc đã cân nhắc
+      options:
+        - label: Không truy cập database xuyên service; giao tiếp qua API/event contract
+        - label: Migration (nếu có) theo expand → compatible rollout → contract
+        - label: Không log prompt/response body; không đưa secret vào Git

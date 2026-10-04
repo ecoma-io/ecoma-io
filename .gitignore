@@ -1,0 +1,67 @@
+# Xem https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files để biết thêm về ignore file.
+
+# Kết quả build
+dist
+tmp
+out-tsc
+
+# dependency
+node_modules
+
+# IDE và editor
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# IDE - VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# lưu trữ linh tinh
+/.sass-cache
+/connect.lock
+/coverage
+/libpeerconnection.log
+npm-debug.log
+yarn-error.log
+testem.log
+/typings
+
+# File hệ thống
+.DS_Store
+Thumbs.db
+
+.nx/cache
+.nx/workspace-data
+.nx/migrate-runs
+.claude/worktrees
+.claude/settings.local.json
+CLAUDE.md 
+
+# Output của Nuxt dev/build
+.output
+.data
+.nuxt
+.nitro
+.cache
+vitest.config.*.timestamp*
+test-output
+tsconfig.tsbuildinfo
+**/*.tsbuildinfo
+
+# Wrangler: cache local và config sinh tự động
+.wrangler
+
+# Wrangler/CI: secrets của Worker. Phải dùng wildcard vì Wrangler đọc cả
+# `.dev.vars.<env>` và `.env.<env>` (theo từng environment ngoài `production`).
+.dev.vars*
+.env*
+
+

@@ -1,0 +1,136 @@
+{
+  "name": "@ecoma-io/transactional-mailer-job",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {},
+  "nx": {
+    "tags": [
+      "type:service",
+      "scope:messaging",
+      "runtime:edge"
+    ],
+    "targets": {
+      "deploy": {
+        "executor": "nx:run-commands",
+        "defaultConfiguration": "production",
+        "dependsOn": [
+          "build"
+        ],
+        "options": {
+          "cwd": "apps/transactional-mailer-job",
+          "command": "npx wrangler deploy --config wrangler.jsonc"
+        },
+        "configurations": {
+          "development": {},
+          "production": {}
+        }
+      },
+      "build": {
+        "executor": "@nx/esbuild:esbuild",
+        "outputs": [
+          "{options.outputPath}"
+        ],
+        "defaultConfiguration": "production",
+        "options": {
+          "platform": "neutral",
+          "outputPath": "apps/transactional-mailer-job/dist",
+          "format": [
+            "esm"
+          ],
+          "bundle": true,
+          "main": "apps/transactional-mailer-job/src/main.ts",
+          "tsConfig": "apps/transactional-mailer-job/tsconfig.app.json",
+          "assets": [
+            "apps/transactional-mailer-job/src/assets"
+          ],
+          "esbuildOptions": {
+            "sourcemap": true,
+            "outExtension": {
+              ".js": ".js"
+            },
+            "conditions": [
+              "workerd",
+              "worker",
+              "browser"
+            ]
+          }
+        },
+        "configurations": {
+          "development": {},
+          "production": {
+            "esbuildOptions": {
+              "sourcemap": false,
+              "outExtension": {
+                ".js": ".js"
+              },
+              "conditions": [
+                "workerd",
+                "worker",
+                "browser"
+              ]
+            }
+          }
+        }
+      },
+      "prune-lockfile": {
+        "dependsOn": [
+          "build"
+        ],
+        "cache": true,
+        "executor": "@nx/js:prune-lockfile",
+        "inputs": [
+          "default",
+          "^default",
+          "{workspaceRoot}/pnpm-workspace.yaml",
+          "{workspaceRoot}/package.json",
+          {
+            "runtime": "node -e \"try{console.log('pnpm major '+require('child_process').execSync('pnpm --version',{stdio:['ignore','pipe','ignore']}).toString().trim().split('.')[0])}catch{console.log('pnpm major unavailable')}\""
+          }
+        ],
+        "outputs": [
+          "{workspaceRoot}/apps/transactional-mailer-job/dist/package.json",
+          "{workspaceRoot}/apps/transactional-mailer-job/dist/pnpm-lock.yaml",
+          "{workspaceRoot}/apps/transactional-mailer-job/dist/pnpm-workspace.yaml",
+          "{workspaceRoot}/apps/transactional-mailer-job/dist/patches",
+          "{workspaceRoot}/apps/transactional-mailer-job/dist/local_path_modules"
+        ],
+        "options": {
+          "buildTarget": "build"
+        }
+      },
+      "copy-workspace-modules": {
+        "dependsOn": [
+          "build"
+        ],
+        "cache": true,
+        "outputs": [
+          "{workspaceRoot}/apps/transactional-mailer-job/dist/workspace_modules"
+        ],
+        "executor": "@nx/js:copy-workspace-modules",
+        "options": {
+          "buildTarget": "build"
+        }
+      },
+      "prune": {
+        "dependsOn": [
+          "prune-lockfile",
+          "copy-workspace-modules"
+        ],
+        "executor": "nx:noop"
+      },
+      "serve": {
+        "continuous": true,
+        "executor": "nx:run-commands",
+        "defaultConfiguration": "development",
+        "dependsOn": [
+          "build"
+        ],
+        "options": {
+          "cwd": "apps/transactional-mailer-job",
+          "command": "npx wrangler dev --config wrangler.jsonc"
+        },
+        "configurations": {}
+      }
+    }
+  }
+}
