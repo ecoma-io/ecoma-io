@@ -1,0 +1,256 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import { MAX_SKEW_SECONDS, MIN_SKEW_SECONDS } from '@ecoma-io/identity-contracts';
+
+import { lazyConfigValidator, validateAccountConfig } from './config-validation';
+
+/**
+ * Test fail-closed của config.
+ *
+ * Mỗi test ở đây bảo vệ một câu hỏi: "Worker có khởi động được khi config sai không?".
+ * Câu trả lời đúng cho tất cả là **không** — vì `03-operations.md` §8 quy định identity
+ * không có degraded path, và Worker khởi động được rồi mới phát hiện thiếu secret thì
+ * nó đã nhận traffic.
+ */
+
+/** Secret đủ dài, hợp lệ theo luật độ dài tối thiểu. */
+const VALID_SECRET = 'k'.repeat(32);
+
+/** OTP HMAC secret hợp lệ — cùng ngưỡng 32 ký tự với internal secret. */
+const VALID_OTP_SECRET = 'o'.repeat(32);
+
+/**
+ * Config cơ sở hợp lệ cho các test khẳng định "không ném".
+ *
+ * Mọi secret bắt buộc đều phải có mặt ở đây: thêm một secret mới vào validator
+ * mà không cập nhật helper này là mọi test "accepts" đỏ ngay — chính là tín hiệu
+ * mong muốn, chứ không phải thứ cần neutralize bằng default rỗng.
+ */
+function validConfig(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return { internalHmacSecret: VALID_SECRET, otpHmacSecret: VALID_OTP_SECRET, ...overrides };
+}
+
+describe('validateAccountConfig', () => {
+  it('accepts a valid secret', () => {
+    expect(() => validateAccountConfig(validConfig())).not.toThrow();
+  });
+
+  it('rejects a missing secret', () => {
+    expect(() => validateAccountConfig({ internalHmacSecret: undefined })).toThrow(
+      /NUXT_INTERNAL_HMAC_SECRET/u,
+    );
+  });
+
+  it('rejects an empty secret instead of falling back to an unauthenticated path', () => {
+    // Secret rỗng là trường hợp nguy hiểm nhất: `verifyRequest` chạy trơn và chấp nhận
+    // MỌI chữ ký. Vì vậy rỗng phải throw chứ không được coi là "không cấu hình thì bỏ qua".
+    expect(() => validateAccountConfig({ internalHmacSecret: '' })).toThrow(
+      /NUXT_INTERNAL_HMAC_SECRET/u,
+    );
+  });
+
+  it('rejects a non-string secret', () => {
+    expect(() => validateAccountConfig({ internalHmacSecret: 12345 })).toThrow(
+      /NUXT_INTERNAL_HMAC_SECRET/u,
+    );
+  });
+
+  it('rejects a secret shorter than the minimum length', () => {
+    expect(() => validateAccountConfig({ internalHmacSecret: 'k'.repeat(31) })).toThrow(
+      /ít nhất 32 ký tự/u,
+    );
+  });
+
+  it('never reveals the configured secret itself in the error message', () => {
+    // Message lỗi đọc được trong log của platform, nên nó chỉ được nêu **ngưỡng** và
+    // tên biến — không bao giờ nêu độ dài thật hay bất kỳ ký tự nào của secret.
+    let message = '';
+    try {
+      validateAccountConfig({ internalHmacSecret: 'x'.repeat(5) });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).not.toContain('xxxxx');
+    expect(message).toContain('NUXT_INTERNAL_HMAC_SECRET');
+  });
+
+  it('rejects a non-integer skew window', () => {
+    expect(() => validateAccountConfig(validConfig({ internalAuthSkewSeconds: 1.5 }))).toThrow(
+      /NUXT_INTERNAL_AUTH_SKEW_SECONDS/u,
+    );
+  });
+
+  it('rejects a non-positive skew window', () => {
+    expect(() => validateAccountConfig(validConfig({ internalAuthSkewSeconds: 0 }))).toThrow(
+      /NUXT_INTERNAL_AUTH_SKEW_SECONDS/u,
+    );
+  });
+
+  it('rejects a skew window above the protocol cap', () => {
+    // Trần là **hằng giao thức** của `identity-contracts`, không phải ngưỡng cục bộ: nếu
+    // `account` nhận `86400` trong khi `auth` từ chối nó, hai service chạy hai cửa sổ khác
+    // nhau và bên rộng hơn quyết định cửa sổ replay thật. Test neo đúng biên qua biên:
+    // `MAX_SKEW_SECONDS` phải **qua**, `MAX_SKEW_SECONDS + 1` phải **rơi**.
+    expect(() =>
+      validateAccountConfig(validConfig({ internalAuthSkewSeconds: MAX_SKEW_SECONDS })),
+    ).not.toThrow();
+    expect(() =>
+      validateAccountConfig(validConfig({ internalAuthSkewSeconds: MAX_SKEW_SECONDS + 1 })),
+    ).toThrow(/NUXT_INTERNAL_AUTH_SKEW_SECONDS/u);
+  });
+
+  it('rejects the library floor exactly one below MIN_SKEW_SECONDS', () => {
+    // Biên dưới dùng **cùng hằng** với `auth` (trước đây mỗi bên tự hardcode một luật).
+    expect(() =>
+      validateAccountConfig(validConfig({ internalAuthSkewSeconds: MIN_SKEW_SECONDS })),
+    ).not.toThrow();
+    expect(() =>
+      validateAccountConfig(validConfig({ internalAuthSkewSeconds: MIN_SKEW_SECONDS - 1 })),
+    ).toThrow(/NUXT_INTERNAL_AUTH_SKEW_SECONDS/u);
+  });
+
+  it('accepts an absent skew window so the library default stays authoritative', () => {
+    // Không đặt ⇒ `verifyRequest` dùng `DEFAULT_SKEW_SECONDS`. Chỉ có một nơi định
+    // nghĩa mặc định, trong `identity-contracts`, để không có hai nguồn sự thật cho
+    // một luật.
+    expect(() => validateAccountConfig(validConfig({ internalAuthSkewSeconds: '' }))).not.toThrow();
+    expect(() => validateAccountConfig(validConfig())).not.toThrow();
+  });
+});
+
+describe('validateAccountConfig — OTP HMAC secret', () => {
+  it('rejects a missing OTP secret', () => {
+    expect(() => validateAccountConfig({ internalHmacSecret: VALID_SECRET })).toThrow(
+      /NUXT_OTP_HMAC_SECRET/u,
+    );
+  });
+
+  it('rejects an empty OTP secret', () => {
+    expect(() => validateAccountConfig(validConfig({ otpHmacSecret: '' }))).toThrow(
+      /NUXT_OTP_HMAC_SECRET/u,
+    );
+  });
+
+  it('rejects a non-string OTP secret', () => {
+    expect(() => validateAccountConfig(validConfig({ otpHmacSecret: 98765 }))).toThrow(
+      /NUXT_OTP_HMAC_SECRET/u,
+    );
+  });
+
+  it('rejects an OTP secret shorter than the minimum length', () => {
+    expect(() => validateAccountConfig(validConfig({ otpHmacSecret: 'o'.repeat(31) }))).toThrow(
+      /NUXT_OTP_HMAC_SECRET/u,
+    );
+  });
+
+  it('never reveals the OTP secret itself in the error message', () => {
+    // Cùng luật với internal secret: log platform đọc được message, nên chỉ nêu
+    // tên biến và ngưỡng — không nêu bất kỳ ký tự nào của secret.
+    let message = '';
+    try {
+      validateAccountConfig(validConfig({ otpHmacSecret: 'p'.repeat(5) }));
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).not.toContain('ppppp');
+    expect(message).toContain('NUXT_OTP_HMAC_SECRET');
+  });
+
+  it('keeps both secrets independent: a valid OTP secret cannot cover for a bad internal one', () => {
+    // Hai secret phục vụ hai hợp đồng khác nhau (internal envelope và OTP digest);
+    // một cái hợp lệ không được làm luồng kiểm của cái kia bị bỏ qua.
+    expect(() => validateAccountConfig(validConfig({ internalHmacSecret: '' }))).toThrow(
+      /NUXT_INTERNAL_HMAC_SECRET/u,
+    );
+    expect(() => validateAccountConfig(validConfig({ otpHmacSecret: undefined }))).toThrow(
+      /NUXT_OTP_HMAC_SECRET/u,
+    );
+  });
+});
+
+describe('validateAccountConfig — mail service URL', () => {
+  it('accepts an absent mail URL: sending fails closed at request time instead', () => {
+    // URL rỗng là "chưa cấu hình mail" — hợp lệ ở tầng config (Worker vẫn phục vụ
+    // session/logout), còn luồng OTP tự fail closed ở request khi cần gửi.
+    expect(() => validateAccountConfig(validConfig())).not.toThrow();
+    expect(() => validateAccountConfig(validConfig({ mailServiceUrl: '' }))).not.toThrow();
+  });
+
+  it('accepts an https origin', () => {
+    expect(() =>
+      validateAccountConfig(validConfig({ mailServiceUrl: 'https://mail.example.com' })),
+    ).not.toThrow();
+  });
+
+  it('accepts an http origin for local transactional-mail dev', () => {
+    expect(() =>
+      validateAccountConfig(validConfig({ mailServiceUrl: 'http://127.0.0.1:8787' })),
+    ).not.toThrow();
+  });
+
+  it('rejects a URL without an http(s) scheme', () => {
+    expect(() =>
+      validateAccountConfig(validConfig({ mailServiceUrl: 'ftp://mail.example.com' })),
+    ).toThrow(/NUXT_MAIL_SERVICE_URL/u);
+  });
+
+  it('rejects a bare host without a scheme', () => {
+    expect(() =>
+      validateAccountConfig(validConfig({ mailServiceUrl: 'mail.example.com' })),
+    ).toThrow(/NUXT_MAIL_SERVICE_URL/u);
+  });
+
+  it('rejects a non-string mail URL', () => {
+    expect(() => validateAccountConfig(validConfig({ mailServiceUrl: 42 }))).toThrow(
+      /NUXT_MAIL_SERVICE_URL/u,
+    );
+  });
+});
+
+/**
+ * `lazyConfigValidator` — thời điểm gọi: request đầu, không phải module-init.
+ *
+ * Trên Workers, `createNitroApp()` chạy top-level của `index.mjs` khi module
+ * Worker load, còn secret chỉ được nối vào runtime config ở request. Validate
+ * lúc init đọc config **chưa có secret** và ném ⇒ module không load được ⇒ kể
+ * cả deployment đúng cũng chết. Các test dưới đây giữ ba tính chất của phiên
+ * bản trì hoãn: (1) không validate trước khi được ensure, (2) config thiếu vẫn
+ * ném và **vẫn** ném ở lần sau — cờ chưa được set, (3) sau khi hợp lệ thì đắt
+ * nhất một boolean check.
+ */
+describe('lazyConfigValidator', () => {
+  it('does not validate until the first ensure call', () => {
+    const readConfig = vi.fn<(event: unknown) => Record<string, unknown>>(() => validConfig());
+    lazyConfigValidator(readConfig);
+    expect(readConfig).not.toHaveBeenCalled();
+  });
+
+  it('throws on the first request when the config is missing and keeps throwing', () => {
+    // Fail-closed của phiên bản trì hoãn: ném ở giữa ⇒ cờ chưa set ⇒ request sau
+    // thử lại và vẫn ném. Không có đường "thử một lần rồi cho qua".
+    const ensure = lazyConfigValidator(() => ({ internalHmacSecret: '' }));
+    expect(() => ensure({})).toThrow(/NUXT_INTERNAL_HMAC_SECRET/u);
+    expect(() => ensure({})).toThrow(/NUXT_INTERNAL_HMAC_SECRET/u);
+  });
+
+  it('validates once after a successful first request', () => {
+    const readConfig = vi.fn<(event: unknown) => Record<string, unknown>>(() => validConfig());
+    const ensure = lazyConfigValidator(readConfig);
+    const event = { marker: 'request-1' };
+    ensure(event);
+    ensure({ marker: 'request-2' });
+    // Đúng một lần đọc config — và đọc đúng event của request đầu.
+    expect(readConfig).toHaveBeenCalledTimes(1);
+    expect(readConfig).toHaveBeenCalledWith(event);
+  });
+
+  it('retries and succeeds once the config becomes valid', () => {
+    let config: Record<string, unknown> = { internalHmacSecret: VALID_SECRET };
+    const ensure = lazyConfigValidator(() => config);
+    expect(() => ensure({})).toThrow(/NUXT_OTP_HMAC_SECRET/u);
+    config = validConfig();
+    expect(() => ensure({})).not.toThrow();
+    // Đã hợp lệ: lần tiếp theo không ném và không đọc lại config thừa.
+    expect(() => ensure({})).not.toThrow();
+  });
+});
