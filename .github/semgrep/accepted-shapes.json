@@ -1,0 +1,65 @@
+[
+  {
+    "rule": "security-sensitive-value-in-http-response",
+    "path": "apps/pact-broker-api/src/routes/admin.ts",
+    "start": 108,
+    "end": 121,
+    "reason": "Show-once machine token creation: POST /admin/machine-tokens tra token ban ro DUNG MOT LAN trong response 201 - day la hop dong cua endpoint (xem comment 'Show-once' trong code). Token hash nam trong DB; moi list sau do chi thay metadata.",
+    "lines": {
+      "108": "^    return c\\.json\\($",
+      "109": "^      \\{$",
+      "110": "^        token: \\{$",
+      "111": "^          id: record\\.id,$",
+      "112": "^          name: parsed\\.data\\.name,$",
+      "113": "^          scopes: parsed\\.data\\.scopes,$",
+      "114": "^          createdAt: record\\.createdAt,$",
+      "115": "^          revokedAt: null,$",
+      "116": "^        \\},$",
+      "117": "^        // Show-once: giá trị duy nhất lần này response chứa nó\\.$",
+      "118": "^        secret: token,$",
+      "119": "^      \\},$",
+      "120": "^      201,$",
+      "121": "^    \\);$"
+    }
+  },
+  {
+    "rule": "security-sensitive-value-in-http-response",
+    "path": "apps/pact-broker-api/src/repo/webhook-repo.ts",
+    "start": 204,
+    "end": 212,
+    "reason": "Webhook execution log: responseStatus/responseBody la COT DB cua bang pact.webhook_executions va dong thoi la field cua DTO route tra ve - khong the doi ten mot ben. Du lieu la nhat ky thuc thi webhook cua TENANT va route GET /webhooks/:id/executions phuc vu dung tenant do (readAuth + tenantId scope). Outbound delivery hien TAT cung (SR-006) nen responseBody hom nay chi chua chuoi tinh; khi bat lai, kenh nay van la thiet ke da duyet.",
+    "lines": {
+      "204": "^    return rows\\.map\\(\\(r\\) => \\(\\{$",
+      "205": "^      id: r\\.id,$",
+      "206": "^      event: r\\.event,$",
+      "207": "^      trigger: r\\.trigger,$",
+      "208": "^      succeeded: r\\.succeeded,$",
+      "209": "^      responseStatus: r\\.response_status,$",
+      "210": "^      responseBody: r\\.response_body,$",
+      "211": "^      executedAt: r\\.executed_at\\.toISOString\\(\\),$",
+      "212": "^    \\}\\)\\);$"
+    }
+  },
+  {
+    "rule": "security-sensitive-value-in-http-response",
+    "path": "apps/pact-broker-api/src/routes/webhooks.ts",
+    "start": 231,
+    "end": 243,
+    "reason": "Route GET /webhooks/:id/executions echo DTO tu webhook-repo (cung chap nhan o webhook-repo.ts): nhat ky thuc thi webhook tra ve cho dung tenant so huu webhook. Field responseBody/responseStatus la hop cong API cua executions list.",
+    "lines": {
+      "231": "^        executions: executions\\.map\\(\\(e\\) => \\(\\{$",
+      "232": "^          id: e\\.id,$",
+      "233": "^          event: e\\.event,$",
+      "234": "^          triggeredBy: e\\.trigger,$",
+      "235": "^          responseStatus: e\\.responseStatus,$",
+      "236": "^          responseBody: e\\.responseBody,$",
+      "237": "^          succeeded: e\\.succeeded,$",
+      "238": "^          executedAt: e\\.executedAt,$",
+      "239": "^          _links: \\{$",
+      "240": "^            self: hal\\.link\\(`/webhooks/\\$\\{id\\}/executions/\\$\\{e\\.id\\}`\\),$",
+      "241": "^            'pb:webhook': hal\\.link\\(`/webhooks/\\$\\{id\\}`\\),$",
+      "242": "^          \\},$",
+      "243": "^        \\}\\)\\),$"
+    }
+  }
+]

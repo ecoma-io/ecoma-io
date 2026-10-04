@@ -1,0 +1,62 @@
+{
+  "name": "@ecoma-io/pact-broker-app",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "@ecoma-io/ui-app-shell": "workspace:*",
+    "@ecoma-io/ui-ecoma-logo": "workspace:*"
+  },
+  "devDependencies": {
+    "@nuxtjs/i18n": "10.6.0"
+  },
+  "nx": {
+    "tags": [
+      "type:composition",
+      "scope:pact",
+      "runtime:edge"
+    ],
+    "targets": {
+      "nuxt-prepare": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "apps/pact-broker-app",
+          "command": "npx nuxt prepare"
+        }
+      },
+      "typecheck": {
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "^typecheck",
+          "nuxt-prepare"
+        ],
+        "cache": true,
+        "inputs": [
+          "default",
+          "{workspaceRoot}/tsconfig.base.json",
+          {
+            "externalDependencies": [
+              "vue-tsc"
+            ]
+          }
+        ],
+        "options": {
+          "cwd": "apps/pact-broker-app",
+          "command": "npx nuxt typecheck"
+        },
+        "//": [
+          "Ghi đè target `typecheck` mặc định của plugin @nx/js (echo no-op),",
+          "mirror đúng cách apps/backoffice và apps/account đã làm: Nuxt sinh",
+          "`.nuxt/tsconfig.*.json` với `noEmit: true`, còn target mặc định chạy",
+          "`tsc --build --emitDeclarationOnly` — hai option xung đột (TS5069), và",
+          "trước nuxt-prepare thì các file đó chưa tồn tại (TS5083).",
+          "`nuxt typecheck` (vue-tsc qua @nuxt/cli) là đường đúng."
+        ]
+      },
+      "test": {
+        "dependsOn": [
+          "nuxt-prepare"
+        ]
+      }
+    }
+  }
+}

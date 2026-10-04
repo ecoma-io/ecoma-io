@@ -1,0 +1,13 @@
+[extend]
+useDefault = true
+
+[allowlist]
+paths = [
+  '''^tmp/''',
+  '''^.nx/''',
+  '''^*/node_modules/''',
+  '''^*/dist/''',
+  '''^*/.output/''',
+  '''.*/.nuxt/.*''',
+  'deploys/platform-deploy/local-certs',
+]

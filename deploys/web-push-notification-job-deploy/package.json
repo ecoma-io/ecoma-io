@@ -1,0 +1,24 @@
+{
+  "name": "web-push-notification-job-deploy",
+  "main": "index.ts",
+  "nx": {
+    "implicitDependencies": [
+      "platform-deploy"
+    ],
+    "tags": [
+      "type:deployment",
+      "scope:notifications",
+      "runtime:native"
+    ],
+    "targets": {
+      "provision": {
+        "//": "Target KHÔNG chạy `pulumi up`: nó chỉ in ra stack mà operator sẽ chạy tay, nên `nx run <project>:provision` là lệnh an toàn để kiểm tra hợp đồng thứ tự của task graph mà không đụng hạ tầng thật. Thứ tự được đảm bảo bởi `dependsOn: ['^provision']` khai trong `nx.json` cho mọi project `tag:type:deployment`.",
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "deploys/web-push-notification-job-deploy",
+          "command": "npx tsx ../../tools/dx provision-gate"
+        }
+      }
+    }
+  }
+}

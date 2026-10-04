@@ -1,0 +1,215 @@
+name: CI
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Run every project instead of the affected set'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup Node.js and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+      - name: Check PR title
+        if: github.event_name == 'pull_request'
+        run: pnpm dx pr-check
+      - name: Format check
+        if: github.event_name == 'pull_request'
+        run: npx oxfmt --check .
+      - name: Architecture tag validation
+        run: pnpm dx arch-check
+      # `force` chỉ tồn tại với workflow_dispatch; mọi trigger khác để nó rỗng và
+      # `!inputs.force` ra `true`, nên PR/push vẫn chạy theo affected như cũ.
+      # Khi dispatch với force=true thì affected=false → action rơi sang `run-many`.
+      - name: Linting &  type check
+        if: github.event_name != 'merge_group'
+        uses: ./.github/actions/run-nx-target
+        with:
+          targets: lint typecheck
+          affected: ${{ !inputs.force }}
+
+  unit-test:
+    name: unit-test
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    # PostgreSQL thật cho các suite replay/atomicity/retention của
+    # `identity-auth-infrastructure` và `apps/auth`. Các suite đó SKIP im lặng khi
+    # thiếu `AUTH_TEST_PG_*`, và một skip trông y hệt một pass — nên runner phải
+    # cung cấp database thật thay vì để kho nonce được kiểm tra bằng Map trong bộ
+    # nhớ. Hai role tách bạch như runbook ở `apps/auth/migrations/README.md`:
+    # migrator có DDL, runtime chỉ DML. Password ở đây là của database nhúng ném
+    # đi sau mỗi job, không phải credential của môi trường thật; các migration
+    # không đọc secret nào.
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+        env:
+          POSTGRES_DB: db_auth_verify
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d db_auth_verify"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup Node.js and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+      # Rust toolchain chỉ cài khi workspace có Cargo project — mọi PR JS thuần
+      # không trả phí cài đặt. Version compiler đọc từ `rust-toolchain.toml` ở
+      # workspace root (single source of truth cho cả local và CI, cùng nguồn
+      # với cache key Cargo); rustup directory override giữ local/CI cùng
+      # toolchain.
+      - name: Detect Cargo projects
+        id: cargo-projects
+        run: |
+          if find . -name 'Cargo.toml' -not -path '*/node_modules/*' -not -path './.nx/*' | grep -q .; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "toolchain=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+      - name: Setup Rust toolchain
+        if: steps.cargo-projects.outputs.present == 'true'
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+        with:
+          toolchain: ${{ steps.cargo-projects.outputs.toolchain }}
+          components: clippy, rustfmt
+      - name: Cache Cargo
+        if: steps.cargo-projects.outputs.present == 'true'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}-
+
+      - name: Unit test
+        uses: ./.github/actions/run-nx-target
+        with:
+          targets: test
+          affected: ${{ !inputs.force }}
+        env:
+          AUTH_TEST_PG_HOST: 127.0.0.1
+          AUTH_TEST_PG_PORT: '5432'
+          AUTH_TEST_PG_DATABASE: db_auth_verify
+          AUTH_TEST_PG_USER: ecoma_auth_runtime
+          AUTH_TEST_PG_PASSWORD: runtime-pw
+          AUTH_TEST_PG_MIGRATOR_USER: ecoma_auth_migrator
+          AUTH_TEST_PG_MIGRATOR_PASSWORD: migrator-pw
+          # `apps/account` chạy các suite tích hợp của nó bằng testcontainers, và
+          # `probeDocker()` mặc định chỉ CẢNH BÁO rồi để chúng skip với exit 0.
+          # Đặt cờ này biến một runner vắng Docker thành lỗi thật: một suite bị
+          # skip vì hạ tầng không được phép trông giống một suite đã pass. Đo
+          # được trên runner `ubuntu-26.04`: Docker 29.4.2 có sẵn, nên cờ này
+          # không thêm việc gì mới — nó chỉ đổi cách thất bại.
+          ACCOUNT_REQUIRE_DOCKER: '1'
+
+  build:
+    name: build
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup Node.js and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+      - name: Build
+        uses: ./.github/actions/run-nx-target
+        with:
+          targets: build
+          affected: ${{ !inputs.force }}
+
+  # Bộ test browser của `apps/backoffice` (Playwright + Chromium thật). Job tách
+  # khỏi `unit-test` vì cần cài browser và hệ thống libs của nó, và vì nó chậm hơn
+  # hẳn: server `nuxt dev` phải khởi động rồi JIT-compile từng route.
+  #
+  # Job KHÔNG có `if:` nào — và đó là điều kiện đúng đắn của nó. `ci-gate` fail với
+  # mọi kết quả khác `success`, kể cả `skipped`, nên một job bị bỏ qua ở đây sẽ làm
+  # đỏ cả pipeline. Trên PR chỉ chạm tài liệu, `nx affected -t e2e` không có project
+  # nào bị ảnh hưởng và thoát 0 với "0 tasks" — đã đo bằng
+  # `npx nx affected -t e2e --base=HEAD~1 --head=HEAD` — nên job chạy, xanh, mà
+  # không tốn phút nào cho test.
+  e2e:
+    name: e2e
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup Node.js and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+      # `@playwright/test` không có postinstall tải browser, nên runner sạch không
+      # có Chromium; `--with-deps` cài luôn các thư viện hệ thống mà Chromium cần.
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: End-to-end tests
+        uses: ./.github/actions/run-nx-target
+        with:
+          targets: e2e
+          affected: ${{ !inputs.force }}
+      # Chỉ khi đỏ: trace, screenshot và HTML report là bằng chứng duy nhất còn lại
+      # sau khi runner bị xoá, và không có chúng thì một job đỏ ở CI là thứ người
+      # khác không tái hiện được.
+      - name: Upload Playwright artifacts
+        if: ${{ failure() || cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: backoffice-playwright-artifacts
+          path: |
+            apps/backoffice/playwright-report
+            apps/backoffice/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  ci-gate:
+    name: ci-gate
+    needs: [verify, unit-test, build, e2e]
+    if: always()
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/aggregate-gate
+        with:
+          results: ${{ join(needs.*.result, ' ') }}
+          gate-name: 'ci-gate'

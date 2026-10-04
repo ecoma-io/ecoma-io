@@ -1,0 +1,144 @@
+import { defineNuxtConfig } from 'nuxt/config';
+import tailwindcss from '@tailwindcss/vite';
+import { ACCOUNT_LOCALE_DEFINITIONS, DEFAULT_ACCOUNT_LOCALE } from './app/i18n/locale-registry';
+
+// https://nuxt.com/docs/api/configuration/nuxt-config
+export default defineNuxtConfig({
+  compatibilityDate: '2026-10-05',
+  workspaceDir: '../../',
+  devtools: { enabled: true },
+  devServer: {
+    // Listen trên mọi network interface để mở app từ thiết bị khác (LAN,
+    // Tailscale IP) thay vì chỉ loopback. `vite.server.allowedHosts` phải
+    // đi kèm: Vite mặc định chỉ nhận `localhost`, `*.localhost` và IP
+    // literal, nên mọi tên DNS khác — kể cả MagicDNS `.ts.net` — bị chặn
+    // 403. Hardcode hostname không dùng được vì mỗi developer một tailnet.
+    // Đánh đổi: dev server không có authentication, ai nối được tới máy dev
+    // đều đọc được app, build error và source code. Cả hai key chỉ có tác
+    // dụng khi `nuxt.options.dev`, nên build production không đổi.
+    host: '0.0.0.0',
+    port: 4202,
+  },
+  typescript: {
+    typeCheck: true,
+    tsConfig: {
+      extends: '../../../tsconfig.base.json', // Nuxt chép nguyên văn chuỗi này sang `./.nuxt/tsconfig.json`, nên nó phải là đường dẫn tương đối so với thư mục đó
+    },
+  },
+  imports: {
+    autoImport: true,
+  },
+  css: ['~/assets/css/styles.css'],
+  modules: ['@nuxt/fonts', '@nuxtjs/i18n'],
+
+  i18n: {
+    // Không tiền tố locale trong URL: `/emails` là `/emails` ở cả ba ngôn ngữ.
+    // Đây là yêu cầu sản phẩm của app tài khoản (địa chỉ phải giữ được khi đổi
+    // ngôn ngữ), **không** phải lựa chọn kỹ thuật cho tiện — vì vậy nó đặt ở
+    // đây chứ không phải ở từng route.
+    strategy: 'no_prefix',
+
+    // Không suy ra locale từ `Accept-Language`. Không có lựa chọn tường minh và
+    // không có preference đã lưu thì app vẫn là tiếng Anh; `defaultLocale` ở
+    // dưới là nguồn sự thật của quy tắc đó và nó **là** giá trị trong registry
+    // (`DEFAULT_ACCOUNT_LOCALE`), không phải chuỗi viết lại lần nữa.
+    detectBrowserLanguage: false,
+    defaultLocale: DEFAULT_ACCOUNT_LOCALE,
+
+    // `language` là BCP-47 cho `<html lang>`; với `zh-CN` nó là `zh-Hans`, khác
+    // `code`. Trộn hai khái niệm này là lỗi thường gặp — xem
+    // `app/i18n/locale-registry.ts`.
+    //
+    // ⚠️ **Không khai `file`.** Message đã nối vào `vue-i18n.config.ts`, và khai
+    // `file` thêm cho mỗi locale sẽ tạo ra một nguồn message thứ hai cho cùng một
+    // locale. Hai nguồn là hai cây key, chúng trôi khỏi nhau ngay khi ai đó
+    // thêm key mới ở một bên — đúng cái lỗi mà `catalogs.spec.ts` sinh ra để
+    // bắt, và ở đây là lỗi do config tự tạo ra.
+    locales: ACCOUNT_LOCALE_DEFINITIONS.map(({ code, language, label }) => ({
+      code,
+      language,
+      name: label,
+    })),
+
+    // Đường dẫn tương đối từ `restructureDir` (`<rootDir>/i18n`). Module tự quét
+    // `i18n.config.ts` nếu bỏ trống, nhưng file của ta nằm trong `app/i18n/`
+    // cùng chỗ với registry và ba catalog — chỉ định tường minh để một đổi tên
+    // file sau này không âm thầm đổi sang config rỗng.
+    restructureDir: 'app/i18n',
+    vueI18n: './vue-i18n.config.ts',
+  },
+
+  // Alias tường minh cho `@ecoma-io/*` — **bắt buộc**, không phải tuỳ chọn.
+  //
+  // `tsconfig.base.json` có `paths: {}` rỗng và `vite.resolve.tsconfigPaths` chỉ
+  // đọc `paths`, nên cả hai cùng không map gì cho `@ecoma-io/identity-domain` /
+  // `@ecoma-io/identity-contracts`. Hệ quả đã quan sát được: Vite resolve
+  // `@ecoma-io/*` **không** được ở runtime, nên import trong `server/` chỉ nổ ở
+  // request đầu tiên chạm tới route đó (dev 500, production 500 theo cold start).
+  //
+  // Vì sao không sửa `tsconfig.base.json`: đó là file dùng chung của **mọi** app,
+  // nên thêm `paths` ở đó là thay đổi ngoài phạm vi app này — và app nào không có
+  // Nuxt/Vite resolver tương ứng vẫn không được lợi. `nuxt.config.ts` của chính app
+  // là nơi duy nhất chịu trách nhiệm resolve được alias của app mình.
+  alias: {
+    // `import.meta.url` chứ không phải `node:path`: `.oxlintrc.json` cấm import Node
+    // builtin trong `apps/**`, và `nuxt.config.ts` khớp glob đó. `new URL(x,
+    // import.meta.url).pathname` cho đường dẫn tuyệt đối mà không cần `resolve`.
+    '@ecoma-io/identity-domain': new URL('../../libs/identity-domain/src/index.ts', import.meta.url)
+      .pathname,
+    '@ecoma-io/identity-contracts': new URL(
+      '../../libs/identity-contracts/src/index.ts',
+      import.meta.url,
+    ).pathname,
+    '@ecoma-io/transactional-mail-contracts': new URL(
+      '../../libs/transactional-mail-contracts/src/index.ts',
+      import.meta.url,
+    ).pathname,
+  },
+
+  runtimeConfig: {
+    // Private runtime config — chỉ server đọc được, không nhúng vào payload.
+    //
+    // Nuxt đổi tên sang convention `NUXT_*`: `internalHmacSecret` ←
+    // `NUXT_INTERNAL_HMAC_SECRET`. Cùng một tên biến phục vụ Worker Secret ở
+    // production và `.env` khi `pnpm dev`, nên không có chỗ nào trong code tự đọc
+    // `process.env` cho config.
+    //
+    // ⚠️ KHÔNG đặt giá trị mặc định ở đây. Default rỗng biến "chưa cấu hình" thành
+    // "chạy được với secret rỗng", mà internal HMAC với secret rỗng thì **chấp nhận
+    // mọi chữ ký**. `server/plugins/config.ts` kiểm lúc khởi động và `throw` — đó mới
+    // là fail closed.
+    internalHmacSecret: '',
+    // Secret HMAC cho digest mã OTP (`server/lib/otp.ts`). Cùng luật với
+    // `internalHmacSecret`: không default, thiếu/qua ngắn thì validate throw —
+    // một digest OTP với key rỗng hay key ngắn không còn là keyed digest.
+    otpHmacSecret: '',
+    // Origin của transactional-mail cho `POST /v1/messages` (không path cuối).
+    // Rỗng = chưa cấu hình; luồng OTP fail-closed ở lần gửi (`server/lib/mail.ts`)
+    // chứ không tự gọi provider — `account` không giữ provider credential.
+    mailServiceUrl: '',
+    // Cửa sổ skew (giây) của envelope HMAC; rỗng ⇒ `verifyRequest` dùng mặc định
+    // 300s. Để trống chứ không đặt số ở đây để chỉ có **một** nơi định nghĩa mặc định
+    // (trong `identity-contracts`) — tránh hai nguồn sự thật cho cùng một luật.
+    internalAuthSkewSeconds: '',
+  },
+
+  nitro: {
+    // `pg` được **bundle** vào Worker, không external: preset `cloudflare-module`
+    // chạy trong isolate của Cloudflare nên `node:*` không tồn tại ở đó.
+    alias: {
+      // ⚠️ Bắt buộc, xem `server/lib/pg-native.cjs` về lý do. Tóm tắt:
+      // `pg/lib/native/client.js` `require('pg-native')` — optional dependency mà
+      // Node nuốt lỗi được, còn Rollup của Nitro thì fail build. Preset bật
+      // `noExternals` nên `nitro.externals` **không** được đọc; `nitro.alias` thì có,
+      // vì nó chạy trước resolver trong plugin `alias` của rollup.
+      'pg-native': new URL('./server/lib/pg-native.cjs', import.meta.url).pathname,
+    },
+  },
+
+  vite: {
+    resolve: { tsconfigPaths: true },
+    server: { allowedHosts: true },
+    plugins: [tailwindcss()],
+  },
+});
