@@ -1,0 +1,61 @@
+name: 'Run Nx target'
+description: 'Runs one or more Nx targets, scoped to the affected projects by default'
+
+inputs:
+  affected:
+    description: |
+      Scope the run to the projects affected since the merge base ('true'), or run
+      the targets on every project in the workspace ('false').
+    required: false
+    default: 'false'
+  targets:
+    description: |
+      Target names to run, e.g. 'test' or 'test,typecheck'. Separate multiple
+      targets with a comma; surrounding whitespace is ignored, so 'test, typecheck'
+      and 'test typecheck' are both accepted.
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    # `nx-set-shas` ghi NX_BASE/NX_HEAD ra $GITHUB_ENV (input
+    # `set-environment-variables-for-job` mặc định là 'true') và Nx đọc lại hai
+    # biến đó khi không có --base/--head tường minh, nên step `nx affected` phía
+    # dưới tự biết base/head mà không cần truyền tay.
+    #
+    # Chỉ chạy ở nhánh affected: nhánh `run-many` không so base/head, nên set-shas
+    # ở đó chỉ tốn thêm thời gian gọi API tìm workflow thành công gần nhất.
+    - name: Derive appropriate SHAs for base and head
+      if: inputs.affected == 'true'
+      uses: nrwl/nx-set-shas@e602fada7ad5987b0f7b1905e7a99ea1c661514c # v5.1.0
+
+    - name: Run Nx targets
+      shell: bash
+      env:
+        # Đọc qua `env:` chứ không nội suy thẳng vào `run:`: người gọi kiểm soát
+        # giá trị này, và `env:` giữ nó là dữ liệu vô hại thay vì văn bản script.
+        AFFECTED: ${{ inputs.affected }}
+        RAW_TARGETS: ${{ inputs.targets }}
+      run: |
+        set -euo pipefail
+
+        # Nx coerce `-t` bằng `parseCSV`, hàm chỉ tách theo dấu phẩy và KHÔNG trim.
+        # "test, typecheck" vì thế cho ra phần tử " typecheck" — một target không
+        # tồn tại, và lệnh sập xuống bằng thông báo lỗi khó hiểu. Chuẩn hoá ở đây
+        # để cả ba cách viết dưới đây ra cùng một lệnh:
+        #   "test,typecheck"   "test, typecheck"   "test typecheck"
+        IFS=$', \t\n' read -ra words <<< "$RAW_TARGETS"
+        targets="$(IFS=,; echo "${words[*]}")"
+
+        if [ -z "$targets" ]; then
+          echo "::error::run-nx-target: input 'targets' resolved to nothing. Pass at least one target, e.g. 'test' or 'test,typecheck'."
+          exit 1
+        fi
+
+        if [ "$AFFECTED" = 'true' ]; then
+          echo "Running on the affected set: npx nx affected -t $targets"
+          npx nx affected -t "$targets"
+        else
+          echo "Running on every project: npx nx run-many -t $targets"
+          npx nx run-many -t "$targets"
+        fi

@@ -1,0 +1,30 @@
+{
+  "name": "@ecoma-io/web-push-notification-job-infrastructure",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": {
+      "@ecoma-io/source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./web-push": {
+      "@ecoma-io/source": "./src/web-push/web-push-sender.ts",
+      "types": "./src/web-push/web-push-sender.ts",
+      "default": "./src/web-push/web-push-sender.ts"
+    }
+  },
+  "dependencies": {
+    "@ecoma-io/push-notification-contracts": "workspace:*",
+    "@ecoma-io/web-push-notification-job-application": "workspace:*"
+  },
+  "nx": {
+    "tags": [
+      "type:infrastructure",
+      "scope:notifications",
+      "runtime:edge"
+    ]
+  }
+}

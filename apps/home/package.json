@@ -1,0 +1,121 @@
+{
+  "name": "@ecoma-io/home",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@ecoma-io/ui-ecoma-logo": "workspace:*"
+  },
+  "nx": {
+    "tags": [
+      "type:composition",
+      "scope:public",
+      "runtime:edge"
+    ],
+    "targets": {
+      "deploy": {
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "build"
+        ],
+        "options": {
+          "forwardAllArgs": false,
+          "command": "npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/home"
+        },
+        "configurations": {
+          "staging": {
+            "command": "npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/home --lane staging"
+          },
+          "production": {
+            "command": "npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/home --lane production"
+          }
+        }
+      },
+      "nuxt-prepare": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "apps/home",
+          "command": "npx nuxt prepare"
+        }
+      },
+      "typecheck": {
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "^typecheck",
+          "nuxt-prepare"
+        ],
+        "cache": true,
+        "inputs": [
+          "default",
+          "{workspaceRoot}/tsconfig.base.json",
+          {
+            "externalDependencies": [
+              "vue-tsc"
+            ]
+          }
+        ],
+        "options": {
+          "cwd": "apps/home",
+          "command": "npx nuxt typecheck"
+        },
+        "//": [
+          "Ghi đè target `typecheck` mặc định của plugin @nx/js (echo no-op),",
+          "mirror đúng cách apps/docs đã làm: Nuxt sinh `.nuxt/tsconfig.*.json`",
+          "với `noEmit: true`, còn target mặc định chạy `tsc --build",
+          "--emitDeclarationOnly` — hai option xung đột (TS5069), và trước",
+          "nuxt-prepare thì các file đó chưa tồn tại (TS5083). `nuxt typecheck`",
+          "(vue-tsc qua @nuxt/cli) là đường đúng: hiểu project references Nuxt 4,",
+          "dùng đúng các `.nuxt/tsconfig.*.json`, và bắt được lỗi type thật.",
+          "Home cần override này khi nó nằm trong tập affected của CI `verify`",
+          "(`nx affected -t typecheck`) — chưa có override, target chỉ pass ở",
+          "dạng bị plugin tắt (no-op), runner sạch sẽ hard-fail TS5083."
+        ]
+      },
+      "test-python": {
+        "executor": "nx:run-commands",
+        "cache": true,
+        "inputs": [
+          "default",
+          "{projectRoot}/tests/**/*.py"
+        ],
+        "options": {
+          "cwd": "apps/home",
+          "command": "python3 -B -m unittest discover -s tests/python -t tests/python && python3 -B -m unittest discover -s tests -t tests -p 'verify_examples_test.py'"
+        },
+        "//": [
+          "Unit test Python của `tests/verify-citations.py` (module `tests/citation_verify.py`,",
+          "`tests/citation-manifest.json`) và của `tests/verify-examples.py`.",
+          "`tests/python/` chỉ chứa `test_citation_verify.py`; `discover` mặc định pattern là",
+          "`test*.py` nên file test đặt cạnh module (`verify_examples_test.py`) không được",
+          "gọi bởi lệnh đầu — lệnh thứ hai với `-p` tường minh là bắt buộc, nếu không 66 test",
+          "kia chỉ chạy được khi tay mà CI không bao giờ thấy.",
+          "CI chỉ chạy `nx affected -t test`, nên file",
+          "Python thuần sẽ không bao giờ được chạy nếu không có target này. Lớp HTTP được",
+          "inject nên **không có request mạng** trong CI: `python3` là tool sẵn có của",
+          "image `ubuntu-26.04`, và các script `tests/verify-*.py` sẵn đã giả định có.",
+          "`-B` để không ghi bytecode trong worktree; `.gitignore` cũng chặn `__pycache__`",
+          "vì tên cache đó không lấp lánh trong review diff.",
+          "Đường live (`verify-citations.py --live`) là công cụ review, không thuộc CI."
+        ]
+      },
+      "test": {
+        "dependsOn": [
+          "nuxt-prepare",
+          "build",
+          "test-python"
+        ],
+        "//": [
+          "`test` phụ thuộc `build`: suite `tests/static-output.spec.ts`",
+          "assert trên output production thật (`.output/public` prerender +",
+          "`.output/server` Worker bundle). `nx test @ecoma-io/home` (local lẫn",
+          "`nx affected -t test` trong CI) giờ luôn build trước, nên một page/",
+          "media/404 fallback hỏng lộ ngay ở bước test thay vì chỉ thấy khi đã",
+          "deploy. (Migrated từ apps/blogs: `test` previously depended on",
+          "`build-static` — home build is the SSR Worker build.)",
+          "`test-python` là target thứ ba: test Python của citation verification và",
+          "của example verification, chạy song song với phần Vitest và không cần Nuxt build."
+        ]
+      }
+    }
+  }
+}

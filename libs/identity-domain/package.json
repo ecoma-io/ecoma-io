@@ -1,0 +1,13 @@
+{
+  "name": "@ecoma-io/identity-domain",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./src/index.ts",
+  "nx": {
+    "tags": [
+      "type:domain",
+      "scope:identity",
+      "runtime:universal"
+    ]
+  }
+}
