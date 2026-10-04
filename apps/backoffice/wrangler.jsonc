@@ -1,0 +1,115 @@
+{
+  // Nuxt/Nitro output cho Cloudflare Workers. Preset `cloudflare_module`
+  // bundle server vào một Worker module; `main` trỏ vào entry mà Nitro emit.
+  //
+  // `assets.directory` là output của `nuxt build --prerender`, phục vụ static
+  // asset của app.
+  //
+  // Worker identity lâu dài — PR không tạo Worker mới, Preview chạy dưới
+  // identity này. Reference: docs/overview/02-delivery.md §5.
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "ecoma-backoffice",
+  "main": ".output/server/index.mjs",
+  "compatibility_date": "2026-10-05",
+  // Nitro dựa vào một số Node.js API qua shim nội bộ (stream, buffer).
+  // Khác với `cache`: các app này là Nuxt app, không phải Worker thuần,
+  // nên `nodejs_compat` ở đây là do Nitro yêu cầu chứ không phải nới lỏng
+  // boundary của `runtime:edge`.
+  //
+  // Cloudflare từ `compatibility_date` 2026-08-04 đã bật sẵn `nodejs_compat`
+  // và `nodejs_compat_v2` nên flag ở trên là thừa về mặt runtime. Nhưng KHÔNG
+  // bỏ: Nitro đọc chính config này để tự bật `cloudflare.nodeCompat`
+  // (nitropack/dist/presets/cloudflare/utils.mjs — nhánh
+  // `userCompatibilityFlags.has("nodejs_compat")`), và nodeCompat là thứ quyết
+  // định việc build có polyfill Node cho runtime bundle hay không. Bỏ flag ở đây
+  // ⇒ Nitro build thiếu shim ⇒ runtime lỗi, mà `wrangler deploy --dry-run`
+  // vẫn báo pass.
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".output/public",
+    "binding": "ASSETS",
+    // Không đặt `run_worker_first`: với Nuxt SSR, mọi request đều phải qua
+    // Worker (render + payload). Chỉ khi một path thực sự cần phục vụ HTML
+    // tĩnh mới bật nó cho path đó, để không mất SSR.
+  },
+  "observability": {
+    "enabled": true,
+  },
+  "dev": {
+    "port": 4201,
+  },
+  // --- Staging / Production — Issue #166 ---
+  //
+  // Trước đây `backoffice` chỉ có một Worker (`ecoma-backoffice`) và không có
+  // env nào, nên deploy target của làn staging và của làn production là **cùng
+  // một** Worker — staging ghi đè production, vi phạm mô hình hai làn ở
+  // `docs/overview/02-delivery.md` §7.
+  //
+  // Mỗi deploy unit có **hai Worker identity riêng**, đặt tên theo
+  // `{target}-{slug}` đúng quy ước của `tools/delivery` (`environmentName`):
+  // staging `stg-ecoma-backoffice`, production `ecoma-backoffice`.
+  //
+  // Staging chưa có custom domain: theo §5.4 hostname ưu tiên `workers.dev`,
+  // custom domain chỉ khi UX cần origin ổn định. `backoffice` là admin surface,
+  // không có public URL ổn định, nên `workers.dev` đủ cho smoke check.
+  "env": {
+    "staging": {
+      "name": "stg-ecoma-backoffice",
+      // Origin dùng cho smoke check. KHÔNG phải thuộc tính Wrangler — Wrangler
+      // bo qua nó; nó tồn tại để `tools/delivery` có một origin tất định cho
+      // deploy unit mà không phải suy đoán từ `account_id` (subdomain
+      // `workers.dev` là cấu hình riêng của Cloudflare account, không suy ra
+      // được từ `account_id`).
+      //
+      // **Phải sửa tay sau khi xác minh subdomain thật của account Cloudflare**
+      // (Cloudflare dashboard → Workers & Pages → subdomain, hoặc
+      // `wrangler whoami`). Giá trị dưới đây là *placeholder* và pipeline sẽ
+      // fail closed cho tới khi nó được thay bằng URL thật — đó là chủ ý: một
+      // URL bịa ra sẽ làm smoke fail bằng lý do "DNS không resolve" trong khi
+      // nguyên nhân thật là URL sai từ đầu.
+      "devOrigin": "https://REPLACE-WITH-REAL-SUBDOMAIN.workers.dev",
+      // Gating dữ liệu backoffice (E1, issue #256). `vars` KHÔNG inherit từ
+      // top-level, nên khoá này phải khai lại ở từng env.
+      //
+      // Staging bật prototype **tường minh**: đây là môi trường demo surface
+      // backoffice trước khi có backend thật, và fixture chỉ được phục vụ khi
+      // giá trị đúng bằng chuỗi `prototype` (`data-mode.ts`). Bất kỳ giá trị
+      // nào khác — kể cả gõ sai hoa/thường hay thừa khoảng trắng — đều fail
+      // closed về trạng thái unavailable.
+      "vars": {
+        "NITRO_PUBLIC_BACKOFFICE_DATA_MODE": "prototype",
+      },
+      // Bề mặt public của `account` — xem ghi chú cùng khoá ở `apps/home`.
+      // App này **phẳng**: không có chiều locale (không `app/pages/[locale]`),
+      // không có content collection, chưa có public domain. Khai tường minh
+      // (thay vì bỏ trống) để "không có" là một quyết định đã ghi, và để thêm
+      // locale về sau là một thay đổi khai báo được nhìn thấy trong diff.
+      //
+      // Không khai `productionOrigin`/`staticAssetProbePath`: app chưa có
+      // canonical policy (chưa có domain production) và chưa có bề mặt
+      // static-asset riêng. Smoke check bỏ các assertion đó chứ không biến
+      // chúng thành pass giả.
+      "smokeSurface": {},
+    },
+    "production": {
+      "name": "ecoma-backoffice",
+      // Xem ghi chú `devOrigin` ở env staging: cùng lý do, cùng chỗ cần sửa
+      // tay. Production của hai app này chưa có custom domain, nên origin
+      // smoke check của lane production cũng phải đến từ `devOrigin`.
+      "devOrigin": "https://REPLACE-WITH-REAL-SUBDOMAIN.workers.dev",
+      // Gating dữ liệu backoffice (E1, issue #256). Fail-closed: mặc dù
+      // `runtimeConfig.public.backofficeDataMode` đã có default `'disabled'`
+      // trong `nuxt.config.ts`, production **khai tường minh** giá trị này để
+      // ai cũng đọc được ngay trong wrangler.jsonc — không phụ thuộc vào
+      // build-time default hay một biến env nằm ngoài repo. Chỉ chuỗi
+      // `'prototype'` mới bật mock.
+      "vars": {
+        "NITRO_PUBLIC_BACKOFFICE_DATA_MODE": "disabled",
+      },
+      // Cùng bề mặt với staging: khác biệt giữa hai làn là
+      // canonical/noindex, không phải tập route. Xem ghi chú `smokeSurface`
+      // ở env staging.
+      "smokeSurface": {},
+    },
+  },
+}

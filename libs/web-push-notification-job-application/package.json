@@ -1,0 +1,25 @@
+{
+  "name": "@ecoma-io/web-push-notification-job-application",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": {
+      "@ecoma-io/source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@ecoma-io/push-notification-contracts": "workspace:*",
+    "@ecoma-io/push-notification-domain": "workspace:*"
+  },
+  "nx": {
+    "tags": [
+      "type:application",
+      "scope:notifications",
+      "runtime:edge"
+    ]
+  }
+}
