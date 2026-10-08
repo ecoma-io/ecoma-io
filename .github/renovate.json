@@ -20,6 +20,14 @@
 
   "osvVulnerabilityAlerts": true,
 
+  "vulnerabilityAlerts": {
+    "description": "Cấu hình riêng cho PR vá lỗ hổng bảo mật (packageRules các rule do Renovate tự sinh).",
+    "enabled": true,
+    "automerge": true,
+    "minimumReleaseAge": null,
+    "labels": ["security", "dependencies"]
+  },
+
   "prBodyNotes": [
     "Lưu ý pnpm: dependency mới có postinstall/build script phải được thêm vào `allowBuilds` trong `pnpm-workspace.yaml`, nếu không `pnpm install` exit 1 với `ERR_PNPM_IGNORED_BUILDS`.",
     "Lưu ý migration: nâng `drizzle-kit` có thể đổi snapshot schema — kiểm tra `schema.contract.json` và migration gate theo `docs/overview/02-delivery.md` §3.",
@@ -54,22 +62,6 @@
       "matchPackageNames": ["drizzle-kit"],
       "groupName": "drizzle-kit",
       "rangeStrategy": "pin",
-      "automerge": false
-    },
-    {
-      "description": "5. SECURITY OVERRIDE: Tự phát hiện lỗi bảo mật, tạo PR riêng ngay lập tức, bỏ qua mọi schedule/minimumAge. Automerge nếu là patch/minor.",
-      "matchIsVulnerabilityAlert": true,
-      "enabled": true,
-      "groupName": null,
-      "schedule": ["at any time"],
-      "minimumReleaseAge": "0 days",
-      "automerge": true,
-      "labels": ["security", "dependencies"]
-    },
-    {
-      "description": "6. SECURITY MAJOR: Khôi phục quyền tạo PR cho major nếu có lỗi bảo mật, nhưng tuyệt đối KHÔNG automerge.",
-      "matchIsVulnerabilityAlert": true,
-      "matchUpdateTypes": ["major"],
       "automerge": false
     }
   ]
