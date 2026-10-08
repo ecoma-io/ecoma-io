@@ -35,6 +35,7 @@ describe('public API entrypoint', () => {
         'getMountDefinition',
         'isPublicMount',
         'parsePublicLayoutPath',
+        'resolveLocaleContext',
       ]),
     );
   });

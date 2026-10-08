@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { PublicLocale } from '@ecoma-io/i18n-public';
 import { mount } from '@vue/test-utils';
 import { PublicFooter, PublicHeader, PublicShell, parsePublicLayoutPath } from '../../index';
 
@@ -152,6 +153,92 @@ describe('PublicHeader', () => {
     const links = wrapper.find('nav[aria-label="Global"]').findAll('a');
     expect(links.map((link) => link.attributes('href'))).toEqual(['/vi/blog', '/vi/docs']);
     expect(wrapper.find('nav[aria-label="Language"] a').attributes('href')).toBe('/en/docs');
+  });
+});
+
+describe('PublicHeader locale availability', () => {
+  it('renders only the current locale when it is the single available locale', () => {
+    const wrapper = mount(PublicShell, {
+      props: { path: '/en/docs/api', availableLocales: ['en'] },
+    });
+    const language = wrapper.find('header nav[aria-label="Language"]');
+    expect(language.exists()).toBe(true);
+    // Chỉ en: current hiển thị dạng text, không có link sang locale nào.
+    expect(language.findAll('a')).toHaveLength(0);
+    expect(language.text()).toContain('English');
+    expect(language.text()).not.toContain('Tiếng Việt');
+    // Không sinh link tới locale ngoài context ở bất kỳ đâu trong header.
+    expect(wrapper.find('header').html()).not.toContain('/vi');
+  });
+
+  it('renders both locales when both are available', () => {
+    const wrapper = mount(PublicShell, {
+      props: { path: '/en/docs/api', availableLocales: ['en', 'vi'] },
+    });
+    const language = wrapper.find('header nav[aria-label="Language"]');
+    expect(language.text()).toContain('English');
+    const link = language.find('a');
+    expect(link.text()).toBe('Tiếng Việt');
+    expect(link.attributes('href')).toBe('/vi/docs/api');
+    expect(link.attributes('hreflang')).toBe('vi-VN');
+  });
+
+  it('always renders the current locale even when it is missing from availableLocales', () => {
+    // Invariant: current luôn hợp lệ trong context — app không liệt kê 'en'
+    // thì 'en' vẫn được render (và 'vi' vẫn link được vì có trong list).
+    const wrapper = mount(PublicShell, {
+      props: { path: '/en/blog', availableLocales: ['vi'] },
+    });
+    const language = wrapper.find('header nav[aria-label="Language"]');
+    expect(language.text()).toContain('English');
+    expect(language.find('a').attributes('href')).toBe('/vi/blog');
+  });
+
+  it('preserves existing switcher behavior when availableLocales is omitted', () => {
+    const wrapper = mount(PublicShell, { props: { path: '/en/docs' } });
+    const language = wrapper.find('header nav[aria-label="Language"]');
+    expect(language.text()).toContain('English');
+    const links = language.findAll('a');
+    expect(links.map((link) => link.attributes('href'))).toEqual(['/vi/docs']);
+  });
+
+  it('drops values outside the locale registry instead of linking to them', () => {
+    // Invalid/unexpected input (JS caller ép kiểu): kế thừa contract
+    // i18n-public — so khớp exact, giá trị lạ bị loại, không throw.
+    const wrapper = mount(PublicShell, {
+      props: {
+        path: '/en/blog',
+        availableLocales: ['en', 'de'] as unknown as readonly PublicLocale[],
+      },
+    });
+    const language = wrapper.find('header nav[aria-label="Language"]');
+    expect(language.exists()).toBe(true);
+    expect(language.text()).toContain('English');
+    expect(language.findAll('a')).toHaveLength(0);
+    expect(wrapper.find('header').html()).not.toContain('/de');
+    expect(wrapper.find('header').html()).not.toContain('/vi');
+  });
+
+  it('updates the switcher reactively when availableLocales changes', async () => {
+    const wrapper = mount(PublicShell, {
+      props: { path: '/en/blog', availableLocales: ['en'] },
+    });
+    expect(wrapper.find('header nav[aria-label="Language"]').findAll('a')).toHaveLength(0);
+
+    await wrapper.setProps({ availableLocales: ['en', 'vi'] });
+
+    const link = wrapper.find('header nav[aria-label="Language"] a');
+    expect(link.attributes('href')).toBe('/vi/blog');
+  });
+
+  it('keeps global navigation and brand unaffected by availability', () => {
+    // Availability chỉ giới hạn locale switcher — nav mount và brand giữ nguyên.
+    const wrapper = mount(PublicShell, {
+      props: { path: '/en/blog', availableLocales: ['en'] },
+    });
+    expect(wrapper.find('header a').attributes('href')).toBe('/en');
+    const links = wrapper.find('header nav[aria-label="Global"]').findAll('a');
+    expect(links.map((link) => link.attributes('href'))).toEqual(['/en/blog', '/en/docs']);
   });
 });
 

@@ -1,12 +1,13 @@
 /**
- * Public API của `layout-public` — public shell, global navigation và public
- * mount topology cho bề mặt public `ecoma.io`.
+ * Public API của `layout-public` — public shell, global navigation, public
+ * mount topology và locale availability context cho bề mặt public `ecoma.io`.
  *
  * Chỉ export đúng những gì consumer cần: registry mount, kiểu kết quả, hai
- * phép xử lý pathname, model navigation và ba component shell. Helper nội bộ
- * (`invalidLayoutPath`, `PUBLIC_MOUNT_DEFINITIONS`) không nằm ở entrypoint
- * này — consumer import locale dimension trực tiếp từ `@ecoma-io/i18n-public`
- * khi cần, thư viện không re-export.
+ * phép xử lý pathname, model navigation, context locale availability và ba
+ * component shell. Helper nội bộ (`invalidLayoutPath`,
+ * `PUBLIC_MOUNT_DEFINITIONS`) không nằm ở entrypoint này — consumer import
+ * locale dimension trực tiếp từ `@ecoma-io/i18n-public` khi cần, thư viện
+ * không re-export.
  */
 
 export {
@@ -24,6 +25,7 @@ export type {
 } from './lib/public-layout-path';
 export { parsePublicLayoutPath } from './lib/parse-public-layout-path';
 export { buildPublicPath } from './lib/build-public-path';
+export { resolveLocaleContext, type PublicLocaleContext } from './lib/locale-context';
 export {
   PUBLIC_NAVIGATION,
   buildPublicNavigation,
