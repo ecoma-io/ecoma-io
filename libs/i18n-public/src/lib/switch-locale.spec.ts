@@ -146,6 +146,8 @@ describe('switchLocale', () => {
 
   describe('reason partition', () => {
     it('never emits already_localized', () => {
+      // already_localized là của localizePath — switch chỉ thay segment đầu,
+      // không bao giờ tự chặn input vì "đã có locale".
       const inputs = [
         '/',
         '/en',
@@ -160,13 +162,14 @@ describe('switchLocale', () => {
         '/en/blog?x=1',
         '',
         'en/blog',
-      ];
-      for (const input of inputs) {
-        const result = switchLocale(input, 'vi');
-        if (result.kind === 'invalid') {
-          expect(result.reason).not.toBe('already_localized');
-        }
-      }
+      ] as const;
+      const observed = new Set(
+        inputs.map((input) => {
+          const result = switchLocale(input, 'vi');
+          return result.kind === 'invalid' ? result.reason : result.kind;
+        }),
+      );
+      expect(observed.has('already_localized')).toBe(false);
     });
   });
 

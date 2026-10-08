@@ -107,11 +107,11 @@ getLocaleDefinition('fr'); // undefined
 
 Hai lý do **không hoán đổi cho nhau**:
 
-| Lý do               | `parsePublicPath`              | `switchLocale`                                    | `localizePath`                     |
-| ------------------- | ------------------------------ | ------------------------------------------------- | ---------------------------------- |
-| `unsupported_locale` | segment đầu không trong registry | **chỉ** locale đích không trong registry         | **chỉ** locale đích không trong registry |
-| `not_localized`      | không trả                      | source không mang locale để đổi (root `/`, segment đầu không phải locale) | không trả |
-| `already_localized`  | không trả                      | không trả                                         | input đã mang locale (chống double-localize) |
+| Lý do                | `parsePublicPath`                | `switchLocale`                                                            | `localizePath`                               |
+| -------------------- | -------------------------------- | ------------------------------------------------------------------------- | -------------------------------------------- |
+| `unsupported_locale` | segment đầu không trong registry | **chỉ** locale đích không trong registry                                  | **chỉ** locale đích không trong registry     |
+| `not_localized`      | không trả                        | source không mang locale để đổi (root `/`, segment đầu không phải locale) | không trả                                    |
+| `already_localized`  | không trả                        | không trả                                                                 | input đã mang locale (chống double-localize) |
 
 ## Boundary với `layout-public`
 

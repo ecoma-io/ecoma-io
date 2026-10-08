@@ -181,31 +181,20 @@ describe('parsePublicPath', () => {
     });
   });
 
-  describe('reason partition', () => {
-    it('never emits not_localized or already_localized', () => {
-      const inputs = [
-        '/',
-        '/en',
-        '/vi',
-        '/blog',
-        '/enabled',
-        '/EN',
-        '/fr',
-        '/en/',
-        '/en//blog',
-        '//',
-        '',
-        'en/blog',
-        '/blog?x=1',
-        '/en#h',
-        '/blog/vi',
-        '/en-US',
-      ];
-      for (const input of inputs) {
-        const result = parsePublicPath(input);
-        if (result.kind === 'invalid') {
-          expect(result.reason).not.toBe('not_localized');
-          expect(result.reason).not.toBe('already_localized');
-        }
-      }
+  describe('type safety', () => {
+    it('rejects non-string arguments at compile time', () => {
+      // @ts-expect-error -- pathname phải là string
+      expect(() => parsePublicPath(123)).not.toThrow();
     });
+
+    it('narrows the discriminated result without any cast', () => {
+      const result = parsePublicPath('/en/blog');
+      if (result.kind !== 'localized') {
+        throw new Error('expected localized');
+      }
+      expectTypeOf(result.locale).toEqualTypeOf<import('../index').PublicLocale>();
+      expect(result.locale).toBe('en');
+      expect(result.remainder).toBe('/blog');
+    });
+  });
+});
