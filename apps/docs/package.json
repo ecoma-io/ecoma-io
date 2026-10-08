@@ -5,7 +5,7 @@
   "nx": {
     "tags": [
       "type:web",
-      "scope:docs",
+      "scope:public",
       "runtime:edge"
     ],
     "targets": {
