@@ -71,6 +71,7 @@ import {
   parsePublicLayoutPath,
   buildPublicPath,
   buildPublicNavigation,
+  resolveLocaleContext,
   PublicShell,
   PublicHeader,
   PublicFooter,
@@ -81,6 +82,7 @@ import {
   type PublicLayoutPathResult,
   type PublicNavigationItem,
   type PublicNavigationLink,
+  type PublicLocaleContext,
 } from '@ecoma-io/layout-public';
 ```
 
@@ -133,6 +135,23 @@ buildPublicNavigation('vi');
 - `PUBLIC_NAVIGATION` là dữ liệu tĩnh, frozen; label là `Record<PublicLocale, string>` nên thiếu locale là lỗi type.
 - Application-specific navigation không nằm trong model này.
 
+### Locale availability
+
+App (blogs, docs, public app tương lai…) báo cho library locale nào **thực sự tồn tại** của resource hiện tại — input resource-level, truyền qua prop `availableLocales` của `PublicShell`/`PublicHeader`:
+
+```vue
+<PublicShell :path="path" :available-locales="['en']">
+  <!-- chỉ resource tiếng Anh: switcher không đề xuất vi -->
+</PublicShell>
+```
+
+- `resolveLocaleContext(current, availableLocales?)` resolve thành `PublicLocaleContext = { current, availableLocales }` — library **không tự suy ra** availability từ content, filesystem hay application.
+- Không truyền `availableLocales` → toàn bộ registry của `i18n-public` (behavior mặc định, không đổi so với trước).
+- Truyền → so khớp exact qua `isPublicLocale` (giá trị ngoài registry bị loại, không throw — kế thừa contract `i18n-public`), khử trùng lặp, trả theo thứ tự registry, frozen.
+- Invariant: `current` **luôn** nằm trong `availableLocales` của context — app không liệt kê locale hiện tại (hoặc truyền mảng rỗng) thì locale đó vẫn được render.
+- Locale switcher chỉ render locale nằm trong context và **không bao giờ** dựng link tới locale ngoài context; global navigation và brand không bị availability ảnh hưởng.
+- Không có routing abstraction thứ hai: link switch vẫn dựng qua `switchLocale` của `i18n-public`.
+
 ## Components
 
 ```vue
@@ -155,7 +174,7 @@ const path = useRoute().path;
 - `PublicShell` nhận `path` (pathname hiện tại), parse **một lần** cho layout state rồi truyền state đã parse vào `PublicHeader`/`PublicFooter` — component không tự parse pathname lần thứ hai, không tự resolve locale. (Helper `buildPublicPath`/`switchLocale` có tự nội suy lại khi dựng href — thuần pure, nằm trong `computed`.)
 - Cấu trúc: `<header>` → `<main>` (slot nội dung app) → `<footer>`; link là `<a href>` thường (crawlable, không phụ thuộc client router).
 - Shell là **multi-root**: Vue không fallthrough attribute từ app xuống component nhiều root — không truyền `class`/`id` vào `<PublicShell>`; styling dùng chính các landmark (`header nav[aria-label="Global"]`, `footer` …), library không đóng vai design system.
-- Header: brand → locale-root, global navigation, locale switcher (đổi locale qua `switchLocale` của `i18n-public`, không reimplement), active mount qua `aria-current`.
+- Header: brand → locale-root, global navigation, locale switcher (đổi locale qua `switchLocale` của `i18n-public`, không reimplement), active mount qua `aria-current`. Switcher hạn chế bởi `availableLocales` của resource nếu được truyền — locale hiện tại luôn được render.
 - Render tĩnh, deterministic: không `Date`, không `window`, không fetch — tương thích SSR/SSG, không client-only state, không hydration dependency.
 - Khi `path` là `root` hoặc `invalid`: render shell không kèm locale-aware link (brand trỏ `/`); không tự đoán locale.
 
