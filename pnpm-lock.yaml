@@ -172,6 +172,9 @@ importers:
       '@commitlint/cli':
         specifier: ^21.2.3
         version: 21.2.3(@types/node@24.19.1)(conventional-commits-parser@7.1.2)(typescript@6.0.3)
+      '@commitlint/config-conventional':
+        specifier: ^21.2.3
+        version: 21.2.3
       '@commitlint/config-nx-scopes':
         specifier: ^21.2.3
         version: 21.2.3(nx@23.2.1)

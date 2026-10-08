@@ -1,8 +1,9 @@
 <!--
   Tiêu đề PR (tiếng Anh — CI kiểm bằng `pnpm dx pr-check`):
     <type>(<scope>): <subject>
+    <type>: <subject>
   - Dành cho PR không mang `feat`/`fix` nào: type chore / docs / ci / refactor / test / style / perf / build...
-  - scope là tên Nx project (vd: identity, transactional-mail, docs, dx), và phải đúng một scope
+  - scope là tên Nx project (vd: identity, transactional-mail, docs, dx). Scope không bắt buộc; nếu có thì chỉ được đúng một
   - PR dùng squash merge → tiêu đề PR trở thành commit title trên main
   - Thay đổi là feature hoặc bug fix, hay có breaking change → dùng template Feature/Fix
 

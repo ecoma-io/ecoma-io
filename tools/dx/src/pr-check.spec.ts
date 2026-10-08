@@ -245,11 +245,23 @@ describe('checkTitlePolicy', () => {
 
   it('accepts titles that carry no feat or fix at all', async () => {
     // Một PR không phải feature và cũng không phải bug fix vẫn là PR hợp lệ;
-    // title của nó chỉ cần đúng một Nx scope. Không có gate type feat/fix nào.
+    // title của nó có scope thì phải đúng một Nx scope, không scope cũng được.
+    // Không có gate type feat/fix nào.
     expect(await checkTitlePolicy('chore(dx): tidy up')).toEqual([]);
     expect(await checkTitlePolicy('docs(dx): update readme')).toEqual([]);
     expect(await checkTitlePolicy('refactor(dx): split the module')).toEqual([]);
     expect(await checkTitlePolicy('ci(dx): refresh workflow')).toEqual([]);
+  });
+
+  it('accepts a title with no scope at all', async () => {
+    // Scope là optional. Type vẫn phải là Conventional Commit hợp lệ — đó là
+    // việc của commitlint, không phải việc của rule này.
+    expect(await checkTitlePolicy('chore: update repository tooling')).toEqual([]);
+    expect(await checkTitlePolicy('ci: update workflow')).toEqual([]);
+    expect(await checkTitlePolicy('docs: update repository docs')).toEqual([]);
+    expect(await checkTitlePolicy('refactor: extract the helper')).toEqual([]);
+    expect(await checkTitlePolicy('feat: add pr-check')).toEqual([]);
+    expect(await checkTitlePolicy('fix: correct pr-check')).toEqual([]);
   });
 
   it('reads type and scope with the preset commitlint itself uses', async () => {
@@ -258,12 +270,6 @@ describe('checkTitlePolicy', () => {
     // bằng conventionalcommits, nên nó vẫn phải bị chặn ở số scope.
     expect(await checkTitlePolicy('chore(dx,docs)!: drop the legacy path')).toEqual([
       'PR title must declare exactly one Nx scope, got "dx,docs".',
-    ]);
-  });
-
-  it('rejects a missing scope', async () => {
-    expect(await checkTitlePolicy('feat: add pr-check')).toEqual([
-      'PR title must declare exactly one Nx scope, e.g. "feat(dx): ...".',
     ]);
   });
 
@@ -727,14 +733,24 @@ describe('checkPullRequest', () => {
 
   it('applies the PR policy on top of a title commitlint already accepted', async () => {
     // lint giả để test này chỉ nói về phần policy, không spawn commitlint thêm
-    // một lần nữa cho một rule mà checkTitlePolicy đã kiểm riêng.
+    // một lần nữa cho một rule mà checkTitlePolicy đã kiểm riêng. Title chứa
+    // multi-scope hợp lệ với commitlint (`scope-enum` tách theo `,`), nên phần
+    // policy phải là thứ duy nhất chặn nó.
     const result = await checkPullRequest({
-      env: prEnv('feat: add pr-check'),
+      env: prEnv('feat(dx,docs): add pr-check'),
       lint: lintPasses,
     });
 
     expect(result.ok).toBe(false);
     expect(result).toMatchObject({ problems: [expect.stringContaining('exactly one Nx scope')] });
+  });
+
+  it('accepts an unscoped PR title end to end', async () => {
+    // Title không scope được phép; commitlint `scope-enum` vẫn chấm (scope rỗng
+    // thì trả `[true, …]`), và checkTitlePolicy không còn phạt thiếu scope.
+    const result = await checkPullRequest({ env: prEnv('chore: update repository tooling') });
+
+    expect(result).toEqual({ ok: true, title: 'chore: update repository tooling' });
   });
 
   it('fails without a GitHub pull request context', async () => {

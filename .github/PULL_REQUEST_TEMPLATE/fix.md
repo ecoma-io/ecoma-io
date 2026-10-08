@@ -1,8 +1,9 @@
 <!--
   Tiêu đề PR (tiếng Anh — CI kiểm bằng `pnpm dx pr-check`):
     fix(<scope>): <subject>
-  - scope là tên Nx project (vd: identity, transactional-mail, docs, dx)
-  - Title có đúng một Nx scope; một PR chỉ mang một `fix`, không trộn `feat`
+  - scope là tên Nx project (vd: identity, transactional-mail, docs, dx). Scope
+    không bắt buộc; nếu có thì chỉ được đúng một. Một PR chỉ mang một `fix`,
+    không trộn `feat`
   - PR dùng squash merge → tiêu đề PR trở thành commit title trên main
   - Breaking change chỉ hợp lệ với type feat/fix
 
