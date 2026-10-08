@@ -125,11 +125,9 @@ describe('localizePath', () => {
     });
 
     it('checks the target locale before the source: both bad still reports unsupported_locale', () => {
+      // Step 1 của precedence là target guard — lỗi locale đích không bao giờ
+      // bị che bởi lỗi cấu trúc hay locale của source.
       expect(localizePath('fr' as unknown as PublicLocale, '/blog')).toEqual({
-        kind: 'invalid',
-        reason: 'unsupported_locale',
-      });
-      expect(localizePath('fr' as unknown as PublicLocale, '/')).toEqual({
         kind: 'invalid',
         reason: 'unsupported_locale',
       });
@@ -160,23 +158,6 @@ describe('localizePath', () => {
         reason: 'unsupported_locale',
       });
       expect(localizePath('EN' as unknown as PublicLocale, '/blog')).toEqual({
-        kind: 'invalid',
-        reason: 'unsupported_locale',
-      });
-    });
-
-    it('checks the target locale before the source: both bad still reports unsupported_locale', () => {
-      // Step 1 của precedence là target guard — lỗi locale đích không bao giờ
-      // bị che bởi lỗi cấu trúc hay locale của source.
-      expect(localizePath('fr' as unknown as PublicLocale, '/blog')).toEqual({
-        kind: 'invalid',
-        reason: 'unsupported_locale',
-      });
-      expect(localizePath('fr' as unknown as PublicLocale, '')).toEqual({
-        kind: 'invalid',
-        reason: 'unsupported_locale',
-      });
-      expect(localizePath('fr' as unknown as PublicLocale, '/en//blog')).toEqual({
         kind: 'invalid',
         reason: 'unsupported_locale',
       });

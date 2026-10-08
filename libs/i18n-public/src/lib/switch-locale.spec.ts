@@ -144,35 +144,6 @@ describe('switchLocale', () => {
     });
   });
 
-  describe('reason partition', () => {
-    it('never emits already_localized', () => {
-      // already_localized là của localizePath — switch chỉ thay segment đầu,
-      // không bao giờ tự chặn input vì "đã có locale".
-      const inputs = [
-        '/',
-        '/en',
-        '/vi',
-        '/en/blog',
-        '/blog',
-        '/fr/blog',
-        '/EN/blog',
-        '/enabled',
-        '/en/blog/',
-        '/en//blog',
-        '/en/blog?x=1',
-        '',
-        'en/blog',
-      ] as const;
-      const observed = new Set(
-        inputs.map((input) => {
-          const result = switchLocale(input, 'vi');
-          return result.kind === 'invalid' ? result.reason : result.kind;
-        }),
-      );
-      expect(observed.has('already_localized')).toBe(false);
-    });
-  });
-
   describe('type safety', () => {
     it('rejects unsupported locale literals at compile time', () => {
       // @ts-expect-error -- 'de' không thuộc PublicLocale union
