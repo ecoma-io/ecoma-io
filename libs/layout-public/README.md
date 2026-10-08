@@ -107,12 +107,14 @@ Canonical constructor — mọi URL dựng qua library, **không** string concat
 ```ts
 buildPublicPath({ locale: 'en' }); // → /en
 buildPublicPath({ locale: 'vi', mount: 'docs' }); // → /vi/docs
-buildPublicPath({ locale: 'en', mount: 'docs', path: '/api' }); // → /en/docs/api
+buildPublicPath({ locale: 'en', mount: 'docs', path: '/guide' }); // → /en/docs/guide
+buildPublicPath({ locale: 'en', mount: 'docs/api' }); // → /en/docs/api
 ```
 
 - `path` mặc định `''`; phải bắt đầu bằng `/` hoặc là `''` — `not_a_pathname`, `trailing_slash`, `empty_segment` trả typed reason.
-- Kết quả luôn là chính kết quả parse của URL đã dựng (canonical); ví dụ `{ mount: 'docs', path: '/api' }` dựng `/en/docs/api` và parse trả `mount = 'docs/api'`.
-- Invariant: `parsePublicLayoutPath(buildPublicPath(x).path)` **≡** `buildPublicPath(x)` — được test.
+- **Topology boundary**: `PublicMount` là ranh giới topology, không phải tiền tố string. Nếu mount + path ghép lại mà parser resolve ra mount **khác** mount đã yêu cầu, builder trả `unknown_mount` thay vì reinterpret — `{ mount: 'docs', path: '/api' }` bị từ chối (thuộc topology của `docs/api`); caller muốn address `docs/api` phải dựng `{ mount: 'docs/api' }`. Rule tổng quát cho mọi mount lồng nhau, không hard-code segment.
+- Kết quả luôn là chính kết quả parse của URL đã dựng (canonical).
+- Invariant: `parsePublicLayoutPath(buildPublicPath(x).path)` **≡** `buildPublicPath(x)` — và parse trả lại nguyên vẹn `locale` / `mount` / `remainder` của input (semantic topology, không chỉ path string) — được test.
 
 ### Registry helpers
 
@@ -136,6 +138,10 @@ buildPublicNavigation('vi');
 ```vue
 <script setup lang="ts">
 import { PublicShell } from '@ecoma-io/layout-public';
+
+// pathname thuần (không `?`/`#`), giống hệt trên server và client —
+// trong Nuxt: `useRoute().path`, không dùng `fullPath`.
+const path = useRoute().path;
 </script>
 
 <template>
@@ -145,8 +151,10 @@ import { PublicShell } from '@ecoma-io/layout-public';
 </template>
 ```
 
-- `PublicShell` nhận `path` (pathname hiện tại), parse **một lần** rồi truyền state đã parse vào `PublicHeader`/`PublicFooter` — component không tự parse pathname lần thứ hai, không tự resolve locale.
+- `path` phải là **pathname thuần** — không query (`?`), không hash (`#`), vì `parsePublicLayoutPath` từ chối chúng là `not_a_pathname` — và phải **giống hệt trên server với client** (vd. `useRoute().path`, không phải `fullPath` hay `location.pathname`). Hai thuộc tính này giữ HTML server/client byte-identical, tránh hydration mismatch.
+- `PublicShell` nhận `path` (pathname hiện tại), parse **một lần** cho layout state rồi truyền state đã parse vào `PublicHeader`/`PublicFooter` — component không tự parse pathname lần thứ hai, không tự resolve locale. (Helper `buildPublicPath`/`switchLocale` có tự nội suy lại khi dựng href — thuần pure, nằm trong `computed`.)
 - Cấu trúc: `<header>` → `<main>` (slot nội dung app) → `<footer>`; link là `<a href>` thường (crawlable, không phụ thuộc client router).
+- Shell là **multi-root**: Vue không fallthrough attribute từ app xuống component nhiều root — không truyền `class`/`id` vào `<PublicShell>`; styling dùng chính các landmark (`header nav[aria-label="Global"]`, `footer` …), library không đóng vai design system.
 - Header: brand → locale-root, global navigation, locale switcher (đổi locale qua `switchLocale` của `i18n-public`, không reimplement), active mount qua `aria-current`.
 - Render tĩnh, deterministic: không `Date`, không `window`, không fetch — tương thích SSR/SSG, không client-only state, không hydration dependency.
 - Khi `path` là `root` hoặc `invalid`: render shell không kèm locale-aware link (brand trỏ `/`); không tự đoán locale.
@@ -171,4 +179,12 @@ Các hệ thống ngoài Public Web không nằm trong dependency graph của th
 
 ```bash
 pnpm exec nx test layout-public
+```
+
+## Kiểm type (component `.vue`)
+
+`tsc` gốc không parse SFC — target `typecheck` của project dùng `vue-tsc` để kiểm type cả ba component (đây là lib duy nhất trong `libs/` xuất component):
+
+```bash
+pnpm exec nx typecheck layout-public
 ```
