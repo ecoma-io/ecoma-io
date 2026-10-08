@@ -4,8 +4,10 @@
     "composite": true,
     "outDir": "../../dist/out-tsc",
     "rootDir": "src",
-    "declaration": true,
-    "types": ["node"]
+    "declaration": true
+    // Không có "types": ["node"] — lib là runtime:universal, global của Node
+    // (process, Buffer, __dirname…) phải là compile error, không phải thứ
+    // typecheck bỏ qua. Spec giữ node/vitest types riêng ở tsconfig.spec.json.
   },
   "include": ["src/**/*.ts"],
   "exclude": [
