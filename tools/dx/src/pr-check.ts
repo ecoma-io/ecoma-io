@@ -306,13 +306,15 @@ async function parseWithRepositoryPreset(message: string): ReturnType<typeof par
 }
 
 /**
- * Chính sách title mà commitlint không thể đảm nhiệm: đúng MỘT Nx scope.
+ * Chính sách title mà commitlint không thể đảm nhiệm: scope là optional, nhưng
+ * nếu có thì phải là đúng MỘT Nx scope.
  *
  * Phần còn lại máy kiểm được ở đây là số scope: commitlint chấm `scope-enum`
  * trên từng phần tách bởi `,` `/` `\`, nên `feat(dx,docs)` vẫn qua được
- * commitlint — số lượng scope chỉ nằm ở chỗ này. Type của title không bị giới
- * hạn ở feat/fix: mọi type hợp lệ đều được; bất biến feat/fix của development
- * commits do `checkDevelopmentCommits` kiểm.
+ * commitlint — số lượng scope chỉ nằm ở chỗ này. Scope rỗng thì không có gì để
+ * kiểm: policy của repository cho phép title không scope. Type của title không
+ * bị giới hạn ở feat/fix: mọi type hợp lệ đều được; bất biến feat/fix của
+ * development commits do `checkDevelopmentCommits` kiểm.
  *
  * Trả về danh sách lỗi; rỗng nghĩa là không vi phạm. Khi header sai dạng thì
  * không có gì để kiểm và commitlint đã báo lỗi syntax từ trước.
@@ -325,9 +327,10 @@ export async function checkTitlePolicy(title: string): Promise<string[]> {
 
   const problems: string[] = [];
 
-  if (!scope || scope.trim() === '') {
-    problems.push('PR title must declare exactly one Nx scope, e.g. "feat(dx): ...".');
-  } else if (/[\s,/\\]/u.test(scope)) {
+  // Scope vắng mặt (hoặc rỗng) là hợp lệ; chỉ scope có giá trị mới phải là
+  // đúng một phần — và phần đó có phải Nx project hay không do commitlint
+  // `scope-enum` chấm, pr-check không nhân danh Nx project.
+  if (scope && scope.trim() !== '' && /[\s,/\\]/u.test(scope)) {
     // commitlint tách scope theo `,` `/` `\` rồi kiểm TỪNG phần trong scope-enum,
     // nên "feat(dx,docs)" hợp lệ trong commitlint — số lượng scope chỉ nằm ở đây.
     problems.push(`PR title must declare exactly one Nx scope, got "${scope}".`);
@@ -398,9 +401,10 @@ export type PrCheckResult =
 
 /**
  * Ghép các bước của PR policy: đọc title và range từ payload, lint title bằng
- * commitlint, áp chính sách đúng một scope, rồi liệt kê development commits từ
- * git local và áp bất biến feat/fix. Mọi lỗi được gom lại một lần để một lần
- * chạy báo đủ những gì sai thay vì bắt người chạy sửa từng vòng.
+ * commitlint, áp chính sách scope (optional, có thì đúng một Nx scope), rồi liệt
+ * kê development commits từ git local và áp bất biến feat/fix. Mọi lỗi được gom
+ * lại một lần để một lần chạy báo đủ những gì sai thay vì bắt người chạy sửa
+ * từng vòng.
  *
  * Không đọc được development commits (thiếu SHA, git hỏng, range không tồn
  * tại) là lỗi của chính policy: range không xác định được thì fail closed,

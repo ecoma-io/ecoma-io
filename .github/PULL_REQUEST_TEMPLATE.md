@@ -5,6 +5,7 @@
   - fix.md     — sửa lỗi
   - others.md  — loại khác (chore / docs / ci / refactor...)
 
-  Tiêu đề PR tiếng Anh theo Conventional Commits với đúng một Nx scope —
+  Tiêu đề PR tiếng Anh theo Conventional Commits; scope optional, nhưng nếu có
+  thì phải là đúng một Nx project —
   CI kiểm bằng `pnpm dx pr-check`. Body viết tiếng Việt.
 -->
