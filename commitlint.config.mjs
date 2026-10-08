@@ -26,15 +26,16 @@ export default {
         // Repo song ngữ nên AI agent dễ dán tiếng Việt vào message.
         // Thay vì whitelist ký tự cho phép (phải maintain corpus đặc biệt),
         // chặn tập con gây lỗi thực tế: mọi ký tự ngoài ASCII — bao gồm
-        // toàn bộ tiếng Việt có dấu.
-        'english-only-message': (parsed) => {
+        // toàn bộ tiếng Việt có dấu. Mục đích là chặn AI commit bằng ngôn ngữ
+        // khác, không phải kiểm tra grammar tiếng Anh.
+        'ascii-only-message': (parsed) => {
           const text = [parsed.header, parsed.body, parsed.footer].filter(Boolean).join('\n');
           const bad = [...text].find((ch) => ch.codePointAt(0) > 0x7f);
 
           if (bad) {
             return [
               false,
-              `Non-ASCII character '${bad}' found; commit messages must be English (ASCII only).`,
+              `Non-ASCII character '${bad}' found; commit messages must contain only ASCII characters.`,
             ];
           }
 
@@ -50,6 +51,6 @@ export default {
       [...(await nxScopes.utils.getProjects(ctx)) /* nhận thêm scope tại đây! */],
     ],
     'breaking-change-allowed-types': [2, 'always'],
-    'english-only-message': [2, 'always'],
+    'ascii-only-message': [2, 'always'],
   },
 };
