@@ -402,9 +402,9 @@ export type PrCheckResult =
 /**
  * Ghép các bước của PR policy: đọc title và range từ payload, lint title bằng
  * commitlint, áp chính sách scope (optional, có thì đúng một Nx scope), rồi liệt
- * kê development commits từ
- * git local và áp bất biến feat/fix. Mọi lỗi được gom lại một lần để một lần
- * chạy báo đủ những gì sai thay vì bắt người chạy sửa từng vòng.
+ * kê development commits từ git local và áp bất biến feat/fix. Mọi lỗi được gom
+ * lại một lần để một lần chạy báo đủ những gì sai thay vì bắt người chạy sửa
+ * từng vòng.
  *
  * Không đọc được development commits (thiếu SHA, git hỏng, range không tồn
  * tại) là lỗi của chính policy: range không xác định được thì fail closed,
