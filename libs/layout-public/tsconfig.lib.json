@@ -2,10 +2,11 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "composite": true,
-    "outDir": "../../dist/out-tsc",
+    "outDir": "../../dist/out-tsc/layout-public",
     "rootDir": "src",
-    "declaration": true,
-    "types": ["node"]
+    "declaration": true
+    // Không có "types": ["node"] — lib là runtime:universal, global của Node
+    // (process, Buffer, __dirname…) phải là compile error; spec giữ "node".
   },
   "include": ["src/**/*.ts"],
   "exclude": [
@@ -21,5 +22,10 @@
     "src/**/*.spec.js",
     "src/**/*.test.jsx",
     "src/**/*.spec.jsx"
+  ],
+  "references": [
+    {
+      "path": "../i18n-public/tsconfig.lib.json"
+    }
   ]
 }
