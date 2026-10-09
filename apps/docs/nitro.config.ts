@@ -10,22 +10,47 @@
 // File riêng này tránh được cả hai.
 //
 // Đây là lựa chọn tạm: khi `@nuxt/schema` trả `nitro` vào `NuxtConfig`, chuyển
-// nội dung file này thành key `nitro` trong `nuxt.config.ts` cho khớp docs. Nuxt
-// hiện cảnh báo B5004 khi thấy `nitro.config.ts` — chỉ dev mode, không ảnh hưởng
-// build.
-//
-// Trang này là deploy unit Workers: docs/overview/02-delivery.md §1 xếp `apps`
-// vào làn Workers, deploy bằng Wrangler. Không có preset này thì Nuxt build cho
-// Node server và không emit ra `.output/server/index.mjs` mà `wrangler.jsonc`
-// trỏ tới.
-//
-// Không dùng `cloudflare` (preset legacy, không emit modern Workers output) và
-// không dùng `cloudflare-pages`: preset Pages ghi ra `dist/_worker.js` cùng
-// `_routes.json`/`_redirects`, lệch với `main` trong wrangler.jsonc.
+// nội dung file này thành key `nitro` trong `nuxt.config.ts` cho khớp docs.
 //
 // Export object thuần, không import `defineNitroConfig` từ `nitro/config`:
 // `nitro` là transitive dependency của `nuxt`, không phải dependency trực tiếp
 // của workspace package này, nên pnpm không cho resolve từ đây.
+//
+// `preset: 'static'` — docs là **static site**, không phải ứng dụng SSR.
+//
+// Đây là điều sửa lỗi `apps/docs` không render được trên Worker (issue #28).
+// `@nuxt/content` chọn database adapter ở thời điểm **request**, theo Nitro
+// preset; với preset Workers nó đòi D1 (`bindingName: "DB"`), còn adapter mặc
+// định lại là sqlite chỉ chạy trên Node. Với `static`, mọi `queryCollection`
+// chạy ở **build time** trên Node — nơi sqlite hợp lệ — và output chỉ còn là
+// file tĩnh. Sau khi deploy không còn truy vấn content nào ở runtime, nên không
+// cần D1, không cần Worker script.
 export default {
-  preset: 'cloudflare-module',
+  preset: 'static',
+  prerender: {
+    // Seed tường minh hai docs landing. Từ đây crawler đi tiếp qua link do
+    // sidebar/landing render ra, nên **mọi** document ở cả hai locale — kể cả
+    // nested page — đều được sinh thành HTML thật. Seed không suy từ content
+    // file: chính route mới là thứ quyết định URL, và crawler đọc đúng URL đó.
+    routes: ['/en/docs', '/vi/docs'],
+    crawlLinks: true,
+    // Crawler đi theo **mọi** link trong HTML, mà shell dùng chung
+    // (`layout-public`) còn render global nav và locale switcher. Những link
+    // đó trỏ ra ngoài docs:
+    //
+    //   `/`            — locale-resolution entry point, không mount nào sở hữu
+    //   `/en`, `/vi`   — locale root, do locale switcher sinh ra
+    //   `/en/blog`…    — mount `blog`, deploy unit khác (`apps/blogs`)
+    //
+    // Chúng 404 một cách đúng đắn (docs không sở hữu chúng), nên phải loại khỏi
+    // prerender thay vì để build đỏ. Dùng **regex** chứ không phải string:
+    // `ignore` so string bằng `startsWith`, nên `'/en'` sẽ nuốt luôn
+    // `/en/docs`; regex neo hai đầu mới khớp đúng path cần loại. Cờ `u` là yêu
+    // cầu của rule `require-unicode-regexp` trong oxlint config của repo.
+    //
+    // Cố ý **không** dùng `failOnError: false`: giữ nguyên mặc định để một docs
+    // route thật sự hỏng vẫn làm build đỏ. Chỉ đúng những entry point ngoài
+    // docs ở trên được miễn.
+    ignore: [/^\/$/u, /^\/en\/?$/u, /^\/vi\/?$/u, /^\/en\/blog\/?$/u, /^\/vi\/blog\/?$/u],
+  },
 };
