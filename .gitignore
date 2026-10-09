@@ -43,6 +43,7 @@ Thumbs.db
 .nx/migrate-runs
 .claude/worktrees
 .claude/settings.local.json
+.claude/skills/
 CLAUDE.md 
 
 # Output của Nuxt dev/build

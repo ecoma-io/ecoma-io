@@ -6,10 +6,10 @@ script `prepare`.
 ## Lệnh
 
 ```bash
-pnpm dx --help            # liệt kê các lệnh
-pnpm dx repo-prepare      # hook, kiểm tra tool, file CLAUDE.md
-pnpm dx gen-claude-md     # chỉ sinh lại các file CLAUDE.md
-pnpm dx pr-check          # kiểm PR theo policy của repository
+pnpm dx --help              # liệt kê các lệnh
+pnpm dx repo-prepare        # hook, kiểm tra tool, đồng bộ cấu hình agent
+pnpm dx sync-agent-config   # chỉ đồng bộ cấu hình agent (CLAUDE.md + .agent/skills/ → .claude/skills/)
+pnpm dx pr-check            # kiểm PR theo policy của repository
 ```
 
 `repo-prepare` chạy lại an toàn — mỗi bước đều bỏ qua việc đã xong.
@@ -18,7 +18,8 @@ pnpm dx pr-check          # kiểm PR theo policy của repository
 
 1. Cài git hook (`lefthook install`).
 2. Kiểm tra Docker, Helm, kustomize và kubeconform có chạy được không.
-3. Viết một `CLAUDE.md` cạnh mọi `AGENTS.md` còn thiếu.
+3. Đồng bộ cấu hình agent: viết `CLAUDE.md` cạnh mọi `AGENTS.md` còn thiếu
+   và đồng bộ `.agent/skills/` → `.claude/skills/`.
 
 ### Kiểm tra tool
 
@@ -48,11 +49,23 @@ Docker được kiểm tra bằng `docker version` chứ không phải `docker -
 Flag trần báo binary đã cài dù daemon có chạy hay không, nên nó sẽ qua bước kiểm
 tra này trên một máy rồi fail mọi commit vì daemon chưa từng tồn tại.
 
-### gen-claude-md
+### sync-agent-config
 
-Duyệt repository và viết `CLAUDE.md` chứa `@AGENTS.md` ở mọi nơi có `AGENTS.md`
-mà thiếu file đó. `AGENTS.md` vẫn là source of truth: `CLAUDE.md` đã tồn tại
-không bao giờ bị ghi đè, và các thư mục bị ignore sẽ bị bỏ qua.
+Đồng bộ cấu hình agent từ source of truth sang cấu hình generated:
+
+- **CLAUDE.md** — duyệt repository và viết `CLAUDE.md` chứa `@AGENTS.md` ở mọi
+  nơi có `AGENTS.md` mà thiếu file đó. `AGENTS.md` vẫn là source of truth:
+  `CLAUDE.md` đã tồn tại không bao giờ bị ghi đè (kể cả file viết tay), và các
+  thư mục bị ignore sẽ bị bỏ qua.
+- **Skills** — đồng bộ `.agent/skills/` → `.claude/skills/`, giữ nguyên cấu
+  trúc thư mục và tất cả file hỗ trợ (không chỉ `SKILL.md`). Copy file mới và
+  file thay đổi, đồng thời xóa file/thư mục đích không còn đối ứng, nên chạy
+  lặp lại là idempotent. `.claude/skills/` hoàn toàn là generated output —
+  custom skills phải đặt trong `.agent/skills/`. Nếu `.agent/skills/` không
+  tồn tại, bước skills được bỏ qua với thông báo rõ ràng và `.claude/skills/`
+  hiện có được giữ nguyên; nếu có nhưng rỗng, nó được đồng bộ như một nguồn
+  rỗng (làm trống đích). Bước này tôn trọng `.gitignore` cho việc duyệt và cho
+  các input được copy, và không đi theo symlink ra ngoài source tree.
 
 ### pr-check
 
@@ -93,16 +106,16 @@ nx lint dx         # oxlint
 
 ## Bố cục
 
-| Path                   | Vai trò                                         |
-| ---------------------- | ----------------------------------------------- |
-| `index.ts`             | Entry point, đưa `app` cho `runMain` của citty. |
-| `src/index.ts`         | Danh sách lệnh.                                 |
-| `src/repo-prepare.ts`  | Các bước của `repo-prepare`, theo thứ tự.       |
-| `src/gen-claude-md.ts` | Phần duyệt `AGENTS.md`.                         |
-| `src/pr-check.ts`      | Chính sách PR và lệnh `pr-check`.               |
-| `src/tools.ts`         | Dò một CLI và cảnh báo về các CLI còn thiếu.    |
-| `src/tool-specs.ts`    | Mỗi tool bắt buộc tên là gì và lấy ở đâu.       |
-| `src/utils.ts`         | `ROOT_DIR` và `runCommand`.                     |
+| Path                       | Vai trò                                                      |
+| -------------------------- | ------------------------------------------------------------ |
+| `index.ts`                 | Entry point, đưa `app` cho `runMain` của citty.              |
+| `src/index.ts`             | Danh sách lệnh.                                              |
+| `src/repo-prepare.ts`      | Các bước của `repo-prepare`, theo thứ tự.                    |
+| `src/sync-agent-config.ts` | Đồng bộ `CLAUDE.md` và `.agent/skills/` → `.claude/skills/`. |
+| `src/pr-check.ts`          | Chính sách PR và lệnh `pr-check`.                            |
+| `src/tools.ts`             | Dò một CLI và cảnh báo về các CLI còn thiếu.                 |
+| `src/tool-specs.ts`        | Mỗi tool bắt buộc tên là gì và lấy ở đâu.                    |
+| `src/utils.ts`             | `ROOT_DIR` và `runCommand`.                                  |
 
 Một tool được mô tả bởi một `ToolSpec` — tên hiển thị, executable, flag lấy
 version và URL cài đặt chính thức — nên thêm tool thứ năm là thêm một spec, không

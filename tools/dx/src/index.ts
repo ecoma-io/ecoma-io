@@ -13,7 +13,7 @@ export const app = defineCommand({
     // `import()` resolve ra module namespace, nhưng citty cần chính định nghĩa
     // command, nên phải bóc default export ra.
     'repo-prepare': () => import('./repo-prepare.js').then((m) => m.default),
-    'gen-claude-md': () => import('./gen-claude-md.js').then((m) => m.default),
+    'sync-agent-config': () => import('./sync-agent-config.js').then((m) => m.default),
     'pr-check': () => import('./pr-check.js').then((m) => m.default),
   },
 });

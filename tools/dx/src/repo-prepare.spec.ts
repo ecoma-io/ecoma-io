@@ -8,8 +8,8 @@ vi.mock('./utils.js', () => ({
   ROOT_DIR: '/repo',
 }));
 
-vi.mock('./gen-claude-md.js', () => ({
-  genClaudeMD: vi.fn<typeof import('./gen-claude-md.js').genClaudeMD>(),
+vi.mock('./sync-agent-config.js', () => ({
+  syncAgentConfig: vi.fn<typeof import('./sync-agent-config.js').syncAgentConfig>(),
 }));
 
 const { checkTools, warnMissingTools } = await import('./tools.js');
@@ -27,7 +27,7 @@ vi.mock('./tools.js', async (importOriginal) => {
 });
 
 const { runCommand } = await import('./utils.js');
-const { genClaudeMD } = await import('./gen-claude-md.js');
+const { syncAgentConfig } = await import('./sync-agent-config.js');
 const { TOOL_SPECS } = await import('./tool-specs.js');
 
 const run = async () => {
@@ -75,17 +75,17 @@ describe('repo-prepare', () => {
     expect(runCommand).toHaveBeenCalledTimes(1);
   });
 
-  it('generates CLAUDE.md after the checks', async () => {
+  it('syncs agent configuration after the checks', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     await run();
 
-    expect(genClaudeMD).toHaveBeenCalled();
+    expect(syncAgentConfig).toHaveBeenCalled();
     const order = log.mock.calls.flat();
     expect(order.indexOf('Installing git hooks')).toBeLessThan(
       order.indexOf('Checking required tools'),
     );
     expect(order.indexOf('Checking required tools')).toBeLessThan(
-      order.indexOf('Generate CLAUDE.md'),
+      order.indexOf('Sync agent configuration'),
     );
   });
 
@@ -102,17 +102,17 @@ describe('repo-prepare', () => {
     expect(warnMissingTools).toHaveBeenCalledWith(TOOL_SPECS);
   });
 
-  it('surfaces a failing CLAUDE.md generation instead of hanging', async () => {
+  it('surfaces a failing agent configuration sync instead of hanging', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    vi.mocked(genClaudeMD).mockRejectedValueOnce(new Error('EACCES'));
+    vi.mocked(syncAgentConfig).mockRejectedValueOnce(new Error('EACCES'));
 
     await expect(run()).rejects.toThrow('EACCES');
   });
 
-  it('waits for CLAUDE.md generation to finish', async () => {
+  it('waits for the agent configuration sync to finish', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     let finished = false;
-    vi.mocked(genClaudeMD).mockImplementationOnce(async () => {
+    vi.mocked(syncAgentConfig).mockImplementationOnce(async () => {
       await new Promise((resolve) => {
         setTimeout(resolve, 10);
       });
