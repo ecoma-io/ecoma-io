@@ -45,8 +45,8 @@ jobs:
         if: github.event_name != 'merge_group'
         run: npx nx affected -t lint
 
-  unit-test:
-    name: unit-test
+  verify:
+    name: verify
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
@@ -61,10 +61,29 @@ jobs:
         uses: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1 # v5.0.1
       - name: Unit test
         run: npx nx affected -t test
+      - name: Type check
+        run: npx nx affected -t typecheck
+
+  build:
+    name: build
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup Node.js and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+      - name: Derive appropriate SHAs for base and head
+        uses: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1 # v5.0.1
+      - name: Build
+        run: npx nx affected -t build
 
   ci-gate:
     name: ci-gate
-    needs: [standard-checks, unit-test]
+    needs: [standard-checks, verify, build]
     if: always()
     runs-on: ubuntu-26.04
     timeout-minutes: 5
