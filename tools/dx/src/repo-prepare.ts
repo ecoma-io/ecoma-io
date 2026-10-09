@@ -1,6 +1,6 @@
 import { defineCommand } from 'citty';
 
-import { genClaudeMD } from './gen-claude-md.js';
+import { syncAgentConfig } from './sync-agent-config.js';
 import { TOOL_SPECS } from './tool-specs.js';
 import { checkTools, warnMissingTools } from './tools.js';
 import { runCommand } from './utils.js';
@@ -19,7 +19,7 @@ export default defineCommand({
     const { missing } = checkTools(TOOL_SPECS);
     warnMissingTools(missing);
 
-    console.log('Generate CLAUDE.md');
-    await genClaudeMD();
+    console.log('Sync agent configuration');
+    await syncAgentConfig();
   },
 });

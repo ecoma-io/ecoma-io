@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
@@ -9,6 +10,7 @@ const execFileAsync = promisify(execFile);
 
 const DX_ROOT = resolve(import.meta.dirname, '..');
 const ENTRY = join(DX_ROOT, 'index.ts');
+const TSX = join(DX_ROOT, '../../node_modules/tsx/dist/cli.mjs');
 
 /**
  * Chạy CLI trong một tiến trình con.
@@ -18,11 +20,12 @@ const ENTRY = join(DX_ROOT, 'index.ts');
  * citty ghi usage ra stderr, nên cả hai stream đều được đọc.
  */
 async function dx(...args: string[]): Promise<string> {
-  const { stdout, stderr } = await execFileAsync('node', [
-    join(DX_ROOT, '../../node_modules/tsx/dist/cli.mjs'),
-    ENTRY,
-    ...args,
-  ]);
+  return dxFrom(DX_ROOT, ...args);
+}
+
+/** Như `dx` nhưng chỉ định cả working directory của tiến trình con. */
+async function dxFrom(cwd: string, ...args: string[]): Promise<string> {
+  const { stdout, stderr } = await execFileAsync('node', [TSX, ENTRY, ...args], { cwd });
 
   return `${stdout}${stderr}`;
 }
@@ -37,11 +40,11 @@ describe('app', () => {
     expect(meta.description).toBe('Devtools for ecoma-io repository');
   });
 
-  it('declares repo-prepare, gen-claude-md and pr-check', () => {
+  it('declares repo-prepare, sync-agent-config and pr-check', () => {
     // Set thay cho mảng sort: cùng đẳng thức tập hợp, không mutation và không
     // cần `toSorted` (lib của repository hiện là es2022).
     expect(new Set(Object.keys(app.subCommands ?? {}))).toEqual(
-      new Set(['repo-prepare', 'gen-claude-md', 'pr-check']),
+      new Set(['repo-prepare', 'sync-agent-config', 'pr-check']),
     );
   });
 
@@ -68,13 +71,22 @@ describe('dx cli', () => {
 
     expect(output).toContain('Ecoma DX');
     expect(output).toContain('repo-prepare');
-    expect(output).toContain('gen-claude-md');
+    expect(output).toContain('sync-agent-config');
     expect(output).toContain('pr-check');
   });
 
   it('describes each subcommand', async () => {
     expect(await dx('repo-prepare', '--help')).toContain('Prepare repository');
-    expect(await dx('gen-claude-md', '--help')).toContain('Generate Claude.md');
+    expect(await dx('sync-agent-config', '--help')).toContain('Sync agent configuration');
     expect(await dx('pr-check', '--help')).toContain('Check a pull request');
+  });
+
+  it('runs sync-agent-config from a working directory other than the repository root', async () => {
+    // Đường dẫn tới module và tới `tsx` được resolve từ vị trí file này, còn
+    // tiến trình con chạy ở một chỗ hoàn toàn khác — nên một lần gọi thành công
+    // chứng minh command không phụ thuộc vào cwd của caller.
+    const output = await dxFrom(tmpdir(), 'sync-agent-config', '--help');
+
+    expect(output).toContain('Sync agent configuration');
   });
 });
