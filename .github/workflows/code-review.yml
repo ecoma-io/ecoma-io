@@ -12,13 +12,24 @@ on:
         type: boolean
         required: false
         default: false
+  pull_request_target:
+    types: [opened, ready_for_review, synchronize, reopened]
 
 permissions:
   contents: write
   pull-requests: write
 
 concurrency:
-  group: ocr-pr-${{ inputs.pr_number }}
+  # Group theo PR: event payload cho trigger tự động (pull_request_target —
+  # inputs context rỗng trên event này), input cho dispatch thủ công, run_id
+  # làm fallback an toàn. PR khác nhau có group khác nhau nên không bao giờ
+  # tự hủy lẫn nhau; trong cùng một PR, run mới thay thế run cũ.
+  group: >-
+    ocr-pr-${{
+      (github.event_name == 'pull_request_target' && github.event.pull_request.number) ||
+      (github.event_name == 'workflow_dispatch' && inputs.pr_number) ||
+      github.run_id
+    }}
   cancel-in-progress: true
 
 jobs:
@@ -26,6 +37,19 @@ jobs:
     name: AI review (OpenCodeReview)
     runs-on: ubuntu-26.04
     timeout-minutes: 60
+    # Trigger tự động (pull_request_target) chỉ review PR nội bộ (head branch
+    # thuộc repo này), không draft, và không thuộc branch prefix automation/
+    # (PR do bot dependency tạo — bỏ qua để tiết kiệm chi phí LLM; vẫn review
+    # được bằng workflow_dispatch). workflow_dispatch luôn chạy. Job-level if
+    # để run bị skip không cấp phát runner. Workflow không bao giờ checkout
+    # hay thực thi code PR head.
+    if: >-
+      github.event_name != 'pull_request_target' ||
+      (
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.draft != true &&
+        !startsWith(github.event.pull_request.head.ref, 'automation/')
+      )
     env:
       # Tắt self-updater chạy nền của CLI để tránh thay package giữa chừng
       # (npm i -g @latest tách rời trong lúc 'ocr config set' đang chạy)
@@ -36,13 +60,15 @@ jobs:
         id: pr
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          PR_NUMBER: ${{ inputs.pr_number }}
+          # Event payload cho trigger pull_request_target; inputs context
+          # chỉ được điền trên workflow_dispatch (trên pull_request_target
+          # nó đánh giá là chuỗi rỗng).
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
         with:
           github-token: ${{ github.token }}
           script: |
-            // Workflow chỉ còn trigger workflow_dispatch (trigger privileged
-            // theo event payload đã bị bỏ), nên PR cần review luôn được đọc theo
-            // số trong input — không còn event payload pull request để đọc.
+            // PR number được đọc theo nguồn sự kiện: payload cho trigger
+            // privileged pull_request_target, input cho workflow_dispatch.
             const requested = (process.env.PR_NUMBER || '').trim();
             if (!/^[1-9][0-9]*$/.test(requested)) {
               core.setFailed(`pr_number must be a pull request number alone; got ${JSON.stringify(requested)}.`);
@@ -98,6 +124,8 @@ jobs:
         with:
           base_ref: ${{ steps.pr.outputs.base_ref }}
           head_sha: ${{ steps.pr.outputs.head_sha }}
+          # pr_number/full_review chỉ có giá trị trên dispatch; trên trigger
+          # tự động chuỗi rỗng là đúng (full_review rỗng → incremental).
           pr_number: ${{ inputs.pr_number }}
           full_review: ${{ inputs.full_review }}
           background: |
