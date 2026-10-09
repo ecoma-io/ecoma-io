@@ -28,9 +28,15 @@ export { buildPublicPath } from './lib/build-public-path';
 export { resolveLocaleContext, type PublicLocaleContext } from './lib/locale-context';
 export {
   PUBLIC_NAVIGATION,
+  PUBLIC_FOOTER_GROUPS,
+  PUBLIC_FOOTER_TAGLINE,
   buildPublicNavigation,
+  buildPublicFooterGroups,
   type PublicNavigationItem,
   type PublicNavigationLink,
+  type PublicFooterGroup,
+  type PublicFooterLink,
+  type PublicFooterLinkResolved,
 } from './lib/public-navigation';
 export { default as PublicShell } from './lib/components/PublicShell.vue';
 export { default as PublicHeader } from './lib/components/PublicHeader.vue';

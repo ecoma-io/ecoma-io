@@ -50,8 +50,13 @@ const layout = computed<PublicLayoutPathResult>((): PublicLayoutPathResult =>
 </script>
 
 <template>
+  <!--
+    `<main>` mang `id="public-main"` làm mục tiêu skip-link của header — shell
+    tự render target, app không phải tự đặt id. Skip link nằm trong
+    `PublicHeader` (phần tử focusable đầu tiên của trang).
+  -->
   <PublicHeader :layout="layout" :available-locales="availableLocales" />
-  <main>
+  <main id="public-main">
     <slot />
   </main>
   <PublicFooter :layout="layout" />

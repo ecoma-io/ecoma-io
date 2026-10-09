@@ -24,12 +24,15 @@ describe('public API entrypoint', () => {
   it('exports exactly the documented runtime surface', () => {
     expect(new Set(Object.keys(publicApi))).toEqual(
       new Set([
+        'PUBLIC_FOOTER_GROUPS',
+        'PUBLIC_FOOTER_TAGLINE',
         'PUBLIC_MOUNTS',
         'PUBLIC_MOUNTS_IN_DECLARATION_ORDER',
         'PUBLIC_NAVIGATION',
         'PublicFooter',
         'PublicHeader',
         'PublicShell',
+        'buildPublicFooterGroups',
         'buildPublicNavigation',
         'buildPublicPath',
         'getMountDefinition',

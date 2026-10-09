@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { PublicShell } from '@ecoma-io/layout-public';
+import { PublicShell, buildPublicPath } from '@ecoma-io/layout-public';
+import type { PublicLocale } from '@ecoma-io/i18n-public';
 import { parseHomeLocaleRoot } from '~/domain/home-locale';
 import { buildHomeSeo } from '~/domain/home-seo';
 import { HOME_CONTENT } from '~/domain/home-content';
@@ -94,6 +95,17 @@ if (locale === undefined) {
 const content = HOME_CONTENT[locale];
 const seo = buildHomeSeo(locale, content);
 
+/**
+ * href cho hai CTA hero — dựng qua builder của `layout-public` (không bao
+ * giờ concatenation); destination là mount thật của public web. `locale`
+ * đã được guard 404 ở trên nhưng TS không đưa sự thu hẹp đó vào hàm, nên
+ * nhận locale làm tham số.
+ */
+function surfaceHref(target: PublicLocale, mount: 'docs' | 'blog'): string {
+  const built = buildPublicPath({ locale: target, mount });
+  return built.kind === 'invalid' ? `/${target}` : built.path;
+}
+
 /* Root `/` không emit SEO metadata — `/` chỉ là locale-resolution entry point,
  * không serve content (`docs/overview/01-architecture.md` A13), và `<head>`
  * của nó thuộc về redirect 302 tới `/en`, không phải một trang.
@@ -119,22 +131,52 @@ useHead({
     Không truyền `availableLocales`: Home tồn tại ở **mọi** locale của registry,
     nên mặc định của shell (toàn bộ registry) mới là đúng — không resource
     nào của Home bị giới hạn locale.
+
+    Landing dùng container rộng của shell (`max-w-6xl` trùng với chrome
+    header/footer); nội dung hero giới hạn đọc bằng `max-w-3xl`.
   -->
   <PublicShell :path="route.path">
-    <div class="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-16">
-      <section class="flex flex-col gap-3">
-        <h1 class="text-4xl font-bold tracking-tight">{{ content.heading }}</h1>
-        <p class="text-lg text-gray-600">{{ content.description }}</p>
+    <div class="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8">
+      <!-- Hero -->
+      <section class="flex flex-col items-start gap-6 py-16 sm:py-24">
+        <h1 class="text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl">
+          {{ content.heading }}
+        </h1>
+        <p class="max-w-2xl text-lg leading-relaxed text-slate-600">
+          {{ content.description }}
+        </p>
+        <div class="flex flex-wrap items-center gap-3">
+          <a
+            :href="surfaceHref(locale, 'docs')"
+            class="rounded-md bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500 motion-safe:transition-colors"
+            >{{ content.docsCta }}</a
+          >
+          <a
+            :href="surfaceHref(locale, 'blog')"
+            class="rounded-md border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500 motion-safe:transition-colors"
+            >{{ content.blogCta }}</a
+          >
+        </div>
       </section>
 
-      <section class="flex flex-col gap-3 text-gray-800">
+      <!-- Intro -->
+      <section class="flex flex-col gap-3 border-t border-slate-200 py-12 text-slate-800">
         <p v-for="paragraph in content.intro" :key="paragraph">{{ paragraph }}</p>
       </section>
 
-      <section class="flex flex-col gap-3">
-        <h2 class="text-2xl font-semibold">{{ content.platformLabel }}</h2>
-        <ul class="flex list-disc flex-col gap-2 pl-5 text-gray-800">
-          <li v-for="point in content.platformPoints" :key="point">{{ point }}</li>
+      <!-- Platform points -->
+      <section class="flex flex-col gap-4 border-t border-slate-200 py-12">
+        <h2 class="text-2xl font-semibold tracking-tight text-slate-900">
+          {{ content.platformLabel }}
+        </h2>
+        <ul class="grid gap-3 sm:grid-cols-2">
+          <li
+            v-for="point in content.platformPoints"
+            :key="point"
+            class="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-relaxed text-slate-700"
+          >
+            {{ point }}
+          </li>
         </ul>
       </section>
     </div>

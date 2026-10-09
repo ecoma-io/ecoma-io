@@ -3,6 +3,17 @@ import type { PublicLocale } from '@ecoma-io/i18n-public';
 import { mount } from '@vue/test-utils';
 import { PublicFooter, PublicHeader, PublicShell, parsePublicLayoutPath } from '../../index';
 
+/**
+ * Lib tsconfig không có DOM lib — MouseEvent chỉ tồn tại runtime (jsdom).
+ * Helper này expose đúng phần test cần: tạo event và đọc `defaultPrevented`.
+ */
+function domClick(init: { ctrlKey?: boolean }): { defaultPrevented: boolean } {
+  const env = globalThis as unknown as {
+    MouseEvent: new (t: string, i: object) => { defaultPrevented: boolean };
+  };
+  return new env.MouseEvent('click', { cancelable: true, ...init });
+}
+
 describe('PublicShell composition', () => {
   it('renders header, main and footer landmarks around slot content', () => {
     const wrapper = mount(PublicShell, {
@@ -16,9 +27,10 @@ describe('PublicShell composition', () => {
     expect(wrapper.find('footer').exists()).toBe(true);
     expect(wrapper.find('main').text()).toBe('APP_CONTENT');
 
-    // Thứ tự: header → main (nội dung app) → footer.
-    expect(html.indexOf('<header')).toBeLessThan(html.indexOf('<main'));
-    expect(html.indexOf('<main')).toBeLessThan(html.indexOf('<footer'));
+    // Thứ tự: header (mở) → main → footer; `<main id=` khớp landmark chính,
+    // không trúng `public-main` xuất hiện trước trong skip link của header.
+    expect(html.indexOf('<header')).toBeLessThan(html.indexOf('<main id='));
+    expect(html.indexOf('<main id=')).toBeLessThan(html.indexOf('<footer'));
   });
 
   it('keeps application content out of header and footer', () => {
@@ -35,14 +47,18 @@ describe('PublicShell composition', () => {
     // Pin reactivity của props destructure trong computed: đổi path (client-side
     // navigation) thì Header/Footer phải re-render theo, không giữ snapshot.
     const wrapper = mount(PublicShell, { props: { path: '/en/blog' } });
-    expect(wrapper.find('header a').attributes('href')).toBe('/en');
+    expect(wrapper.find('header a[href="/en"]').attributes('href')).toBe('/en');
 
     await wrapper.setProps({ path: '/vi/docs' });
 
-    expect(wrapper.find('header a').attributes('href')).toBe('/vi');
-    const links = wrapper.find('header nav[aria-label="Global"]').findAll('a');
+    expect(wrapper.find('header a[href="/vi"]').attributes('href')).toBe('/vi');
+    // Trigger Docs là disclosure link (`a[href="/vi/docs"]` + aria-expanded);
+    // panel đóng vẫn nằm trong DOM (chỉ `hidden`), nên đếm anchor **cấp
+    // top-level** của nav (`nav > ul > li > a`) sẽ thấy cả trigger lẫn Blog —
+    // lấy link khác trigger để xác nhận chỉ Blog là link thường.
+    const links = wrapper.findAll('header nav[aria-label="Global"] > ul > li > a');
     expect(links.map((link) => link.attributes('href'))).toEqual(['/vi/blog', '/vi/docs']);
-    expect(links[1].attributes('aria-current')).toBe('page');
+    expect(links[1]?.text()).toContain('Docs');
     expect(wrapper.find('footer a').attributes('href')).toBe('/vi');
   });
 
@@ -54,54 +70,123 @@ describe('PublicShell composition', () => {
 });
 
 describe('PublicHeader', () => {
+  it('renders a skip link to the main landmark as the first focusable element', () => {
+    const wrapper = mount(PublicShell, { props: { path: '/en/docs/api' } });
+    const first = wrapper.find('header a');
+    expect(first.attributes('href')).toBe('#public-main');
+    expect(wrapper.find('main').attributes('id')).toBe('public-main');
+  });
+
   it('links the brand to the locale-root surface', () => {
     const wrapper = mount(PublicShell, { props: { path: '/en/docs/api' } });
-    const brand = wrapper.find('header a');
+    const brand = wrapper.find('header a[href="/en"]');
     expect(brand.text()).toBe('ecoma.io');
-    expect(brand.attributes('href')).toBe('/en');
   });
 
   it('renders global navigation with locale-aware hrefs', () => {
     const wrapper = mount(PublicShell, { props: { path: '/vi/blog' } });
     const nav = wrapper.find('header nav[aria-label="Global"]');
     expect(nav.exists()).toBe(true);
-    const links = nav.findAll('a');
-    expect(links.map((link) => [link.text(), link.attributes('href')])).toEqual([
-      ['Blog', '/vi/blog'],
-      ['Docs', '/vi/docs'],
+    // Mọi mục nav cấp cao nhất đều là `<a href>` thật — kể cả trigger Docs
+    // (no-JS và crawler vẫn có link tới docs). Combinator trực tiếp `>` để
+    // không trúng link trong mega panel.
+    const topLinks = nav.findAll(':scope > ul > li > a');
+    expect(topLinks.map((link) => link.attributes('href'))).toEqual(['/vi/blog', '/vi/docs']);
+    expect(topLinks[0]?.text()).toBe('Blog');
+    const trigger = topLinks[1];
+    expect(trigger?.text()).toContain('Docs');
+    expect(trigger?.attributes('aria-expanded')).toBe('false');
+    expect(trigger?.attributes('aria-controls')).toBe('public-header-docs-panel');
+  });
+
+  it('opens the docs disclosure to reveal mount root and section links', async () => {
+    const wrapper = mount(PublicShell, { props: { path: '/en' } });
+    const trigger = wrapper.find('header nav[aria-label="Global"] a[href="/en/docs"]');
+    expect(trigger.attributes('aria-expanded')).toBe('false');
+    // Panel luôn trong DOM, đóng bằng `hidden` — không nằm trong accessibility
+    // tree khi đóng.
+    const panel = wrapper.find('#public-header-docs-panel');
+    expect(panel.attributes('hidden')).toBeDefined();
+
+    await trigger.trigger('click');
+
+    expect(trigger.attributes('aria-expanded')).toBe('true');
+    expect(panel.attributes('hidden')).toBeUndefined();
+    const links = panel.findAll('a');
+    const hrefs = links.map((link) => link.attributes('href'));
+    expect(hrefs).toEqual([
+      '/en/docs',
+      '/en/docs/getting-started',
+      '/en/docs/concepts',
+      '/en/docs/guides',
     ]);
+  });
+
+  it('lets modifier-click through so new-tab navigation reaches the mount root', async () => {
+    // `@click.exact.prevent`: guard `exact` chạy trước `prevent` trong
+    // withModifiers — modifier-click KHÔNG bị preventDefault (đi native mở
+    // tab mới) và panel không toggle. Assert cả defaultPrevented: thứ tự
+    // đảo (`prevent.exact`) sẽ prevent rồi mới return — click chết, và test
+    // chỉ assert aria-expanded sẽ không bắt được.
+    const wrapper = mount(PublicShell, { props: { path: '/en' } });
+    const trigger = wrapper.find('header nav[aria-label="Global"] a[href="/en/docs"]');
+
+    const event = domClick({ ctrlKey: true });
+    (trigger.element as { dispatchEvent(e: unknown): boolean }).dispatchEvent(event);
+    await wrapper.vm.$nextTick();
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(trigger.attributes('aria-expanded')).toBe('false');
+    expect(wrapper.find('#public-header-docs-panel').attributes('hidden')).toBeDefined();
+  });
+
+  it('prevents plain clicks so the panel toggles instead of navigating', async () => {
+    // Chiều đối xứng: click thuần bị preventDefault (không điều hướng) và
+    // toggle panel.
+    const wrapper = mount(PublicShell, { props: { path: '/en' } });
+    const trigger = wrapper.find('header nav[aria-label="Global"] a[href="/en/docs"]');
+
+    const event = domClick({});
+    (trigger.element as { dispatchEvent(e: unknown): boolean }).dispatchEvent(event);
+    await wrapper.vm.$nextTick();
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(trigger.attributes('aria-expanded')).toBe('true');
+    expect(wrapper.find('#public-header-docs-panel').attributes('hidden')).toBeUndefined();
   });
 
   it('marks the exact current mount with aria-current=page', () => {
     const wrapper = mount(PublicShell, { props: { path: '/en/blog' } });
-    const links = wrapper.find('header nav[aria-label="Global"]').findAll('a');
-    expect(links[0].attributes('aria-current')).toBe('page');
-    expect(links[1].attributes('aria-current')).toBeUndefined();
+    const nav = wrapper.find('header nav[aria-label="Global"]');
+    // Blog (link thường) là trang hiện tại.
+    expect(nav.find('a[href="/en/blog"]').attributes('aria-current')).toBe('page');
+    // Trigger Docs (disclosure link) mang section sense — ở đây không active.
+    expect(nav.find('a[href="/en/docs"]').attributes('aria-current')).toBeUndefined();
   });
 
-  it('marks a nested mount with aria-current=true on the parent item', () => {
+  it('marks a nested mount with aria-current=true on the parent trigger', () => {
     // docs/api không có mục riêng trong global nav — pathname dưới mount lồng
-    // nhau vẫn hiện thị section cha là đang active.
+    // nhau vẫn hiện thị section cha là đang active, trên chính trigger.
     const wrapper = mount(PublicShell, { props: { path: '/en/docs/api/guide' } });
-    const links = wrapper.find('header nav[aria-label="Global"]').findAll('a');
-    expect(links[1].attributes('aria-current')).toBe('true');
-    expect(links[0].attributes('aria-current')).toBeUndefined();
+    const nav = wrapper.find('header nav[aria-label="Global"]');
+    expect(nav.find('a[href="/en/docs"]').attributes('aria-current')).toBe('true');
+    expect(nav.find('a[href="/en/blog"]').attributes('aria-current')).toBeUndefined();
   });
 
   it('marks a child resource of the current mount with aria-current=true, not page', () => {
-    // Link Blog trỏ /en/blog; pathname /en/blog/hello-world là trang con,
-    // không phải chính link đó — 'page' sẽ sai semantics ARIA.
-    const wrapper = mount(PublicShell, { props: { path: '/en/blog/hello-world' } });
-    const links = wrapper.find('header nav[aria-label="Global"]').findAll('a');
-    expect(links[0].attributes('aria-current')).toBe('true');
-    expect(links[1].attributes('aria-current')).toBeUndefined();
+    // Trigger Docs trỏ mount root; pathname /en/docs/hello-world là trang con
+    // của mount docs — 'page' sẽ sai semantics ARIA, section sense là 'true'.
+    const wrapper = mount(PublicShell, { props: { path: '/en/docs/hello-world' } });
+    const nav = wrapper.find('header nav[aria-label="Global"]');
+    expect(nav.find('a[href="/en/docs"]').attributes('aria-current')).toBe('true');
+    expect(nav.find('a[href="/en/blog"]').attributes('aria-current')).toBeUndefined();
   });
 
   it('renders no aria-current on the locale-root surface', () => {
     const wrapper = mount(PublicShell, { props: { path: '/en' } });
-    const links = wrapper.find('header nav[aria-label="Global"]').findAll('a');
-    for (const link of links) {
-      expect(link.attributes('aria-current')).toBeUndefined();
+    const nav = wrapper.find('header nav[aria-label="Global"]');
+    for (const el of nav.findAll('a')) {
+      expect(el.attributes('aria-current')).toBeUndefined();
     }
   });
 
@@ -132,14 +217,15 @@ describe('PublicHeader', () => {
     const wrapper = mount(PublicShell, { props: { path: '/' } });
     expect(wrapper.find('header nav[aria-label="Global"]').exists()).toBe(false);
     expect(wrapper.find('header nav[aria-label="Language"]').exists()).toBe(false);
-    expect(wrapper.find('header a').attributes('href')).toBe('/');
+    // Brand trỏ `/` khi chưa có locale; skip link luôn trỏ `#public-main`.
+    expect(wrapper.find('header a[href="/"]').exists()).toBe(true);
   });
 
   it('renders no locale-aware chrome for an invalid path', () => {
     const wrapper = mount(PublicShell, { props: { path: '/en/unknown' } });
     expect(wrapper.find('header nav[aria-label="Global"]').exists()).toBe(false);
     expect(wrapper.find('header nav[aria-label="Language"]').exists()).toBe(false);
-    expect(wrapper.find('header a').attributes('href')).toBe('/');
+    expect(wrapper.find('header a[href="/"]').exists()).toBe(true);
     // Shell vẫn render được khung cho trang lỗi — không throw.
     expect(wrapper.find('main').exists()).toBe(true);
   });
@@ -150,8 +236,11 @@ describe('PublicHeader', () => {
     const wrapper = mount(PublicHeader, {
       props: { layout: parsePublicLayoutPath('/vi/docs') },
     });
-    const links = wrapper.find('nav[aria-label="Global"]').findAll('a');
-    expect(links.map((link) => link.attributes('href'))).toEqual(['/vi/blog', '/vi/docs']);
+    const nav = wrapper.find('nav[aria-label="Global"]');
+    expect(nav.find('a[href="/vi/blog"]').attributes('href')).toBe('/vi/blog');
+    // /vi/docs dừng đúng mount root → trigger Docs (disclosure link) mang
+    // section sense 'page' (như link thường).
+    expect(nav.find('a[href="/vi/docs"]').attributes('aria-current')).toBe('page');
     expect(wrapper.find('nav[aria-label="Language"] a').attributes('href')).toBe('/en/docs');
   });
 });
@@ -236,9 +325,10 @@ describe('PublicHeader locale availability', () => {
     const wrapper = mount(PublicShell, {
       props: { path: '/en/blog', availableLocales: ['en'] },
     });
-    expect(wrapper.find('header a').attributes('href')).toBe('/en');
-    const links = wrapper.find('header nav[aria-label="Global"]').findAll('a');
-    expect(links.map((link) => link.attributes('href'))).toEqual(['/en/blog', '/en/docs']);
+    expect(wrapper.find('header a[href="/en"]').exists()).toBe(true);
+    const nav = wrapper.find('header nav[aria-label="Global"]');
+    expect(nav.find('a[href="/en/blog"]').exists()).toBe(true);
+    expect(nav.find('a[href="/en/docs"]').text()).toContain('Docs');
   });
 });
 
