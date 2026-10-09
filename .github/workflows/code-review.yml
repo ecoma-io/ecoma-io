@@ -33,8 +33,9 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     env:
-      # Disable the CLI's background self-updater to prevent package replacement mid-execution
-      # (npm i -g @latest detached while 'ocr config set' runs) which causes "Cannot find module" races.
+      # Tắt self-updater chạy nền của CLI để tránh thay package giữa chừng
+      # (npm i -g @latest tách rời trong lúc 'ocr config set' đang chạy)
+      # gây ra các lỗi "Cannot find module" cạnh tranh.
       OCR_NO_UPDATE: '1'
     steps:
       - name: Resolve PR info and check for changes
