@@ -73,6 +73,28 @@ async function readdirOrEmpty(dir: string): Promise<Dirent[]> {
 }
 
 /**
+ * Tạo file mới, chỉ khi path chưa tồn tại.
+ *
+ * Trả `false` khi path đã có (kể cả một symlink hỏng, vì `wx` từ chối mọi path đã
+ * tồn tại). Dùng `wx` thay vì `writeFile` mặc định là điều kiện để một symlink
+ * tên `CLAUDE.md` không bị ghi xuyên qua — ghi xuyên qua nó sẽ sửa file mà symlink
+ * trỏ tới, có thể là chính `AGENTS.md` hoặc một file ngoài repository.
+ */
+async function writeNewFile(path: string, contents: string): Promise<boolean> {
+  try {
+    await writeFile(path, contents, { encoding: 'utf8', flag: 'wx' });
+
+    return true;
+  } catch (error) {
+    if (hasCode(error, 'EEXIST')) {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
+/**
  * Thư mục gốc của git repository chứa `dir`.
  *
  * Resolve một lần rồi nhớ lại: mọi lần kiểm tra ignore sau đó dùng cùng giá trị,
@@ -160,14 +182,22 @@ async function generateClaudeFiles(dir: string, repoRoot: string): Promise<void>
   const entries = await readdir(dir, { withFileTypes: true });
 
   const hasAgents = entries.some((entry) => entry.isFile() && entry.name === 'AGENTS.md');
-  const hasClaude = entries.some((entry) => entry.isFile() && entry.name === 'CLAUDE.md');
+
+  // Kiểm tra theo tên chứ không theo `isFile()`: một symlink tên CLAUDE.md cũng
+  // tính là "đã có". Nếu coi nó là thiếu rồi ghi, `writeFile` sẽ đi theo symlink
+  // và ghi đè file mà nó trỏ tới — có thể chính là AGENTS.md, hoặc một file nằm
+  // ngoài repository.
+  const hasClaude = entries.some((entry) => entry.name === 'CLAUDE.md');
 
   if (hasAgents && !hasClaude) {
     const claudePath = join(dir, 'CLAUDE.md');
 
-    await writeFile(claudePath, '@AGENTS.md\n', 'utf8');
-
-    console.log(`created ${relative(ROOT_DIR, claudePath)}`);
+    // `wx` từ chối ghi khi path đã tồn tại (kể cả symlink hỏng), nên không có
+    // đường nào ghi xuyên qua symlink kể cả khi trạng thái đổi giữa `readdir` và
+    // lúc ghi.
+    if (await writeNewFile(claudePath, '@AGENTS.md\n')) {
+      console.log(`created ${relative(ROOT_DIR, claudePath)}`);
+    }
   }
 
   await Promise.all(
@@ -178,16 +208,26 @@ async function generateClaudeFiles(dir: string, repoRoot: string): Promise<void>
 }
 
 /**
- * Chắc chắn rằng `target` nằm bên trong `root` trước khi xoá.
+ * Chắc chắn rằng `target` nằm bên trong cây `root` trước khi xoá.
  *
  * `.claude/skills` là output sinh tự động nên việc dọn dẹp nó là bình thường,
  * nhưng một lỗi ghép path có thể biến thao tác xoá thành vụ xoá nhầm ra ngoài
  * cây đích.
+ *
+ * Thoát ra ngoài chỉ khi tương đối bắt đầu bằng đúng một thành phần `..` (hoặc
+ * `../`): so khớp `startsWith('..')` sẽ từ chối nhầm một entry tên `..data`, và vì
+ * `repo-prepare` chạy trong `pnpm prepare`, một từ chối nhầm như vậy làm hỏng cả
+ * bước chuẩn bị repository.
  */
 function assertInside(root: string, target: string): void {
   const relativePath = relative(root, target);
 
-  if (relativePath === '' || relativePath.startsWith('..') || isAbsolute(relativePath)) {
+  if (
+    relativePath === '' ||
+    relativePath === '..' ||
+    relativePath.startsWith(`..${sep}`) ||
+    isAbsolute(relativePath)
+  ) {
     throw new Error(`Refusing to remove ${target}: it is outside ${root}`);
   }
 }
@@ -197,6 +237,36 @@ async function removeInside(root: string, target: string): Promise<void> {
   assertInside(root, target);
 
   await rm(target, { recursive: true, force: true });
+}
+
+/**
+ * Chặn đích đi qua symlink trước khi ghi hay xoá bất cứ thứ gì.
+ *
+ * `assertInside` so khớp chuỗi path, nên nó không thấy được một symlink ở chính
+ * đường dẫn tới đích: khi `.claude` là symlink, mọi thao tác trên `.claude/skills`
+ * vẫn "trông như" nằm trong repository nhưng thực tế lại rơi vào thư mục mà
+ * symlink trỏ tới — xoá và ghi ra ngoài repository. Vì vậy phải kiểm tra từng
+ * thành phần đường dẫn tới đích, và từ chối thay vì đoán ý người dùng.
+ */
+async function assertNoSymlinkPath(dir: string, segments: string[]): Promise<string> {
+  let current = dir;
+
+  for (const segment of segments) {
+    current = join(current, segment);
+
+    const stats = await lstatOrNull(current);
+
+    if (stats === null) {
+      // Phần còn lại chưa tồn tại: `mkdir -p` sẽ tạo thư mục thật, không symlink.
+      break;
+    }
+
+    if (stats.isSymbolicLink()) {
+      throw new Error(`Refusing to sync skills: ${relative(ROOT_DIR, current)} is a symbolic link`);
+    }
+  }
+
+  return join(dir, ...segments);
 }
 
 /**
@@ -324,8 +394,7 @@ async function mirror(
  * Nguồn tồn tại (kể cả rỗng) thì đích được đồng bộ thành bản sao đúng của nguồn.
  */
 async function syncSkills(dir: string, repoRoot: string): Promise<void> {
-  const source = join(dir, '.agent', 'skills');
-  const dest = join(dir, '.claude', 'skills');
+  const source = await assertNoSymlinkPath(dir, ['.agent', 'skills']);
 
   const sourceStat = await statOrNull(source);
 
@@ -338,6 +407,8 @@ async function syncSkills(dir: string, repoRoot: string): Promise<void> {
   if (!sourceStat.isDirectory()) {
     throw new Error(`${SKILLS_SOURCE_LABEL} is not a directory: ${source}`);
   }
+
+  const dest = await assertNoSymlinkPath(dir, ['.claude', 'skills']);
 
   const destStat = await lstatOrNull(dest);
 

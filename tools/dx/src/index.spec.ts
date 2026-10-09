@@ -81,12 +81,16 @@ describe('dx cli', () => {
     expect(await dx('pr-check', '--help')).toContain('Check a pull request');
   });
 
-  it('runs sync-agent-config from a working directory other than the repository root', async () => {
-    // Đường dẫn tới module và tới `tsx` được resolve từ vị trí file này, còn
-    // tiến trình con chạy ở một chỗ hoàn toàn khác — nên một lần gọi thành công
-    // chứng minh command không phụ thuộc vào cwd của caller.
-    const output = await dxFrom(tmpdir(), 'sync-agent-config', '--help');
+  it('runs sync-agent-config for real from a working directory other than the repository root', async () => {
+    // Trái với `--help` (citty cắt usage trước khi chạy `run()`), lần gọi này thực
+    // sự dispatch tới `run()` → `syncAgentConfig()`. `ROOT_DIR` được resolve từ vị
+    // trí module chứ không phải từ cwd của caller, nên chạy từ một thư mục hoàn
+    // toàn khác vẫn đồng bộ đúng repository hiện tại. Hệ quả phụ duy nhất là sinh
+    // các file `CLAUDE.md` gitignored còn thiếu — đúng hành vi thiết kế của
+    // `repo-prepare`.
+    const output = await dxFrom(tmpdir(), 'sync-agent-config');
 
     expect(output).toContain('Sync agent configuration');
+    expect(output).not.toContain(tmpdir());
   });
 });

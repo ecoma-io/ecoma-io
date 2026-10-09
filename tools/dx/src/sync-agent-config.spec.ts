@@ -190,6 +190,31 @@ describe('syncAgentConfig - CLAUDE.md generation', () => {
 
     expect(await readFile(join(root, 'svc/CLAUDE.md'), 'utf8')).toBe('hand written\n');
   });
+
+  it('does not write through a symlinked CLAUDE.md that points at AGENTS.md', async () => {
+    const root = await makeRepo({ 'svc/AGENTS.md': 'rules\n' });
+    await symlink('AGENTS.md', join(root, 'svc', 'CLAUDE.md'));
+
+    await syncAgentConfig(root);
+
+    // Nguồn sự thật không được phép bị ghi đè qua symlink.
+    expect(await readFile(join(root, 'svc', 'AGENTS.md'), 'utf8')).toBe('rules\n');
+    expect(await readFile(join(root, 'svc', 'CLAUDE.md'), 'utf8')).toBe('rules\n');
+    expect(logs.some((line) => line.startsWith('created '))).toBe(false);
+  });
+
+  it('does not write through a symlinked CLAUDE.md that escapes the repository', async () => {
+    const root = await makeRepo({ 'svc/AGENTS.md': 'rules\n' });
+    const outside = await makeTempDir();
+    await writeFile(join(outside, 'outside.txt'), 'precious\n', 'utf8');
+    await symlink(join(outside, 'outside.txt'), join(root, 'svc', 'CLAUDE.md'));
+
+    await syncAgentConfig(root);
+
+    // Symlink trỏ ra ngoài repository: ghi qua nó sẽ sửa file ngoài repo.
+    expect(await readFile(join(outside, 'outside.txt'), 'utf8')).toBe('precious\n');
+    expect(logs.some((line) => line.startsWith('created '))).toBe(false);
+  });
 });
 
 describe('syncAgentConfig - skills synchronization', () => {
@@ -368,6 +393,49 @@ describe('syncAgentConfig - skills synchronization', () => {
     expect(existsSync(join(root, '.claude/skills/demo/linked'))).toBe(false);
   });
 
+  it('refuses a symlinked .claude instead of writing and deleting outside the repository', async () => {
+    const root = await makeRepo({ '.agent/skills/demo/SKILL.md': '# demo\n' });
+    const outside = await makeTempDir();
+    await makeDir(join(outside, 'skills/important-skill'));
+    await writeFile(join(outside, 'skills/important-skill/data.md'), 'keep\n', 'utf8');
+    await symlink(outside, join(root, '.claude'));
+
+    // Chuỗi path `.claude/skills` trông như nằm trong repository, nhưng thao tác
+    // thật sẽ rơi vào `outside` — phải từ chối thay vì ghi/xoá ở đó.
+    await expect(syncAgentConfig(root)).rejects.toThrow(/symbolic link/u);
+
+    expect(existsSync(join(outside, 'skills/important-skill/data.md'))).toBe(true);
+    expect(existsSync(join(outside, 'skills/demo'))).toBe(false);
+  });
+
+  it('refuses a symlinked .agent/skills source root instead of following it', async () => {
+    const root = await makeRepo({});
+    const outside = await makeTempDir();
+    await makeDir(join(outside, 'demo'));
+    await writeFile(join(outside, 'demo/SKILL.md'), '# demo\n', 'utf8');
+    await makeDir(join(root, '.agent'));
+    await symlink(outside, join(root, '.agent', 'skills'));
+
+    await expect(syncAgentConfig(root)).rejects.toThrow(/symbolic link/u);
+
+    expect(existsSync(join(root, '.claude'))).toBe(false);
+  });
+
+  it('handles names that merely start with two dots', async () => {
+    // `..data` là tên hợp lệ, không phải đường dẫn thoát ra ngoài. Nếu phép kiểm
+    // tra dùng `startsWith('..')` thì entry này bị từ chối lúc dọn, và vì
+    // `repo-prepare` chạy trong `pnpm prepare` nên cả bước chuẩn bị sẽ hỏng.
+    const root = await makeRepo({
+      '.agent/skills/..data/x.md': 'x\n',
+      '.claude/skills/..stale/y.md': 'y\n',
+    });
+
+    await syncAgentConfig(root);
+
+    expect(existsSync(join(root, '.claude/skills/..data/x.md'))).toBe(true);
+    expect(existsSync(join(root, '.claude/skills/..stale'))).toBe(false);
+  });
+
   it('runs repeatedly without rewriting or removing anything on the second run', async () => {
     const root = await makeRepo({
       'svc/AGENTS.md': 'rules\n',
@@ -388,8 +456,18 @@ describe('syncAgentConfig - skills synchronization', () => {
   it('skips .git instead of walking the object store', async () => {
     const root = await makeRepo({ 'svc/AGENTS.md': 'rules\n' });
 
+    // `.git` không nằm trong `.gitignore`, nên nếu không chặn tường minh thì
+    // walker sẽ đi vào đó. Đặt sẵn một `AGENTS.md` bên trong để phép kiểm tra
+    // thực sự phát hiện được việc chặn `.git` bị gỡ: một cây `git init` trống
+    // không có `AGENTS.md` nào trong `.git`, nên khẳng định trên log sẽ luôn
+    // đúng kể cả khi guard bị xoá.
+    const gitDir = join(root, '.git');
+    await mkdir(join(gitDir, 'hooks'), { recursive: true });
+    await writeFile(join(gitDir, 'hooks', 'AGENTS.md'), 'inside git\n', 'utf8');
+
     await syncAgentConfig(root);
 
+    expect(existsSync(join(gitDir, 'hooks', 'CLAUDE.md'))).toBe(false);
     expect(logs.some((line) => line.includes('.git/'))).toBe(false);
   });
 });
