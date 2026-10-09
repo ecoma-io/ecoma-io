@@ -32,6 +32,11 @@ jobs:
     name: AI review (OpenCodeReview)
     runs-on: ubuntu-26.04
     timeout-minutes: 60
+    env:
+      # Tắt self-updater chạy nền của CLI để tránh thay package giữa chừng
+      # (npm i -g @latest tách rời trong lúc 'ocr config set' đang chạy)
+      # gây ra các lỗi "Cannot find module" cạnh tranh.
+      OCR_NO_UPDATE: '1'
     steps:
       - name: Resolve PR info and check for changes
         id: pr
@@ -68,11 +73,36 @@ jobs:
             core.setOutput('skip_review', hasNoChanges ? 'true' : 'false');
 
             if (hasNoChanges) {
-              core.info('No changes detected between head and base. Skipping review.');
+              core.info('No changes detected between head and base. Skipping review. Step will be skipped.');
             }
+
+      - name: Preflight OpenCodeReview CLI
+        if: steps.pr.outputs.skip_review != 'true'
+        id: preflight
+        shell: bash
+        env:
+          OCR_VERSION_PIN: '1.12.12'
+        run: |
+          set -euo pipefail
+          # npm >= 11 gate install scripts bằng allow-scripts; bật đúng cho package
+          # này để postinstall (tải binary + verify checksum) chạy một cách xác định.
+          npm config set allow-scripts="@alibaba-group/open-code-review"
+          npm install -g --no-audit --no-fund "@alibaba-group/open-code-review@${OCR_VERSION_PIN}"
+          if ! command -v ocr >/dev/null 2>&1; then
+            echo "::error::'ocr' executable không nằm trên PATH sau khi cài @alibaba-group/open-code-review@${OCR_VERSION_PIN}; kiểm tra liên kết bin toàn cục của npm."
+            exit 1
+          fi
+          OCR_VERSION_OUTPUT="$(ocr version 2>/dev/null || true)"
+          printf '%s\n' "$OCR_VERSION_OUTPUT"
+          if ! printf '%s' "$OCR_VERSION_OUTPUT" | grep -qE "open-code-review[[:space:]]+v${OCR_VERSION_PIN//./\\.}([[:space:]]|\$)"; then
+            echo "::error::Phiên bản OpenCodeReview không khớp pin: muốn v${OCR_VERSION_PIN}, nhận được: ${OCR_VERSION_OUTPUT}"
+            exit 1
+          fi
+          echo "OpenCodeReview preflight OK: v${OCR_VERSION_PIN}."
 
       - name: Review the pull request
         id: ocr
+        if: steps.pr.outputs.skip_review != 'true'
         uses: alibaba/open-code-review@182898cf522da3d04157b422752d028417974e19 # v1.12.12
         with:
           base_ref: ${{ steps.pr.outputs.base_ref }}
@@ -124,11 +154,11 @@ jobs:
           llm_use_anthropic: false
           llm_protocol: openai
           language: Vietnamese
-          ocr_version: 1.12.11
+          ocr_version: 1.12.12
           llm_timeout: '360'
           review_task_timeout: '30'
           effort: high
-          review_concurrency: '16'
+          review_concurrency: '8'
           stream_progress: 'true'
           upload_artifacts: 'true'
           sticky_summary: 'true'
