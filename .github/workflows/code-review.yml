@@ -75,6 +75,30 @@ jobs:
               core.info('No changes detected between head and base. Skipping review. Step will be skipped.');
             }
 
+      - name: Preflight OpenCodeReview CLI
+        if: steps.pr.outputs.skip_review != 'true'
+        id: preflight
+        shell: bash
+        env:
+          OCR_VERSION_PIN: '1.12.12'
+        run: |
+          set -euo pipefail
+          # npm >= 11 gate install scripts bằng allow-scripts; bật đúng cho package
+          # này để postinstall (tải binary + verify checksum) chạy một cách xác định.
+          npm config set allow-scripts="@alibaba-group/open-code-review"
+          npm install -g --no-audit --no-fund "@alibaba-group/open-code-review@${OCR_VERSION_PIN}"
+          if ! command -v ocr >/dev/null 2>&1; then
+            echo "::error::'ocr' executable không nằm trên PATH sau khi cài @alibaba-group/open-code-review@${OCR_VERSION_PIN}; kiểm tra liên kết bin toàn cục của npm."
+            exit 1
+          fi
+          OCR_VERSION_OUTPUT="$(ocr version 2>/dev/null || true)"
+          printf '%s\n' "$OCR_VERSION_OUTPUT"
+          if ! printf '%s' "$OCR_VERSION_OUTPUT" | grep -qE "open-code-review[[:space:]]+v${OCR_VERSION_PIN//./\\.}([[:space:]]|\$)"; then
+            echo "::error::Phiên bản OpenCodeReview không khớp pin: muốn v${OCR_VERSION_PIN}, nhận được: ${OCR_VERSION_OUTPUT}"
+            exit 1
+          fi
+          echo "OpenCodeReview preflight OK: v${OCR_VERSION_PIN}."
+
       - name: Review the pull request
         id: ocr
         if: steps.pr.outputs.skip_review != 'true'
