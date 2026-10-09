@@ -1,5 +1,16 @@
 @import 'tailwindcss';
 
+/*
+ * Tailwind CSS 4 chỉ tự quét module graph tĩnh của app consuming. Template
+ * của shared lib `@ecoma-io/layout-public` resolve qua nuxt.config alias
+ * không nằm trong graph đó, nên utility class chỉ xuất hiện trong template
+ * của lib (sr-only, backdrop-blur, max-w-6xl, motion-safe:*) bị rớt khỏi CSS
+ * build. Đăng ký lib source ở đây (đường dẫn RELATIVE so với chính file CSS
+ * này — Tailwind v4 resolve `@source` theo file chứa nó, không phải workspace
+ * root). Chi tiết: issue #58.
+ */
+@source '../../../../../libs/layout-public/**/*.{vue,ts}';
+
 .docs-content h1 {
   @apply mb-6 scroll-mt-20 text-3xl font-bold tracking-tight text-slate-900;
 }

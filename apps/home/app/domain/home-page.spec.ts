@@ -51,8 +51,9 @@ describe('app/pages/[locale]/index.vue', () => {
 
     expect(text).toContain('Every page is served under a locale prefix');
     expect(text).toContain('Public pages are served from the edge and rendered on the server.');
-    // Shell nhận `route.path` nên nav dựng theo chính locale của trang.
-    expect(wrapper.find('header a').attributes('href')).toBe('/en');
+    // Shell nhận `route.path` nên brand dựng theo chính locale của trang.
+    // Anchor đầu header là skip link (`#public-main`) — chọn anchor theo href.
+    expect(wrapper.find('header a[href="/en"]').exists()).toBe(true);
     expect(wrapper.find('main').exists()).toBe(true);
     expect(wrapper.find('footer').exists()).toBe(true);
   });
@@ -63,7 +64,7 @@ describe('app/pages/[locale]/index.vue', () => {
 
     expect(text).toContain('Mọi trang đều được phục vụ dưới một locale prefix');
     expect(text).toContain('Các trang public được phục vụ từ edge và render ở server.');
-    expect(wrapper.find('header a').attributes('href')).toBe('/vi');
+    expect(wrapper.find('header a[href="/vi"]').exists()).toBe(true);
   });
 
   it('mỗi locale render nội dung riêng — không rò nội dung locale kia', () => {

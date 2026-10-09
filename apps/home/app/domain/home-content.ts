@@ -33,6 +33,10 @@ export type HomeContent = {
   readonly platformLabel: string;
   /** Các điểm mô tả nền tảng, trung tính và đúng với bề mặt public hiện tại. */
   readonly platformPoints: readonly string[];
+  /** Nhãn CTA hero trỏ tới docs — destination thật duy nhất của public web. */
+  readonly docsCta: string;
+  /** Nhãn CTA phụ hero trỏ tới blog. */
+  readonly blogCta: string;
 };
 
 /**
@@ -55,6 +59,8 @@ export const HOME_CONTENT: Readonly<Record<PublicLocale, HomeContent>> = Object.
       'Public pages are served from the edge and rendered on the server.',
       'English and Vietnamese are first-class locales, each with its own stable URL.',
     ]),
+    docsCta: 'Read the docs',
+    blogCta: 'Visit the blog',
   }),
   vi: Object.freeze({
     title: 'Ecoma.io — trang chủ public',
@@ -69,5 +75,7 @@ export const HOME_CONTENT: Readonly<Record<PublicLocale, HomeContent>> = Object.
       'Các trang public được phục vụ từ edge và render ở server.',
       'Tiếng Anh và tiếng Việt đều là locale hạng nhất, mỗi locale có URL ổn định riêng.',
     ]),
+    docsCta: 'Đọc tài liệu',
+    blogCta: 'Xem blog',
   }),
 });
