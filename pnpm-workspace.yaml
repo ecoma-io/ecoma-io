@@ -20,3 +20,22 @@ allowBuilds:
   unrs-resolver: true
   workerd: true
   sharp: true
+
+# Patch tạm cho `@nx/js`, chờ fix chính thức từ upstream.
+#
+# `getInputs()` trong `@nx/js/typescript` áp dụng `offset` của thư mục chứa
+# tsconfig cho `include` nhưng bỏ sót cho `exclude`. Nuxt sinh
+# `apps/*/.nuxt/tsconfig.{app,node}.json` với `exclude` chứa `../../../node_modules`
+# (trỏ ra `node_modules` ở workspace root), nên khi thiếu `offset` thì
+# `joinPathFragments` triệt tiêu `..` với `{workspaceRoot}` và cho ra fileset
+# trần `node_modules/**/*` — Nx từ chối:
+#   "!node_modules/**/*" is an invalid fileset.
+#
+# Hệ quả phụ: mọi `exclude` lồng trong `.nuxt/` đều bị tính sai đường dẫn
+# (ví dụ `../dist` thành `!{workspaceRoot}/apps/dist` thay vì
+# `!{projectRoot}/dist`), làm hash/invalidation của target `typecheck` sai.
+#
+# Xoá entry này khi `@nx/js` đã có fix (theo dõi nrwl/nx#26521 — bug vẫn còn
+# trên master tại thời điểm thêm patch).
+patchedDependencies:
+  '@nx/js@23.3.0': patches/@nx__js@23.3.0.patch
