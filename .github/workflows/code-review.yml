@@ -32,6 +32,10 @@ jobs:
     name: AI review (OpenCodeReview)
     runs-on: ubuntu-26.04
     timeout-minutes: 60
+    env:
+      # Disable the CLI's background self-updater to prevent package replacement mid-execution
+      # (npm i -g @latest detached while 'ocr config set' runs) which causes "Cannot find module" races.
+      OCR_NO_UPDATE: '1'
     steps:
       - name: Resolve PR info and check for changes
         id: pr
@@ -68,11 +72,12 @@ jobs:
             core.setOutput('skip_review', hasNoChanges ? 'true' : 'false');
 
             if (hasNoChanges) {
-              core.info('No changes detected between head and base. Skipping review.');
+              core.info('No changes detected between head and base. Skipping review. Step will be skipped.');
             }
 
       - name: Review the pull request
         id: ocr
+        if: steps.pr.outputs.skip_review != 'true'
         uses: alibaba/open-code-review@182898cf522da3d04157b422752d028417974e19 # v1.12.12
         with:
           base_ref: ${{ steps.pr.outputs.base_ref }}
@@ -124,11 +129,11 @@ jobs:
           llm_use_anthropic: false
           llm_protocol: openai
           language: Vietnamese
-          ocr_version: 1.12.11
+          ocr_version: 1.12.12
           llm_timeout: '360'
           review_task_timeout: '30'
           effort: high
-          review_concurrency: '16'
+          review_concurrency: '8'
           stream_progress: 'true'
           upload_artifacts: 'true'
           sticky_summary: 'true'
