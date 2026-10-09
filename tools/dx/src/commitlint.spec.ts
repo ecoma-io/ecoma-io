@@ -19,7 +19,9 @@ function lint(message: string): { ok: boolean; report: string } {
 }
 
 describe('commitlint config: scope policy', () => {
-  it('accepts commits with no scope at all', { timeout: 15_000 }, async () => {
+  // Timeout của các test spawn commitlint thật là `testTimeout` cấp project
+  // trong vitest.config.mts — không đặt lại rời rạc từng test.
+  it('accepts commits with no scope at all', async () => {
     // Scope là optional: không có gì để chấm, `scope-enum` trả `[true, …]`.
     for (const message of [
       'feat: add cache',
@@ -33,7 +35,7 @@ describe('commitlint config: scope policy', () => {
     }
   });
 
-  it('accepts a scope that names an Nx project', { timeout: 15_000 }, async () => {
+  it('accepts a scope that names an Nx project', async () => {
     for (const message of [
       'chore(dx): update repository tooling',
       'fix(home): fix route #123',
@@ -67,7 +69,7 @@ describe('commitlint config: scope policy', () => {
 });
 
 describe('commitlint config: ascii-only-message', () => {
-  it('accepts ASCII punctuation and symbols', { timeout: 30_000 }, async () => {
+  it('accepts ASCII punctuation and symbols', async () => {
     for (const message of [
       'feat(dx): support foo_bar-$%^*',
       'fix(home): fix route #123',
@@ -81,7 +83,7 @@ describe('commitlint config: ascii-only-message', () => {
     }
   });
 
-  it('rejects non-ASCII characters anywhere in the message', { timeout: 30_000 }, async () => {
+  it('rejects non-ASCII characters anywhere in the message', async () => {
     // Cùng một rule cho header, body và footer: chỉ tập trung kiểm header sẽ
     // để lọt một message mà body dán tiếng Việt vào.
     const messages = [
