@@ -535,12 +535,19 @@ describe('syncAgentConfig - failure handling', () => {
 
   it('keeps ROOT_DIR out of the removal path', async () => {
     // Không có `.agent/skills` trong repo tạm: bản sao dọn dẹp phải không bao
-    // giờ chạm tới gì ngoài `.claude/skills`.
+    // giờ chạm tới gì ngoài `.claude/skills` của repo đang xử lý.
     const root = await makeRepo({ 'svc/AGENTS.md': 'rules\n' });
+
+    // Trạng thái `.claude/skills` của repo thật được chụp lại thay vì giả định
+    // nó luôn vắng mặt: spec CLI ở `index.spec.ts` cố ý chạy sync-agent-config
+    // thật trên ROOT_DIR, nên artifact đó có thể tồn tại sẵn tuỳ thứ tự chạy.
+    // Điều cần chứng minh là lần chạy này không tạo, xoá hay đổi nó.
+    const rootSkillsPath = join(ROOT_DIR, '.claude', 'skills');
+    const rootSkillsExistedBefore = existsSync(rootSkillsPath);
 
     await syncAgentConfig(root);
 
     expect(relative(ROOT_DIR, root).startsWith('..')).toBe(true);
-    expect(existsSync(join(ROOT_DIR, '.claude', 'skills'))).toBe(false);
+    expect(existsSync(rootSkillsPath)).toBe(rootSkillsExistedBefore);
   });
 });
