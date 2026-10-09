@@ -15,5 +15,6 @@ export const app = defineCommand({
     'repo-prepare': () => import('./repo-prepare.js').then((m) => m.default),
     'sync-agent-config': () => import('./sync-agent-config.js').then((m) => m.default),
     'pr-check': () => import('./pr-check.js').then((m) => m.default),
+    'arch-check': () => import('./arch-check.js').then((m) => m.default),
   },
 });

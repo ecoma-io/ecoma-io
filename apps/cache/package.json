@@ -5,7 +5,7 @@
   "dependencies": {},
   "nx": {
     "tags": [
-      "type:service",
+      "type:composition",
       "scope:platform",
       "runtime:edge"
     ],
