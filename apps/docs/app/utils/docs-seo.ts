@@ -11,8 +11,8 @@
  *   phải bản dịch) — mỗi URL tự canonical chính nó.
  * - hreflang chỉ sinh cho locale **có bản dịch thật** và đi qua `switchLocale`
  *   của `i18n-public`, không ghép chuỗi `/${locale}${...}` thủ công.
- * - origin là hằng số `ecoma.io`: không đọc host của request nên kết quả
- *   deterministic và không phụ thuộc môi trường preview.
+ * - origin là hằng số `ecoma.io` (`../domain/docs-origin`): không đọc host của
+ *   request nên kết quả deterministic và không phụ thuộc môi trường preview.
  */
 
 import {
@@ -21,10 +21,8 @@ import {
   switchLocale,
   type PublicLocale,
 } from '@ecoma-io/i18n-public';
+import { toProductionUrl } from '../domain/docs-origin';
 import { docsUiStrings } from './docs-ui-strings';
-
-/** Origin public của bề mặt `ecoma.io` — hằng số, không suy từ request. */
-const PUBLIC_ORIGIN = 'https://ecoma.io';
 
 /** Một link `alternate` hreflang đã dựng sẵn cho `useHead`. */
 export type DocsAlternateLink = {
@@ -39,18 +37,19 @@ export type DocsSeo = {
   readonly lang: string;
   /** `document.title`. */
   readonly title: string;
-  /** `description` từ frontmatter (rỗng nếu page không khai báo). */
+  /**
+   * `description` từ frontmatter (rỗng nếu page không khai báo).
+   *
+   * Chuỗi rỗng là contract có chủ ý: route bỏ hẳn thẻ meta description khi giá
+   * trị rỗng, thay vì phát một thẻ rỗng. Việc bỏ thẻ thuộc route, không phải hàm
+   * thuần này.
+   */
   readonly description: string;
   /** URL tuyệt đối canonical của chính pathname hiện tại. */
   readonly canonical: string;
   /** Link `alternate` cho các locale có bản dịch thật. */
   readonly alternates: readonly DocsAlternateLink[];
 };
-
-/** URL tuyệt đối cho một public pathname. */
-export function absolutePublicUrl(pathname: string): string {
-  return `${PUBLIC_ORIGIN}${pathname}`;
-}
 
 /**
  * Head của một docs page.
@@ -84,16 +83,19 @@ export function buildDocsSeo(input: {
     alternates.push({
       rel: 'alternate',
       hreflang: definition.hreflang,
-      href: absolutePublicUrl(switched.path),
+      href: toProductionUrl(switched.path),
     });
   }
 
   return {
     // `hreflang` của registry, không phải `locale` code: `vi` → `vi-VN`.
     lang: getLocaleDefinition(input.locale)?.hreflang ?? input.locale,
-    title: `${input.title ?? ''} · Ecoma ${strings.documentation}`,
+    // Title rỗng/thiếu thì bỏ hẳn separator: fallback về tên bề mặt đã
+    // localized thay vì sinh `" · Ecoma Documentation"` có separator lơ lửng.
+    // `trim()` vì frontmatter `"  Installation  "` không được lọt vào title.
+    title: `${input.title?.trim() || strings.documentation} · Ecoma ${strings.documentation}`,
     description: input.description ?? '',
-    canonical: absolutePublicUrl(input.pathname),
+    canonical: toProductionUrl(input.pathname),
     alternates,
   };
 }

@@ -78,9 +78,9 @@ export function getSectionCards(
       path: section.path,
       title: section.title,
       description: sectionDescriptions[section.path] ?? '',
-      // Cây đã được `getDocsRootNavigation` chuẩn hoá nên `children` ở đây đã
-      // sạch (không còn con trùng path với section).
-      entries: (section.children ?? []).map((child) => ({
+      // Không tin caller đã chuẩn hoá: index page của section (con trùng path
+      // với cha) bị loại tại đây nên hàm tự đủ với cây thô từ Nuxt Content.
+      entries: withoutSelfChild(section).map((child) => ({
         path: child.path,
         title: child.title,
       })),

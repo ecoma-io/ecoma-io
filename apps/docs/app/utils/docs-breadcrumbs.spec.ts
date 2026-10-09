@@ -121,4 +121,21 @@ describe('docs breadcrumbs', () => {
 
     expect(result).toEqual([{ path: '/en/docs/unknown', title: 'Unknown' }]);
   });
+
+  it('keeps only the current page when the docs root is unavailable, never leaking the locale-root crumb', () => {
+    // Không có `docsRootPath` thì không có anchor cho phép lọc prefix: crumb
+    // tuyệt đối nào cũng pass, kể cả locale-root `/en` → link 404. Đúng nhất là
+    // bỏ toàn bộ ancestor crumb, giữ page hiện tại (từ document nên tồn tại).
+    const result = buildDocsBreadcrumbs({
+      docsRootPath: undefined,
+      docsRootTitle: 'Documentation',
+      ancestorCrumbs: [crumb('/en', 'En'), crumb('/en/docs/getting-started', 'Getting Started')],
+      currentPath: '/en/docs/getting-started/installation',
+      currentTitle: 'Installation',
+    });
+
+    expect(result).toEqual([
+      { path: '/en/docs/getting-started/installation', title: 'Installation' },
+    ]);
+  });
 });

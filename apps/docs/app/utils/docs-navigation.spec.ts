@@ -116,4 +116,26 @@ describe('getSectionCards', () => {
       expect(card.entries.every((entry) => entry.path !== card.path)).toBe(true);
     }
   });
+
+  it('normalizes a raw tree itself: drops the self-child index even without getDocsRootNavigation', () => {
+    // `getSectionCards` nhận `navigation` thô từ caller: không được giả định
+    // ai đó đã chuẩn hoá — index page trùng path với section phải bị loại tại
+    // đây, còn children thật thì giữ nguyên.
+    const rawSections: ContentNavigationItem[] = [
+      {
+        title: 'Getting Started',
+        path: '/en/docs/getting-started',
+        children: [
+          { title: 'Getting Started', path: '/en/docs/getting-started' },
+          { title: 'Installation', path: '/en/docs/getting-started/installation' },
+        ],
+      },
+    ];
+    const cards = getSectionCards(rawSections, '/en/docs', {});
+
+    expect(cards).toHaveLength(1);
+    expect(cards[0]?.entries.map((entry) => entry.path)).toEqual([
+      '/en/docs/getting-started/installation',
+    ]);
+  });
 });

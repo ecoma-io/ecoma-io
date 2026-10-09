@@ -16,6 +16,11 @@
  * không nằm trong docs tree, rồi luôn kết thúc bằng **page hiện tại lấy từ
  * chính document** — không phải từ navigation — để nhãn luôn khớp tiêu đề
  * trang. Lọc theo pathname chứ không theo nhãn nên không phụ thuộc ngôn ngữ.
+ *
+ * Lọc theo prefix chỉ có nghĩa khi biết gốc docs: khi `docsRootPath` là
+ * `undefined` (docs landing không resolve được), không có prefix nào để neo
+ * phép lọc, nên hàm bỏ toàn bộ ancestor crumb và trả duy nhất page hiện tại —
+ * tốt hơn là rò một crumb như `/en` trỏ tới 404.
  */
 
 import type { ContentNavigationItem } from '@nuxt/content';
@@ -34,7 +39,8 @@ export type DocsBreadcrumb = {
  * `current` là document của pathname hiện tại.
  *
  * Bất biến: không mắt nào trùng path, mắt cuối luôn là page hiện tại, và mọi
- * mắt đều là pathname thật của content (không có `/en`).
+ * mắt đều là pathname thật của content (không có `/en`). Khi `docsRootPath`
+ * `undefined`, kết quả là duy nhất page hiện tại.
  */
 export function buildDocsBreadcrumbs(input: {
   readonly docsRootPath: string | undefined;
@@ -46,12 +52,18 @@ export function buildDocsBreadcrumbs(input: {
   const entries: DocsBreadcrumb[] = [];
   const seen = new Set<string>();
 
-  if (input.docsRootPath !== undefined) {
-    entries.push({ path: input.docsRootPath, title: input.docsRootTitle });
-    seen.add(input.docsRootPath);
+  if (input.docsRootPath === undefined) {
+    // Không có gốc docs thì không có anchor cho phép lọc prefix: mọi crumb
+    // tuyệt đối đều pass, kể cả locale-root `/en` → link 404. Chỉ giữ page
+    // hiện tại, lấy từ document nên vẫn tồn tại.
+    entries.push({ path: input.currentPath, title: input.currentTitle });
+    return entries;
   }
 
-  const docsPrefix = `${input.docsRootPath ?? ''}/`;
+  entries.push({ path: input.docsRootPath, title: input.docsRootTitle });
+  seen.add(input.docsRootPath);
+
+  const docsPrefix = `${input.docsRootPath}/`;
   for (const crumb of input.ancestorCrumbs) {
     if (seen.has(crumb.path) || crumb.path === input.currentPath) {
       continue;

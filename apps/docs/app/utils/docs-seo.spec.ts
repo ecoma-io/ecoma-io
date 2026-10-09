@@ -47,6 +47,54 @@ describe('docs SEO head', () => {
     ).toBe('Cài đặt · Ecoma Tài liệu');
   });
 
+  it('falls back to the localized surface name when the title is missing', () => {
+    // Title thiếu là hợp lệ (frontmatter không bắt buộc): fallback phải sang
+    // tên bề mặt đã localized, không sinh separator lơ lửng đầu chuỗi.
+    expect(
+      buildDocsSeo({
+        pathname: '/en/docs/getting-started/installation',
+        locale: 'en',
+        title: undefined,
+        description: 'Description',
+        availableLocales: ['en'],
+      }).title,
+    ).toBe('Documentation · Ecoma Documentation');
+
+    expect(
+      buildDocsSeo({
+        pathname: '/vi/docs/getting-started/installation',
+        locale: 'vi',
+        title: undefined,
+        description: 'Mô tả',
+        availableLocales: ['vi'],
+      }).title,
+    ).toBe('Tài liệu · Ecoma Tài liệu');
+  });
+
+  it('treats a whitespace-only title as missing', () => {
+    expect(
+      buildDocsSeo({
+        pathname: '/en/docs/getting-started/installation',
+        locale: 'en',
+        title: '   ',
+        description: 'Description',
+        availableLocales: ['en'],
+      }).title,
+    ).toBe('Documentation · Ecoma Documentation');
+  });
+
+  it('trims surrounding whitespace from the page title', () => {
+    expect(
+      buildDocsSeo({
+        pathname: '/en/docs/getting-started/installation',
+        locale: 'en',
+        title: '  Installation  ',
+        description: 'Description',
+        availableLocales: ['en'],
+      }).title,
+    ).toBe('Installation · Ecoma Documentation');
+  });
+
   it('takes the description from the document frontmatter', () => {
     expect(
       buildDocsSeo({
