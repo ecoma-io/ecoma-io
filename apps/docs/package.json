@@ -13,7 +13,7 @@
         "executor": "nx:run-commands",
         "defaultConfiguration": "production",
         "dependsOn": [
-          "build"
+          "build-static"
         ],
         "options": {
           "cwd": "apps/docs",
