@@ -22,6 +22,14 @@ export type DocsUiStrings = {
   readonly previous: string;
   /** Nhãn link tới document kế tiếp. */
   readonly next: string;
+  /**
+   * Tên truy cập được của `<nav>` bọc cặp prev/next.
+   *
+   * Landmark `<nav>` phải có tên phân biệt với các `<nav>` khác trên trang
+   * (sidebar, TOC, breadcrumb, điều hướng global của shell); thiếu tên thì
+   * screen reader chỉ đọc "navigation" mà không nói là điều hướng nào.
+   */
+  readonly pagination: string;
   /** Tên bề mặt docs — dùng cho breadcrumb gốc và nhãn navigation. */
   readonly documentation: string;
   /** Tiêu đề của khối card section trên docs landing. */
@@ -33,6 +41,7 @@ const DOCS_UI_STRINGS: Readonly<Record<PublicLocale, DocsUiStrings>> = Object.fr
     onThisPage: 'On this page',
     previous: 'Previous',
     next: 'Next',
+    pagination: 'Pagination',
     documentation: 'Documentation',
     sections: 'Sections',
   }),
@@ -40,6 +49,7 @@ const DOCS_UI_STRINGS: Readonly<Record<PublicLocale, DocsUiStrings>> = Object.fr
     onThisPage: 'Nội dung',
     previous: 'Trước',
     next: 'Tiếp',
+    pagination: 'Phân trang',
     documentation: 'Tài liệu',
     sections: 'Các phần',
   }),

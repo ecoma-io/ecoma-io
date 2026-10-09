@@ -8,6 +8,7 @@ describe('docs UI strings', () => {
       onThisPage: 'On this page',
       previous: 'Previous',
       next: 'Next',
+      pagination: 'Pagination',
       documentation: 'Documentation',
       sections: 'Sections',
     });
@@ -15,6 +16,7 @@ describe('docs UI strings', () => {
       onThisPage: 'Nội dung',
       previous: 'Trước',
       next: 'Tiếp',
+      pagination: 'Phân trang',
       documentation: 'Tài liệu',
       sections: 'Các phần',
     });
@@ -32,7 +34,7 @@ describe('docs UI strings', () => {
   it('does not leak English copy into the Vietnamese strings', () => {
     const vi = docsUiStrings('vi');
     for (const value of Object.values(vi)) {
-      expect(value).not.toMatch(/On this page|Previous|Next|Documentation|Sections/u);
+      expect(value).not.toMatch(/On this page|Previous|Next|Pagination|Documentation|Sections/u);
     }
   });
 
@@ -41,5 +43,6 @@ describe('docs UI strings', () => {
     expect(vi.onThisPage).toBe('Nội dung');
     expect(vi.previous).toBe('Trước');
     expect(vi.next).toBe('Tiếp');
+    expect(vi.pagination).toBe('Phân trang');
   });
 });

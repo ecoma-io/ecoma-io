@@ -9,6 +9,11 @@
   `rel="prev"`/`rel="next"` là gợi ý điều hướng tuần tự cho crawler; nhãn
   `Previous`/`Next` đã localized. Mục không tồn tại render khoảng trống để
   layout hai cột không xô lệch khi ở đầu hoặc cuối chuỗi.
+
+  `<nav>` ở đây cần **tên truy cập được** (`labels.pagination`): trên một trang
+  docs có nhiều landmark `nav` (global của shell, language, breadcrumb, sidebar,
+  TOC), nên một `nav` không tên chỉ được đọc là "navigation" và người dùng
+  screen reader không biết đó là điều hướng nào.
 -->
 <script setup lang="ts">
 // Hai hướng điều hướng (`previous`/`next`) cộng nhãn localized của chúng —
@@ -20,13 +25,20 @@ const { previous, next, labels } = defineProps<{
   readonly previous: { readonly path: string; readonly title: string } | undefined;
   /** Document liền sau, hoặc `undefined` nếu đang ở cuối chuỗi. */
   readonly next: { readonly path: string; readonly title: string } | undefined;
-  /** Nhãn localized cho hai hướng. */
-  readonly labels: { readonly previous: string; readonly next: string };
+  /** Nhãn localized cho hai hướng, cộng tên truy cập được của `<nav>`. */
+  readonly labels: {
+    readonly previous: string;
+    readonly next: string;
+    readonly pagination: string;
+  };
 }>();
 </script>
 
 <template>
-  <nav class="mt-10 grid gap-4 border-t border-slate-200 pt-6 sm:grid-cols-2">
+  <nav
+    :aria-label="labels.pagination"
+    class="mt-10 grid gap-4 border-t border-slate-200 pt-6 sm:grid-cols-2"
+  >
     <div>
       <a
         v-if="previous"
