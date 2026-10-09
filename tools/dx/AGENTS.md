@@ -7,3 +7,5 @@
 - Repository preparation must remain safe for repeated execution.
 - Recursive repository operations must respect `.gitignore`.
 - `CLAUDE.md` is generated from `AGENTS.md`; do not make `CLAUDE.md` the source of truth.
+- `.claude/skills/` is generated from `.agent/skills/`; do not make `.claude/skills/` the source of truth, and never author hand-written skills there — they belong in `.agent/skills/`.
+- Agent-configuration synchronization must be idempotent: copy new and changed files, delete destination entries with no source counterpart, and preserve `.claude/skills/` untouched when the `.agent/skills/` source is absent.
