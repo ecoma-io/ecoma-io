@@ -26,3 +26,4 @@ allowBuilds:
 # bị tính sai fileset. Gỡ khi upstream fix (nrwl/nx#26521).
 patchedDependencies:
   '@nx/js@23.3.0': patches/@nx__js@23.3.0.patch
+  nuxt-content-assets@3.0.1: patches/nuxt-content-assets@3.0.1.patch
