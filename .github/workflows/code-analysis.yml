@@ -15,6 +15,9 @@ permissions:
 jobs:
   codeql:
     name: CodeQL (${{ matrix.language }})
+    # PR đã được scan đầy đủ ở lượt pull_request trước khi vào merge queue, nên
+    # lượt chạy lặp lại ở merge_group chỉ tốn runner mà không thêm thông tin.
+    if: github.event_name != 'merge_group'
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
@@ -45,6 +48,8 @@ jobs:
 
   semgrep:
     name: Semgrep
+    # Xem comment ở job `codeql` phía trên.
+    if: github.event_name != 'merge_group'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
@@ -72,6 +77,8 @@ jobs:
 
   gitleaks:
     name: Gitleaks
+    # Xem comment ở job `codeql` phía trên.
+    if: github.event_name != 'merge_group'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
@@ -147,10 +154,20 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
+      - name: Analysis intentionally skipped for merge_group
+        # Trong merge queue, các job analysis (codeql/semgrep/gitleaks) đã bị skip
+        # vì PR đã được scan đầy đủ ở lượt pull_request; gate không có kết quả nào
+        # để tổng hợp nên chỉ ghi log rồi kết thúc thành công. Không coi lượt skip
+        # này là một lần scan đã qua.
+        if: github.event_name == 'merge_group'
+        run: |
+          echo "::notice::[analysis-gate] Security analysis intentionally skipped for merge_group; the pull_request run already scanned this change set."
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name != 'merge_group'
         with:
           persist-credentials: false
       - uses: ./.github/actions/aggregate-gate
+        if: github.event_name != 'merge_group'
         with:
           results: ${{ join(needs.*.result, ' ') }}
           gate-name: 'analysis-gate'

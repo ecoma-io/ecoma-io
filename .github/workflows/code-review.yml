@@ -1,12 +1,6 @@
 name: Code Review
 
 on:
-  pull_request_target:
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - ready_for_review
   workflow_dispatch:
     inputs:
       pr_number:
@@ -24,7 +18,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: ocr-pr-${{ github.event.pull_request.number || inputs.pr_number }}
+  group: ocr-pr-${{ inputs.pr_number }}
   cancel-in-progress: true
 
 jobs:
@@ -46,22 +40,19 @@ jobs:
         with:
           github-token: ${{ github.token }}
           script: |
-            let pr;
-            if (context.eventName === 'workflow_dispatch') {
-              const requested = (process.env.PR_NUMBER || '').trim();
-              if (!/^[1-9][0-9]*$/.test(requested)) {
-                core.setFailed(`pr_number must be a pull request number alone; got ${JSON.stringify(requested)}.`);
-                return;
-              }
-              const { data } = await github.rest.pulls.get({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: Number(requested),
-              });
-              pr = data;
-            } else {
-              pr = context.payload.pull_request;
+            // Workflow chỉ còn trigger workflow_dispatch (trigger privileged
+            // theo event payload đã bị bỏ), nên PR cần review luôn được đọc theo
+            // số trong input — không còn event payload pull request để đọc.
+            const requested = (process.env.PR_NUMBER || '').trim();
+            if (!/^[1-9][0-9]*$/.test(requested)) {
+              core.setFailed(`pr_number must be a pull request number alone; got ${JSON.stringify(requested)}.`);
+              return;
             }
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(requested),
+            });
 
             core.setOutput('base_ref', pr.base.ref);
             core.setOutput('head_sha', pr.head.sha);
@@ -145,9 +136,9 @@ jobs:
 
             Do not report style-only issues unless explicitly required by repository rules.
 
-            PR Title: ${{ steps.pr.outputs.title || github.event.pull_request.title }}
+            PR Title: ${{ steps.pr.outputs.title }}
             PR Description:
-            ${{ steps.pr.outputs.body || github.event.pull_request.body }}
+            ${{ steps.pr.outputs.body }}
           llm_url: ${{ secrets.ECOMA_LLM_BASE_URL }}
           llm_auth_token: ${{ secrets.ECOMA_LLM_API_KEY }}
           llm_model: glm-5.3-flash
