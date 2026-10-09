@@ -39,13 +39,14 @@
 ## Workflow
 
 - Priority: fix bugs first, then feature improvements — unless I ask to prioritise something specific; my call overrides these rules.
-- Every non-trivial task gets, in this order, before any code is written — by me directly or by dispatched subagents:
-  1. Issue filed, branch pushed to the remote, draft PR opened against the default branch and linking the issue.
-  2. Update code and verify it locally before committing.
-  3. Push to the PR, monitor CI and Code Review/Scanning, and resolve every problem until CI is green, all conversations are resolved and the PR is ready for review.
+- Work follows five conditional phases — Understand, Plan, Execute, Validate, Deliver — skipped or combined as the task warrants.
+- Every independently trackable unit of implementation work needs a GitHub Issue: search existing Issues and PRs first, and reuse a suitable Issue or create one if none exists.
+- Well-defined implementation work: identify or create the Issue, then create a branch and open a linked draft PR against the default branch before editing code. Exploratory work with unclear scope: investigate enough to define the work first, then create the Issue and start implementing.
+- No new Issue for standalone explanations, advice, or reviews contained within an existing PR; track independent follow-up work separately.
 - Every commit — mine or a subagent's — is cryptographically signed; never push an unsigned commit. If commit signing isn't available, tell me instead of working around it.
 - When a task decomposes into independent units, dispatch them as concurrent subagents (multiple Agent calls in a single message) instead of implementing units one at a time. Put the issue number, branch, and draft PR in each subagent's prompt; give agents that edit the same repo concurrently their own worktree (`isolation: "worktree"`); and dispatch a dependent unit only after the units it depends on have reported back. The coordinating session synthesizes results and routes follow-ups; it does not do the units' file edits itself unless explicitly asked.
-- Single-unit work with nothing to parallelize can be done directly, still through the gate above. Requests phrased as handoff/handover are full ownership transfers to a single subagent that carries the unit end to end — no parallel split, no supervision. Report every dispatched subagent in the session summary alongside issues filed.
+- Single-unit work with nothing to parallelize can be done directly. Requests phrased as handoff/handover are full ownership transfers to a single subagent that carries the unit end to end — no parallel split, no supervision. Report every dispatched subagent in the session summary alongside issues filed.
+- Validate on the real artifacts: run the relevant checks locally before committing; after pushing, monitor CI and Code Review/Scanning and resolve every problem until CI is green and all review conversations are resolved. Finish by reporting verified results or blockers and updating the Issue and PR to match reality.
 
 ### Pull requests
 
