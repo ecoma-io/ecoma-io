@@ -52,14 +52,23 @@ names, globs, `tag:<name>` references, and negation (`!<pattern>`).
 
 ## Project Configuration
 
-Use `pnpm nx show project <name> --json` for a project's full resolved
-configuration — targets inferred by plugins included.
+Start with `pnpm nx show project <name> --json`: it returns the project's full
+effective configuration, with plugin-inferred targets and workspace defaults
+included.
 
-**Do not read `project.json` to understand a project.** In this workspace most
-projects have no `project.json` at all: their configuration lives in an `nx`
-field inside the project's `package.json`, and most targets are _inferred_ by the
-plugins configured in `nx.json`. Only reading a source file gives a partial,
-sometimes empty, answer.
+**Never treat `project.json`, `package.json`, or any other single configuration
+file as the complete resolved configuration.** Here most projects have no
+`project.json` — their configuration lives in an `nx` field inside the project's
+`package.json` — and most targets are _inferred_ by the plugins configured in
+`nx.json`. Two libraries (`libs/i18n-public`, `libs/layout-public`) do carry a
+`project.json`, which is where their tags and any handwritten targets live. A
+source file on its own gives a partial, sometimes empty, answer.
+
+When you need to know where a setting comes from, or which file to edit, go to
+the source: the project's `project.json` or the `nx` field in its `package.json`,
+plus the relevant plugin configuration in `nx.json`. Decide effective behavior
+from the resolved configuration, and decide where to change something from the
+configuration source.
 
 ```bash
 # Full resolved configuration (targets included)
@@ -73,8 +82,9 @@ pnpm nx show project @ecoma-io/home --json | jq -r '.root'
 
 ## Targets
 
-Targets are what can be run on a project. Which targets a project has is decided
-by the plugins in `nx.json` plus any `nx.targets` in its `package.json`.
+Targets are what can be run on a project. Which targets a project has comes from
+the plugins in `nx.json`, plus any `targets` written in its `project.json` or in
+the `nx` field of its `package.json`.
 
 ```bash
 # Target names available on a project
