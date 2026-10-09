@@ -66,7 +66,7 @@ const sections = computed<readonly SectionCard[]>(() =>
 <template>
   <PublicShell :path="currentPath" :available-locales="availableLocales">
     <div class="mx-auto w-full max-w-7xl px-4 py-6 lg:px-8">
-      <DocsBreadcrumbs :entries="breadcrumbs" :label="ui.documentation" />
+      <DocsBreadcrumbs :entries="breadcrumbs" :label="ui.breadcrumbs" />
 
       <div class="mt-4 lg:hidden">
         <DocsSidebar :items="navigation" :current-path="currentPath" :label="ui.documentation" />

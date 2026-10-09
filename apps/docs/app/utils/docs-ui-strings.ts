@@ -30,8 +30,17 @@ export type DocsUiStrings = {
    * screen reader chỉ đọc "navigation" mà không nói là điều hướng nào.
    */
   readonly pagination: string;
-  /** Tên bề mặt docs — dùng cho breadcrumb gốc và nhãn navigation. */
+  /** Tên bề mặt docs — dùng cho nhãn navigation và tiêu đề disclosure trên mobile. */
   readonly documentation: string;
+  /**
+   * Tên truy cập được của `<nav>` breadcrumb.
+   *
+   * Phải **khác** `documentation`: breadcrumb và sidebar là hai landmark
+   * `<nav>` cùng tồn tại trên một page, nên nếu dùng chung một chuỗi thì screen
+   * reader đọc hai mục "Documentation" giống hệt nhau và người dùng không phân
+   * biệt được đâu là breadcrumb, đâu là cây điều hướng.
+   */
+  readonly breadcrumbs: string;
   /** Tiêu đề của khối card section trên docs landing. */
   readonly sections: string;
 };
@@ -43,6 +52,7 @@ const DOCS_UI_STRINGS: Readonly<Record<PublicLocale, DocsUiStrings>> = Object.fr
     next: 'Next',
     pagination: 'Pagination',
     documentation: 'Documentation',
+    breadcrumbs: 'Breadcrumbs',
     sections: 'Sections',
   }),
   vi: Object.freeze({
@@ -51,6 +61,7 @@ const DOCS_UI_STRINGS: Readonly<Record<PublicLocale, DocsUiStrings>> = Object.fr
     next: 'Tiếp',
     pagination: 'Phân trang',
     documentation: 'Tài liệu',
+    breadcrumbs: 'Đường dẫn',
     sections: 'Các phần',
   }),
 });

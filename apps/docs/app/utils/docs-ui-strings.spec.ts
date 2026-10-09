@@ -10,6 +10,7 @@ describe('docs UI strings', () => {
       next: 'Next',
       pagination: 'Pagination',
       documentation: 'Documentation',
+      breadcrumbs: 'Breadcrumbs',
       sections: 'Sections',
     });
     expect(docsUiStrings('vi')).toEqual({
@@ -18,6 +19,7 @@ describe('docs UI strings', () => {
       next: 'Tiếp',
       pagination: 'Phân trang',
       documentation: 'Tài liệu',
+      breadcrumbs: 'Đường dẫn',
       sections: 'Các phần',
     });
   });
@@ -34,7 +36,22 @@ describe('docs UI strings', () => {
   it('does not leak English copy into the Vietnamese strings', () => {
     const vi = docsUiStrings('vi');
     for (const value of Object.values(vi)) {
-      expect(value).not.toMatch(/On this page|Previous|Next|Pagination|Documentation|Sections/u);
+      expect(value).not.toMatch(
+        /On this page|Previous|Next|Pagination|Documentation|Breadcrumbs|Sections/u,
+      );
+    }
+  });
+
+  it('keeps the nav landmark labels distinct within a locale', () => {
+    // Breadcrumb, sidebar và TOC là ba `<nav>` cùng tồn tại trên một page. Nếu
+    // hai trong số đó trùng tên truy cập được thì screen reader đọc hai landmark
+    // giống hệt nhau và người dùng không phân biệt được chúng — đúng lỗi đã có
+    // với nhãn `documentation` dùng cho cả breadcrumb lẫn sidebar. Test này chốt
+    // rằng tập nhãn landmark không có phần tử trùng.
+    for (const definition of PUBLIC_LOCALES) {
+      const ui = docsUiStrings(definition.code);
+      const landmarkLabels = [ui.documentation, ui.breadcrumbs, ui.onThisPage, ui.pagination];
+      expect(new Set(landmarkLabels).size).toBe(landmarkLabels.length);
     }
   });
 
