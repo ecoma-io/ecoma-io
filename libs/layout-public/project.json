@@ -8,9 +8,8 @@
   "targets": {
     "typecheck": {
       "executor": "nx:run-commands",
-      "//": "Chế độ `--build` (thay cho `--noEmit --composite false`): TS phải build các project reference trước thì `tsconfig.spec.json` mới thấy output `.d.ts` của lib. Cùng lý do, plugin `@nx/js/typescript` cũng chạy `tsc --build tsconfig.json --emitDeclarationOnly`.",
       "options": {
-        "command": "vue-tsc --build tsconfig.json --emitDeclarationOnly",
+        "command": "vue-tsc --noEmit --composite false -p tsconfig.spec.json",
         "cwd": "{projectRoot}"
       },
       "inputs": ["default"]
