@@ -131,12 +131,22 @@ Nx (`projectType` app/library vẫn là cấu hình Nx riêng, không liên quan
 
 ### 6.3 `scope` — ownership / dependency boundary
 
-`scope` nói project thuộc **sở hữu của ai**: một bounded context hoặc một vùng ownership chia sẻ. Dependency chéo scope chỉ đi
-qua `type:contracts` của provider (§7).
+`scope` nói project thuộc **sở hữu của ai**: một bounded context hoặc một vùng ownership chia sẻ.
+
+Trục ownership có hai tầng nền: `scope:shared` là **đáy** — chỉ được phụ thuộc `scope:shared` (không platform, không
+implementation, không contract của scope nghiệp vụ nào — `onlyDependOnLibsWithTags` khớp bất kỳ tag nào trong allowlist nên
+đưa `type:contracts` vào đây là mở `shared → contracts của scope bất kỳ`, đảo chiều tầng đáy) — còn
+`scope:platform` được phép phụ thuộc thêm `shared` và `type:contracts` của scope bất kỳ. Chiều ngược lại (`shared` → `platform`)
+bị chặn chủ đích: platform đã phụ thuộc shared, mở chiều ngược là mời dependency cycle giữa hai tầng nền.
+
+Bounded context/product scope (`identity`, `backoffice`, `llm`, `payment`, …) được phụ thuộc **toàn bộ implementation** của
+hai tầng nền — đó là vai trò foundation layer, khác hẳn dependency chéo scope nghiệp vụ: giữa các scope nghiệp vụ ngang hàng,
+chỉ được phụ thuộc qua `type:contracts` của provider, không bao giờ import implementation của scope khác.
 
 Scope hiện dùng: `public`, `shared`, `platform`, `identity`, `backoffice`, `llm`, `payment`, `messaging`, `notifications`,
 `local`. Scope mới thêm vào phải được khai báo trong constraint của `.oxlintrc.json` và `KNOWN_SCOPES` của
-`tools/dx/src/arch-tags.ts` — hai nguồn này được test ràng buộc đồng bộ.
+`tools/dx/src/arch-tags.ts` — hai nguồn này được test ràng buộc đồng bộ hai chiều: scope nào thiếu constraint, constraint
+nào nhắm scope lạ, hay runtime constraint lệch ma trận compatibility đều bị test bắt.
 
 ## 7. Dependency rules
 
@@ -144,25 +154,34 @@ Hai lượt kiểm với cơ chế khác nhau, bổ sung cho nhau:
 
 **Lượt direct + transitive theo tag — Oxlint module boundaries** (`@nx/enforce-module-boundaries` trong `.oxlintrc.json`):
 
-| Source                   | Quy tắc                                                                                          |
-| ------------------------ | ------------------------------------------------------------------------------------------------ |
-| `type:domain`            | Không phụ thuộc `application`/`infrastructure`/`composition`/`tooling` — **transitive**          |
-| `type:application`       | Không phụ thuộc `infrastructure`/`composition`/`tooling` — **transitive**                        |
-| `type:infrastructure`    | Chỉ phụ thuộc `domain`/`application`/`contracts`/`infrastructure`                                |
-| `type:contracts`         | Không phụ thuộc bất kỳ type implementation nào — **transitive**                                  |
-| `type:composition`       | Không phụ thuộc `type:tooling`; được compose `domain`/`application`/`infrastructure`/`contracts` |
-| `type:tooling`           | Chỉ phụ thuộc `type:tooling`                                                                     |
-| mọi scope                | Chéo scope chỉ qua `type:contracts` của provider                                                 |
-| composition edge/browser | Chỉ phụ thuộc lib `runtime:edge`/`universal` (tương ứng `browser`) — lượt direct                 |
+| Source                   | Quy tắc                                                                                                     |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `type:domain`            | Không phụ thuộc `application`/`infrastructure`/`composition`/`tooling` — **transitive**                     |
+| `type:application`       | Không phụ thuộc `infrastructure`/`composition`/`tooling` — **transitive**                                   |
+| `type:infrastructure`    | Chỉ phụ thuộc `domain`/`application`/`contracts`/`infrastructure`                                           |
+| `type:contracts`         | Không phụ thuộc bất kỳ type implementation nào — **transitive**                                             |
+| `type:composition`       | Chỉ compose `domain`/`application`/`infrastructure`/`contracts` — app không import app                      |
+| `type:tooling`           | Chỉ phụ thuộc `type:tooling`                                                                                |
+| bounded context scope    | Được dùng implementation của tầng nền (`shared`, `platform`); scope nghiệp vụ khác chỉ qua `type:contracts` |
+| `scope:shared`           | Chỉ phụ thuộc `scope:shared` — không contract của scope khác (đáy của trục ownership)                       |
+| `scope:platform`         | Chỉ phụ thuộc `scope:platform`/`scope:shared` + `type:contracts`                                            |
+| composition edge/browser | Chỉ phụ thuộc lib `runtime:edge`/`universal` (tương ứng `browser`) — lượt direct                            |
 
-`notDependOnLibsWithTags` là **transitive**: domain không chạm application kể cả qua chuỗi lib trung gian. Contracts được phép
-chéo scope (consumer phụ thuộc contract của provider) nhưng không bao giờ chạm implementation của provider — constraint
-`type:contracts` transitive chặn hướng đó.
+`notDependOnLibsWithTags` là **transitive**: domain không chạm application kể cả qua chuỗi lib trung gian. `onlyDependOnLibsWithTags`
+khớp **bất kỳ tag nào** trong danh sách nên allowlist scope đọc theo vai trò: tầng nền có mặt trong allowlist của bounded
+context là vì chúng là foundation layer được dùng trọn vẹn, không phải ngoại lệ chéo scope; implementation của scope nghiệp
+vụ khác không có mặt trong allowlist nào, và kể khi một edge import trượt vào allowlist, constraint `type:*` phía trên vẫn
+chặn hướng đó. Contracts được phép chéo scope (consumer phụ thuộc contract của provider) nhưng không bao giờ chạm
+implementation của provider — constraint `type:contracts` transitive chặn hướng đó. Allowlist `type:composition` cố ý
+KHÔNG chứa `type:composition` lẫn `type:tooling`: một deploy unit không bao giờ import trực tiếp deploy unit khác (app là
+composition root, không phải implementation cho app khác), và tooling là dev lane không làm lib runtime; các combo runtime
+dưới đây cũng không có hai type đó ở lượt direct — import chéo app không trượt qua được lượt nào.
 
 **Lượt graph-wide — `pnpm dx arch-check`** (`tools/dx`):
 
 - Tag schema: đúng một `scope:*`, `type:*`, `runtime:*` mỗi project; value thuộc allowlist; không còn value legacy
-  (`type:web`, `type:service`, `type:lib`, `type:tool`, `layer:*`, `runtime:node`).
+  (`type:web`, `type:service`, `type:lib`, `type:tool`, `runtime:node`, và **mọi** tag mang prefix `layer:*` — dimension đã
+  bị xoá nên bị chặn theo prefix, không theo danh sách value).
 - Runtime compatibility **transitive trên project graph**: `edge` không được chạm `native`/`browser` qua bất kỳ chuỗi
   dependency nào (và đối ứng cho `browser`/`native`); `universal` chỉ được phụ thuộc `universal`.
 

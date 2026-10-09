@@ -8,7 +8,9 @@
  *    allowlist, và không còn value legacy (`type:web`, `layer:*`, …). Lượt này
  *    chạy trên **tất cả** project, bất kể affected — một tag sai ở project không
  *    đổi file nào cũng phải bị bắt, vì chính tag là dữ liệu đầu vào của mọi
- *    constraint khác.
+ *    constraint khác. Danh sách `show` là truth: project nào có trong danh sách
+ *    mà vắng trong project graph thì check fail-closed (xem
+ *    `buildWorkspaceState`) — không skip lặng lẽ project nào.
  *
  * 2. **Runtime compatibility theo graph** — đọc project graph và kiểm mỗi edge
  *    theo ma trận `RUNTIME_COMPAT`: `runtime:edge` không được phụ thuộc
@@ -33,7 +35,16 @@ export const ARCH_TAG_DIMENSIONS = {
 
 export type ArchDimension = keyof typeof ARCH_TAG_DIMENSIONS;
 
-/** Value legacy của các dimension cũ — xuất hiện ở project nào cũng là lỗi. */
+/**
+ * Value legacy của các dimension cũ — xuất hiện ở project nào cũng là lỗi.
+ *
+ * Danh sách này chặn value biết trước của dimension VẪN TỒN TẠI (`type:*`,
+ * `runtime:*`): value đó giờ không thuộc allowlist nên lượt 1 đã báo
+ * `invalid-value`, mục ở đây chỉ để gắn nhãn `legacy-value` — lỗi taxonomy cũ,
+ * không phải gõ sai. Riêng dimension đã bị XOÁ (`layer`) bị chặn theo PREFIX
+ * trong `validateTagSchema`: mọi `layer:*` là di tích bất kể value, không thể
+ * lọt qua chỉ vì value chưa được liệt kê.
+ */
 export const LEGACY_TAG_VALUES: readonly string[] = [
   'type:web',
   'type:service',
@@ -97,7 +108,8 @@ export interface ArchTagViolation {
     | 'invalid-value'
     | 'legacy-value'
     | 'unknown-scope'
-    | 'runtime-compat';
+    | 'runtime-compat'
+    | 'graph-inconsistent';
   detail: string;
 }
 
@@ -131,16 +143,58 @@ export function collectWorkspaceState(): {
     };
   };
 
+  const projects = buildWorkspaceState(names, graph.graph);
+  return { projects };
+}
+
+/**
+ * Hợp nhất danh sách project authoritative (`nx show projects`) với project
+ * graph. Danh sách `show` là **truth về những project nào tồn tại** — project
+ * có trong danh sách mà vắng trong graph là lỗi dữ liệu graph (fail-closed,
+ * không skip lặng lẽ: một project bị bỏ qua là một project không ai kiểm tag).
+ *
+ * Node external/npm (package dependency, không phải project) nằm trong
+ * `dependencies` chứ không trong `nodes` của graph — chúng bị lọc khỏi danh
+ * sách edges project↔project, đúng vai trò, không phải lỗi.
+ *
+ * Tách thành helper thuần để unit test được mà không cần corrupt workspace thật.
+ */
+export function buildWorkspaceState(
+  names: readonly string[],
+  graph: {
+    nodes: Record<string, { name: string; data: { tags?: string[] } }>;
+    dependencies: Record<string, { target: string }[]>;
+  },
+): Map<string, ArchProjectNode> {
+  const missing = names.filter((name) => !graph.nodes[name]);
+  if (missing.length > 0) {
+    throw new GraphInconsistencyError(
+      `workspace projects missing from the Nx project graph — ` +
+        `arch-check refuses to validate a partial graph: ${missing.join(', ')}`,
+      missing,
+    );
+  }
+
   const projects = new Map<string, ArchProjectNode>();
   for (const name of names) {
-    const node = graph.graph.nodes[name];
-    if (!node) continue; // external node hoặc project ẩn — bỏ khỏi lượt kiểm tag
-    const deps = (graph.graph.dependencies[name] ?? [])
+    const node = graph.nodes[name];
+    const deps = (graph.dependencies[name] ?? [])
       .map((d) => d.target)
-      .filter((t) => graph.graph.nodes[t] !== undefined); // chỉ quan tâm project↔project
+      .filter((t) => graph.nodes[t] !== undefined); // chỉ quan tâm project↔project
     projects.set(name, { name, tags: node.data.tags ?? [], dependencies: deps });
   }
-  return { projects };
+  return projects;
+}
+
+/** Graph và danh sách project lệch nhau — workspace chưa sẵn sàng để validate. */
+export class GraphInconsistencyError extends Error {
+  readonly missingProjects: readonly string[];
+
+  constructor(message: string, missingProjects: readonly string[] = []) {
+    super(message);
+    this.name = 'GraphInconsistencyError';
+    this.missingProjects = missingProjects;
+  }
 }
 
 /** Lượt 1: schema của ba dimension tag trên một project. */
@@ -157,7 +211,10 @@ export function validateTagSchema(project: ArchProjectNode): ArchTagViolation[] 
     // Legacy check đứng TRƯỚC guard dimension: `layer:*` thuộc dimension đã bị
     // xoá nên nếu để sau `dim in ARCH_TAG_DIMENSIONS` thì nó đi thẳng qua mà
     // không bị báo — đúng kiểu "legacy còn sống lặng lẽ" mà check này hunting.
-    if (LEGACY_TAG_VALUES.includes(tag)) {
+    // `layer` bị chặn theo PREFIX (mọi value), không theo danh sách value định
+    // trước: dimension đã bị xoá khỏi taxonomy nên giá trị nào mang prefix đó
+    // cũng là di tích — danh sách cứng chỉ bắt được value biết trước.
+    if (LEGACY_TAG_VALUES.includes(tag) || tag.startsWith('layer:')) {
       violations.push({ project: project.name, kind: 'legacy-value', detail: tag });
       continue;
     }
@@ -240,7 +297,17 @@ export function validateArchitecture(state: {
 
 /** Điểm vào CLI: exit 1 kèm danh sách vi phạm nếu workspace lệch schema. */
 export function main(): number {
-  const state = collectWorkspaceState();
+  let state: ReturnType<typeof collectWorkspaceState>;
+  try {
+    state = collectWorkspaceState();
+  } catch (error) {
+    if (error instanceof GraphInconsistencyError) {
+      console.error(`[graph-inconsistent] ${error.message}`);
+      console.error('architecture tag validation failed: Nx project graph is inconsistent');
+      return 1;
+    }
+    throw error; // lỗi môi trường (nx crash, JSON hỏng) — để stacktrace gốc lộ ra
+  }
   const violations = validateArchitecture(state);
   if (violations.length === 0) {
     console.log(`architecture tags OK (${state.projects.size} projects validated)`);

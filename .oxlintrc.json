@@ -269,20 +269,34 @@
               "type:tooling"
             ]
           },
-          // composition: được compose mọi type trừ tooling (tooling là dev lane, không làm lib runtime).
+          // composition: WHITELIST đúng bảng §7 — chỉ compose bốn type lib. Target
+          // `type:composition` khác (app→app: một deploy unit import trực tiếp deploy
+          // unit khác) và `type:tooling` không có mặt trong allowlist nên bị chặn ở
+          // lượt direct; taxonomy cũ bảo vệ ranh giới này qua `type:web`/`type:service`
+          // → onlyDependOn ["type:lib"] — whitelist giữ đúng ranh giới đó.
           {
             "sourceTag": "type:composition",
-            "notDependOnLibsWithTags": ["type:tooling"]
+            "onlyDependOnLibsWithTags": [
+              "type:domain",
+              "type:application",
+              "type:contracts",
+              "type:infrastructure"
+            ]
           },
           // tooling: chỉ phụ thuộc tooling — developer tool không làm library runtime cho app.
           {
             "sourceTag": "type:tooling",
             "onlyDependOnLibsWithTags": ["type:tooling"]
           },
-          // Scope: dependency chéo scope chỉ qua contract. `type:contracts` trong
-          // onlyDependOn* cho phép consumer phụ thuộc contract của scope khác; các
-          // type implementation (domain/application/infrastructure) của scope khác
-          // bị chặn bởi constraint `type:*` phía trên (notDependOn transitive).
+          // Scope: bounded context (identity, backoffice, llm, ...) được phụ thuộc
+          // trực tiếp hai TẦNG NỀN (shared, platform) — toàn bộ implementation của
+          // tầng nền được phép dùng, đúng vai trò foundation layer trong §6.3 docs —
+          // và `type:contracts` của scope bất kỳ. Giữa các scope NGANG HÀNG,
+          // `onlyDependOnLibsWithTags` khớp BẤT KỂ tag nào trong danh sách nên
+          // implementation scope khác không có tên ở đây: consumer chỉ chạm được
+          // contract của scope khác, còn import implementation chéo scope trượt
+          // vào allowlist sẽ bị constraint `type:*` phía trên chặn (notDependOn
+          // transitive với domain/application, onlyDependOn với infrastructure).
           {
             "sourceTag": "scope:public",
             "onlyDependOnLibsWithTags": [
@@ -310,6 +324,19 @@
               "type:contracts"
             ]
           },
+          // scope:shared là ĐÁY của trục ownership: CHỈ được phụ thuộc shared —
+          // không platform, không implementation, không contract của scope nghiệp vụ
+          // nào. `onlyDependOnLibsWithTags` khớp bất kỳ tag nào trong danh sách nên
+          // để `type:contracts` vào đây là mở `shared → contracts của scope bất kỳ`
+          // (target chỉ cần MỘT tag khớp), tạo chu trình shared ↔ contracts của
+          // scope đó — đảo chiều dependency của tầng đáy. Ngoại lệ `type:contracts`
+          // là cho CONSUMER chạm contract của provider; tầng đáy không consume.
+          {
+            "sourceTag": "scope:shared",
+            "onlyDependOnLibsWithTags": ["scope:shared"]
+          },
+          // scope:platform là tầng nền duy nhất được mở rộng từ shared: chỉ phụ thuộc
+          // platform + shared + contract, không phụ thuộc scope nghiệp vụ nào.
           {
             "sourceTag": "scope:platform",
             "onlyDependOnLibsWithTags": ["scope:platform", "scope:shared", "type:contracts"]
@@ -367,7 +394,6 @@
               "type:application",
               "type:contracts",
               "type:infrastructure",
-              "type:composition",
               "runtime:edge",
               "runtime:universal"
             ]
@@ -379,7 +405,6 @@
               "type:application",
               "type:contracts",
               "type:infrastructure",
-              "type:composition",
               "runtime:browser",
               "runtime:universal"
             ]
@@ -391,8 +416,6 @@
               "type:application",
               "type:contracts",
               "type:infrastructure",
-              "type:composition",
-              "type:tooling",
               "runtime:native",
               "runtime:universal"
             ]
