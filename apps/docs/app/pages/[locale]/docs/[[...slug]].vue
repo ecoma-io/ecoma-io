@@ -2,9 +2,16 @@
   Route duy nhất phục vụ toàn bộ content của docs:
   `apps/docs/app/pages/[locale]/docs/[[...slug]].vue`
 
-  Route này **validate bằng chính pathname thật** (`route.path`) qua
-  `isDocsRoute` (dựng trên `parsePublicLayoutPath` của `layout-public`), rồi chỉ
-  nhận `kind === 'localized' && mount === 'docs'`. Nhờ vậy:
+  Route này **validate bằng chính pathname thô** qua `isDocsRoute` (dựng trên
+  `parsePublicLayoutPath` của `layout-public`), rồi chỉ nhận
+  `kind === 'localized' && mount === 'docs'`. Nguồn pathname khác nhau theo môi
+  trường: trên server h3 percent-decode request path **trước** khi vue-router
+  nhìn thấy (nên `to.path` đã bị decode), trong khi `useRequestURL().pathname`
+  vẫn là byte gốc trên wire; client thì `to.path` giữ nguyên encoding.
+  `validate` chọn nguồn theo môi trường, nhờ vậy URL không canonical
+  (`/%65n/docs/...`) bị từ chối thay vì được phục vụ dưới dạng đã decode. Sau
+  `validate`, mọi pathname vào được setup đều canonical nên phần còn lại của
+  route dùng thẳng `route.path`. `isDocsRoute` nhận:
 
   - `/en/docs`, `/vi/docs`, `/en/docs/getting-started`, `/vi/docs/foo/bar` —
     hợp lệ;
@@ -36,7 +43,18 @@ import { buildDocsSeo } from '~/utils/docs-seo';
 import { isDocsRoute, parseDocsRoute } from '~/utils/docs-routing';
 
 definePageMeta({
-  validate: (route) => isDocsRoute(route.path),
+  /**
+   * Nguồn pathname khác nhau theo môi trường, giống pattern của
+   * `apps/home/app/pages/[locale]/index.vue`: trên server h3 đã percent-decode
+   * request path trước khi `validate` nhìn thấy (nên `to.path` là bản đã
+   * decode), còn `useRequestURL().pathname` đọc từ `originalUrl` — byte gốc
+   * chưa decode. Client thì `to.path` giữ nguyên encoding. Validate đúng pathname
+   * thô để URL không canonical (`/%65n/docs/...`) bị từ chối thay vì được phục vụ.
+   */
+  validate: (to) => {
+    const rawPathname = import.meta.server ? useRequestURL().pathname : to.path;
+    return isDocsRoute(rawPathname);
+  },
 });
 
 const route = useRoute();
@@ -73,10 +91,18 @@ const { data: navigation } = await useAsyncData(`docs:navigation:${locale.value}
  * landing. Lấy từ chính content (`description` ở frontmatter) nên landing không
  * phải hard-code mô tả của section; query riêng vì `queryCollectionNavigation`
  * chỉ trả metadata điều hướng (title/path), không mang `description`.
+ *
+ * Chỉ landing cần dữ liệu này: trên landing (`remainder === ''`) mới query,
+ * còn document page trả `{}` ngay — bề mặt dùng nhiều nhất của docs không trả
+ * tiền cho một query nó không render. Cache key theo pathname (không phải
+ * locale) để hai mức bề mặt không giành nhau một entry.
  */
 const { data: sectionDescriptions } = await useAsyncData(
-  `docs:section-descriptions:${locale.value}`,
+  `docs:section-descriptions:${route.path}`,
   async () => {
+    if ((layout.value?.remainder ?? '') !== '') {
+      return {};
+    }
     const records = await queryCollection('docs')
       .select('path', 'description')
       .where('path', 'LIKE', `/${locale.value}/docs/%`)
@@ -139,26 +165,44 @@ const breadcrumbs = computed<readonly { path: string; title: string }[]>(() => {
  * locale; một locale được coi là có bản dịch khi tồn tại document ở đúng đường
  * dẫn đó. Nhờ vậy locale switcher của `PublicShell` chỉ link tới bản dịch có
  * thật, và một page chỉ có tiếng Anh không hiện link tiếng Việt hỏng.
+ *
+ * Một **round-trip duy nhất** cho mọi locale: dựng trước candidate path của
+ * từng registry locale rồi truy một lần với `where('path', 'IN', paths)` —
+ * thay vì một query `.first()` mỗi locale. Locale nào có path trong kết quả là
+ * locale đó có bản dịch. Candidate path bị builder từ chối (topology — ví dụ
+ * remainder rơi vào mount lồng nhau) đơn giản không nằm trong `IN`, tức locale
+ * đó không có bản dịch của resource.
  */
 const { data: translationAvailability } = await useAsyncData(
   `docs:translations:${route.path}`,
   async () => {
     const resourceRemainder = layout.value?.remainder ?? '';
-    const checks = await Promise.all(
-      PUBLIC_LOCALES.map(async (definition) => {
-        const built = buildPublicPath({
-          locale: definition.code,
-          mount: 'docs',
-          path: resourceRemainder,
-        });
-        if (built.kind !== 'localized') {
-          return { code: definition.code, exists: false };
-        }
-        const found = await queryCollection('docs').path(built.path).first();
-        return { code: definition.code, exists: found !== null };
-      }),
-    );
-    return checks.filter((check) => check.exists).map((check) => check.code);
+    const candidates = PUBLIC_LOCALES.flatMap((definition) => {
+      const built = buildPublicPath({
+        locale: definition.code,
+        mount: 'docs',
+        path: resourceRemainder,
+      });
+      return built.kind === 'localized' ? [built.path] : [];
+    });
+    // `IN ()` không phải SQL hợp lệ: không candidate nào thì không query —
+    // không locale nào có bản dịch.
+    if (candidates.length === 0) {
+      return [];
+    }
+    const records = await queryCollection('docs')
+      .select('path')
+      .where('path', 'IN', candidates)
+      .all();
+    const existingPaths = new Set(records.map((record) => record.path));
+    return PUBLIC_LOCALES.flatMap((definition) => {
+      const built = buildPublicPath({
+        locale: definition.code,
+        mount: 'docs',
+        path: resourceRemainder,
+      });
+      return built.kind === 'localized' && existingPaths.has(built.path) ? [definition.code] : [];
+    });
   },
 );
 
@@ -214,7 +258,11 @@ const seo = computed(() =>
 useHead(() => ({
   htmlAttrs: { lang: seo.value.lang },
   title: seo.value.title,
-  meta: [{ name: 'description', content: seo.value.description }],
+  // Description rỗng thì **không** emit meta — meta `content=""` là metadata
+  // sai (các crawler hiện trích snippet từ nội dung khi thiếu description) và
+  // prerendered HTML sẽ mang rác tĩnh khó thay sau khi deploy.
+  meta:
+    seo.value.description === '' ? [] : [{ name: 'description', content: seo.value.description }],
   link: [
     { rel: 'canonical' as const, href: seo.value.canonical },
     ...seo.value.alternates.map((alternate) => ({
@@ -229,6 +277,7 @@ useHead(() => ({
 <template>
   <DocsLandingView
     v-if="page && isDocsLanding"
+    :locale="locale"
     :page="page"
     :navigation="sidebarNavigation"
     :current-path="route.path"
@@ -238,6 +287,7 @@ useHead(() => ({
   />
   <DocsPageView
     v-else-if="page"
+    :locale="locale"
     :page="page"
     :navigation="sidebarNavigation"
     :current-path="route.path"

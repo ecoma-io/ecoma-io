@@ -51,7 +51,10 @@ function isNested(depth: number): boolean {
     </summary>
     <div class="mt-3 lg:mt-0">
       <nav :aria-label="label">
-        <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <!-- `summary` ở trên là heading của mobile — nhãn in lại chỉ dành cho desktop. -->
+        <p
+          class="mb-2 hidden text-xs font-semibold uppercase tracking-wide text-slate-500 lg:block"
+        >
           {{ label }}
         </p>
         <ul class="space-y-1 border-l border-slate-200 text-sm">

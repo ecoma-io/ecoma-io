@@ -11,13 +11,16 @@ import DocsPager from '~/components/docs/DocsPager.vue';
 import { docsUiStrings } from '~/utils/docs-ui-strings';
 
 // View này là **nơi ráp dữ liệu route đã resolved** vào layout 3 cột, nên nó
-// nhận đúng bảy input độc lập (document, navigation, pathname hiện tại, locale
-// availability, breadcrumbs, prev, next). Gộp chúng thành một object bao ngoài
-// chỉ để lọt linter sẽ làm mất type của từng prop tại call site mà không tăng
-// tính đóng gói — cùng cách xử lý như `PublicShell`/`PublicHeader`.
-const { page, navigation, currentPath, availableLocales, breadcrumbs, previous, next } =
+// nhận đúng tám input độc lập (locale, document, navigation, pathname hiện
+// tại, locale availability, breadcrumbs, prev, next). Gộp chúng thành một
+// object bao ngoài chỉ để lọt linter sẽ làm mất type của từng prop tại call
+// site mà không tăng tính đóng gói — cùng cách xử lý như
+// `PublicShell`/`PublicHeader`.
+const { locale, page, navigation, currentPath, availableLocales, breadcrumbs, previous, next } =
   // oxlint-disable-next-line vue/max-props
   defineProps<{
+    /** Locale đã được route validate từ registry — component không tự suy đoán. */
+    readonly locale: PublicLocale;
     /** Document đã query từ collection `docs` (type do route suy ra). */
     readonly page: import('@nuxt/content').DocsCollectionItem;
     readonly navigation: readonly ContentNavigationItem[];
@@ -28,14 +31,7 @@ const { page, navigation, currentPath, availableLocales, breadcrumbs, previous, 
     readonly next: { readonly path: string; readonly title: string } | undefined;
   }>();
 
-/**
- * Locale của document, suy từ segment đầu của `stem` (`en/docs/...`).
- *
- * `stem` là stem của content item và luôn bắt đầu bằng locale code — đọc từ đó
- * thay vì từ route để component không phụ thuộc vue-router.
- */
-const locale = computed<PublicLocale>(() => (page.stem.split('/')[0] ?? 'en') as PublicLocale);
-const ui = computed(() => docsUiStrings(locale.value));
+const ui = computed(() => docsUiStrings(locale));
 /** TOC do content renderer sinh — có thể vắng nếu page không có heading. */
 const toc = computed(() => page.body?.toc);
 </script>

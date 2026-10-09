@@ -34,12 +34,22 @@ type SectionCard = {
   readonly entries: readonly { readonly path: string; readonly title: string }[];
 };
 
-// Landing ráp dữ liệu route đã resolved (document, navigation, pathname, locale
-// availability, breadcrumbs, description của section) thành lưới card — sáu
-// input độc lập. Xem ghi chú tương ứng ở `DocsPageView`.
-const { page, navigation, currentPath, availableLocales, breadcrumbs, sectionDescriptions } =
+// Landing ráp dữ liệu route đã resolved (locale, document, navigation,
+// pathname, locale availability, breadcrumbs, description của section) thành
+// lưới card — bảy input độc lập. Xem ghi chú tương ứng ở `DocsPageView`.
+const {
+  locale,
+  page,
+  navigation,
+  currentPath,
+  availableLocales,
+  breadcrumbs,
+  sectionDescriptions,
+} =
   // oxlint-disable-next-line vue/max-props
   defineProps<{
+    /** Locale đã được route validate từ registry — component không tự suy đoán. */
+    readonly locale: PublicLocale;
     readonly page: import('@nuxt/content').DocsCollectionItem;
     readonly navigation: readonly ContentNavigationItem[];
     readonly currentPath: string;
@@ -49,8 +59,7 @@ const { page, navigation, currentPath, availableLocales, breadcrumbs, sectionDes
     readonly sectionDescriptions: Readonly<Record<string, string>>;
   }>();
 
-const locale = computed<PublicLocale>(() => (page.stem.split('/')[0] ?? 'en') as PublicLocale);
-const ui = computed(() => docsUiStrings(locale.value));
+const ui = computed(() => docsUiStrings(locale));
 
 /**
  * Card section dựng từ content navigation đã được route re-root
@@ -110,6 +119,12 @@ const sections = computed<readonly SectionCard[]>(() =>
                 :key="section.path"
                 class="flex flex-col rounded-lg border border-slate-200 p-5"
               >
+                <!--
+                  Link tiêu đề là link **duy nhất** trỏ tới section index: một
+                  footer link lặp lại cùng đích chỉ nhân bản accessible name
+                  mà không thêm thông tin cho ai đang điều hướng bằng screen
+                  reader.
+                -->
                 <h3 class="text-lg font-semibold text-slate-900">
                   <a :href="section.path" class="hover:underline focus-visible:underline">
                     {{ section.title }}
@@ -128,12 +143,6 @@ const sections = computed<readonly SectionCard[]>(() =>
                     </a>
                   </li>
                 </ul>
-                <a
-                  :href="section.path"
-                  class="mt-4 text-sm font-medium text-slate-900 hover:underline focus-visible:underline"
-                >
-                  {{ section.title }} →
-                </a>
               </li>
             </ul>
           </article>
