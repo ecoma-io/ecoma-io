@@ -18,6 +18,10 @@ Cần các công cụ sau:
 | pnpm 12+    | Package manager cho workspace |
 | Git         | Quản lý phiên bản             |
 
+Version chính xác được pin trong repository: `.node-version` pin Node.js và
+field `packageManager` trong `package.json` pin pnpm. Dùng Corepack hoặc cài
+trực tiếp đúng các version đó là toàn bộ toolchain sẽ thống nhất với nhau.
+
 > **Lưu ý** — trên macOS có thể cần `watchman` nếu trình theo dõi file báo
 > rebuild không liên quan.
 
@@ -32,8 +36,10 @@ docs/    tài liệu kiến trúc và vận hành
 tools/   tooling dành cho developer (dx CLI)
 ```
 
-Mỗi thư mục trên là một package của pnpm workspace. `apps/docs` là ứng dụng
-tài liệu mà bạn đang đọc.
+pnpm workspace bao phủ `apps/*`, `tools/*` và `docs`; các library dưới `libs/`
+là Nx project không có `package.json` riêng, được resolve qua workspace alias.
+Mọi thư mục còn lại trong layout trên là package của pnpm workspace. `apps/docs`
+là ứng dụng tài liệu mà bạn đang đọc.
 
 ## Tổng quan phát triển cục bộ
 
@@ -76,15 +82,27 @@ pnpm exec nx test docs
 
 ## Build sẽ làm gì
 
-Build ứng dụng docs tạo ra Nitro server bundle và static asset:
+Ứng dụng docs là một **static site**: `nitro.config.ts` chọn preset Nitro
+**`static`**, nên mọi truy vấn content chạy ở build time trên Node và output
+chỉ là file tĩnh — không có code runtime, không có database. Nx target build
+chạy Nuxt kèm prerendering:
 
-```text
-.nuxt/         artifact build của Nuxt
-.output/       output của Nitro (server + public asset)
+```bash
+npx nx build-static @ecoma-io/docs
 ```
 
-`nitro.config.ts` của apps/docs chọn preset **`cloudflare-module`** để output
-có thể deploy lên Cloudflare Workers.
+Output nằm trong `apps/docs/.output/public`:
+
+```text
+.output/public/           HTML đã prerender, một thư mục cho mỗi route
+.output/public/_nuxt/     client asset đã hash
+.output/public/__nuxt_content/  dump của content database
+```
+
+Nuxt cũng để lại symlink `dist` trỏ tới `.output/public` — đó là path mà target
+`serve-static` phục vụ và là path mà `wrangler.jsonc` deploy
+(`nx deploy @ecoma-io/docs` build static site trước, rồi publish như một
+assets-only Worker).
 
 > **Cảnh báo** — không bao giờ commit secret vào `.dev.vars*` hoặc `.env*`.
 > Cấu hình Worker cục bộ chỉ dùng cho phát triển.

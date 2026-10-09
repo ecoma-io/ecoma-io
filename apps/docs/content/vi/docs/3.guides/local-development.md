@@ -16,7 +16,9 @@ cd apps/docs
 pnpm exec nuxt dev
 ```
 
-Server lắng nghe tại `http://localhost:4203`.
+Server lắng nghe tại `http://localhost:4203` — port được pin trong `devServer`
+của `nuxt.config.ts` ứng dụng. Nx target `serve` chạy cùng một lệnh đó:
+`npx nx serve @ecoma-io/docs`.
 
 ## 2. Kiểm tra một trang
 
@@ -55,17 +57,24 @@ và content-resolution.
 
 ## 5. Build
 
-Build production kiểm tra SSR, sinh static asset và preset Cloudflare:
+Ứng dụng docs là một static site, nên build production prerender mọi trang:
 
 ```bash
-cd apps/docs
-pnpm exec nuxt build
+npx nx build-static @ecoma-io/docs
 ```
 
-Output nằm trong `.output/`. Có thể preview cục bộ:
+Output nằm trong `apps/docs/.output/public` — HTML đã prerender cùng asset, với
+symlink `apps/docs/dist` trỏ tới đó. Hai Nx target tiêu thụ output này:
+
+- `npx nx serve-static @ecoma-io/docs` phục vụ nó cục bộ ở port 4200.
+- `npx nx deploy @ecoma-io/docs` publish nó lên Cloudflare như một assets-only
+  Worker (`build-static` tự chạy trước).
+
+Cần xem lại site đã build mà không deploy, hãy trỏ bất kỳ static file server
+nào vào thư mục output, ví dụ:
 
 ```bash
-npx wrangler dev .output/server/index.mjs --assets .output/public
+npx serve apps/docs/dist
 ```
 
 ---

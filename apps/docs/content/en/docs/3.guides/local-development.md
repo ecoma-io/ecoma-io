@@ -16,7 +16,9 @@ cd apps/docs
 pnpm exec nuxt dev
 ```
 
-The server listens on `http://localhost:4203`.
+The server listens on `http://localhost:4203` — the port is pinned in
+`devServer` in the app's `nuxt.config.ts`. The Nx target `serve` runs the same
+command: `npx nx serve @ecoma-io/docs`.
 
 ## 2. Inspect a page
 
@@ -56,18 +58,24 @@ path-validation and content-resolution tests.
 
 ## 5. Build
 
-A production build exercises SSR, static asset generation and the Cloudflare
-preset:
+The docs app is a static site, so the production build prerenders every page:
 
 ```bash
-cd apps/docs
-pnpm exec nuxt build
+npx nx build-static @ecoma-io/docs
 ```
 
-The output lands in `.output/`. You can preview it locally:
+The output lands in `apps/docs/.output/public` — prerendered HTML plus assets,
+with `apps/docs/dist` as a symlink to it. Two Nx targets consume that output:
+
+- `npx nx serve-static @ecoma-io/docs` serves it locally on port 4200.
+- `npx nx deploy @ecoma-io/docs` publishes it to Cloudflare as an assets-only
+  Worker (`build-static` runs first automatically).
+
+To inspect the built site without deploying, point any static file server at
+the output directory, for example:
 
 ```bash
-npx wrangler dev .output/server/index.mjs --assets .output/public
+npx serve apps/docs/dist
 ```
 
 ---

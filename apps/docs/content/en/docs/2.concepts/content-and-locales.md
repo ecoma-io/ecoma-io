@@ -43,6 +43,8 @@ content/vi/docs/getting-started/installation.md
 
 There is **no per-page locale mapping** — the directory is the route.
 
+![One resource, two locale URLs: the Installation page maps to /en/docs/getting-started/installation and /vi/docs/getting-started/installation, linked by reciprocal hreflang en and vi-VN](./content-locales-map.svg)
+
 ## Self-contained URLs
 
 Because the locale is part of the URL, every document has a self-contained
@@ -60,6 +62,20 @@ The docs sidebar, breadcrumbs and previous/next navigation are derived from the
 content tree **filtered to the current locale**. An English reader sees only the
 English tree; the Vietnamese tree never leaks in, and prev/next never jumps
 across locales.
+
+## Telling search engines about the twin
+
+Because a resource and its translations live at different URLs, each page
+declares its twins with `rel="alternate"` `hreflang` links. The registry in
+`libs/i18n-public` defines the BCP-47 tags — `en` for English, `vi-VN` for
+Vietnamese — and the docs app emits an alternate link for every locale that
+**actually has** the same document. A page that exists only in English
+advertises no Vietnamese alternate, so search engines are never pointed at a 404.
+
+The same registry drives the language switcher in the header: switching locale
+keeps the current resource and swaps only the first URL segment, so
+`/en/docs/getting-started/installation` becomes
+`/vi/docs/getting-started/installation` — never the docs home.
 
 ---
 

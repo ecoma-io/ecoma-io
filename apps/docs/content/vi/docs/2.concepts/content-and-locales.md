@@ -43,6 +43,8 @@ content/vi/docs/getting-started/installation.md
 
 **Không có** locale mapping thủ công ở từng trang — thư mục chính là route.
 
+![Một resource, hai URL theo locale: trang Installation ánh xạ sang /en/docs/getting-started/installation và /vi/docs/getting-started/installation, liên kết với nhau bằng hreflang hai chiều en và vi-VN](./content-locales-map.svg)
+
 ## URL tự chứa
 
 Vì locale là một phần của URL, mỗi tài liệu có một địa chỉ canonical tự chứa.
@@ -58,6 +60,20 @@ Liên kết trong tài liệu luôn ở trong locale hiện tại:
 Sidebar, breadcrumbs và previous/next của docs được sinh từ content tree
 **lọc theo locale hiện tại**. Người đọc tiếng Anh chỉ thấy cây tiếng Anh; cây
 tiếng Việt không rò rỉ vào, và prev/next không bao giờ nhảy qua locale.
+
+## Báo cho search engine biết URL chị em
+
+Vì một resource và các bản dịch của nó nằm ở các URL khác nhau, mỗi trang khai
+báo các URL chị em bằng link `rel="alternate"` kèm `hreflang`. Registry trong
+`libs/i18n-public` định nghĩa các tag BCP-47 — `en` cho tiếng Anh, `vi-VN` cho
+tiếng Việt — và ứng dụng docs sinh một alternate link cho mọi locale **thực sự
+có** document đó. Một trang chỉ tồn tại bằng tiếng Anh sẽ không quảng bá
+alternate tiếng Việt nào, nên search engine không bao giờ bị trỏ tới một 404.
+
+Cùng registry đó điều khiển bộ chuyển đổi ngôn ngữ ở header: chuyển locale giữ
+nguyên resource hiện tại và chỉ thay segment đầu của URL, nên
+`/en/docs/getting-started/installation` trở thành
+`/vi/docs/getting-started/installation` — không bao giờ rơi về trang chủ docs.
 
 ---
 

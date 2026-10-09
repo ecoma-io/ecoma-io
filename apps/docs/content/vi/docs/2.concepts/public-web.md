@@ -11,6 +11,8 @@ Bề mặt công khai của `ecoma.io` tuân theo một mô hình URL duy nhất
 /<locale>/<mount>/<path>
 ```
 
+![Giải phẫu một public web URL: ba segment /locale, /mount và /path, với ví dụ /en/docs/getting-started và /vi/docs/getting-started](./public-web-url.svg)
+
 ## Ba segment
 
 - **locale** — segment đầu tiên, luôn hiện diện. Các locale được hỗ trợ nằm
@@ -50,6 +52,21 @@ thay vì âm thầm sửa:
   redirect; policy resolve thuộc về caller.
 - `docs/api` là mount lồng nhau với deployment unit riêng. Ứng dụng docs không
   phục vụ nó — request tới `/en/docs/api` bị từ chối trước khi lookup content.
+
+## Mô hình nằm ở đâu
+
+Mô hình URL không phải là một quy ước mà mỗi application tự tuân theo — nó được
+thực thi trong hai library nhỏ mà mọi public application đều phụ thuộc vào:
+
+- `libs/i18n-public` sở hữu **locale dimension**: registry `PUBLIC_LOCALES`,
+  parse segment đầu tiên và locale switching. Nó không biết gì về mount hay
+  application.
+- `libs/layout-public` sở hữu **mount topology**: registry `PUBLIC_MOUNTS`
+  (`blog`, `docs`, `docs/api`), khớp một pathname với một mount và dựng liên
+  kết ngược lại.
+
+Thêm một locale hay một mount nghĩa là thêm một entry vào registry tương ứng;
+phần còn lại của nền tảng suy ra từ chính dữ liệu đó.
 
 ---
 

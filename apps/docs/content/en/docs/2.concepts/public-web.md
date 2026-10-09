@@ -11,6 +11,8 @@ The public surface of `ecoma.io` follows one strict URL model:
 /<locale>/<mount>/<path>
 ```
 
+![Anatomy of a public web URL: the three segments /locale, /mount and /path, with the examples /en/docs/getting-started and /vi/docs/getting-started](./public-web-url.svg)
+
 ## The three segments
 
 - **locale** — the first segment, always present. Supported locales live in the
@@ -52,6 +54,21 @@ silently fixed:
 - `docs/api` is a nested mount with its own deployment unit. The docs
   application does not serve it — a request for `/en/docs/api` is rejected
   before content lookup.
+
+## Where the model lives
+
+The URL model is not a convention that each app re-follows — it is enforced in
+two small libraries that every public app depends on:
+
+- `libs/i18n-public` owns the **locale dimension**: the `PUBLIC_LOCALES`
+  registry, parsing the first segment and locale switching. It knows nothing
+  about mounts or applications.
+- `libs/layout-public` owns the **mount topology**: the `PUBLIC_MOUNTS`
+  registry (`blog`, `docs`, `docs/api`), matching a pathname to a mount and
+  building links back.
+
+Adding a locale or a mount means adding one entry to the corresponding
+registry; the rest of the platform derives from that data.
 
 ---
 
