@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended", "helpers:pinGitHubActionDigests", "group:monorepos"],
-  "branchPrefix": "chore/",
+  "branchPrefix": "automation/",
   "semanticCommitType": "chore",
   "semanticCommits": "enabled",
   "semanticCommitScope": "",
