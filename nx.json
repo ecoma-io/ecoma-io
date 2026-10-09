@@ -20,32 +20,9 @@
   },
   "plugins": [
     {
-      "plugin": "@nx/js/typescript",
-      "options": {
-        "typecheck": {
-          "targetName": "typecheck"
-        },
-        "build": {
-          "targetName": "build",
-          "configName": "tsconfig.lib.json",
-          "buildDepsName": "build-deps",
-          "watchDepsName": "watch-deps"
-        }
-      },
-      "exclude": ["libs/i18n-public/*", "libs/layout-public-sidenav/*", "libs/layout-public/*"]
-    },
-    {
       "plugin": "@nx/oxlint",
       "options": {
         "targetName": "lint"
-      }
-    },
-    {
-      "plugin": "@nx/vitest",
-      "options": {
-        "testTargetName": "test",
-        "ciTargetName": "test-ci",
-        "testMode": "watch"
       }
     },
     {
@@ -60,18 +37,41 @@
       }
     },
     {
-      "plugin": "@nx/playwright/plugin",
+      "plugin": "@nx/js/typescript",
+      "include": ["apps/**/*"],
       "options": {
-        "targetName": "e2e"
+        "typecheck": {
+          "targetName": "typecheck"
+        },
+        "build": {
+          "targetName": "build",
+          "configName": "tsconfig.lib.json",
+          "buildDepsName": "build-deps",
+          "watchDepsName": "watch-deps"
+        }
       }
     },
     {
       "plugin": "@nx/js/typescript",
-      "include": ["libs/i18n-public/*", "libs/layout-public-sidenav/*", "libs/layout-public/*"],
+      "include": ["libs/**/*"],
       "options": {
         "typecheck": {
           "targetName": "typecheck"
         }
+      }
+    },
+    {
+      "plugin": "@nx/vitest",
+      "options": {
+        "testTargetName": "test",
+        "ciTargetName": "test-ci",
+        "testMode": "watch"
+      }
+    },
+    {
+      "plugin": "@nx/playwright/plugin",
+      "options": {
+        "targetName": "e2e"
       }
     }
   ],
