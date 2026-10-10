@@ -11,11 +11,12 @@ import {
 import type { PUBLIC_MOUNT_DEFINITIONS } from './mount-registry';
 
 describe('mount registry', () => {
-  it('declares exactly the three public mounts in declaration order', () => {
+  it('declares exactly the four public mounts in declaration order', () => {
     expect(PUBLIC_MOUNTS_IN_DECLARATION_ORDER.map((definition) => definition.path)).toEqual([
       'blog',
       'docs',
       'docs/api',
+      'legal',
     ]);
   });
 
@@ -24,6 +25,7 @@ describe('mount registry', () => {
       'docs/api',
       'blog',
       'docs',
+      'legal',
     ]);
   });
 
@@ -33,6 +35,7 @@ describe('mount registry', () => {
     }
     expect(getMountDefinition('blog')).toBe(PUBLIC_MOUNTS_IN_DECLARATION_ORDER[0]);
     expect(getMountDefinition('docs/api')).toBe(PUBLIC_MOUNTS_IN_DECLARATION_ORDER[2]);
+    expect(getMountDefinition('legal')).toBe(PUBLIC_MOUNTS_IN_DECLARATION_ORDER[3]);
   });
 
   it('freezes both collections and every entry', () => {
@@ -45,11 +48,12 @@ describe('mount registry', () => {
       // @ts-expect-error -- registry là readonly policy, không phải mutable state
       PUBLIC_MOUNTS[0].path = 'x';
     }).toThrow(TypeError);
-    expect(PUBLIC_MOUNTS).toHaveLength(3);
+    expect(PUBLIC_MOUNTS).toHaveLength(4);
     expect(PUBLIC_MOUNTS.map((definition) => definition.path)).toEqual([
       'docs/api',
       'blog',
       'docs',
+      'legal',
     ]);
   });
 
@@ -57,8 +61,8 @@ describe('mount registry', () => {
     getMountDefinition('nope');
     getMountDefinition('');
     isPublicMount('blogging');
-    expect(PUBLIC_MOUNTS).toHaveLength(3);
-    expect(PUBLIC_MOUNTS_IN_DECLARATION_ORDER).toHaveLength(3);
+    expect(PUBLIC_MOUNTS).toHaveLength(4);
+    expect(PUBLIC_MOUNTS_IN_DECLARATION_ORDER).toHaveLength(4);
   });
 
   describe('isPublicMount', () => {
@@ -92,13 +96,13 @@ describe('mount registry', () => {
       expect(getMountDefinition('pricing')).toBeUndefined();
       expect(getMountDefinition('BLOG')).toBeUndefined();
       expect(getMountDefinition('')).toBeUndefined();
-      expect(PUBLIC_MOUNTS).toHaveLength(3);
+      expect(PUBLIC_MOUNTS).toHaveLength(4);
     });
   });
 
   describe('type safety', () => {
     it('PublicMount is the closed union of registry paths', () => {
-      expectTypeOf<PublicMount>().toEqualTypeOf<'blog' | 'docs' | 'docs/api'>();
+      expectTypeOf<PublicMount>().toEqualTypeOf<'blog' | 'docs' | 'docs/api' | 'legal'>();
     });
 
     it('derives PublicMount from the registry data, not from a hand-written union', () => {

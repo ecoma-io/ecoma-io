@@ -171,9 +171,10 @@ describe('public API entrypoint', () => {
         'docs/api',
         'blog',
         'docs',
+        'legal',
       ]);
       runLookups();
-      expect(PUBLIC_MOUNTS).toHaveLength(3);
+      expect(PUBLIC_MOUNTS).toHaveLength(4);
       expect(PUBLIC_NAVIGATION).toHaveLength(2);
     });
   });

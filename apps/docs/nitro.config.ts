@@ -35,12 +35,15 @@ export default {
     routes: ['/en/docs', '/vi/docs'],
     crawlLinks: true,
     // Crawler đi theo **mọi** link trong HTML, mà shell dùng chung
-    // (`layout-public`) còn render global nav và locale switcher. Những link
-    // đó trỏ ra ngoài docs:
+    // (`layout-public`) còn render global nav, locale switcher và footer. Những
+    // link đó trỏ ra ngoài docs:
     //
     //   `/`            — locale-resolution entry point, không mount nào sở hữu
     //   `/en`, `/vi`   — locale root, do locale switcher sinh ra
     //   `/en/blog`…    — mount `blog`, deploy unit khác (`apps/blogs`)
+    //   `/en/legal`…   — mount `legal` (các trang policy), deploy unit khác
+    //                    (`apps/home`); footer render 5 link resource dưới
+    //                    mount này, nên cả subtree phải được loại
     //
     // Chúng 404 một cách đúng đắn (docs không sở hữu chúng), nên phải loại khỏi
     // prerender thay vì để build đỏ. Dùng **regex** chứ không phải string:
@@ -51,6 +54,17 @@ export default {
     // Cố ý **không** dùng `failOnError: false`: giữ nguyên mặc định để một docs
     // route thật sự hỏng vẫn làm build đỏ. Chỉ đúng những entry point ngoài
     // docs ở trên được miễn.
-    ignore: [/^\/$/u, /^\/en\/?$/u, /^\/vi\/?$/u, /^\/en\/blog\/?$/u, /^\/vi\/blog\/?$/u],
+    ignore: [
+      /^\/$/u,
+      /^\/en\/?$/u,
+      /^\/vi\/?$/u,
+      /^\/en\/blog\/?$/u,
+      /^\/vi\/blog\/?$/u,
+      // `(?:/[^/]+)?` phủ cả mount root lẫn một resource segment; mọi thứ sâu
+      // hơn một segment (vd `/en/legal/privacy/x`) không bị nuốt — pathname như
+      // vậy nếu lọt vào crawl là hỏng và vẫn phải làm build đỏ.
+      /^\/en\/legal(?:\/[^/]+)?\/?$/u,
+      /^\/vi\/legal(?:\/[^/]+)?\/?$/u,
+    ],
   },
 };
