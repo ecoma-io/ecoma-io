@@ -1,0 +1,250 @@
+name: Home Staging
+
+# Làn staging của deploy unit `home` (docs/overview/02-delivery.md §4, §7.4).
+#
+# Trigger là `workflow_run` sau CI trên main — KHÔNG phải `push` trực tiếp —
+# để deploy chỉ chạy khi toàn bộ CI gate đã pass, và để run này có thể đọc
+# `head_sha` của run CI (SHA nguồn thật). Mọi quyết định SHA trong workflow
+# dùng `workflow_run.head_sha` được bắt qua env (không nội suy thẳng vào
+# `run:` — convention chung của repo, semgrep rule
+# `workflow-expression-interpolated-into-run`), không bao giờ dùng
+# `github.sha`: với event `workflow_run`, `github.sha` là SHA của commit
+# mặc định **tại thời điểm run** chứ không phải commit đã được push — hai
+# giá trị có thể lệch nhau.
+#
+# Luồng (task §4):
+#   CI pass trên main
+#     → `context` job (không secret): home có nằm trong tập affected không?
+#     → `build` job (không secret): build + artifact + manifest gắn SHA
+#     → `deploy` job (env `staging`): stale guard → wrangler deploy → smoke
+#     → evidence: status `home/staging-verified` trên ĐÚNG SHA
+#     → `tag` job (contents: write): tag `@ecoma-io/home@{version}` trên SHA
+#       đã verify — đường tạo tag duy nhất, luôn SAU staging verification.
+#
+# Production KHÔNG tự chạy sau job này: promotion là `workflow_dispatch`
+# riêng (`home-production.yaml`) với input tag + Environment approval.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+# Mặc định minimal; job `tag` nâng quyền riêng của nó.
+permissions:
+  contents: read
+
+concurrency:
+  # Chỉ một run staging chạy vật lý tại một thời điểm. KHÔNG cancel-in-progress:
+  # cancel run đang deploy là nguy (Worker ở trạng thái dở dang); thay vào đó
+  # run xếp hàng, và stale-run guard trong job deploy sẽ nhường/abort run nào
+  # không còn là revision hiện hành.
+  group: home-staging
+  cancel-in-progress: false
+
+jobs:
+  context:
+    name: context
+    # Job này KHÔNG có secret: chỉ đọc metadata run và phân tích Nx graph.
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    outputs:
+      head_sha: ${{ steps.meta.outputs.head_sha }}
+      version: ${{ steps.version.outputs.version }}
+      affected: ${{ steps.affected.outputs.affected }}
+    steps:
+      - name: Resolve source SHA
+        id: meta
+        env:
+          EVENT_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          EVENT_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          EVENT_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          # Chỉ process run CI thành công từ push main (task §4 điều 1).
+          if [ "$EVENT_CONCLUSION" != "success" ]; then
+            echo "CI run concluded '$EVENT_CONCLUSION' — not deploying" >&2
+            exit 1
+          fi
+          if [ "$EVENT_HEAD_BRANCH" != "main" ]; then
+            echo "CI run is for branch '$EVENT_HEAD_BRANCH' — not deploying" >&2
+            exit 1
+          fi
+          # Bảo vệ kép cho invariant head_sha (task §4): event không đúng
+          # hình dạng thì dừng, không suy SHA từ nguồn nào khác.
+          if ! echo "$EVENT_HEAD_SHA" | grep -qE '^[0-9a-f]{40}$'; then
+            echo "workflow_run.head_sha is not a 40-hex SHA: '$EVENT_HEAD_SHA'" >&2
+            exit 1
+          fi
+          echo "head_sha=$EVENT_HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "CI run $EVENT_RUN_ID for $EVENT_HEAD_SHA is a valid trigger"
+
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.meta.outputs.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Read home version
+        id: version
+        env:
+          HEAD_SHA: ${{ steps.meta.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          version=$(node -e 'console.log(require("./apps/home/package.json").version)')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "home version at $HEAD_SHA: $version"
+
+      # Base của affected = commit cha của head trên main: affected của một
+      # push main là diff từ commit cha (không dùng nhánh PR nào). Commit cha
+      # luôn tồn tại — merge queue tạo commit squash trên top của main hiện
+      # hành; commit đầu tiên của repo không bao giờ đi qua CI gate này.
+      - name: Derive base SHA for affected
+        id: nx-shas
+        env:
+          HEAD_SHA: ${{ steps.meta.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          base=$(git rev-parse "$HEAD_SHA^")
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+
+      # `nx show projects --affected --json` trả mảng JSON các project affected
+      # (đã gồm project phụ thuộc gián tiếp qua lib — dependency graph của
+      # workspace xác định, không cấu hình thêm).
+      - name: Check whether home is affected
+        id: affected
+        env:
+          BASE_SHA: ${{ steps.nx-shas.outputs.base }}
+          HEAD_SHA: ${{ steps.meta.outputs.head_sha }}
+          NX_CLOUD: false
+        run: |
+          set -euo pipefail
+          affected=$(npx nx show projects --affected --base="$BASE_SHA" --head="$HEAD_SHA" --json)
+          echo "$affected" | grep -q '@ecoma-io/home' \
+            && echo "affected=true" >> "$GITHUB_OUTPUT" \
+            || { echo "affected=false" >> "$GITHUB_OUTPUT"; echo "@ecoma-io/home is not affected by $HEAD_SHA — skipping deploy"; }
+
+  build:
+    name: build
+    needs: [context]
+    if: needs.context.outputs.affected == 'true'
+    # Job build KHÔNG có secret (task §4: build trong secret-free job).
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.context.outputs.head_sha }}
+          persist-credentials: false
+
+      - name: Setup Node.js and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      # Nuxt build cần `.nuxt` metadata (nuxt-prepare sinh nó) và `nx build`
+      # đã dependsOn nuxt-prepare trong project config.
+      - name: Build home
+        run: npx nx run @ecoma-io/home:build
+
+      - name: Write build manifest
+        env:
+          HEAD_SHA: ${{ needs.context.outputs.head_sha }}
+          VERSION: ${{ needs.context.outputs.version }}
+        run: |
+          set -euo pipefail
+          cat > apps/home/.output/build-manifest.json <<JSON
+          {
+            "sourceSha": "$HEAD_SHA",
+            "version": "$VERSION",
+            "workerName": "stg-ecoma-home"
+          }
+          JSON
+          cat apps/home/.output/build-manifest.json
+
+      - name: Upload deploy artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: home-staging-${{ needs.context.outputs.head_sha }}
+          path: apps/home/.output
+          # Manifest phải đi cùng artifact — toàn bộ thư mục .output.
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy:
+    name: deploy
+    needs: [context, build]
+    # GitHub Environment `staging`: nguồn duy nhất của CLOUDFLARE_API_TOKEN
+    # (checklist vận hành — environment này phải tồn tại với secret đó).
+    environment: staging
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      statuses: write
+    outputs:
+      verified: ${{ steps.run.outputs.verified }}
+    steps:
+      - name: Checkout pipeline scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.context.outputs.head_sha }}
+          # Shallow đủ: chỉ cần script runner + wrangler.jsonc.
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node.js and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Download deploy artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: home-staging-${{ needs.context.outputs.head_sha }}
+          path: artifact
+
+      - name: Run guarded deploy + smoke
+        id: run
+        env:
+          HEAD_SHA: ${{ needs.context.outputs.head_sha }}
+          RUN_ID: ${{ github.run_id }}
+          ARTIFACT_DIR: ${{ github.workspace }}/artifact
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        # Script fail → step fail → job fail. Script chạy wrangler từ checkout
+        # root và symlink `apps/home/.output` vào artifact đã tải — artifact
+        # (đã verify qua manifest) là thứ được deploy.
+        run: npx tsx apps/home/deploy/pipeline/staging-deploy.mts deploy
+
+  tag:
+    name: tag-release
+    needs: [context, deploy]
+    # Job tag chỉ chạy khi deploy đã verify thật sự (output `verified`).
+    if: needs.deploy.outputs.verified == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    # Đơn vị duy nhất trong toàn pipeline có quyền ghi.
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout verified source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.context.outputs.head_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node.js and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Create release tag on verified SHA
+        env:
+          HEAD_SHA: ${{ needs.context.outputs.head_sha }}
+          RUN_ID: ${{ github.run_id }}
+          GH_TOKEN: ${{ github.token }}
+        # Mode `tag` đọc version từ checkout (apps/home/package.json) — không
+        # cần artifact; checkout này đã ghim đúng SHA đã verify.
+        run: npx tsx apps/home/deploy/pipeline/staging-deploy.mts tag

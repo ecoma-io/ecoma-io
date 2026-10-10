@@ -28,4 +28,16 @@
 // của workspace package này, nên pnpm không cho resolve từ đây.
 export default {
   preset: 'cloudflare-module',
+  // Cờ noindex cho môi trường staging. Chuỗi giá trị đi qua chuỗi env của
+  // Workers: wrangler.jsonc `env.staging.vars.NITRO_PUBLIC_NO_INDEX` → `env`
+  // của worker → `globalThis.__env__` (nitropack cloudflare module handler)
+  // → proxy `process.env` (unenv) → `applyEnv` của Nitro (prefix
+  // `NITRO_`, snakeCase) → `useRuntimeConfig().public.noIndex`.
+  // Mặc định `false` (production): middleware `server/middleware/no-index.ts`
+  // chỉ bật header khi giá trị là `true` tuyệt đối — fail-safe về mặt SEO.
+  runtimeConfig: {
+    public: {
+      noIndex: false,
+    },
+  },
 };

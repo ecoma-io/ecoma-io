@@ -1,0 +1,73 @@
+name: Home Production
+
+# Làn production của deploy unit `home` (docs/overview/02-delivery.md §6–§7.3).
+#
+# KHÔNG bao giờ trigger tự động: `workflow_dispatch` duy nhất với input `tag`,
+# và job promote gắn GitHub Environment `production` — environment đó phải
+# được cấu hình **required reviewers** (checklist vận hành), nên GitHub
+# chặn job cho tới khi người có quyền approve. Đây là điều kiện §6 số 4
+# (human approval) ở tầng platform, không phải logic workflow tự chế.
+#
+# Fail-closed trước Wrangler (task §6): job promote chạy script
+# `promote-production.mts` — gate `evaluatePromotionGate` kiểm đủ năm điều
+# kiện (release identity, tag→SHA trong main history, version tại SHA khớp
+# tag, staging evidence cho ĐÚNG SHA, environment approval bởi platform) rồi
+# mới deploy `--env production` lên `ecoma.io` / worker `ecoma-home`.
+#
+# Post-deploy: smoke production, status `home/production-verified` trên
+# tagged SHA. KHÔNG auto-rollback — failure được ghi, rollback là một
+# promotion có chủ đích của version cũ.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to promote (e.g. @ecoma-io/home@1.2.3)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  # Một promotion tại một thời điểm — hai promote chồng nhau ghi đè lẫn nhau
+  # không chủ đích. KHÔNG cancel-in-progress: promotion đang chạy phải hoàn
+  # tất (deploy + smoke + evidence) trước promotion kế.
+  group: home-production
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: promote
+    # Environment production: required reviewer approve tại đây (platform
+    # gate), secret CLOUDFLARE_API_TOKEN production được inject cho job này.
+    environment: production
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      # Checkout **nhánh main** đầy đủ — job phải resolve tag VÀ lịch sử main
+      # để gate kiểm reachability; không checkout theo tag trước khi gate pass.
+      - name: Checkout main with full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      # Build phải chạy ở ĐÚNG commit được tag sau khi gate pass — script tự
+      # checkout commit đó (detached) trước khi build, để artifact production
+      # là artifact của revision đã verify, không phải main head.
+      - name: Promotion gate → build tagged commit → deploy → smoke
+        id: run
+        env:
+          RUN_ID: ${{ github.run_id }}
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: npx tsx apps/home/deploy/pipeline/promote-production.mts "$RELEASE_TAG"

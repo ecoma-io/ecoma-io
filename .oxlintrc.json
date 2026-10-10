@@ -571,6 +571,18 @@
       }
     },
     {
+      // Tooling deploy pipeline (apps/home/deploy/**) chạy trên Node runner
+      // trong GitHub Actions, không phải trên edge runtime của app — được
+      // phép console (log tiến trình job) và Node builtins (fs, path...).
+      // Glob đứng TRƯỚC override `apps/**` để match-first.
+      "files": ["apps/**/deploy/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}"],
+      "rules": {
+        "no-console": "off",
+        "no-restricted-imports": "off",
+        "import/no-nodejs-modules": "off"
+      }
+    },
+    {
       "files": ["**/*.{spec,test}.{ts,tsx,js,jsx,mts,cts}"],
       "rules": {
         "@typescript-eslint/explicit-function-return-type": "off"

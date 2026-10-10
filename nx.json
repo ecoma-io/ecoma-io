@@ -85,6 +85,41 @@
       }
     }
   ],
+  "release": {
+    // Nx Release per-project cho deploy unit `home` — PR2 (Issue #78). Quan hệ
+    // `independent`: mỗi deploy unit tự version, không bump dây chuyền theo
+    // workspace. Conventional commits quyết định bump level; `fallbackCurrent
+    // VersionResolver: disk` đọc version hiện tại từ package.json của project.
+    "projects": ["@ecoma-io/home"],
+    "projectsRelationship": "independent",
+    "version": {
+      "conventionalCommits": true,
+      "fallbackCurrentVersionResolver": "disk"
+    },
+    "git": {
+      // Release commit (squash-merge trên main) cập nhật package.json +
+      // CHANGELOG.md của project. KHÔNG tag ở đây: tag chỉ được tạo sau khi
+      // staging smoke pass trên đúng SHA đã verify — chain order là
+      // CI → staging deploy → smoke → commit status `home/staging-verified`
+      // → job tag tạo `@ecoma-io/home@{version}` trên SHA đã verify.
+      // `push: false` — runner tự push tag bằng GH_TOKEN của job `tag`
+      // (job duy nhất có `contents: write`).
+      "commit": true,
+      "commitMessage": "chore(home): release {projectName} {version}",
+      "tag": false,
+      "push": false
+    },
+    "changelog": {
+      "projectChangelogs": {
+        "file": "{projectRoot}/CHANGELOG.md"
+      }
+    },
+    // Tag pattern theo §3 PR2: `{projectName}@{version}` — tên project là
+    // `@ecoma-io/home` (không phải tên thư mục `home`).
+    "releaseTag": {
+      "pattern": "{projectName}@{version}"
+    }
+  },
   "targetDefaults": {
     "test": {
       "dependsOn": ["^build"]
