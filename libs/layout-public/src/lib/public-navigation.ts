@@ -152,10 +152,10 @@ export type PublicFooterGroup = {
 
 /**
  * Footer groups — dữ liệu tĩnh, frozen, chỉ chứa destination **thực sự tồn
- * tại**: home locale-root, các public mount, và các section docs đã có content
- * (`getting-started`, `concepts`, `guides`). Không có link Terms/Privacy hay
- * mạng xã hội — không có trang nào như vậy, footer không bịa destination để
- * lấp layout.
+ * tại**: home locale-root, các public mount, các section docs đã có content
+ * (`getting-started`, `concepts`, `guides`) và các resource policy dưới mount
+ * `legal` do `apps/home` phục vụ. Không có link mạng xã hội — không có trang
+ * nào như vậy, footer không bịa destination để lấp layout.
  */
 const FOOTER_DEFINITIONS = [
   {
@@ -176,6 +176,36 @@ const FOOTER_DEFINITIONS = [
       },
       { mount: 'docs', path: '/concepts', label: { en: 'Concepts', vi: 'Khái niệm' } },
       { mount: 'docs', path: '/guides', label: { en: 'Guides', vi: 'Hướng dẫn' } },
+    ],
+  },
+  {
+    heading: { en: 'Legal', vi: 'Pháp lý' },
+    links: [
+      {
+        mount: 'legal',
+        path: '/privacy',
+        label: { en: 'Privacy Policy', vi: 'Chính sách bảo mật' },
+      },
+      {
+        mount: 'legal',
+        path: '/terms',
+        label: { en: 'Terms of Service', vi: 'Điều khoản dịch vụ' },
+      },
+      {
+        mount: 'legal',
+        path: '/service-delivery',
+        label: { en: 'Service Delivery Policy', vi: 'Chính sách cung cấp dịch vụ' },
+      },
+      {
+        mount: 'legal',
+        path: '/payment',
+        label: { en: 'Payment Policy', vi: 'Chính sách thanh toán' },
+      },
+      {
+        mount: 'legal',
+        path: '/refund',
+        label: { en: 'Refund Policy', vi: 'Chính sách hoàn tiền' },
+      },
     ],
   },
 ] as const satisfies readonly {

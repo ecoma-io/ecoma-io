@@ -49,6 +49,10 @@ describe('parsePublicLayoutPath core topology', () => {
     ['/en/docs/guide', 'en', 'docs', '/guide'],
     ['/en/docs/api/guide', 'en', 'docs/api', '/guide'],
     ['/vi/docs/api/guide', 'vi', 'docs/api', '/guide'],
+    ['/en/legal', 'en', 'legal', ''],
+    ['/vi/legal', 'vi', 'legal', ''],
+    ['/en/legal/privacy', 'en', 'legal', '/privacy'],
+    ['/vi/legal/refund', 'vi', 'legal', '/refund'],
   ] as const)(
     'parses %s to locale %s, mount %s, remainder %s',
     (pathname, locale, mount, remainder) => {

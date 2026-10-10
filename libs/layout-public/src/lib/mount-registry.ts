@@ -23,7 +23,9 @@
  *
  * - `blog` — mount một segment;
  * - `docs` — mount một segment;
- * - `docs/api` — mount nhiều segment, lồng dưới `docs` (deepest-first resolution).
+ * - `docs/api` — mount nhiều segment, lồng dưới `docs` (deepest-first resolution);
+ * - `legal` — mount một segment: các trang policy (privacy, terms…) do app
+ *   phục vụ resource dưới mount; mount root không có trang.
  *
  * Export nội bộ (không qua `src/index.ts`): test type-level cần chiếu
  * `typeof` vào đúng nguồn dữ liệu này.
@@ -32,6 +34,7 @@ export const PUBLIC_MOUNT_DEFINITIONS = [
   { path: 'blog' },
   { path: 'docs' },
   { path: 'docs/api' },
+  { path: 'legal' },
 ] as const;
 
 /**

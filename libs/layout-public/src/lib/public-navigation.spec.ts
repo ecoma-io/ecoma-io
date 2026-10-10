@@ -169,6 +169,17 @@ describe('footer groups', () => {
       '/concepts',
       '/guides',
     ]);
+    // Cột Legal chỉ chứa năm resource policy dưới mount legal — cùng tập với
+    // các trang policy mà apps/home phục vụ; mount của chúng phải là legal.
+    const legalGroup = PUBLIC_FOOTER_GROUPS.find((group) => group.heading.en === 'Legal');
+    expect(legalGroup?.links.map((link) => link.path)).toEqual([
+      '/privacy',
+      '/terms',
+      '/service-delivery',
+      '/payment',
+      '/refund',
+    ]);
+    expect(legalGroup?.links.every((link) => link.mount === 'legal')).toBe(true);
   });
 
   it('gives every heading and link a label for every locale', () => {
@@ -209,6 +220,16 @@ describe('footer groups', () => {
             { label: 'Guides', href: '/en/docs/guides' },
           ],
         },
+        {
+          heading: 'Legal',
+          links: [
+            { label: 'Privacy Policy', href: '/en/legal/privacy' },
+            { label: 'Terms of Service', href: '/en/legal/terms' },
+            { label: 'Service Delivery Policy', href: '/en/legal/service-delivery' },
+            { label: 'Payment Policy', href: '/en/legal/payment' },
+            { label: 'Refund Policy', href: '/en/legal/refund' },
+          ],
+        },
       ]);
     });
 
@@ -228,6 +249,16 @@ describe('footer groups', () => {
             { label: 'Bắt đầu', href: '/vi/docs/getting-started' },
             { label: 'Khái niệm', href: '/vi/docs/concepts' },
             { label: 'Hướng dẫn', href: '/vi/docs/guides' },
+          ],
+        },
+        {
+          heading: 'Pháp lý',
+          links: [
+            { label: 'Chính sách bảo mật', href: '/vi/legal/privacy' },
+            { label: 'Điều khoản dịch vụ', href: '/vi/legal/terms' },
+            { label: 'Chính sách cung cấp dịch vụ', href: '/vi/legal/service-delivery' },
+            { label: 'Chính sách thanh toán', href: '/vi/legal/payment' },
+            { label: 'Chính sách hoàn tiền', href: '/vi/legal/refund' },
           ],
         },
       ]);
