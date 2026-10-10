@@ -15,10 +15,10 @@ local (Lefthook)
   → build
   → migration gate (khi storage schema đổi)
   → deploy Worker
-  → post-deploy verification (promotion gate)
+  → post-deploy verification
 ```
 
-- **Gate bắt buộc:** contract check (§3), migration gate (§3), promotion gate (§7.1). Gate fail → dừng pipeline.
+- **Gate bắt buộc trước deploy:** contract check (§3), migration gate (§3), promotion gate của làn production (§7.2). Gate fail → dừng pipeline.
 - `nx affected` quyết định unit nào đi qua pipeline; release một unit không đụng unit khác.
 - Mọi deploy unit là Worker (`01` §1): không image, không registry, không GitOps reconcile. Deploy là lệnh có trả về — bước kế tiếp chạy ngay khi lệnh thành công.
 
@@ -27,7 +27,7 @@ local (Lefthook)
 Mỗi deploy unit đi qua hai làn với nhịp khác nhau (§4, §7.2):
 
 - **Làn staging — tự động:** merge commit liên quan unit vào `main` → deploy revision đó lên staging → smoke test → ghi kết quả gắn với **exact commit SHA**.
-- **Làn production — promotion gate:** chỉ chạy khi một **release** (§7.2) thỏa mọi điều kiện promotion: staging verification pass **cho chính revision được tag**, approval production, post-deploy verification pass. Production không bao giờ deploy "commit mới nhất của `main`".
+- **Làn production — promotion gate:** chỉ chạy khi một **release** (§7.2) thỏa mọi điều kiện promotion **trước khi deploy**: release có định danh đầy đủ, staging verification pass **cho chính revision được tag**, approval production. Production không bao giờ deploy "commit mới nhất của `main`". **Post-deploy verification** chạy **sau** khi production deploy xong; fail → failure handling (§8) — nó không phải điều kiện để vào production.
 
 Hai làn dùng hai Worker identity tách biệt (staging `stg-*`, production — §4); không có cơ chế promote version xuyên identity — production deploy lại từ source revision đã verify với cấu hình environment của nó.
 
@@ -90,7 +90,7 @@ Baseline VPS database-only của ecoma — quyết định của ecoma, không p
 | Môi trường       | Workers            | PostgreSQL                                                      | D1                                                          | Kích hoạt                         |
 | ---------------- | ------------------ | --------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------- |
 | **Local**        | Wrangler/Miniflare | qua Docker Compose hoặc mock                                    | D1 local hoặc mock                                          | Dev                               |
-| **PR Preview**   | Worker Preview     | mock hoặc DB preview tách biệt; **không bao giờ** DB production | namespace/DB riêng theo PR; **không bao giờ** D1 production | PR                                |
+| **PR Preview**   | Worker Preview     | mock hoặc DB preview tách biệt; **không bao giờ** DB production | namespace/DB riêng theo PR; **không bao giờ** D1 production | Thủ công (§5.1), không theo PR    |
 | **CI ephemeral** | —                  | Testcontainers PostgreSQL                                       | Miniflare D1                                                | PR (khi affected)                 |
 | **Staging**      | Workers `stg-*`    | database staging riêng                                          | D1 staging riêng                                            | Merge `main` (làn staging, §1.1)  |
 | **Production**   | Workers production | database production                                             | D1 production                                               | Promotion release qua gate (§7.2) |
@@ -107,7 +107,8 @@ Baseline VPS database-only của ecoma — quyết định của ecoma, không p
 
 ### 5.1 Nguyên tắc
 
-- **Mỗi unit chỉ có một Worker identity lâu dài; PR không tạo Worker mới.** Mỗi PR tạo một **Worker Preview** dưới identity đó — `llm-api` không ngoại lệ.
+- **Mỗi unit chỉ có một Worker identity lâu dài; PR không tạo Worker mới.** Preview chạy dưới identity đó — `llm-api` không ngoại lệ.
+- **Preview là manual-only:** mở hay cập nhật PR chỉ chạy validation (§1); **không** tự động deploy Preview nào. Preview được tạo/refresh theo yêu cầu rõ (theo PR, branch hay revision — do phần implement chốt, §12).
 - Preview có code, vars, secrets, bindings, URL, observability riêng; **không kế thừa cấu hình production**; cấu hình nằm trong `previews` block.
 - Preview là **untrusted runtime** (`01` §6) và không ghi được storage production — enforced bằng binding, không bằng quy ước (`01` invariant 2).
 
@@ -116,7 +117,7 @@ Baseline VPS database-only của ecoma — quyết định của ecoma, không p
 | Tài nguyên         | Hành vi Preview                               | Chính sách ecoma                                                                  |
 | ------------------ | --------------------------------------------- | --------------------------------------------------------------------------------- |
 | Worker code/config | Isolated                                      | Mặc định                                                                          |
-| KV, R2             | Cùng namespace/bucket = cùng data             | PR cần isolation phải có namespace/prefix riêng                                   |
+| KV, R2             | Cùng namespace/bucket = cùng data             | Preview cần isolation phải có namespace/prefix riêng                              |
 | **D1**             | Binding trỏ DB nào thì ghi DB đó              | **Không bao giờ bind D1 production vào Preview**                                  |
 | **Hyperdrive/PG**  | Binding trỏ origin nào thì ghi origin đó      | **Không bao giờ bind Hyperdrive production vào Preview**                          |
 | Queue              | Produce được, **không** consume được          | Chỉ bind queue riêng/test; không thiết kế E2E dựa vào Preview consumer (`04` QU7) |
@@ -125,20 +126,20 @@ Baseline VPS database-only của ecoma — quyết định của ecoma, không p
 
 - Chặn bằng binding: mọi environment phải khai báo `hyperdrive` / `d1_databases` / `kv_namespaces` / `queues` **tường minh**, không kế thừa mảng top-level; `previews` không được khai báo `id`/binding của production — lint config kiểm (`01` invariant 2).
 
-### 5.3 Dependency mode (CI khai báo cho từng app)
+### 5.3 Dependency mode (khai báo cho từng app)
 
 | Mode | Cách                                         | Dùng khi                                                                  |
 | ---- | -------------------------------------------- | ------------------------------------------------------------------------- |
 | A    | Preview → Service Binding → **production** B | Đã chứng minh tương thích, read-only/được bảo vệ — theo quy ước và review |
 | B    | Preview A → HTTPS + preview auth → Preview B | Cần test cross-service thật; B có Access hoặc service token               |
-| C    | Mock                                         | Mặc định cho PR smoke                                                     |
+| C    | Mock                                         | Mặc định cho smoke — không cần Preview                                    |
 
 Từ D2 trở đi mặc định Mode C (hoặc A); không E2E chéo giữa các Preview. **Preview routing** (router động cho preview trên cùng domain) chưa chốt — xem mục 12.
 
 ### 5.4 Hostname, cleanup, auth
 
 - **Hostname:** ưu tiên `workers.dev`; custom domain chỉ khi UX cần origin ổn định, sau khi xác minh certificate/Access/routing (§12).
-- **Cleanup:** không dựa vào `pull_request: closed`. **Worker Janitor** (cron ~6 giờ) quét tài nguyên theo tag/prefix PR, đối chiếu trạng thái PR qua GitHub API; PR đóng hoặc tuổi > 7 ngày → xoá Preview và dọn resource.
+- **Cleanup:** không dựa vào `pull_request: closed`. **Worker Janitor** (cron ~6 giờ) quét tài nguyên theo tag/prefix, đối chiếu trạng thái PR (khi Preview gắn PR) qua GitHub API; PR đóng hoặc tuổi > 7 ngày → xoá Preview và dọn resource.
 - **Auth:** `MockOidcAdapter` ký JWT cùng format production (trang chọn user/role từ seed data), bảo vệ 3 lớp. Org strict service token auth là mặc định (`04` AC1) — chỉ **Service Auth policy** cấp quyền.
 - Giới hạn platform (số lượng Preview, retention, hành vi Queue preview) → `04-platform-facts.md`; Preview của service riêng → `services/<service>/03-operations.md`.
 
@@ -176,10 +177,10 @@ PR source ──build──► Untrusted artifact ──► Trusted deploy workf
 - **Rollback tại release:** chọn Worker version đã publish, không rebuild, không revert Git (`04` WV1–WV3); chi tiết → §8.
 - Chuỗi storage: **expand → deploy → migrate (nếu cần) → verify → enable → contract** — contract chỉ chạy sau rollback window (§3).
 
-### 7.1 Làn Worker và promotion gate
+### 7.1 Làn Worker và promotion gate runtime
 
 - **Atomic stateless:** version mới phục vụ 100% khi promote; không rolling giữa các version. Version skew giữa Service Binding là điều kiện bình thường — app bắt `ChunkLoadError` và reload tối đa một lần. Không drain; stream dài có thể bị cắt khi version bị thay → keepalive theo `01` invariant 19.
-- **Promotion gate runtime** cho mọi Worker DB-backed (đọc Axiom): request count, error rate, latency, stream abort rate, quota failures, reservation failures. Thiếu metrics → dừng promotion, **không** tự rollback.
+- **Promotion gate runtime** (khác promotion gate trước deploy ở §7.2) cho mọi Worker DB-backed (đọc Axiom): request count, error rate, latency, stream abort rate, quota failures, reservation failures. Thiếu metrics → dừng promotion, **không** tự rollback.
 - Version Override để pin request test tương thích.
 - Canary theo trọng số cho Worker → §12.
 
@@ -201,9 +202,9 @@ PR source ──build──► Untrusted artifact ──► Trusted deploy workf
 PR validation → merge `main`
   → deploy revision (pre-release SHA) lên staging → smoke test → ghi kết quả theo SHA
   → Nx Release: Release PR (version + changelog) → merge → tag {projectName}@{version} tại SHA mới
-  → xác minh revision được tag đã pass staging (§7.3)
-  → approval production (GitHub Environment)
-  → deploy revision đó lên production → post-deploy verification → ghi provenance
+  → [promotion gate] định danh đầy đủ + staging verification của tagged SHA (§7.3) + approval production
+  → deploy revision đó lên production
+  → post-deploy verification → ghi provenance; fail → failure handling (§8)
 ```
 
 **Release identity — thông tin tối thiểu của một lần deploy production (provenance):**
@@ -215,12 +216,13 @@ PR validation → merge `main`
 - Approval production + kết quả deploy production.
 - Kết quả post-deploy verification.
 
-**Promotion gate — điều kiện bắt buộc trước khi production deploy:**
+**Promotion gate — điều kiện bắt buộc TRƯỚC khi production deploy, tất cả phải pass:**
 
 1. Release có định danh đầy đủ (version, tag, SHA).
 2. Staging deploy + verification pass **cho chính revision được tag** (§7.3 — SHA dịch sau Release PR là trường hợp bắt buộc phải xử lý, không được bỏ qua).
 3. Approval production qua GitHub Environment (§6).
-4. Post-deploy verification pass và provenance được ghi lại đủ để rollback (§8).
+
+Post-deploy verification **không** thuộc promotion gate: nó chạy sau khi production đã deploy (§7.4) và là đầu vào của failure handling, không phải điều kiện để bắt đầu deploy.
 
 **Ranh giới release:** release độc lập theo deploy unit — release `home` không kéo release unit khác; `nx affected` quyết định unit nào đi qua pipeline. Publish của Nx Release không dùng cho app/service — deploy là job riêng chạy `wrangler deploy`, sinh Worker version bất biến (`04` WV1).
 
@@ -230,8 +232,8 @@ Việc merge Release PR thêm commit version/changelog vào `main`, nên **SHA �
 
 Yêu cầu kiến trúc cho phần implement (chưa có cơ chế nào tồn tại trong workflow hiện tại):
 
-- Production workflow **không** chạy trên SHA trừ khi revision đó có bằng chứng staging verification. Nguồn sự thật của bằng chứng phải là durable state (artifact/job result gắn SHA), không phải suy luận "commit cha đã pass".
-- Cơ chế cụ thể — re-deploy tagged SHA lên staging rồi verify, hay ghi nhận verification của tree content khi Release PR chỉ thêm metadata — do phần implement chốt sau khi xác minh hành vi thật của Nx Release. Không dùng suy luận chưa xác minh.
+- Production workflow **không** chạy trên một SHA trừ khi **đúng SHA đó** có bằng chứng staging verification. Nguồn sự thật của bằng chứng phải là durable state (artifact/job result gắn SHA), không phải suy luận "commit cha đã pass".
+- Việc Release PR chỉ thêm metadata version/changelog (tree content của bản build không đổi) **không** tự thỏa yêu cầu trên — bằng chứng vẫn phải gắn với exact tagged SHA. Cơ chế cụ thể (re-deploy tagged SHA lên staging rồi verify, hay cách khác) do phần implement chốt sau khi xác minh hành vi thật của Nx Release và staging trigger. Không dùng suy luận chưa xác minh.
 
 ### 7.4 Yêu cầu triển khai hai làn
 
@@ -247,7 +249,7 @@ Chưa có workflow deploy nào trong repo — mọi mục dưới đây là yêu
 
 - Chỉ chạy cho release có định danh (§7.2) và staging verification của đúng revision được tag (§7.3).
 - Approval qua GitHub Environment production (§6); cấu hình + credential production riêng (WS3).
-- Post-deploy verification; ghi provenance đủ để rollback (§7.2, §8).
+- Post-deploy verification **sau khi deploy xong**; kết quả ghi vào provenance, fail → failure handling (§8) — không phải điều kiện để bắt đầu deploy (§7.2).
 - Staging và production là hai Worker identity tách biệt; không giả định Cloudflare promote trực tiếp version xuyên identity — phần implement phải xác minh cơ chế Wrangler/Cloudflare được hỗ trợ và deploy lại từ đúng source revision đã verify với cấu hình environment đích. Cơ chế này **chưa xác minh** (§12).
 
 Hai làn deploy application tách biệt với provisioning infrastructure: infrastructure thay đổi qua Pulumi workflow riêng (§9); một release application **không** chạy `pulumi up`.
@@ -315,6 +317,7 @@ Chỉ chứa **delivery uncertainty**. Architectural decision → `01` §10 · o
 | Cơ chế deploy + rollback mà Wrangler/Cloudflare hỗ trợ giữa Worker identity staging và production (§7.4)   | Trước pipeline production đầu  |
 | Concurrency/stale-run guard cho deploy workflow staging — cơ chế cụ thể (§7.4)                             | Trước pipeline staging đầu     |
 | Nơi lưu provenance release (§7.2) — artifact, job result hay store khác                                    | Trước pipeline production đầu  |
+| Cơ chế trigger Preview manual (theo PR, branch hay revision; workflow hay CLI) (§5.1)                      | Trước Preview đầu              |
 | Preview database: 1 config chung + schema-per-PR hay chỉ mock                                              | Sau spike D2c                  |
 | Preview routing — router động (KV + header routing) cho preview trên cùng domain, phục vụ E2E liên dịch vụ | Sau D2                         |
 | Custom-domain scheme cho Preview                                                                           | Sau spike certificate/Access   |
