@@ -22,6 +22,15 @@ local (Lefthook)
 - `nx affected` quyết định unit nào đi qua pipeline; release một unit không đụng unit khác.
 - Mọi deploy unit là Worker (`01` §1): không image, không registry, không GitOps reconcile. Deploy là lệnh có trả về — bước kế tiếp chạy ngay khi lệnh thành công.
 
+### 1.1 Hai làn deploy
+
+Mỗi deploy unit đi qua hai làn với nhịp khác nhau (§4, §7.2):
+
+- **Làn staging — tự động:** merge commit liên quan unit vào `main` → deploy revision đó lên staging → smoke test → ghi kết quả gắn với **exact commit SHA**.
+- **Làn production — promotion gate:** chỉ chạy khi một **release** (§7.2) thỏa mọi điều kiện promotion: staging verification pass **cho chính revision được tag**, approval production, post-deploy verification pass. Production không bao giờ deploy "commit mới nhất của `main`".
+
+Hai làn dùng hai Worker identity tách biệt (staging `stg-*`, production — §4); không có cơ chế promote version xuyên identity — production deploy lại từ source revision đã verify với cấu hình environment của nó.
+
 ---
 
 ## 2. Git and Nx
@@ -78,13 +87,13 @@ Taxonomy (`apps`/`libs`/`tests`) và cấu trúc Nx project → [`05-code-archit
 
 Baseline VPS database-only của ecoma — quyết định của ecoma, không phải platform minimum; validate bằng load test + restore drill → `03` §2.1.
 
-| Môi trường       | Workers            | PostgreSQL                                                      | D1                                                          | Kích hoạt         |
-| ---------------- | ------------------ | --------------------------------------------------------------- | ----------------------------------------------------------- | ----------------- |
-| **Local**        | Wrangler/Miniflare | qua Docker Compose hoặc mock                                    | D1 local hoặc mock                                          | Dev               |
-| **PR Preview**   | Worker Preview     | mock hoặc DB preview tách biệt; **không bao giờ** DB production | namespace/DB riêng theo PR; **không bao giờ** D1 production | PR                |
-| **CI ephemeral** | —                  | Testcontainers PostgreSQL                                       | Miniflare D1                                                | PR (khi affected) |
-| **Staging**      | Workers `stg-*`    | database staging riêng                                          | D1 staging riêng                                            | Merge `main`      |
-| **Production**   | Workers production | database production                                             | D1 production                                               | Merge Release PR  |
+| Môi trường       | Workers            | PostgreSQL                                                      | D1                                                          | Kích hoạt                         |
+| ---------------- | ------------------ | --------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------- |
+| **Local**        | Wrangler/Miniflare | qua Docker Compose hoặc mock                                    | D1 local hoặc mock                                          | Dev                               |
+| **PR Preview**   | Worker Preview     | mock hoặc DB preview tách biệt; **không bao giờ** DB production | namespace/DB riêng theo PR; **không bao giờ** D1 production | PR                                |
+| **CI ephemeral** | —                  | Testcontainers PostgreSQL                                       | Miniflare D1                                                | PR (khi affected)                 |
+| **Staging**      | Workers `stg-*`    | database staging riêng                                          | D1 staging riêng                                            | Merge `main` (làn staging, §1.1)  |
+| **Production**   | Workers production | database production                                             | D1 production                                               | Promotion release qua gate (§7.2) |
 
 **Database staging là tối ưu chi phí, không phải chiến lược availability:**
 
@@ -145,7 +154,7 @@ PR source ──build──► Untrusted artifact ──► Trusted deploy workf
 
 1. PR build không có secret; PR từ fork không có deploy credential.
 2. Trusted workflow chỉ lấy artifact đã build; credential theo GitHub Environment (`preview`, `staging`, `production`).
-3. Environment production chỉ cho `main`/Release PR + reviewer.
+3. Environment production chỉ cho workflow promotion release (§7.2) + reviewer.
 4. Preview runtime chỉ có preview/test credentials; không bind production secret.
 5. Cloudflare management token không vào Worker runtime.
 6. **Không có control plane nào kéo workload từ Git** — deploy bằng Wrangler API token scoped, không orchestrator, không manifest.
@@ -162,7 +171,6 @@ PR source ──build──► Untrusted artifact ──► Trusted deploy workf
 
 ## 7. Release và rollout
 
-- **Nx Release**, chạy hoàn toàn trong GitHub Actions: Release PR tự dựng (`nx release version` + changelog) → merge → tag `{projectName}@{version}`. Publish không dùng cho app/service — deploy là job riêng, `wrangler deploy`, sinh Worker version bất biến (`04` WV1).
 - Mỗi deployment có file cấu hình riêng để rollout độc lập. Không có bước bất đồng bộ nào — `wrangler deploy` trả về khi deploy xong.
 - Thứ tự khi thêm unit mới: **Infra → storage expand → `llm-api` → Workers → Router → promotion gate.** Sau đó mỗi release chỉ rollout unit bị ảnh hưởng.
 - **Rollback tại release:** chọn Worker version đã publish, không rebuild, không revert Git (`04` WV1–WV3); chi tiết → §8.
@@ -171,9 +179,78 @@ PR source ──build──► Untrusted artifact ──► Trusted deploy workf
 ### 7.1 Làn Worker và promotion gate
 
 - **Atomic stateless:** version mới phục vụ 100% khi promote; không rolling giữa các version. Version skew giữa Service Binding là điều kiện bình thường — app bắt `ChunkLoadError` và reload tối đa một lần. Không drain; stream dài có thể bị cắt khi version bị thay → keepalive theo `01` invariant 19.
-- **Promotion gate** cho mọi Worker DB-backed (đọc Axiom): request count, error rate, latency, stream abort rate, quota failures, reservation failures. Thiếu metrics → dừng promotion, **không** tự rollback.
-- Staging tự cập nhật khi merge `main`; production cập nhật khi merge Release PR. Version Override để pin request test tương thích.
+- **Promotion gate runtime** cho mọi Worker DB-backed (đọc Axiom): request count, error rate, latency, stream abort rate, quota failures, reservation failures. Thiếu metrics → dừng promotion, **không** tự rollback.
+- Version Override để pin request test tương thích.
 - Canary theo trọng số cho Worker → §12.
+
+### 7.2 Environment, release, promotion
+
+**Khái niệm (canonical cho mọi tài liệu delivery):**
+
+| Khái niệm          | Định nghĩa                                                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Environment**    | Một deployment target (staging, production) — Worker identity + cấu hình + credential riêng (§4, §6)                                        |
+| **Release**        | Một phiên bản có định danh của **một** deploy unit: version + tag + exact Git commit SHA (định dạng tag mục tiêu `{projectName}@{version}`) |
+| **Promotion gate** | Tập điều kiện bắt buộc trước khi một release vào production (liệt kê bên dưới)                                                              |
+
+**Trạng thái hiện tại:** Nx Release **chưa được cấu hình** trong repo — chưa có release config, chưa có tag, chưa có CHANGELOG. Mọi thứ dưới đây là kiến trúc mục tiêu; phần implement phải dựng theo đúng nó (§12). Cơ chế Nx Release ghi version per-deploy-unit (package.json hay cách khác) vẫn là uncertainty mở (§12).
+
+**Vòng đời release một deploy unit (mục tiêu):**
+
+```text
+PR validation → merge `main`
+  → deploy revision (pre-release SHA) lên staging → smoke test → ghi kết quả theo SHA
+  → Nx Release: Release PR (version + changelog) → merge → tag {projectName}@{version} tại SHA mới
+  → xác minh revision được tag đã pass staging (§7.3)
+  → approval production (GitHub Environment)
+  → deploy revision đó lên production → post-deploy verification → ghi provenance
+```
+
+**Release identity — thông tin tối thiểu của một lần deploy production (provenance):**
+
+- Deploy unit (Nx project).
+- Release version + tag (khi đã có).
+- Exact Git commit SHA.
+- Kết quả staging deploy + smoke test **của đúng SHA đó**.
+- Approval production + kết quả deploy production.
+- Kết quả post-deploy verification.
+
+**Promotion gate — điều kiện bắt buộc trước khi production deploy:**
+
+1. Release có định danh đầy đủ (version, tag, SHA).
+2. Staging deploy + verification pass **cho chính revision được tag** (§7.3 — SHA dịch sau Release PR là trường hợp bắt buộc phải xử lý, không được bỏ qua).
+3. Approval production qua GitHub Environment (§6).
+4. Post-deploy verification pass và provenance được ghi lại đủ để rollback (§8).
+
+**Ranh giới release:** release độc lập theo deploy unit — release `home` không kéo release unit khác; `nx affected` quyết định unit nào đi qua pipeline. Publish của Nx Release không dùng cho app/service — deploy là job riêng chạy `wrangler deploy`, sinh Worker version bất biến (`04` WV1).
+
+### 7.3 Đồng bộ staging với revision được tag
+
+Việc merge Release PR thêm commit version/changelog vào `main`, nên **SHA được tag khác SHA đã deploy staging trước đó**. Nếu bỏ qua điểm này, production có thể deploy một revision chưa từng chạy staging — vi phạm promotion gate.
+
+Yêu cầu kiến trúc cho phần implement (chưa có cơ chế nào tồn tại trong workflow hiện tại):
+
+- Production workflow **không** chạy trên SHA trừ khi revision đó có bằng chứng staging verification. Nguồn sự thật của bằng chứng phải là durable state (artifact/job result gắn SHA), không phải suy luận "commit cha đã pass".
+- Cơ chế cụ thể — re-deploy tagged SHA lên staging rồi verify, hay ghi nhận verification của tree content khi Release PR chỉ thêm metadata — do phần implement chốt sau khi xác minh hành vi thật của Nx Release. Không dùng suy luận chưa xác minh.
+
+### 7.4 Yêu cầu triển khai hai làn
+
+Chưa có workflow deploy nào trong repo — mọi mục dưới đây là yêu cầu cho phần implement, không phải mô tả trạng thái hiện tại.
+
+**Staging (tự động khi merge `main`, per-unit theo `nx affected`):**
+
+- Build đúng revision merge, deploy lên Worker identity staging (`stg-*`, §4) với cấu hình + credential staging.
+- Smoke test sau deploy; ghi kết quả deploy + verification gắn exact commit SHA.
+- Concurrency guard chống chạy chồng và chống stale run ghi đè staging state không chủ đích (cancel/supercede theo unit + SHA).
+
+**Production (promotion, không tự động theo `main`):**
+
+- Chỉ chạy cho release có định danh (§7.2) và staging verification của đúng revision được tag (§7.3).
+- Approval qua GitHub Environment production (§6); cấu hình + credential production riêng (WS3).
+- Post-deploy verification; ghi provenance đủ để rollback (§7.2, §8).
+- Staging và production là hai Worker identity tách biệt; không giả định Cloudflare promote trực tiếp version xuyên identity — phần implement phải xác minh cơ chế Wrangler/Cloudflare được hỗ trợ và deploy lại từ đúng source revision đã verify với cấu hình environment đích. Cơ chế này **chưa xác minh** (§12).
+
+Hai làn deploy application tách biệt với provisioning infrastructure: infrastructure thay đổi qua Pulumi workflow riêng (§9); một release application **không** chạy `pulumi up`.
 
 ---
 
@@ -187,19 +264,23 @@ PR source ──build──► Untrusted artifact ──► Trusted deploy workf
 
 Không có đường rollback nào đi qua migration: rollback Worker **không bao giờ** rollback database (`01` invariant 11).
 
+**Application rollback** là quay về Worker version đã publish, đã verify — không build lại từ source tree có thể đã đổi (`04` WV1–WV3). Với release production, version cần rollback tới là version của revision trước đó trong provenance (§7.2). Cơ chế rollback giữa hai Worker identity staging/production **chưa xác minh** — cùng yêu cầu xác minh với cơ chế deploy (§7.4, §12).
+
+**Infrastructure rollback** là bài toán khác: phụ thuộc resource type và Pulumi state, xử lý độc lập với application rollback — không có cơ chế chung; runbook riêng khi có (→ `03`).
+
 ---
 
 ## 9. Ranh giới tooling
 
-| Tool             | Responsibility                                                         |
-| ---------------- | ---------------------------------------------------------------------- |
-| Nx               | project graph / task orchestration / affected                          |
-| Wrangler         | Worker, D1, Preview, version, deploy, Worker Secrets                   |
-| Pulumi           | infrastructure resources (DNS, R2, KV, Queues, D1, Hyperdrive, Access) |
-| GitHub Actions   | trusted CI/CD execution                                                |
-| Contract tooling | compatibility gate (Pact, oasdiff, `drizzle-broker`)                   |
+| Tool             | Responsibility                                                                                       |
+| ---------------- | ---------------------------------------------------------------------------------------------------- |
+| Nx               | project graph / task orchestration / affected / release + versioning                                 |
+| Wrangler         | Worker, D1, Preview, version, deploy, Worker Secrets                                                 |
+| Pulumi           | infrastructure resources (DNS, R2, KV, Queues, D1, Hyperdrive, Access)                               |
+| GitHub Actions   | orchestration CI/CD, workflow dependency, environment credential, approval gate, deploy verification |
+| Contract tooling | compatibility gate (Pact, oasdiff, `drizzle-broker`)                                                 |
 
-Không khai báo cùng một resource ở hai công cụ. Workers VPC Service + Cloudflare Tunnel quản lý bằng Wrangler (`04` VP4); bootstrap hạ tầng một lần → `03`.
+Không khai báo cùng một resource ở hai công cụ. Workers VPC Service + Cloudflare Tunnel quản lý bằng Wrangler (`04` VP4); bootstrap hạ tầng một lần → `03`. Nx Release là nguồn sinh version/tag/changelog (§7.2); Wrangler là nguồn thực thi deploy/version của Worker; Pulumi provisioning infrastructure — deploy application và provisioning infrastructure là hai workflow tách biệt, release application không chạy `pulumi up` (§7.4). Pulumi state ở R2 backend theo environment, credential + passphrase riêng (§6); resource bootstrap cần để tạo/truy cập state backend không được mô hình hoá như resource chỉ tạo được sau khi backend sẵn có.
 
 ---
 
@@ -230,6 +311,10 @@ Chỉ chứa **delivery uncertainty**. Architectural decision → `01` §10 · o
 | Mục                                                                                                        | Kích hoạt                      |
 | ---------------------------------------------------------------------------------------------------------- | ------------------------------ |
 | Cách Nx Release ghi version cho deploy unit (package.json hay cách khác)                                   | Trước D2a                      |
+| Cơ chế đồng bộ staging verification với revision được tag sau Release PR (§7.3)                            | Trước pipeline production đầu  |
+| Cơ chế deploy + rollback mà Wrangler/Cloudflare hỗ trợ giữa Worker identity staging và production (§7.4)   | Trước pipeline production đầu  |
+| Concurrency/stale-run guard cho deploy workflow staging — cơ chế cụ thể (§7.4)                             | Trước pipeline staging đầu     |
+| Nơi lưu provenance release (§7.2) — artifact, job result hay store khác                                    | Trước pipeline production đầu  |
 | Preview database: 1 config chung + schema-per-PR hay chỉ mock                                              | Sau spike D2c                  |
 | Preview routing — router động (KV + header routing) cho preview trên cùng domain, phục vụ E2E liên dịch vụ | Sau D2                         |
 | Custom-domain scheme cho Preview                                                                           | Sau spike certificate/Access   |
