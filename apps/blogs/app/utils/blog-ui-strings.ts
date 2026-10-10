@@ -44,6 +44,14 @@ export type BlogUiStrings = {
   readonly pagination: string;
   /** Danh sách tag của một article — nhãn truy cập được cho vùng tag. */
   readonly tags: string;
+  /**
+   * Tên truy cập được của scroll container bọc bảng Markdown (`ProseTable`).
+   *
+   * Container có `role="region"` + focus bằng bàn phím (cuộn ngang bảng rộng
+   * hơn cột đọc); region phải có tên phân biệt, và tên theo locale của trang
+   * — component resolve qua route vì `ContentRenderer` không truyền props.
+   */
+  readonly tableRegion: string;
 };
 
 const BLOG_UI_STRINGS: Readonly<Record<PublicLocale, BlogUiStrings>> = Object.freeze({
@@ -59,6 +67,7 @@ const BLOG_UI_STRINGS: Readonly<Record<PublicLocale, BlogUiStrings>> = Object.fr
     writtenBy: 'By',
     pagination: 'Article navigation',
     tags: 'Tags',
+    tableRegion: 'Data table',
   }),
   vi: Object.freeze({
     blog: 'Blog',
@@ -72,6 +81,7 @@ const BLOG_UI_STRINGS: Readonly<Record<PublicLocale, BlogUiStrings>> = Object.fr
     writtenBy: 'Tác giả',
     pagination: 'Điều hướng bài viết',
     tags: 'Thẻ',
+    tableRegion: 'Bảng dữ liệu',
   }),
 });
 

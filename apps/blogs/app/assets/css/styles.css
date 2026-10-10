@@ -31,6 +31,25 @@
   @apply mt-8 mb-3 scroll-mt-24 text-xl font-semibold tracking-tight text-slate-900;
 }
 
+/*
+ * h4-h6: Markdown cho phép tới h6, và content không bị chặn các mức này ở
+ * schema hay lint — thiếu rule thì heading sâu rơi về style mặc định của UA
+ * (nhỏ hơn h3 ở trên) và mất `scroll-mt-*` nên bị header sticky che khi điều
+ * hướng anchor. Reset về cùng scale với h3, chỉ khác cỡ nhẹ để giữ nhịp phân
+ * cấp thị giác.
+ */
+.blog-content h4 {
+  @apply mt-8 mb-3 scroll-mt-24 text-lg font-semibold tracking-tight text-slate-900;
+}
+
+.blog-content h5 {
+  @apply mt-8 mb-3 scroll-mt-24 text-base font-semibold tracking-tight text-slate-900;
+}
+
+.blog-content h6 {
+  @apply mt-8 mb-3 scroll-mt-24 text-base font-semibold tracking-tight text-slate-700;
+}
+
 .blog-content p {
   @apply mb-4 text-lg leading-relaxed text-slate-700;
 }

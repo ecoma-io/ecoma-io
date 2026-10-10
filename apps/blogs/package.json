@@ -43,7 +43,9 @@
           "{workspaceRoot}/tsconfig.base.json",
           {
             "externalDependencies": [
-              "vue-tsc"
+              "vue-tsc",
+              "typescript",
+              "nuxt"
             ]
           }
         ],

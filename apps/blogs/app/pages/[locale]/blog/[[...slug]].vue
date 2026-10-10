@@ -37,14 +37,15 @@
 -->
 <script setup lang="ts">
 import type { PublicLocale } from '@ecoma-io/i18n-public';
-import { buildPublicPath } from '@ecoma-io/layout-public';
 import BlogArticleView from '~/components/blogs/BlogArticleView.vue';
 // Import tường minh (giống apps/docs): auto-import đăng ký component với
 // prefix thư mục (`BlogsBlogLandingView`), nên tên trong template
 // (`BlogLandingView`) không resolve được — SSR render rỗng im lặng.
 import BlogLandingView from '~/components/blogs/BlogLandingView.vue';
 import {
+  articleDisplayTags,
   normalizeArticleCover,
+  pickAdjacentArticles,
   pickFeaturedArticle,
   pickRelatedArticles,
   orderArticlesByDateDesc,
@@ -90,13 +91,6 @@ const remainder = computed(() => layout.value?.remainder ?? '');
 const isBlogLanding = computed(() => remainder.value === '');
 
 /**
- * Landing path canonical của mount — dùng cho SEO fallback title và link "all
- * posts" khi `buildPublicPath` từ chối (không xảy ra với mount hợp lệ, nhưng
- * kiểu kết quả là discriminated union nên phải thu hẹp).
- */
-const blogRoot = computed(() => buildPublicPath({ locale: locale.value, mount: 'blog' }));
-
-/**
  * Article của pathname hiện tại — nguồn nội dung duy nhất của article page.
  * Không chạy trên landing: `/en/blog` không có document nào (chỉ article có
  * file content), và cố query `.path('/en/blog')` sẽ trả `null` vô nghĩa.
@@ -105,24 +99,34 @@ const { data: page } = await useAsyncData(`blog:page:${route.path}`, () =>
   isBlogLanding.value ? Promise.resolve(null) : queryCollection('blog').path(route.path).first(),
 );
 
-if (page.value === null && !isBlogLanding.value) {
-  throw createError({ statusCode: 404, statusMessage: 'Article not found' });
-}
-
 /**
  * Toàn bộ article của **locale hiện tại**, mới nhất trước — dùng chung cho
- * landing (hero + listing) và article page (related, base của pager).
+ * landing (hero + listing) và article page (related, pager).
  *
  * Lọc theo locale ở **tầng query** (`path` LIKE `/<locale>/blog/%`), không lọc
  * lại ở UI: `path` của mọi item trong collection luôn bắt đầu bằng segment
  * locale (`/en/blog/...`), nên pattern này khớp đúng tập article của locale và
  * không bao giờ trộn hai locale.
  *
- * `order` ở đây chỉ để listing; featured/related giữ bất biến riêng của chúng
- * trong `blog-articles.ts` (sort lại từ input, không giả định input đã sort).
+ * `.select(...)` chỉ lấy đúng các cột được map bên dưới — thiếu cột nào thì
+ * listing/featured/related/pager không dùng, kể cả cột `body` (AST Markdown
+ * đầy đủ, nặng nhất collection). `apps/docs` dùng cùng pattern cho query
+ * cùng dạng; kéo cả bảng chỉ làm payload cache và memory lớn vô ích.
  */
 const { data: articles } = await useAsyncData(`blog:articles:${locale.value}`, async () => {
   const records = await queryCollection('blog')
+    .select(
+      'path',
+      'stem',
+      'title',
+      'description',
+      'date',
+      'author',
+      'tags',
+      'featured',
+      'cover',
+      'coverAlt',
+    )
     .where('path', 'LIKE', `/${locale.value}/blog/%`)
     .all();
   const summaries: BlogArticleSummary[] = records.map((record) => ({
@@ -132,7 +136,9 @@ const { data: articles } = await useAsyncData(`blog:articles:${locale.value}`, a
     description: record.description ?? '',
     date: record.date ?? '',
     author: record.author ?? '',
-    tags: record.tags ?? [],
+    // Dedupe/trim/loại tag rỗng ở tầng dữ liệu — component nhận danh sách đã
+    // sạch nên `v-for :key` không bao giờ gặp duplicate key.
+    tags: articleDisplayTags(record.tags),
     featured: record.featured ?? false,
     cover: normalizeArticleCover(record.cover, record.coverAlt),
   }));
@@ -148,6 +154,16 @@ const articlesForLocale = computed<readonly BlogArticleSummary[]>(() => articles
 const currentArticle = computed<BlogArticleSummary | undefined>(() =>
   articlesForLocale.value.find((article) => article.path === route.path),
 );
+
+/**
+ * 404 cho article page khi **không** dựng được nội dung: document query về
+ * `null`, hoặc document có mà summary không map được (query listing lệch) —
+ * cả hai đều không render được trang article hoàn chỉnh, và một trang rỗng
+ * HTTP 200 (chỉ còn head SEO) là tệ hơn 404: nó vẫn bị index.
+ */
+if (!isBlogLanding.value && (page.value === null || currentArticle.value === undefined)) {
+  throw createError({ statusCode: 404, statusMessage: 'Article not found' });
+}
 
 /** Hero của landing — featured, fallback bài mới nhất, `undefined` khi blog rỗng. */
 const featuredArticle = computed(() => pickFeaturedArticle(articlesForLocale.value));
@@ -226,11 +242,10 @@ const availableLocales = computed<readonly PublicLocale[]>(
 );
 
 /**
- * Article liền trước / liền sau **trong cùng locale**.
- *
- * Dùng cùng danh sách đã lọc theo locale và đã sort (`date` DESC, `stem` ASC —
- * xem `orderArticlesByDateDesc`), nên cặp prev/next không bao giờ nhảy sang
- * locale khác; biên danh sách cho `undefined` (không bọc vòng).
+ * Cặp previous/next của article page — nguồn duy nhất là
+ * `pickAdjacentArticles` (trong `blog-articles.ts`, unit test): ngữ nghĩa theo
+ * trục thời gian ("previous" = cũ hơn, "next" = mới hơn), biên danh sách cho
+ * `undefined`, không bọc vòng, không bao giờ chứa chính article hiện tại.
  *
  * Không dùng `queryCollectionItemSurroundings` ở đây: hàm đó sort theo `stem`
  * trên **toàn collection** mà không lọc được theo locale ở tầng SQL theo cách
@@ -238,25 +253,9 @@ const availableLocales = computed<readonly PublicLocale[]>(
  * landing `index.md` của từng article cũng lọt vào sequence. Danh sách phẳng
  * đã sort trong tay là đúng nguồn duy nhất cho pager của blog phẳng.
  */
-const previousArticle = computed(() => {
+const adjacentArticles = computed(() => {
   const current = currentArticle.value;
-  if (!current) {
-    return undefined;
-  }
-  const list = articlesForLocale.value;
-  const index = list.findIndex((article) => article.path === current.path);
-  const item = index > 0 ? list[index - 1] : undefined;
-  return item ? { path: item.path, title: item.title } : undefined;
-});
-const nextArticle = computed(() => {
-  const current = currentArticle.value;
-  if (!current) {
-    return undefined;
-  }
-  const list = articlesForLocale.value;
-  const index = list.findIndex((article) => article.path === current.path);
-  const item = index >= 0 && index < list.length - 1 ? list[index + 1] : undefined;
-  return item ? { path: item.path, title: item.title } : undefined;
+  return current ? pickAdjacentArticles(articlesForLocale.value, current) : undefined;
 });
 
 /**
@@ -270,10 +269,9 @@ const seo = computed(() =>
   buildBlogSeo({
     pathname: route.path,
     locale: locale.value,
-    title:
-      currentArticle.value?.title ??
-      page.value?.title ??
-      (blogRoot.value.kind === 'localized' ? undefined : undefined),
+    // Article: title frontmatter; landing: không có title frontmatter —
+    // `buildBlogSeo` fallback về `Ecoma Blog` (brand + bề mặt, đúng một lần).
+    title: currentArticle.value?.title ?? page.value?.title,
     description: currentArticle.value?.description ?? page.value?.description,
     availableLocales: availableLocales.value,
   }),
@@ -313,8 +311,8 @@ useHead(() => ({
     :page="page"
     :summary="currentArticle"
     :related="relatedArticles"
-    :previous="previousArticle"
-    :next="nextArticle"
+    :previous="adjacentArticles?.previous"
+    :next="adjacentArticles?.next"
     :available-locales="availableLocales"
     :ui="blogUiStrings(locale)"
   />

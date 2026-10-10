@@ -9,6 +9,15 @@ export default defineConfig(() => ({
   // nxViteTsPaths resolve alias `@ecoma-io/*` trong test, vue() transform
   // component `.vue` — đặt sau vì transform pipeline đọc theo thứ tự.
   plugins: [nxViteTsPaths(), vue()],
+  resolve: {
+    // Nuxt alias không tồn tại ngoài Nuxt runtime: `~`/`~/` map vào `app/`
+    // theo convention Nuxt 4 (`srcDir: app/`) — component test import helper
+    // qua `~/utils/*` cần mapping này (giống `apps/home`).
+    alias: {
+      '~': new URL('./app', import.meta.url).pathname,
+      '~/': new URL('./app/', import.meta.url).pathname,
+    },
+  },
   test: {
     name: '@ecoma-io/blogs',
     watch: false,

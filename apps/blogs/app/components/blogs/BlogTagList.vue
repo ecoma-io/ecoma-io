@@ -16,7 +16,13 @@ defineProps<{
 </script>
 
 <template>
-  <ul :aria-label="label" class="flex flex-wrap items-center gap-2">
+  <!--
+    Ẩn hẳn khi không còn tag: danh sách có nhãn nhưng rỗng khiến screen reader
+    đọc nhãn rồi dừng ở vùng trống. Dedupe/trim diễn ra ở tầng dữ liệu
+    (`articleDisplayTags` trong `blog-articles.ts`, gọi ở route) — component
+    nhận danh sách đã sạch nên `:key="tag"` luôn an toàn.
+  -->
+  <ul v-if="tags.length > 0" :aria-label="label" class="flex flex-wrap items-center gap-2">
     <li
       v-for="tag in tags"
       :key="tag"

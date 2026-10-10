@@ -6,11 +6,16 @@
   bảo một landmark `<main>`, skip link và global nav có tên.
 -->
 <script setup lang="ts">
+// Import tường minh (không phụ thuộc auto-import): component test mount SFC
+// này ngoài Nuxt runtime (`@vitejs/plugin-vue` thuần) — same pattern với
+// PublicShell của layout-public.
+import { computed } from 'vue';
 import type { PublicLocale } from '@ecoma-io/i18n-public';
 import { PublicShell, buildPublicPath } from '@ecoma-io/layout-public';
 import type { BlogCollectionItem } from '@nuxt/content';
 import { ContentRenderer } from '#components';
 import BlogTagList from '~/components/blogs/BlogTagList.vue';
+import { formatArticleDate } from '~/utils/blog-date';
 import type { BlogArticleSummary } from '~/utils/blog-articles';
 import type { BlogUiStrings } from '~/utils/blog-ui-strings';
 
@@ -25,25 +30,22 @@ const { locale, page, summary, related, previous, next, availableLocales, ui } =
     readonly summary: BlogArticleSummary;
     /** Related articles cùng tag chính, đã loại chính article này. */
     readonly related: readonly BlogArticleSummary[];
+    /** Bài cũ hơn liền trước — `undefined` ở biên (bài cũ nhất). */
     readonly previous: { readonly path: string; readonly title: string } | undefined;
+    /** Bài mới hơn liền sau — `undefined` ở biên (bài mới nhất). */
     readonly next: { readonly path: string; readonly title: string } | undefined;
     /** Locale thực sự có bản dịch của article — input cho locale switcher. */
     readonly availableLocales: readonly PublicLocale[];
     readonly ui: BlogUiStrings;
   }>();
 
-/** Link về blog landing — dựng qua builder của `layout-public`, không concatenate. */
-const blogRoot = buildPublicPath({ locale, mount: 'blog' });
-
-/** Ngày hiển thị theo locale. */
-function formatDate(date: string, localeCode: string): string {
-  return new Date(`${date}T00:00:00Z`).toLocaleDateString(localeCode, {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    timeZone: 'UTC',
-  });
-}
+/**
+ * Link về blog landing — dựng qua builder của `layout-public`, không
+ * concatenate. Bọc `computed()` để track prop `locale`: client-side navigate
+ * giữa hai locale tái dùng instance component này, path tính một lần lúc
+ * setup sẽ trỏ landing cũ trong khi nội dung đã sang locale mới.
+ */
+const blogRoot = computed(() => buildPublicPath({ locale, mount: 'blog' }));
 </script>
 
 <template>
@@ -57,7 +59,7 @@ function formatDate(date: string, localeCode: string): string {
         phải nội dung hiển thị lần hai.
       -->
       <p class="text-sm text-slate-500">
-        <time :datetime="summary.date">{{ formatDate(summary.date, locale) }}</time>
+        <time :datetime="summary.date">{{ formatArticleDate(summary.date, locale) }}</time>
         <span aria-hidden="true"> · </span>
         <span>{{ ui.writtenBy }} {{ summary.author }}</span>
       </p>
@@ -67,16 +69,19 @@ function formatDate(date: string, localeCode: string): string {
       </div>
 
       <!--
-        Cover của article: `aspect-video` + `object-cover` giữ tỉ lệ khung;
-        lazy vì người đọc chưa scroll tới nội dung. Article không cover thì
-        không render `<img>` — không hình hỏng hay placeholder rỗng.
+        Cover của article: nằm trên khối nội dung ở tỉ lệ full-cột đọc — đây
+        là phần tử LCP của trang, nên `loading="eager"` + `fetchpriority="high"`
+        (lazy trên LCP image là anti-pattern: browser chỉ bắt đầu tải khi phần
+        tử gần viewport). `decoding="async"` giữ lại — giải mã bất đồng bộ
+        không chặn render. Article không cover thì không render `<img>`.
       -->
       <img
         v-if="summary.cover"
         :src="summary.cover.src"
         :alt="summary.cover.alt"
         class="mt-6 aspect-video w-full rounded-lg object-cover"
-        loading="lazy"
+        loading="eager"
+        fetchpriority="high"
         decoding="async"
       />
 
@@ -90,19 +95,21 @@ function formatDate(date: string, localeCode: string): string {
       </div>
 
       <p class="mt-10">
-        <a
+        <NuxtLink
           v-if="blogRoot.kind === 'localized'"
-          :href="blogRoot.path"
+          :to="blogRoot.path"
           class="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline focus-visible:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
         >
           ← {{ ui.allPosts }}
-        </a>
+        </NuxtLink>
       </p>
 
       <!--
         Cặp prev/next chỉ chứa article **cùng locale** (query đã lọc ở tầng SQL,
-        xem route). `<nav>` mang tên riêng để không trùng accessible name với
-        global nav của shell.
+        xem route). Ngữ nghĩa theo trục thời gian: "previous" = bài cũ hơn,
+        "next" = bài mới hơn — nguồn là `pickAdjacentArticles` trong
+        `blog-articles.ts`. `<nav>` mang tên riêng để không trùng accessible
+        name với global nav của shell.
       -->
       <nav
         v-if="previous || next"
@@ -111,21 +118,21 @@ function formatDate(date: string, localeCode: string): string {
       >
         <div v-if="previous" class="sm:max-w-[48%]">
           <p class="text-xs uppercase tracking-wide text-slate-500">{{ ui.previous }}</p>
-          <a
-            :href="previous.path"
+          <NuxtLink
+            :to="previous.path"
             class="text-sm font-medium text-slate-900 hover:underline focus-visible:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
           >
             {{ previous.title }}
-          </a>
+          </NuxtLink>
         </div>
         <div v-if="next" class="sm:max-w-[48%] sm:text-right">
           <p class="text-xs uppercase tracking-wide text-slate-500">{{ ui.next }}</p>
-          <a
-            :href="next.path"
+          <NuxtLink
+            :to="next.path"
             class="text-sm font-medium text-slate-900 hover:underline focus-visible:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
           >
             {{ next.title }}
-          </a>
+          </NuxtLink>
         </div>
       </nav>
 
@@ -134,12 +141,12 @@ function formatDate(date: string, localeCode: string): string {
         <ul class="mt-4 space-y-3">
           <li v-for="article in related" :key="article.path">
             <p class="text-sm">
-              <a
-                :href="article.path"
+              <NuxtLink
+                :to="article.path"
                 class="font-medium text-slate-900 hover:underline focus-visible:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
               >
                 {{ article.title }}
-              </a>
+              </NuxtLink>
               <span class="text-slate-500"> — {{ article.description }}</span>
             </p>
           </li>

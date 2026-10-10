@@ -6,29 +6,26 @@
   được của chính link title, không phải một link thứ hai.
 -->
 <script setup lang="ts">
+import type { PublicLocale } from '@ecoma-io/i18n-public';
 // Import tường minh: auto-import đăng ký `BlogsBlogTagList` (prefix thư mục),
 // còn template dùng `BlogTagList` — không import thì SSR render rỗng im lặng.
 import BlogTagList from '~/components/blogs/BlogTagList.vue';
+import { formatArticleDate } from '~/utils/blog-date';
 import type { BlogArticleSummary } from '~/utils/blog-articles';
 import type { BlogUiStrings } from '~/utils/blog-ui-strings';
 
-// oxlint-disable-next-line vue/max-props
-defineProps<{
-  readonly article: BlogArticleSummary;
-  readonly ui: BlogUiStrings;
-}>();
-
-/** Ngày hiển thị theo locale — demo content vẫn format đúng locale, không hard-code `en-US`. */
-const { locale } = useI18nLocale();
-
-function formatDate(date: string, localeCode: string): string {
-  return new Date(`${date}T00:00:00Z`).toLocaleDateString(localeCode, {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    timeZone: 'UTC',
-  });
-}
+const { article, locale, ui } =
+  // oxlint-disable-next-line vue/max-props
+  defineProps<{
+    readonly article: BlogArticleSummary;
+    /**
+     * Locale của trang đang render card — truyền xuống từ route qua view cha,
+     * cùng nguồn với mọi component khác trên trang (không tự parse lại
+     * `route.path` với fallback im lặng, không snapshot không reactive).
+     */
+    readonly locale: PublicLocale;
+    readonly ui: BlogUiStrings;
+  }>();
 </script>
 
 <template>
@@ -49,19 +46,24 @@ function formatDate(date: string, localeCode: string): string {
     />
     <div class="flex flex-1 flex-col p-5">
       <h3 class="text-lg font-semibold tracking-tight text-slate-900">
-        <a
-          :href="article.path"
+        <!--
+          `NuxtLink` thay `<a href>`: client-side navigate giữa các article
+          không tải lại cả bundle, payload prerender được dùng lại. HTML tĩnh
+          vẫn render `<a href>` thật nên SEO/crawl không đổi.
+        -->
+        <NuxtLink
+          :to="article.path"
           :aria-label="`${article.title} — ${ui.readMore}`"
           class="hover:underline focus-visible:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
         >
           {{ article.title }}
-        </a>
+        </NuxtLink>
       </h3>
       <p class="mt-2 flex-1 text-sm leading-relaxed text-slate-600">
         {{ article.description }}
       </p>
       <p class="mt-3 text-xs text-slate-500">
-        <time :datetime="article.date">{{ formatDate(article.date, locale) }}</time>
+        <time :datetime="article.date">{{ formatArticleDate(article.date, locale) }}</time>
         <span aria-hidden="true"> · </span>
         <span>{{ article.author }}</span>
       </p>

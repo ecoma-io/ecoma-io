@@ -7,10 +7,15 @@
   các article còn lại mới nhất trước.
 -->
 <script setup lang="ts">
+// Import tường minh (không phụ thuộc auto-import): component test mount SFC
+// này ngoài Nuxt runtime (`@vitejs/plugin-vue` thuần) — same pattern với
+// PublicShell của layout-public.
+import { computed } from 'vue';
 import type { PublicLocale } from '@ecoma-io/i18n-public';
 import { PublicShell, buildPublicPath } from '@ecoma-io/layout-public';
 import BlogArticleCard from '~/components/blogs/BlogArticleCard.vue';
 import BlogTagList from '~/components/blogs/BlogTagList.vue';
+import { formatArticleDate } from '~/utils/blog-date';
 import type { BlogArticleSummary } from '~/utils/blog-articles';
 import type { BlogUiStrings } from '~/utils/blog-ui-strings';
 
@@ -31,21 +36,16 @@ const { locale, featured, rest, availableLocales } =
 /**
  * Landing path canonical của mount — dựng qua builder của `layout-public`
  * thay vì concatenate `/${locale}/blog`, để landing đi đúng cùng contract
- * topology với mọi path public khác của app. Builder trả discriminated union;
- * với mount hợp lệ nhánh `localized` luôn xảy ra, nên extract sẵn path.
+ * topology với mọi path public khác của app. Bọc trong `computed()` để track
+ * prop `locale`: `PublicShell` có contract phản ứng khi `path` đổi, và
+ * client-side navigate `/en/blog` → `/vi/blog` tái dùng instance component
+ * này (cùng route record, chỉ đổi param) — path tính một lần lúc setup sẽ
+ * giữ nguyên locale cũ trong khi nội dung đã sang locale mới.
  */
-const builtPath = buildPublicPath({ locale, mount: 'blog' });
-const currentPath = builtPath.kind === 'localized' ? builtPath.path : '/';
-
-/** Ngày hiển thị theo locale — demo content vẫn format đúng locale. */
-function formatDate(date: string, localeCode: string): string {
-  return new Date(`${date}T00:00:00Z`).toLocaleDateString(localeCode, {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    timeZone: 'UTC',
-  });
-}
+const currentPath = computed<string>(() => {
+  const built = buildPublicPath({ locale, mount: 'blog' });
+  return built.kind === 'localized' ? built.path : '/';
+});
 </script>
 
 <template>
@@ -53,23 +53,37 @@ function formatDate(date: string, localeCode: string): string {
     <div class="mx-auto w-full max-w-6xl px-4 py-10 lg:px-8">
       <!--
         Hero chỉ render khi có article featured (hoặc fallback). Blog rỗng vẫn
-        là landing hợp lệ: tiêu đề + listing rỗng, không hero rỗng.
+        là landing hợp lệ: tiêu đề + listing rỗng, không hero rỗng — và "tiêu
+        đề" ở đây là `<h1>` thật: blog rỗng cũng không được mất heading cấp
+        một (hierarchy cho screen reader + tín hiệu chủ đề cho SEO), nên
+        `ui.blog` làm h1 fallback khi không có hero.
       -->
+      <h1 v-if="!featured" class="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+        {{ ui.blog }}
+      </h1>
       <article v-if="featured">
-        <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">
+        <!--
+          Nhãn chỉ khi article hero thực sự `featured: true` — fallback bài
+          mới nhất không phải featured, gắn nhãn đó là nói dối người đọc.
+        -->
+        <p
+          v-if="featured.featured"
+          class="text-sm font-semibold uppercase tracking-wide text-slate-500"
+        >
           {{ ui.featured }}
         </p>
         <!--
-          Cover của hero: ảnh lớn nhất trang, nên eager decode; `aspect-video`
-          + `object-cover` giữ tỉ lệ khung bất kể kích thước gốc. Featured
-          không cover thì không render `<img>` — không hình hỏng.
+          Cover của hero: phần tử LCP của landing, `fetchpriority="high"` để
+          browser ưu tiên tải ngay; `aspect-video` + `object-cover` giữ tỉ lệ
+          khung bất kể kích thước gốc. Featured không cover thì không render
+          `<img>` — không hình hỏng.
         -->
         <img
           v-if="featured.cover"
           :src="featured.cover.src"
           :alt="featured.cover.alt"
           class="mt-4 aspect-video w-full max-w-4xl rounded-lg object-cover"
-          decoding="async"
+          fetchpriority="high"
         />
         <h1 class="mt-2 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
           <a
@@ -84,7 +98,7 @@ function formatDate(date: string, localeCode: string): string {
           {{ featured.description }}
         </p>
         <p class="mt-3 text-sm text-slate-500">
-          <time :datetime="featured.date">{{ formatDate(featured.date, locale) }}</time>
+          <time :datetime="featured.date">{{ formatArticleDate(featured.date, locale) }}</time>
           <span aria-hidden="true"> · </span>
           <span>{{ ui.writtenBy }} {{ featured.author }}</span>
         </p>
@@ -97,7 +111,7 @@ function formatDate(date: string, localeCode: string): string {
         <h2 class="text-xl font-semibold tracking-tight text-slate-900">{{ ui.latest }}</h2>
         <ul class="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           <li v-for="article in rest" :key="article.path">
-            <BlogArticleCard :article="article" :ui="ui" />
+            <BlogArticleCard :article="article" :locale="locale" :ui="ui" />
           </li>
         </ul>
       </section>

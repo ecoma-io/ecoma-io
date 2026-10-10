@@ -36,9 +36,11 @@ describe('buildBlogSeo', () => {
     ).toBe('One URL model · Ecoma Blog');
   });
 
-  it('falls back to the localized surface name when the title is missing or blank', () => {
-    // Title thiếu hoặc rỗng không được sinh separator lơ lửng
-    // `" · Ecoma Blog"`; frontmatter có khoảng trắng phải bị trim.
+  it('falls back to the brand plus surface name, once, when the title is missing or blank', () => {
+    // Title thiếu hoặc rỗng không được sinh chuỗi lặp tên bề mặt
+    // (`Blog · Ecoma Blog` — thừa, và giống hệt nhau ở mọi locale nên mất tín
+    // hiệu locale cho crawler); fallback phát `Ecoma Blog` đúng một lần.
+    // Frontmatter có khoảng trắng phải bị trim.
     for (const title of [undefined, '', '   ']) {
       expect(
         buildBlogSeo({
@@ -48,8 +50,20 @@ describe('buildBlogSeo', () => {
           description: 'Description',
           availableLocales: ['en'],
         }).title,
-      ).toBe('Blog · Ecoma Blog');
+      ).toBe('Ecoma Blog');
     }
+  });
+
+  it('trims a padded title before applying the template', () => {
+    expect(
+      buildBlogSeo({
+        pathname: '/en/blog/url-model',
+        locale: 'en',
+        title: '  One URL model  ',
+        description: 'Description',
+        availableLocales: ['en'],
+      }).title,
+    ).toBe('One URL model · Ecoma Blog');
   });
 
   it('keeps the description verbatim and reports missing description as an empty string', () => {

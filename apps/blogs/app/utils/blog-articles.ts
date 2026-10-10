@@ -1,7 +1,7 @@
 /**
  * Logic thuần của listing blog: thứ tự article, selection featured, related và
- * previous/next — tách khỏi route/component để test được mọi bất biến mà không
- * cần dựng Nuxt runtime.
+ * pager (previous/next) — tách khỏi route/component để test được mọi bất
+ * biến mà không cần dựng Nuxt runtime.
  *
  * Bất biến được pin ở đây:
  *
@@ -11,13 +11,17 @@
  *   article hiện tại ra khỏi kết quả.
  * - **Deterministic ordering**: mới nhất trước, so `date` giảm dần; hai article
  *   cùng ngày (EN/VI cùng ngày hoặc demo data trùng ngày) được phá hoài bằng
- *   `stem` tăng dần — `stem` là đường dẫn content có số ordering prefix
- *   (`en/blog/1.url-model`), ổn định và không trùng, nên sort toàn phần luôn
- *   xác định.
+ *   `stem` tăng dần — so theo **collation có số** (`localeCompare numeric`),
+ *   nên prefix ordering (`en/blog/2.x` đứng trước `en/blog/10.x`) đúng ngay
+ *   khi một locale vượt quá 9 article; `stem` là đường dẫn content ổn định và
+ *   không trùng, nên sort toàn phần luôn xác định.
  * - **Featured fallback**: article featured đầu tiên theo cùng thứ tự được
  *   chọn; khi không article nào `featured === true`, bài mới nhất được dùng
  *   thay thế — landing luôn có một hero, nhưng Hero không bao giờ rỗng và
  *   không bao giờ bị suy từ dữ liệu ngoài danh sách đã lọc.
+ * - **Pager theo trục thời gian**: "previous" là bài **cũ hơn** liền trước,
+ *   "next" là bài **mới hơn** liền sau trong danh sách đã sort — hàm
+ *   `pickAdjacentArticles` ở dưới là nguồn duy nhất của cặp này.
  */
 
 /**
@@ -61,7 +65,9 @@ export function normalizeArticleCover(
   cover: string | undefined,
   coverAlt: string | undefined,
 ): BlogArticleCover | undefined {
-  if (typeof cover !== 'string' || cover === '') {
+  // Hai nhánh cùng một invariant, nên cùng chuẩn `trim()`: cover chỉ toàn
+  // khoảng trắng cũng không được lọt qua làm `src="   "`.
+  if (typeof cover !== 'string' || cover.trim() === '') {
     return undefined;
   }
   if (typeof coverAlt !== 'string' || coverAlt.trim() === '') {
@@ -83,7 +89,10 @@ export function orderArticlesByDateDesc(
     if (a.date !== b.date) {
       return a.date < b.date ? 1 : -1;
     }
-    return a.stem < b.stem ? -1 : a.stem > b.stem ? 1 : 0;
+    // Tie-break so `stem` theo **collation có số**: prefix ordering trong tên
+    // thư mục (`2.x` trước `10.x`) là ý nghĩa editorial của prefix, so chữ
+    // thuần sẽ đảo hai bài đó ngay khi một locale vượt 9 bài cùng ngày.
+    return a.stem.localeCompare(b.stem, 'en', { numeric: true });
   });
 }
 
@@ -109,20 +118,80 @@ export function pickFeaturedArticle(
  * (danh sách input đã lọc theo locale), loại chính article hiện tại, mới nhất
  * trước, giới hạn `limit`.
  *
- * Chọn "tag đầu tiên" thay vì "giao của mọi tag" để thứ tự tag trong
- * frontmatter mang ý nghĩa (tag đầu là chủ đề chính), và để một article chỉ
- * chung tag phụ vẫn có cơ hội xuất hiện khi tag chính thiếu ứng viên.
+ * Chọn "tag đầu tiên" (`tags[0]`) làm tiêu chí **duy nhất**: thứ tự tag trong
+ * frontmatter mang ý nghĩa (tag đầu là chủ đề chính). Hàm **không** fallback
+ * sang tag phụ — một article chỉ chung tag phụ của article hiện tại sẽ không
+ * bao giờ xuất hiện trong related, kể cả khi không có ứng viên nào chia tag
+ * chính (trường hợp đó trả `[]`).
  */
 export function pickRelatedArticles(
   articles: readonly BlogArticleSummary[],
   current: BlogArticleSummary,
   limit: number,
 ): BlogArticleSummary[] {
-  const primaryTag = current.tags[0];
+  // `.at(0)` thay vì `[0]`: `at` luôn mang `| undefined` trong kiểu trả về
+  // bất kể cờ `noUncheckedIndexedAccess` — guard dưới đây đúng ở mọi cấu hình
+  // tsconfig, không thành dead branch khi cờ tắt.
+  const primaryTag = current.tags.at(0);
   if (primaryTag === undefined) {
     return [];
   }
   return orderArticlesByDateDesc(articles)
     .filter((article) => article.path !== current.path && article.tags.includes(primaryTag))
     .slice(0, limit);
+}
+
+/** Cặp điều hướng pager của article hiện tại — mỗi phía `undefined` ở biên danh sách. */
+export type BlogAdjacentArticles = {
+  /** Bài **cũ hơn** liền trước theo thời gian — `undefined` khi article là bài cũ nhất. */
+  readonly previous: { readonly path: string; readonly title: string } | undefined;
+  /** Bài **mới hơn** liền sau theo thời gian — `undefined` khi article là bài mới nhất. */
+  readonly next: { readonly path: string; readonly title: string } | undefined;
+};
+
+/**
+ * Cặp previous/next của article hiện tại trên **danh sách đã sort** của
+ * `orderArticlesByDateDesc` (mới nhất trước).
+ *
+ * Ngữ nghĩa theo **trục thời gian** — cách blog đọc hiểu "bài trước/bài sau":
+ *
+ * - `previous` là bài **cũ hơn** liền trước (trong danh sách mới-nhất-trước,
+ *   phần tử ngay **sau** article hiện tại);
+ * - `next` là bài **mới hơn** liền sau (phần tử ngay **trước** article hiện
+ *   tại).
+ *
+ * Bài cũ nhất không có `previous`, bài mới nhất không có `next` — biên danh
+ * sách cho `undefined`, không bọc vòng. Article hiện tại không bao giờ xuất
+ * hiện trong cặp, và vì input là danh sách đã lọc theo locale, cặp này không
+ * bao giờ nhảy sang locale khác.
+ */
+export function pickAdjacentArticles(
+  articles: readonly BlogArticleSummary[],
+  current: BlogArticleSummary,
+): BlogAdjacentArticles {
+  const index = articles.findIndex((article) => article.path === current.path);
+  if (index < 0) {
+    return { previous: undefined, next: undefined };
+  }
+  const older = articles[index + 1];
+  const newer = articles[index - 1];
+  return {
+    previous: older ? { path: older.path, title: older.title } : undefined,
+    next: newer ? { path: newer.path, title: newer.title } : undefined,
+  };
+}
+
+/**
+ * Tags hiển thị của một article: dedupe (schema `z.array(z.string())` không
+ * ràng buộc unique — frontmatter có tag lặp thì `v-for :key="tag"` sinh
+ * duplicate key và Vue patch DOM sai), trim và loại chuỗi rỗng.
+ *
+ * Gọi ở **tầng map route** (một lần trên dữ liệu thô), không trong component —
+ * component nhận danh sách đã sạch, `:key="tag"` luôn an toàn.
+ */
+export function articleDisplayTags(tags: readonly string[] | undefined): readonly string[] {
+  if (tags === undefined) {
+    return [];
+  }
+  return [...new Set(tags.map((tag) => tag.trim()).filter((tag) => tag !== ''))];
 }

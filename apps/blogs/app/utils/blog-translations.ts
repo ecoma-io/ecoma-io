@@ -12,12 +12,32 @@
 import { PUBLIC_LOCALES, type PublicLocale } from '@ecoma-io/i18n-public';
 import { buildPublicPath } from '@ecoma-io/layout-public';
 
+/**
+ * Cặp `{ locale, path }` cho **một** resource trên **mọi** registry locale —
+ * nguồn suy ra duy nhất của cả ba helper dưới đây.
+ *
+ * `path` là candidate của query `where('path', 'IN', …)`; `locale` là phần tử
+ * của tập availability. Ba hàm export cùng chạy trên danh sách này nên
+ * candidate dùng để query và candidate dùng để lọc `existingPaths` không bao
+ * giờ tách nhau — sửa contract (buildPublicPath/PUBLIC_LOCALES) chỉ cần đúng
+ * một chỗ.
+ */
+function blogLocalizedEntries(
+  remainder?: string,
+): readonly { locale: PublicLocale; path: string }[] {
+  return PUBLIC_LOCALES.flatMap((definition) => {
+    const built = buildPublicPath({
+      locale: definition.code,
+      mount: 'blog',
+      ...(remainder === undefined ? {} : { path: remainder }),
+    });
+    return built.kind === 'localized' ? [{ locale: definition.code, path: built.path }] : [];
+  });
+}
+
 /** Tập locale có landing của mount `blog` — landing là route tĩnh của mount, tồn tại ở mọi registry locale. */
 export function blogLandingAvailableLocales(): readonly PublicLocale[] {
-  return PUBLIC_LOCALES.flatMap((definition) => {
-    const built = buildPublicPath({ locale: definition.code, mount: 'blog' });
-    return built.kind === 'localized' ? [definition.code] : [];
-  });
+  return blogLocalizedEntries().map((entry) => entry.locale);
 }
 
 /**
@@ -32,14 +52,9 @@ export function blogArticleAvailableLocales(
   remainder: string,
   existingPaths: ReadonlySet<string>,
 ): readonly PublicLocale[] {
-  return PUBLIC_LOCALES.flatMap((definition) => {
-    const built = buildPublicPath({
-      locale: definition.code,
-      mount: 'blog',
-      path: remainder,
-    });
-    return built.kind === 'localized' && existingPaths.has(built.path) ? [definition.code] : [];
-  });
+  return blogLocalizedEntries(remainder)
+    .filter((entry) => existingPaths.has(entry.path))
+    .map((entry) => entry.locale);
 }
 
 /**
@@ -51,12 +66,5 @@ export function blogArticleAvailableLocales(
  * `existingPaths`, không phải ở bước dựng candidate).
  */
 export function blogTranslationCandidates(remainder: string): readonly string[] {
-  return PUBLIC_LOCALES.flatMap((definition) => {
-    const built = buildPublicPath({
-      locale: definition.code,
-      mount: 'blog',
-      path: remainder,
-    });
-    return built.kind === 'localized' ? [built.path] : [];
-  });
+  return blogLocalizedEntries(remainder).map((entry) => entry.path);
 }

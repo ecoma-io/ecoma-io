@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { PUBLIC_LOCALES } from '@ecoma-io/i18n-public';
+import { PUBLIC_MOUNTS } from '@ecoma-io/layout-public';
 
 /**
  * Contract của seed content — chạy trên **file thật** trong `content/`, không
@@ -206,5 +208,48 @@ describe('seed content contract', () => {
       }),
     );
     expect(localeAssetLeaks, 'asset files inside locale trees').toEqual([]);
+  });
+
+  it('covers every registry locale and every global shell link in the prerender ignore list', () => {
+    // `nitro.config.ts` liệt kê tường minh những entry point ngoài blog mà
+    // crawler (`crawlLinks: true`) đi theo từ global nav/footer của
+    // `layout-public`: locale roots, mount `docs`. Đây là coupling có chủ ý —
+    // nhưng phải được ghim bằng test: lib thêm locale mới hoặc mount mới vào
+    // registry mà blogs chưa cập nhật `ignore` thì test đỏ **ngay tại đây**
+    // thay vì build đỏ lúc prerender (hoặc tệ hơn, prerender 404 âm thầm).
+    const nitroConfig = (() => {
+      const modules = import.meta.glob<string>('../nitro.config.ts', {
+        query: '?raw',
+        import: 'default',
+        eager: true,
+      });
+      return modules['../nitro.config.ts'] ?? '';
+    })();
+
+    // Mọi locale của registry phải có cả locale root lẫn mount-ignore phủ.
+    for (const definition of PUBLIC_LOCALES) {
+      const code = definition.code;
+      expect(nitroConfig, `nitro ignore: locale root /${code}`).toContain(`^\\/${code}\\/?$`);
+      expect(nitroConfig, `nitro ignore: docs mount of locale ${code}`).toContain(
+        `^\\/${code}\\/docs(\\/.*)?$`,
+      );
+    }
+
+    // Mọi mount trong registry khác `blog` (mount của app này) phải xuất hiện
+    // trong ignore — mount mới sinh ra ở lib mà blogs không sở hữu là một
+    // entry point ngoài ownership cho crawler. Ignore hoạt động theo **prefix
+    // segment**: pattern `^\/en\/docs(\/.*)?$` phủ cả mount lồng nhau
+    // (`docs/api`), nên chỉ mount **cấp một** (không có `/` trong path) cần
+    // pattern riêng trong config; mount mới sinh ra ở lib là lỗi test ngay tại
+    // đây thay vì build đỏ lúc prerender.
+    for (const definition of PUBLIC_MOUNTS) {
+      const mount = definition.path;
+      if (mount === 'blog' || mount.includes('/')) {
+        continue;
+      }
+      expect(nitroConfig, `nitro ignore: mount ${mount} outside blog ownership`).toContain(
+        `\\/${mount}(\\/`,
+      );
+    }
   });
 });

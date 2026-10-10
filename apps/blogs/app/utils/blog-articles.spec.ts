@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  articleDisplayTags,
+  normalizeArticleCover,
   orderArticlesByDateDesc,
+  pickAdjacentArticles,
   pickFeaturedArticle,
   pickRelatedArticles,
   type BlogArticleSummary,
@@ -42,6 +45,17 @@ describe('orderArticlesByDateDesc', () => {
       en({ path: '/en/blog/a', stem: 'en/blog/1.a', date: '2026-09-01' }),
     ]);
     expect(ordered.map((article) => article.path)).toEqual(['/en/blog/a', '/en/blog/b']);
+  });
+
+  it('breaks stem ties numerically: 2.x sorts before 10.x', () => {
+    // So chữ thuần đặt `10.x` trước `2.x` — prefix ordering prefix mất ý nghĩa
+    // editorial ngay khi một locale vượt 9 bài cùng ngày. Collation numeric
+    // giữ đúng thứ tự số.
+    const ordered = orderArticlesByDateDesc([
+      en({ path: '/en/blog/ten', stem: 'en/blog/10.ten', date: '2026-09-01' }),
+      en({ path: '/en/blog/two', stem: 'en/blog/2.two', date: '2026-09-01' }),
+    ]);
+    expect(ordered.map((article) => article.path)).toEqual(['/en/blog/two', '/en/blog/ten']);
   });
 
   it('never mixes locales when the input list is locale-filtered', () => {
@@ -156,5 +170,134 @@ describe('pickRelatedArticles', () => {
     // Mọi kết quả đến từ pool — không có article nào được "suy ra" ngoài input.
     const poolPaths = new Set(pool.map((article) => article.path));
     expect(related.every((article) => poolPaths.has(article.path))).toBe(true);
+  });
+
+  it('never promotes a secondary-tag-only article even when the primary tag has no candidates', () => {
+    // Docstring của hàm pin hành vi này: không fallback sang tag phụ — pool
+    // không ai chia tag chính (`architecture`) thì kết quả rỗng, dù
+    // `same-secondary` chia tag phụ.
+    const noPrimaryCandidates = [
+      current,
+      en({ path: '/en/blog/same-secondary', tags: ['urls'], date: '2026-09-25' }),
+      en({ path: '/en/blog/other', tags: ['design'], date: '2026-09-15' }),
+    ];
+    expect(pickRelatedArticles(noPrimaryCandidates, current, 3)).toEqual([]);
+  });
+});
+
+describe('pickAdjacentArticles', () => {
+  // Danh sách đã sort mới-nhất-trước — đúng output của
+  // `orderArticlesByDateDesc` mà route truyền vào.
+  const list = [
+    en({ path: '/en/blog/newest', date: '2026-10-07' }),
+    en({ path: '/en/blog/middle', date: '2026-09-16' }),
+    en({ path: '/en/blog/oldest', date: '2026-09-02' }),
+  ];
+
+  it('points previous at the older article and next at the newer one', () => {
+    // Ngữ nghĩa theo trục thời gian: "previous" = cũ hơn, "next" = mới hơn —
+    // trong danh sách mới-nhất-trước, previous là phần tử *sau* hiện tại.
+    const middle = list[1];
+    expect(middle).toBeDefined();
+    if (!middle) {
+      return;
+    }
+    const adjacent = pickAdjacentArticles(list, middle);
+    expect(adjacent.previous?.path).toBe('/en/blog/oldest');
+    expect(adjacent.next?.path).toBe('/en/blog/newest');
+  });
+
+  it('leaves previous undefined at the oldest article (no wraparound)', () => {
+    const oldest = list[2];
+    expect(oldest).toBeDefined();
+    if (!oldest) {
+      return;
+    }
+    const adjacent = pickAdjacentArticles(list, oldest);
+    expect(adjacent.previous).toBeUndefined();
+    expect(adjacent.next?.path).toBe('/en/blog/middle');
+  });
+
+  it('leaves next undefined at the newest article (no wraparound)', () => {
+    const newest = list[0];
+    expect(newest).toBeDefined();
+    if (!newest) {
+      return;
+    }
+    const adjacent = pickAdjacentArticles(list, newest);
+    expect(adjacent.previous?.path).toBe('/en/blog/middle');
+    expect(adjacent.next).toBeUndefined();
+  });
+
+  it('returns both sides undefined when the current article is not in the list', () => {
+    const stranger = en({ path: '/en/blog/stranger', date: '2026-09-20' });
+    const adjacent = pickAdjacentArticles(list, stranger);
+    expect(adjacent.previous).toBeUndefined();
+    expect(adjacent.next).toBeUndefined();
+  });
+
+  it('never places the current article in its own pager pair', () => {
+    for (const article of list) {
+      const adjacent = pickAdjacentArticles(list, article);
+      const paths = [adjacent.previous?.path, adjacent.next?.path];
+      expect(paths).not.toContain(article.path);
+    }
+  });
+});
+
+describe('normalizeArticleCover', () => {
+  it('keeps a complete valid pair', () => {
+    expect(normalizeArticleCover('/assets/cover.svg', 'A cover')).toEqual({
+      src: '/assets/cover.svg',
+      alt: 'A cover',
+    });
+  });
+
+  it('drops the cover when the URL is missing or blank', () => {
+    // Cover chỉ toàn khoảng trắng cũng bị loại — invariant của hai nhánh phải
+    // phản chiếu nhau, không sinh `<img src="   ">`.
+    expect(normalizeArticleCover(undefined, 'A cover')).toBeUndefined();
+    expect(normalizeArticleCover('', 'A cover')).toBeUndefined();
+    expect(normalizeArticleCover('   ', 'A cover')).toBeUndefined();
+  });
+
+  it('drops the cover when the alt is missing or blank', () => {
+    expect(normalizeArticleCover('/assets/cover.svg', undefined)).toBeUndefined();
+    expect(normalizeArticleCover('/assets/cover.svg', '')).toBeUndefined();
+    expect(normalizeArticleCover('/assets/cover.svg', '   ')).toBeUndefined();
+  });
+
+  it('keeps an alt that only surrounds real text with whitespace, trimmed is not required', () => {
+    // Alt có nội dung nhưng hai đầu có khoảng trắng vẫn hợp lệ — hàm chỉ loại
+    // alt **rỗng sau trim**, không mutate giá trị (renderer giữ nguyên text).
+    expect(normalizeArticleCover('/assets/cover.svg', ' A cover ')).toEqual({
+      src: '/assets/cover.svg',
+      alt: ' A cover ',
+    });
+  });
+});
+
+describe('articleDisplayTags', () => {
+  it('deduplicates repeated tags', () => {
+    expect(articleDisplayTags(['meta', 'meta', 'design'])).toEqual(['meta', 'design']);
+  });
+
+  it('trims and drops blank tags', () => {
+    expect(articleDisplayTags(['  meta  ', '   ', ''])).toEqual(['meta']);
+  });
+
+  it('returns an empty list for undefined and empty input', () => {
+    expect(articleDisplayTags(undefined)).toEqual([]);
+    expect(articleDisplayTags([])).toEqual([]);
+  });
+
+  it('preserves first-occurrence order after dedupe', () => {
+    // Thứ tự frontmatter mang ý nghĩa (tag đầu là chủ đề chính của related) —
+    // dedupe không được đảo thứ tự.
+    expect(articleDisplayTags(['design', 'meta', 'design', 'urls'])).toEqual([
+      'design',
+      'meta',
+      'urls',
+    ]);
   });
 });

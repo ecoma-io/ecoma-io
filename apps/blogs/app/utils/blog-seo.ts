@@ -13,8 +13,9 @@
  *   của `i18n-public`, không ghép chuỗi `/${locale}${...}` thủ công.
  * - origin là hằng số `ecoma.io` (`../domain/blog-origin`): không đọc host của
  *   request nên kết quả deterministic và không phụ thuộc môi trường preview.
- * - title rỗng/thiếu thì fallback về tên bề surface localized, không sinh
- *   separator lơ lửng `" · Ecoma Blog"`.
+ * - title rỗng/thiếu thì phát `Ecoma Blog` (brand + tên bề mặt, đúng một lần);
+ *   title thật đi qua template `<title> · Ecoma Blog` — không bao giờ sinh
+ *   separator lơ lửng hay lặp tên bề mặt (`Blog · Ecoma Blog`).
  */
 
 import {
@@ -92,10 +93,13 @@ export function buildBlogSeo(input: {
   return {
     // `hreflang` của registry, không phải `locale` code: `vi` → `vi-VN`.
     lang: getLocaleDefinition(input.locale)?.hreflang ?? input.locale,
-    // Title rỗng/thiếu thì bỏ hẳn separator: fallback về tên bề mặt đã
-    // localized thay vì sinh `" · Ecoma Blog"` có separator lơ lửng.
-    // `trim()` vì frontmatter `"  Tiêu đề  "` không được lọt vào title.
-    title: `${input.title?.trim() || strings.blog} · Ecoma ${strings.blog}`,
+    // Title rỗng/thiếu thì phát đúng một lần `Ecoma Blog` — template đầy đủ
+    // lặp tên bề mặt hai lần (`Blog · Ecoma Blog`), thừa và giống hệt nhau ở
+    // mọi locale, mất tín hiệu locale cho crawler. `trim()` vì frontmatter
+    // `"  Tiêu đề  "` không được lọt vào title.
+    title: input.title?.trim()
+      ? `${input.title.trim()} · Ecoma ${strings.blog}`
+      : `Ecoma ${strings.blog}`,
     description: input.description ?? '',
     canonical: toProductionUrl(input.pathname),
     alternates,
