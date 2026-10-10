@@ -1,6 +1,6 @@
 /**
  * SEO payload cho một trang Home — pure, **derive hoàn toàn** từ registry
- * locale của `i18n-public` và public URL constructor của `layout-public`.
+ * locale của `app/i18n` và public URL constructor của `app/layout`.
  *
  * Tách khỏi page để phần metadata kiểm chứng được **không cần** Nuxt runtime:
  * `useHead` chỉ là lớp vận chuyển kết quả của hàm này vào `<head>`; mọi quyết
@@ -17,8 +17,8 @@
  * sao origin không được lấy từ request.
  */
 
-import { getLocaleDefinition, PUBLIC_LOCALES, type PublicLocale } from '@ecoma-io/i18n-public';
-import { buildPublicPath } from '@ecoma-io/layout-public';
+import { getLocaleDefinition, PUBLIC_LOCALES, type PublicLocale } from '../i18n/index';
+import { buildPublicPath } from '../layout/index';
 import { toProductionUrl } from './home-origin';
 
 /**

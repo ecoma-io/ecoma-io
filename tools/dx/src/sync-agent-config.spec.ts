@@ -22,7 +22,24 @@ import { ROOT_DIR } from './utils.js';
 /**
  * Mọi cây thư mục test đều là một git repository thật (`git init`), vì
  * `syncAgentConfig` resolve repo root và gọi `git check-ignore` qua shell.
+ *
+ * Git spawn trong fixture scrub `GIT_*` env: lefthook pre-push chạy suite này
+ * với `GIT_DIR` trỏ vào repo thật của workspace, và giá trị đó thắng `cwd` —
+ * không scrub thì `git init` của fixture ghim vào repo thật và mọi kiểm tra
+ * ignore chạy nhầm trên workspace.
  */
+function gitEnv(): NodeJS.ProcessEnv {
+  const {
+    GIT_DIR: _dir,
+    GIT_WORK_TREE: _tree,
+    GIT_INDEX_FILE: _index,
+    GIT_COMMON_DIR: _common,
+    ...rest
+  } = process.env;
+
+  return rest;
+}
+
 async function repo(shape: Record<string, string>): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'dx-sync-'));
 
@@ -37,7 +54,7 @@ async function repo(shape: Record<string, string>): Promise<string> {
     }
   }
 
-  execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore' });
+  execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore', env: gitEnv() });
 
   return root;
 }

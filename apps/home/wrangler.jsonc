@@ -28,9 +28,20 @@
   "assets": {
     "directory": ".output/public",
     "binding": "ASSETS",
-    // Không đặt `run_worker_first`: với Nuxt SSR, mọi request đều phải qua
-    // Worker (render + payload). Chỉ khi một path thực sự cần phục vụ HTML
-    // tĩnh mới bật nó cho path đó, để không mất SSR.
+    // `html_handling: "drop-trailing-slash"` — kế thừa URL policy của hai app
+    // cũ (`apps/docs`, `apps/blogs`): public URL canonical của repo **không**
+    // có trailing slash (`parsePublicPath` của `app/layout` từ chối trailing
+    // slash, SEO phát canonical không slash). Mặc định `auto` lại 307
+    // `/en/docs` → `/en/docs/`, tức chính canonical URL bị redirect vĩnh viễn.
+    "html_handling": "drop-trailing-slash",
+    // Không đặt `run_worker_first`: assets-first giữ content pages được phục
+    // vụ từ static asset (không invoke Worker), còn mọi request khác — SSR,
+    // payload, path lạ — đi vào Worker. Không đặt cả `not_found_handling`:
+    // fallback đó phục vụ `404.html` cho request không khớp asset mà không
+    // invoke Worker, tức sẽ nuốt SSR của `/en`, `/en/legal/*` và error page
+    // SSR cho path content lạ (404 trong app hợp nhất là sản phẩm của Worker:
+    // middleware gate + `error.vue`). `404.html` vẫn được prerender để giữ
+    // artifact-level tương thích nhưng cố ý không wire vào serving.
   },
   "observability": {
     "enabled": true,

@@ -8,8 +8,8 @@
  * request, không `Date`/random.
  */
 
-import { getLocaleDefinition, PUBLIC_LOCALES, type PublicLocale } from '@ecoma-io/i18n-public';
-import { buildPublicPath } from '@ecoma-io/layout-public';
+import { getLocaleDefinition, PUBLIC_LOCALES, type PublicLocale } from '../i18n/index';
+import { buildPublicPath } from '../layout/index';
 import { toProductionUrl } from './home-origin';
 
 /** Một `<link rel="alternate" hreflang=…>` cho một locale khác của resource. */

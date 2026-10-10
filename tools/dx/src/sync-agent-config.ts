@@ -10,6 +10,26 @@ import { ROOT_DIR } from './utils.js';
 const execFileAsync = promisify(execFile);
 
 /**
+ * Env scrub `GIT_*` cho git spawn.
+ *
+ * Git export `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE`/`GIT_COMMON_DIR` cho
+ * hooks (suite này chạy dưới lefthook pre-push), và giá trị đó trỏ vào repo
+ * của workspace thay vì repo mà `-C` chỉ tới — `GIT_DIR` thắng `cwd`. Không
+ * scrub thì lệnh `rev-parse`/`check-ignore` đọc nhầm repo thật của workspace.
+ */
+function gitEnv(): NodeJS.ProcessEnv {
+  const {
+    GIT_DIR: _dir,
+    GIT_WORK_TREE: _tree,
+    GIT_INDEX_FILE: _index,
+    GIT_COMMON_DIR: _common,
+    ...rest
+  } = process.env;
+
+  return rest;
+}
+
+/**
  * Cây skills: `.agent/skills` là source of truth, `.claude/skills` là output sinh.
  *
  * Hai nhãn này chỉ dùng để in thông báo; đường dẫn thật được ghép từ `dir`.
@@ -108,7 +128,9 @@ async function gitRepoRoot(dir: string): Promise<string> {
 
   let root: string;
   try {
-    const { stdout } = await execFileAsync('git', ['-C', dir, 'rev-parse', '--show-toplevel']);
+    const { stdout } = await execFileAsync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], {
+      env: gitEnv(),
+    });
     root = stdout.trim();
   } catch (error) {
     throw new Error(
@@ -150,7 +172,9 @@ async function isIgnored(path: string, repoRoot: string): Promise<boolean> {
   }
 
   try {
-    await execFileAsync('git', ['-C', repoRoot, 'check-ignore', '-q', '--', relativePath]);
+    await execFileAsync('git', ['-C', repoRoot, 'check-ignore', '-q', '--', relativePath], {
+      env: gitEnv(),
+    });
 
     return true;
   } catch (error) {

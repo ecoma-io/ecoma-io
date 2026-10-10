@@ -66,7 +66,17 @@
       },
       "test": {
         "dependsOn": [
-          "nuxt-prepare"
+          "nuxt-prepare",
+          "build"
+        ],
+        "//": [
+          "`test` phụ thuộc `build`: suite `tests/static-output.spec.ts`",
+          "assert trên output production thật (`.output/public` prerender +",
+          "`.output/server` Worker bundle). `nx test @ecoma-io/home` (local lẫn",
+          "`nx affected -t test` trong CI) giờ luôn build trước, nên một page/",
+          "media/404 fallback hỏng lộ ngay ở bước test thay vì chỉ thấy khi đã",
+          "deploy. (Migrated từ apps/blogs: `test` previously depended on",
+          "`build-static` — home build is the SSR Worker build.)"
         ]
       }
     }

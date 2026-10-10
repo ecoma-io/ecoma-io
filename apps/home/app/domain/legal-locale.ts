@@ -8,12 +8,12 @@
  *
  * Không tự phân tích locale: toàn bộ luật cấu trúc (`?`/`#`, `//`, trailing
  * slash, so khớp locale exact từng byte) thuộc `parsePublicPath` của
- * `i18n-public`; phần thêm của app chỉ là khớp segment `legal` + slug exact.
+ * `app/i18n`; phần thêm của app chỉ là khớp segment `legal` + slug exact.
  * Không decode, không lowercase, không repair: `/%6Cegal`, `/Legal`,
  * `/en/legal/` và `/en/legal/privacy/x` đều bị từ chối.
  */
 
-import { parsePublicPath, type PublicLocale } from '@ecoma-io/i18n-public';
+import { parsePublicPath, type PublicLocale } from '../i18n/index';
 import { LEGAL_SLUGS, type LegalSlug } from './legal-content';
 
 /**

@@ -17,6 +17,26 @@ import { ROOT_DIR } from './utils.js';
 const PR_EVENTS = new Set(['pull_request', 'pull_request_target']);
 
 /**
+ * Env scrub `GIT_*` cho git spawn.
+ *
+ * Git export `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE`/`GIT_COMMON_DIR` cho
+ * hooks (suite này chạy dưới lefthook pre-push), và giá trị đó trỏ vào repo
+ * của workspace thay vì repo mà `cwd` chỉ tới — `GIT_DIR` thắng `cwd`. Không
+ * scrub thì range của PR bị đọc nhầm trên repo thật của workspace.
+ */
+function gitEnv(): NodeJS.ProcessEnv {
+  const {
+    GIT_DIR: _dir,
+    GIT_WORK_TREE: _tree,
+    GIT_INDEX_FILE: _index,
+    GIT_COMMON_DIR: _common,
+    ...rest
+  } = process.env;
+
+  return rest;
+}
+
+/**
  * Binary commitlint đã cài trong repository.
  *
  * Gọi bằng `process.execPath` chứ không qua `npx`: `npx` có thể rời khỏi
@@ -224,7 +244,7 @@ export function listDevelopmentCommits(
   const result = spawnSync(
     'git',
     ['--no-pager', 'log', '--reverse', '-z', '--format=%H%x00%B', `${range.base}..${range.head}`],
-    { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
+    { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: gitEnv() },
   );
 
   if (result.error) {

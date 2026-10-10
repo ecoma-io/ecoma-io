@@ -31,6 +31,7 @@ const TSX = join(DX_ROOT, '../../node_modules/tsx/dist/cli.mjs');
  */
 const HEAD_SHA = execFileSync('git', ['-C', DX_ROOT, 'rev-parse', 'HEAD'], {
   encoding: 'utf8',
+  env: gitEnv(),
 }).trim();
 
 const tempDirs: string[] = [];
@@ -70,8 +71,28 @@ function prEnv(
 /** Lint giả: test chỉ nói về policy sẽ không spawn commitlint thêm một lần. */
 const lintPasses = (): LintResult => ({ ok: true, report: '' });
 
+/**
+ * Env cho git chạy trên repo tạm: bỏ mọi biến `GIT_*` mà tiến trình cha truyền
+ * xuống. Git export `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` cho hooks
+ * (lefthook pre-push chạy suite này), và giá trị đó trỏ vào repo thật của
+ * workspace — không scrub thì `git init` của fixture vẫn bị ghim vào repo thật
+ * (`GIT_DIR` thắng `cwd`), `checkout -b` đè branch thật và commit fixture rơi
+ * vào lịch sử của workspace.
+ */
+function gitEnv(): NodeJS.ProcessEnv {
+  const {
+    GIT_DIR: _dir,
+    GIT_WORK_TREE: _tree,
+    GIT_INDEX_FILE: _index,
+    GIT_COMMON_DIR: _common,
+    ...rest
+  } = process.env;
+
+  return rest;
+}
+
 function git(repo: string, ...args: string[]): string {
-  return execFileSync('git', args, { cwd: repo, encoding: 'utf8' });
+  return execFileSync('git', args, { cwd: repo, encoding: 'utf8', env: gitEnv() });
 }
 
 /**
@@ -239,7 +260,7 @@ describe('checkTitlePolicy', () => {
     expect(await checkTitlePolicy('feat(dx): add pr-check')).toEqual([]);
     expect(await checkTitlePolicy('fix(dx): correct pr-check')).toEqual([]);
     expect(await checkTitlePolicy('feat(home): add landing page')).toEqual([]);
-    expect(await checkTitlePolicy('fix(i18n-public): reject malformed locale')).toEqual([]);
+    expect(await checkTitlePolicy('fix(identity): reject malformed locale')).toEqual([]);
     expect(await checkTitlePolicy('feat(dx)!: drop the legacy path')).toEqual([]);
   });
 
@@ -268,23 +289,23 @@ describe('checkTitlePolicy', () => {
     // `@commitlint/parse` mặc định là preset angular, nơi dấu `!` làm type thành
     // null nên chính sách sẽ im lặng và title này thoát; repository này lại chấm
     // bằng conventionalcommits, nên nó vẫn phải bị chặn ở số scope.
-    expect(await checkTitlePolicy('chore(dx,docs)!: drop the legacy path')).toEqual([
-      'PR title must declare exactly one Nx scope, got "dx,docs".',
+    expect(await checkTitlePolicy('chore(dx,home)!: drop the legacy path')).toEqual([
+      'PR title must declare exactly one Nx scope, got "dx,home".',
     ]);
   });
 
   it('rejects more than one scope', async () => {
-    expect(await checkTitlePolicy('feat(dx,i18n-public): add pr-check')).toEqual([
-      'PR title must declare exactly one Nx scope, got "dx,i18n-public".',
+    expect(await checkTitlePolicy('feat(dx,identity): add pr-check')).toEqual([
+      'PR title must declare exactly one Nx scope, got "dx,identity".',
     ]);
-    expect(await checkTitlePolicy('feat(dx i18n-public): add pr-check')).toEqual([
-      'PR title must declare exactly one Nx scope, got "dx i18n-public".',
+    expect(await checkTitlePolicy('feat(dx identity): add pr-check')).toEqual([
+      'PR title must declare exactly one Nx scope, got "dx identity".',
     ]);
     // commitlint chấm `,` và `/` là delimiter của scope-enum rồi kiểm từng phần,
     // nên các title trên đi qua commitlint mà không hỏng — chỉ số lượng scope
     // phải chặn ở đây.
-    expect(await checkTitlePolicy('feat(dx/i18n-public): add pr-check')).toEqual([
-      'PR title must declare exactly one Nx scope, got "dx/i18n-public".',
+    expect(await checkTitlePolicy('feat(dx/identity): add pr-check')).toEqual([
+      'PR title must declare exactly one Nx scope, got "dx/identity".',
     ]);
   });
 
@@ -526,10 +547,10 @@ describe('checkPullRequest', () => {
 
   it('accepts a valid fix title scoped to another Nx project', async () => {
     const result = await checkPullRequest({
-      env: prEnv('fix(i18n-public): reject malformed locale'),
+      env: prEnv('fix(identity): reject malformed locale'),
     });
 
-    expect(result).toEqual({ ok: true, title: 'fix(i18n-public): reject malformed locale' });
+    expect(result).toEqual({ ok: true, title: 'fix(identity): reject malformed locale' });
   });
 
   it('rejects invalid conventional commit syntax', async () => {
@@ -567,14 +588,14 @@ describe('checkPullRequest', () => {
   it('rejects several Nx scopes even though commitlint accepts them', async () => {
     // scope-enum tách theo `,` và kiểm từng phần, nên title này hợp lệ với
     // commitlint; chỉ policy của pr-check mới chặn được nó.
-    const result = await checkPullRequest({ env: prEnv('feat(dx,docs): add pr-check') });
+    const result = await checkPullRequest({ env: prEnv('feat(dx,home): add pr-check') });
 
     expect(result.ok).toBe(false);
     expect(result).toMatchObject({ problems: [expect.stringContaining('exactly one Nx scope')] });
   });
 
   it('rejects a slash-separated scope even though commitlint accepts it', async () => {
-    const result = await checkPullRequest({ env: prEnv('feat(dx/docs): add pr-check') });
+    const result = await checkPullRequest({ env: prEnv('feat(dx/home): add pr-check') });
 
     expect(result.ok).toBe(false);
     expect(result).toMatchObject({ problems: [expect.stringContaining('exactly one Nx scope')] });
@@ -737,7 +758,7 @@ describe('checkPullRequest', () => {
     // multi-scope hợp lệ với commitlint (`scope-enum` tách theo `,`), nên phần
     // policy phải là thứ duy nhất chặn nó.
     const result = await checkPullRequest({
-      env: prEnv('feat(dx,docs): add pr-check'),
+      env: prEnv('feat(dx,home): add pr-check'),
       lint: lintPasses,
     });
 
@@ -803,7 +824,7 @@ describe('dx pr-check', () => {
   });
 
   it('exits 1 when the PR title violates the policy', async () => {
-    const { code, output } = await prCheck(prEnv('feat(dx,docs): add pr-check'));
+    const { code, output } = await prCheck(prEnv('feat(dx,home): add pr-check'));
 
     expect(code).toBe(1);
     expect(output).toContain('PR policy check failed');

@@ -3,7 +3,7 @@
  * sở hữu của application**.
  *
  * Cùng nguyên tắc với `HOME_CONTENT`: app tự sở hữu content của mình,
- * `layout-public` chỉ sở hữu chrome dùng chung và không biết content của app.
+ * `app/layout` chỉ sở hữu chrome dùng chung và không biết content của app.
  * Cấu trúc `Record<PublicLocale, …>` khiến thêm một locale mà thiếu bản dịch
  * là lỗi type ngay tại khai báo.
  *
@@ -14,7 +14,7 @@
  * hẹn tính năng chưa có.
  */
 
-import type { PublicLocale } from '@ecoma-io/i18n-public';
+import type { PublicLocale } from '../i18n/index';
 
 /**
  * Một đề mục trong nội dung policy: heading + các đoạn văn.

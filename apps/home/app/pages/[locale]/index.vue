@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { PublicShell, buildPublicPath } from '@ecoma-io/layout-public';
-import type { PublicLocale } from '@ecoma-io/i18n-public';
+import { PublicShell, buildPublicPath } from '../../layout/index';
+import type { PublicLocale } from '../../i18n/index';
 import { parseHomeLocaleRoot } from '~/domain/home-locale';
 import { buildHomeSeo } from '~/domain/home-seo';
 import { HOME_CONTENT } from '~/domain/home-content';
@@ -65,7 +65,7 @@ definePageMeta({
    * decode ở một phía.
    *
    * Kiểm tra luôn đi qua `parseHomeLocaleRoot` → `parsePublicPath` của
-   * `i18n-public` với so khớp exact: không decode, không lowercase, không
+   * `app/i18n` với so khớp exact: không decode, không lowercase, không
    * strip slash, nên `/%65n`, `/EN`, `/Vi`, `/en/` và mọi pathname có
    * remainder đều bị từ chối mà không cần bảng locale thứ hai.
    */
@@ -96,7 +96,7 @@ const content = HOME_CONTENT[locale];
 const seo = buildHomeSeo(locale, content);
 
 /**
- * href cho hai CTA hero — dựng qua builder của `layout-public` (không bao
+ * href cho hai CTA hero — dựng qua builder của `app/layout` (không bao
  * giờ concatenation); destination là mount thật của public web. `locale`
  * đã được guard 404 ở trên nhưng TS không đưa sự thu hẹp đó vào hàm, nên
  * nhận locale làm tham số.

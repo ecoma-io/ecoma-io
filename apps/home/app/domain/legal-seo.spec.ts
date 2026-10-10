@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { buildLegalSeo } from './legal-seo';
 import { HOME_PRODUCTION_ORIGIN } from './home-origin';
 import { LEGAL_SLUGS } from './legal-content';
-import { PUBLIC_LOCALES } from '@ecoma-io/i18n-public';
+import { PUBLIC_LOCALES } from '../i18n/index';
 
 const enContent = {
   title: 'Privacy Policy — ecoma.io',

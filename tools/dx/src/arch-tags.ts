@@ -16,7 +16,7 @@
  *    theo ma trận `RUNTIME_COMPAT`: `runtime:edge` không được phụ thuộc
  *    `runtime:native`/`runtime:browser`, v.v. Lượt này dùng graph chứ không dùng
  *    directory glob: guard theo glob (`.oxlintrc.json` override) chỉ chặn chữ
- *    `node:*` trong `apps/**`/`libs/**`, không biết project nào là `runtime:edge`
+ *    `node:*` trong mã của app, không biết project nào là `runtime:edge`
  *    thật — một tooling script import `node:fs` hợp lệ, một app edge thì không,
  *    và glob không phân biệt được hai trường hợp đó.
  */
