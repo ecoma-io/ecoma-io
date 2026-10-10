@@ -15,6 +15,7 @@
     "target": "es2022",
     "customConditions": ["@ecoma-io/source"],
     "paths": {
+      "@ecoma-io/error-pages": ["./libs/error-pages/src/index.ts"],
       "@ecoma-io/i18n-public": ["./libs/i18n-public/src/index.ts"],
       "@ecoma-io/layout-public": ["./libs/layout-public/src/index.ts"],
       "@ecoma-io/logo": ["./libs/logo/src/index.ts"]

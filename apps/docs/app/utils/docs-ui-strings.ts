@@ -43,6 +43,20 @@ export type DocsUiStrings = {
   readonly breadcrumbs: string;
   /** Tiêu đề của khối card section trên docs landing. */
   readonly sections: string;
+  /**
+   * Tiêu đề `<h1>` của trang lỗi 404 ("Page not found").
+   *
+   * Trang 404 tĩnh (`error.vue` → `404.html` qua wrangler
+   * `not_found_handling`) render bằng locale **mặc định khi build** vì file
+   * tĩnh duy nhất không biết URL bị lỗi thuộc locale nào — copy theo locale
+   * khác không thể chọn được lúc serve. Vẫn giữ entry per-locale ở đây để
+   * thêm locale vào registry mà thiếu bản dịch là lỗi type.
+   */
+  readonly notFoundTitle: string;
+  /** Mô tả dưới tiêu đề của trang 404. */
+  readonly notFoundDescription: string;
+  /** Nhãn CTA quay về docs landing. */
+  readonly notFoundBackToDocs: string;
 };
 
 const DOCS_UI_STRINGS: Readonly<Record<PublicLocale, DocsUiStrings>> = Object.freeze({
@@ -54,6 +68,10 @@ const DOCS_UI_STRINGS: Readonly<Record<PublicLocale, DocsUiStrings>> = Object.fr
     documentation: 'Documentation',
     breadcrumbs: 'Breadcrumbs',
     sections: 'Sections',
+    notFoundTitle: 'Page not found',
+    notFoundDescription:
+      'The documentation page you are looking for does not exist or has been moved.',
+    notFoundBackToDocs: 'Back to documentation',
   }),
   vi: Object.freeze({
     onThisPage: 'Nội dung',
@@ -63,6 +81,9 @@ const DOCS_UI_STRINGS: Readonly<Record<PublicLocale, DocsUiStrings>> = Object.fr
     documentation: 'Tài liệu',
     breadcrumbs: 'Đường dẫn',
     sections: 'Các phần',
+    notFoundTitle: 'Không tìm thấy trang',
+    notFoundDescription: 'Trang tài liệu bạn tìm không tồn tại hoặc đã được di chuyển.',
+    notFoundBackToDocs: 'Về trang tài liệu',
   }),
 });
 
