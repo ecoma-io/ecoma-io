@@ -39,6 +39,12 @@ export default defineNuxtConfig({
   alias: {
     '@ecoma-io/i18n-public': resolve('../../libs/i18n-public/src/index.ts'),
     '@ecoma-io/layout-public': resolve('../../libs/layout-public/src/index.ts'),
+    // `PublicHeader` của `layout-public` import `@ecoma-io/logo`; không alias
+    // thì lần sinh `.nuxt/tsconfig*.json` có `paths` riêng sẽ che mất mapping
+    // `@ecoma-io/*` của tsconfig base và `nuxt build` ở runner sạch báo
+    // TS2307 (local còn pass nhờ base paths chảy qua — determinism phải đến
+    // từ alias tường minh, cùng pattern với hai lib ở trên).
+    '@ecoma-io/logo': resolve('../../libs/logo/src/index.ts'),
   },
   modules: ['@nuxt/fonts', 'nuxt-content-assets', '@nuxt/content'],
   css: ['~/assets/css/styles.css'],
