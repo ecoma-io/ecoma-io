@@ -80,7 +80,10 @@ describe('PublicHeader', () => {
   it('links the brand to the locale-root surface', () => {
     const wrapper = mount(PublicShell, { props: { path: '/en/docs/api' } });
     const brand = wrapper.find('header a[href="/en"]');
-    expect(brand.text()).toBe('ecoma.io');
+    // Brand là artwork logo (`EcomaLogo` render `<img>`), accessible name đến
+    // từ `alt` — không còn text node để assert; pin cả alt lẫn src.
+    expect(brand.find('img[alt="ecoma.io"]').exists()).toBe(true);
+    expect(brand.find('img[src*="ecoma-logo-horizontal"]').exists()).toBe(true);
   });
 
   it('renders global navigation with locale-aware hrefs', () => {
@@ -329,6 +332,19 @@ describe('PublicHeader locale availability', () => {
     const nav = wrapper.find('header nav[aria-label="Global"]');
     expect(nav.find('a[href="/en/blog"]').exists()).toBe(true);
     expect(nav.find('a[href="/en/docs"]').text()).toContain('Docs');
+  });
+
+  it('renders the brand logo with fallback size classes and intrinsic ratio intact', () => {
+    // Sizing contract: header đặt `h-9 w-auto` qua class fallthrough của
+    // EcomaLogo (CSS-only — HTML width/height giữ nguyên cặp intrinsic
+    // 160×46 để `<img>` có ratio, tránh CLS). Pin lại để không ai xoá
+    // `w-auto` (một mình `h-9` bóp méo artwork) hay đè width/height attrs.
+    const wrapper = mount(PublicShell, { props: { path: '/en' } });
+    const brandImg = wrapper.find('header a[href="/en"] img');
+    expect(brandImg.classes()).toEqual(expect.arrayContaining(['h-9', 'w-auto']));
+    expect(brandImg.attributes('width')).toBe('160');
+    expect(brandImg.attributes('height')).toBe('46');
+    expect(brandImg.attributes('alt')).toBe('ecoma.io');
   });
 });
 

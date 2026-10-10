@@ -1,5 +1,6 @@
 # layout-public Instructions
 
+- Brand artwork is owned by `logo` (`scope:shared`). The header renders it via `EcomaLogo` with CSS-only sizing (`h-9 w-auto`); keep the intrinsic `width`/`height` attributes intact (they are the artwork ratio, not the display size). The footer keeps the text brand: the artwork wordmark (`#161616`) is unreadable on the `slate-950` footer and recoloring is forbidden — do not "fix" contrast by editing the asset.
 - The application name and the public mount are **separate**. `blogs` is served at `/blog`, `api-reference` at `/docs/api`.
 - Locale placement is owned by `i18n-public`. Consume it; do not re-decide the ordering here.
 - **Locale availability** is a resource-level input (`availableLocales` prop on `PublicShell`/`PublicHeader`). `layout-public` never derives it from content, filesystem, translation data, Blogs, Docs, Nuxt Content, or any application; it only resolves via `resolveLocaleContext` and filters the locale switcher. The current locale is always kept valid in that context.

@@ -66,10 +66,9 @@ URL của SVG nguồn, đã được bundler resolve (dev server path hoặc has
 ```text
 apps (home · blogs · docs · api-reference …)
   ↓                    ← tiêu thụ
-logo                   ← artwork brand, không phụ thuộc gì
-layout-public          ← shell · global navigation · mount topology
-  ↓
-i18n-public            ← locale dimension
+layout-public          ← shell · global navigation · mount topology (brand header qua EcomaLogo)
+  ↓        ↓
+i18n-public  logo      ← locale dimension · artwork brand, không phụ thuộc gì
 ```
 
 Tags: `type:application` (UI component — cùng hàng với `layout-public`), `scope:shared` (mọi bounded context được phụ thuộc `scope:shared`), `runtime:universal`.
@@ -91,4 +90,4 @@ pnpm exec nx typecheck logo
 ## Giới hạn hiện tại
 
 - Chỉ có **primary horizontal logo** từ SVG nguồn. Các biến thể khác (stacked, symbol, wordmark riêng, colorway) cần thiết kế chính thức trước khi thêm vào library.
-- Chưa tích hợp vào bất kỳ app hay library consumer nào — việc đó thuộc các PR riêng.
+- Chưa tích hợp vào bất kỳ app nào — việc đó thuộc các PR riêng. Consumer library đầu tiên là `layout-public` (brand của `PublicHeader`).

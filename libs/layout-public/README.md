@@ -1,6 +1,6 @@
 # layout-public
 
-Thư viện **shared public-web layer** cho bề mặt public của `ecoma.io`: public shell dùng chung (Header/Footer), global navigation và public mount topology. Tiêu thụ contract locale của [`i18n-public`](../i18n-public/README.md) — không tự quyết định gì về locale.
+Thư viện **shared public-web layer** cho bề mặt public của `ecoma.io`: public shell dùng chung (Header/Footer), global navigation và public mount topology. Tiêu thụ contract locale của [`i18n-public`](../i18n-public/README.md) — không tự quyết định gì về locale — và artwork brand qua [`logo`](../logo/README.md).
 
 ## Library làm gì
 
@@ -174,7 +174,8 @@ const path = useRoute().path;
 - `PublicShell` nhận `path` (pathname hiện tại), parse **một lần** cho layout state rồi truyền state đã parse vào `PublicHeader`/`PublicFooter` — component không tự parse pathname lần thứ hai, không tự resolve locale. (Helper `buildPublicPath`/`switchLocale` có tự nội suy lại khi dựng href — thuần pure, nằm trong `computed`.)
 - Cấu trúc: `<header>` → `<main>` (slot nội dung app) → `<footer>`; link là `<a href>` thường (crawlable, không phụ thuộc client router).
 - Shell là **multi-root**: Vue không fallthrough attribute từ app xuống component nhiều root — không truyền `class`/`id` vào `<PublicShell>`; styling dùng chính các landmark (`header nav[aria-label="Global"]`, `footer` …), library không đóng vai design system.
-- Header: brand → locale-root, global navigation, locale switcher (đổi locale qua `switchLocale` của `i18n-public`, không reimplement), active mount qua `aria-current`. Switcher hạn chế bởi `availableLocales` của resource nếu được truyền — locale hiện tại luôn được render.
+- Header: brand (artwork logo qua `EcomaLogo` — kích thước đặt bằng CSS, `h-9 w-auto`; accessible name là `alt` mặc định `ecoma.io` của logo lib) → locale-root, global navigation, locale switcher (đổi locale qua `switchLocale` của `i18n-public`, không reimplement), active mount qua `aria-current`. Switcher hạn chế bởi `availableLocales` của resource nếu được truyền — locale hiện tại luôn được render.
+- Footer **giữ brand chữ** (`ecoma.io`), không dùng logo: footer nền `slate-950` còn wordmark của artwork là màu `#161616` — không đọc được trên nền đó, mà artwork cấm recolor/variant (invariant của `logo`). Khi cần logo trên nền sậm, phải có variant sáng từ chủ sở hữu artwork trước.
 - Render tĩnh, deterministic: không `Date`, không `window`, không fetch — tương thích SSR/SSG, không client-only state, không hydration dependency.
 - Khi `path` là `root` hoặc `invalid`: render shell không kèm locale-aware link (brand trỏ `/`); không tự đoán locale.
 
@@ -184,8 +185,8 @@ const path = useRoute().path;
 apps (home · blogs · docs · api-reference)
   ↓                       ← nội dung, app-specific navigation
 layout-public             ← shell · global navigation · mount topology
-  ↓
-i18n-public               ← locale dimension
+  ↓        ↓
+i18n-public  logo        ← locale dimension · brand artwork
 ```
 
 ```text

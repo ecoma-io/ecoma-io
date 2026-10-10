@@ -1,6 +1,7 @@
 <!--
-  `PublicHeader` — shared public header: brand, global navigation (kèm mega
-  panel Docs), locale switcher, CTA, mobile navigation.
+  `PublicHeader` — shared public header: brand (artwork logo qua `EcomaLogo`
+  của `@ecoma-io/logo`), global navigation (kèm mega panel Docs), locale
+  switcher, CTA, mobile navigation.
 
   Header **nhận state đã parse** từ `PublicShell` chứ không tự parse pathname
   và không tự resolve locale — parse chỉ xảy ra một lần, ở `PublicShell`.
@@ -31,6 +32,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { PUBLIC_LOCALES, switchLocale, type PublicLocale } from '@ecoma-io/i18n-public';
+import { EcomaLogo } from '@ecoma-io/logo';
 import { buildPublicPath } from '../build-public-path';
 import { localeRootHref } from '../locale-root-href';
 import { resolveLocaleContext, type PublicLocaleContext } from '../locale-context';
@@ -250,12 +252,17 @@ function onHeaderFocusout(event: { relatedTarget: unknown }): void {
     >
     <!-- Container shell dùng chung — gutters và bề rộng khớp footer. -->
     <div class="mx-auto flex h-16 w-full max-w-6xl items-center gap-4 px-4 sm:px-6 lg:px-8">
-      <!-- Brand -->
+      <!-- Brand: artwork logo thật qua `EcomaLogo` (`scope:shared`, mọi bounded
+           context được phụ thuộc). Kích thước điều khiển bằng CSS (fallthrough
+           `class` của logo lib) — giữ intrinsic `width`/`height` của `<img>`
+           làm ratio, chỉ đặt `h-*` và để `w-auto` co giãn theo. Accessible name
+           đến từ `alt="ecoma.io"` mặc định của logo lib, tương đương text cũ. -->
       <a
         :href="homeHref"
-        class="shrink-0 text-lg font-semibold tracking-tight text-slate-900 hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
-        >ecoma<span class="text-slate-400">.io</span></a
+        class="shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
       >
+        <EcomaLogo class="h-9 w-auto" />
+      </a>
 
       <!-- Global navigation — desktop -->
       <nav
