@@ -40,6 +40,9 @@
   "references": [
     {
       "path": "../i18n-public/tsconfig.lib.json"
+    },
+    {
+      "path": "../logo/tsconfig.lib.json"
     }
   ]
 }

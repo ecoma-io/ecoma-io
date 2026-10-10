@@ -20,6 +20,10 @@ describe('PublicShell SSR', () => {
     expect(html).toContain('<main');
     expect(html).toContain('<footer');
     expect(html).toContain('href="/en"');
+    // Brand render đúng artwork qua `<img>` cả trên server — src là asset URL
+    // hashed của logo lib (anchor theo tên file), alt mang accessible name.
+    expect(html).toContain('alt="ecoma.io"');
+    expect(html).toMatch(/<img[^>]*ecoma-logo-horizontal\.svg/u);
     // Nav và locale switcher là HTML tĩnh, crawlable — không phụ thuộc hydration.
     expect(html).toContain('href="/en/docs"');
     expect(html).toContain('href="/vi/docs/api"');
