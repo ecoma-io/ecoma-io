@@ -62,7 +62,16 @@
       },
       "test": {
         "dependsOn": [
-          "nuxt-prepare"
+          "nuxt-prepare",
+          "build-static"
+        ],
+        "//": [
+          "`test` phụ thuộc `build-static`: suite `tests/static-output.spec.ts`",
+          "assert trên output prerender thật (`.output/public`) — Finding 4 của",
+          "review PR #20 yêu cầu verification chạy được trên artifact thật, không",
+          "phải chỉ trên source. `nx test blogs` (local lẫn `nx affected -t test`",
+          "trong CI) giờ luôn build static trước, nên một page/media/404 fallback",
+          "hỏng lộ ngay ở bước test thay vì chỉ thấy khi đã deploy."
         ]
       }
     }
