@@ -62,8 +62,10 @@ jobs:
       - name: Setup Node.js and pnpm
         uses: ./.github/actions/setup-node-pnpm
       # Rust toolchain chỉ cài khi workspace có Cargo project — mọi PR JS thuần
-      # không trả phí cài đặt. Ref pin đúng version trong `rust-toolchain.toml`
-      # ở workspace root; rustup directory override giữ local/CI cùng toolchain.
+      # không trả phí cài đặt. Version compiler đọc từ `rust-toolchain.toml` ở
+      # workspace root (single source of truth cho cả local và CI, cùng nguồn
+      # với cache key Cargo); rustup directory override giữ local/CI cùng
+      # toolchain.
       - name: Detect Cargo projects
         id: cargo-projects
         run: |
@@ -72,10 +74,12 @@ jobs:
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
+          echo "toolchain=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
       - name: Setup Rust toolchain
         if: steps.cargo-projects.outputs.present == 'true'
-        uses: dtolnay/rust-toolchain@a2627de80e5819949c7e1c83ed99b29085fc9bc4 # 1.98.1
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
+          toolchain: ${{ steps.cargo-projects.outputs.toolchain }}
           components: clippy, rustfmt
       - name: Cache Cargo
         if: steps.cargo-projects.outputs.present == 'true'
