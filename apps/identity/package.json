@@ -4,7 +4,7 @@
   "private": true,
   "nx": {
     "tags": [
-      "type:web",
+      "type:composition",
       "scope:identity",
       "runtime:edge"
     ],

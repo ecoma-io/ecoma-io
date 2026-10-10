@@ -8,8 +8,8 @@
   },
   "nx": {
     "tags": [
-      "type:web",
-      "scope:seller",
+      "type:composition",
+      "scope:llm",
       "runtime:edge"
     ],
     "targets": {

@@ -10,8 +10,8 @@
   },
   "nx": {
     "tags": [
-      "type:tool",
-      "runtime:node",
+      "type:tooling",
+      "runtime:native",
       "scope:local"
     ]
   }

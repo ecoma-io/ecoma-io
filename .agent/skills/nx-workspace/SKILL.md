@@ -33,9 +33,9 @@ pnpm nx show projects --json
 pnpm nx show projects -p 'apps/*'
 pnpm nx show projects -p 'libs/*'
 
-# Filter by tag (this repo tags projects with type:, scope:, runtime:)
+# Filter by tag (this repo tags projects with scope:, type:, runtime:)
 pnpm nx show projects -p 'tag:scope:public'
-pnpm nx show projects -p 'tag:type:lib'
+pnpm nx show projects -p 'tag:type:domain'
 pnpm nx show projects -p 'tag:runtime:edge'
 
 # Filter by project type

@@ -233,49 +233,131 @@
         "enforceBuildableLibDependency": true,
         "allow": ["^.*/eslint(\\.base)?\\.config\\.[cm]?[jt]s$"],
         "depConstraints": [
+          // Type dependency direction.
+          // `notDependOn*` là cấm TRANSITIVE (mọi project reachable); `onlyDependOn*` là lượt direct edge.
+          // domain: không chạm application/infrastructure/composition/tooling kể cả qua trung gian.
           {
-            "sourceTag": "type:web",
-            "onlyDependOnLibsWithTags": ["type:lib"]
+            "sourceTag": "type:domain",
+            "notDependOnLibsWithTags": [
+              "type:application",
+              "type:infrastructure",
+              "type:composition",
+              "type:tooling"
+            ]
           },
           {
-            "sourceTag": "type:service",
-            "onlyDependOnLibsWithTags": ["type:lib"]
+            "sourceTag": "type:application",
+            "notDependOnLibsWithTags": ["type:infrastructure", "type:composition", "type:tooling"]
           },
           {
-            "sourceTag": "type:infras",
-            "onlyDependOnLibsWithTags": ["type:lib"]
+            "sourceTag": "type:infrastructure",
+            "onlyDependOnLibsWithTags": [
+              "type:domain",
+              "type:application",
+              "type:contracts",
+              "type:infrastructure"
+            ]
           },
+          // contracts: boundary artifact — cấm implementation/domain logic kể cả qua trung gian.
           {
-            "sourceTag": "type:tool",
-            "onlyDependOnLibsWithTags": ["type:lib", "type:tool"]
+            "sourceTag": "type:contracts",
+            "notDependOnLibsWithTags": [
+              "type:domain",
+              "type:application",
+              "type:infrastructure",
+              "type:composition",
+              "type:tooling"
+            ]
           },
+          // composition: WHITELIST đúng bảng §7 — chỉ compose bốn type lib. Target
+          // `type:composition` khác (app→app: một deploy unit import trực tiếp deploy
+          // unit khác) và `type:tooling` không có mặt trong allowlist nên bị chặn ở
+          // lượt direct; taxonomy cũ bảo vệ ranh giới này qua `type:web`/`type:service`
+          // → onlyDependOn ["type:lib"] — whitelist giữ đúng ranh giới đó.
+          {
+            "sourceTag": "type:composition",
+            "onlyDependOnLibsWithTags": [
+              "type:domain",
+              "type:application",
+              "type:contracts",
+              "type:infrastructure"
+            ]
+          },
+          // tooling: chỉ phụ thuộc tooling — developer tool không làm library runtime cho app.
+          {
+            "sourceTag": "type:tooling",
+            "onlyDependOnLibsWithTags": ["type:tooling"]
+          },
+          // Scope: bounded context (identity, backoffice, llm, ...) được phụ thuộc
+          // trực tiếp hai TẦNG NỀN (shared, platform) — toàn bộ implementation của
+          // tầng nền được phép dùng, đúng vai trò foundation layer trong §6.3 docs —
+          // và `type:contracts` của scope bất kỳ. Giữa các scope NGANG HÀNG,
+          // `onlyDependOnLibsWithTags` khớp BẤT KỂ tag nào trong danh sách nên
+          // implementation scope khác không có tên ở đây: consumer chỉ chạm được
+          // contract của scope khác, còn import implementation chéo scope trượt
+          // vào allowlist sẽ bị constraint `type:*` phía trên chặn (notDependOn
+          // transitive với domain/application, onlyDependOn với infrastructure).
           {
             "sourceTag": "scope:public",
-            "onlyDependOnLibsWithTags": ["scope:public", "scope:shared", "scope:platform"]
-          },
-          {
-            "sourceTag": "scope:docs",
-            "onlyDependOnLibsWithTags": ["scope:docs", "scope:shared", "scope:platform"]
+            "onlyDependOnLibsWithTags": [
+              "scope:public",
+              "scope:shared",
+              "scope:platform",
+              "type:contracts"
+            ]
           },
           {
             "sourceTag": "scope:identity",
-            "onlyDependOnLibsWithTags": ["scope:identity", "scope:shared", "scope:platform"]
+            "onlyDependOnLibsWithTags": [
+              "scope:identity",
+              "scope:shared",
+              "scope:platform",
+              "type:contracts"
+            ]
           },
           {
             "sourceTag": "scope:backoffice",
-            "onlyDependOnLibsWithTags": ["scope:backoffice", "scope:shared", "scope:platform"]
+            "onlyDependOnLibsWithTags": [
+              "scope:backoffice",
+              "scope:shared",
+              "scope:platform",
+              "type:contracts"
+            ]
           },
+          // scope:shared là ĐÁY của trục ownership: CHỈ được phụ thuộc shared —
+          // không platform, không implementation, không contract của scope nghiệp vụ
+          // nào. `onlyDependOnLibsWithTags` khớp bất kỳ tag nào trong danh sách nên
+          // để `type:contracts` vào đây là mở `shared → contracts của scope bất kỳ`
+          // (target chỉ cần MỘT tag khớp), tạo chu trình shared ↔ contracts của
+          // scope đó — đảo chiều dependency của tầng đáy. Ngoại lệ `type:contracts`
+          // là cho CONSUMER chạm contract của provider; tầng đáy không consume.
+          {
+            "sourceTag": "scope:shared",
+            "onlyDependOnLibsWithTags": ["scope:shared"]
+          },
+          // scope:platform là tầng nền duy nhất được mở rộng từ shared: chỉ phụ thuộc
+          // platform + shared + contract, không phụ thuộc scope nghiệp vụ nào.
           {
             "sourceTag": "scope:platform",
-            "onlyDependOnLibsWithTags": ["scope:platform", "scope:shared"]
+            "onlyDependOnLibsWithTags": ["scope:platform", "scope:shared", "type:contracts"]
           },
           {
             "sourceTag": "scope:llm",
-            "onlyDependOnLibsWithTags": ["scope:llm", "scope:shared", "scope:platform"]
+            "onlyDependOnLibsWithTags": [
+              "scope:llm",
+              "scope:shared",
+              "scope:platform",
+              "type:contracts"
+            ]
           },
           {
             "sourceTag": "scope:payment",
-            "onlyDependOnLibsWithTags": ["scope:payment", "scope:shared", "scope:platform"]
+            "onlyDependOnLibsWithTags": [
+              "scope:payment",
+              "scope:shared",
+              "scope:platform",
+              "type:contracts"
+            ]
           },
           {
             "sourceTag": "scope:local",
@@ -283,19 +365,60 @@
           },
           {
             "sourceTag": "scope:messaging",
-            "onlyDependOnLibsWithTags": ["scope:messaging", "scope:shared", "scope:platform"]
+            "onlyDependOnLibsWithTags": [
+              "scope:messaging",
+              "scope:shared",
+              "scope:platform",
+              "type:contracts"
+            ]
           },
           {
             "sourceTag": "scope:notifications",
-            "onlyDependOnLibsWithTags": ["scope:notifications", "scope:shared", "scope:platform"]
+            "onlyDependOnLibsWithTags": [
+              "scope:notifications",
+              "scope:shared",
+              "scope:platform",
+              "type:contracts"
+            ]
+          },
+          // Runtime compatibility, lượt direct edge theo tag thật. Lượt transitive
+          // (edge không được chạm native qua chuỗi lib) và tag schema (đúng một
+          // tag mỗi dimension) do tools/dx arch-tags validator kiểm trên project
+          // graph, chạy unconditional trong CI — Node builtin không tạo graph edge
+          // nên cấm import builtin vẫn do no-restricted-imports +
+          // import/no-nodejs-modules theo override glob ở dưới.
+          {
+            "allSourceTags": ["type:composition", "runtime:edge"],
+            "onlyDependOnLibsWithTags": [
+              "type:domain",
+              "type:application",
+              "type:contracts",
+              "type:infrastructure",
+              "runtime:edge",
+              "runtime:universal"
+            ]
           },
           {
-            "sourceTag": "scope:console",
-            "onlyDependOnLibsWithTags": ["scope:console", "scope:shared", "scope:platform"]
+            "allSourceTags": ["type:composition", "runtime:browser"],
+            "onlyDependOnLibsWithTags": [
+              "type:domain",
+              "type:application",
+              "type:contracts",
+              "type:infrastructure",
+              "runtime:browser",
+              "runtime:universal"
+            ]
           },
           {
-            "sourceTag": "scope:seller",
-            "onlyDependOnLibsWithTags": ["scope:seller", "scope:shared", "scope:platform"]
+            "allSourceTags": ["type:composition", "runtime:native"],
+            "onlyDependOnLibsWithTags": [
+              "type:domain",
+              "type:application",
+              "type:contracts",
+              "type:infrastructure",
+              "runtime:native",
+              "runtime:universal"
+            ]
           }
         ]
       }

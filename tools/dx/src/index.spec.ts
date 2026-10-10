@@ -40,11 +40,11 @@ describe('app', () => {
     expect(meta.description).toBe('Devtools for ecoma-io repository');
   });
 
-  it('declares repo-prepare, sync-agent-config and pr-check', () => {
+  it('declares repo-prepare, sync-agent-config, pr-check and arch-check', () => {
     // Set thay cho mảng sort: cùng đẳng thức tập hợp, không mutation và không
     // cần `toSorted` (lib của repository hiện là es2022).
     expect(new Set(Object.keys(app.subCommands ?? {}))).toEqual(
-      new Set(['repo-prepare', 'sync-agent-config', 'pr-check']),
+      new Set(['repo-prepare', 'sync-agent-config', 'pr-check', 'arch-check']),
     );
   });
 
@@ -73,12 +73,14 @@ describe('dx cli', () => {
     expect(output).toContain('repo-prepare');
     expect(output).toContain('sync-agent-config');
     expect(output).toContain('pr-check');
+    expect(output).toContain('arch-check');
   });
 
   it('describes each subcommand', async () => {
     expect(await dx('repo-prepare', '--help')).toContain('Prepare repository');
     expect(await dx('sync-agent-config', '--help')).toContain('Sync agent configuration');
     expect(await dx('pr-check', '--help')).toContain('Check a pull request');
+    expect(await dx('arch-check', '--help')).toContain('Validate Nx architecture tags');
   });
 
   it('runs sync-agent-config for real from a working directory other than the repository root', async () => {

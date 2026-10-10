@@ -3,7 +3,7 @@
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "libs/i18n-public/src",
   "projectType": "library",
-  "tags": ["type:lib", "scope:public", "runtime:universal"],
+  "tags": ["type:domain", "scope:public", "runtime:universal"],
   "// targets": "to see all targets run: nx show project i18n-public --web",
   "targets": {}
 }
