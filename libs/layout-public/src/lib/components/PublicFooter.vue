@@ -16,6 +16,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { PublicLocale } from '@ecoma-io/i18n-public';
+import { EcomaLogo } from '@ecoma-io/logo';
 import { localeRootHref } from '../locale-root-href';
 import { buildPublicFooterGroups, PUBLIC_FOOTER_TAGLINE } from '../public-navigation';
 import type { PublicLayoutPathResult } from '../public-layout-path';
@@ -51,14 +52,22 @@ const groups = computed(() =>
     <!-- Container shell dùng chung: cùng bề rộng và gutters với header. -->
     <div class="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6 lg:px-8">
       <div class="flex flex-col gap-10 md:flex-row md:justify-between">
-        <!-- Brand block -->
+        <!-- Brand block: artwork logo qua `EcomaLogo`, cùng một brand surface
+             với header. Wordmark của artwork là màu tối theo nguồn
+             (`#161616`) nên không đọc được trên nền `slate-950`; footer sở hữu
+             plate trắng (`bg-white`) để artwork giữ nguyên byte — recolor là
+             việc cấm (libs/logo/AGENTS.md). Sizing CSS-only (`h-6 w-auto`,
+             giữ intrinsic ratio của `<img>`); `block` bỏ descender gap của
+             inline `<img>` để padding plate đều hai phía. Accessible name đến
+             từ `alt="ecoma.io"` mặc định của logo lib. -->
         <div class="max-w-sm">
-          <p class="text-lg font-semibold text-white">
+          <p>
             <a
               :href="homeHref"
-              class="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-              >ecoma.io</a
+              class="inline-block rounded-md bg-white p-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
             >
+              <EcomaLogo class="block h-6 w-auto" />
+            </a>
           </p>
           <p class="mt-3 text-sm leading-relaxed text-slate-400">
             {{ locale === undefined ? '' : PUBLIC_FOOTER_TAGLINE[locale] }}

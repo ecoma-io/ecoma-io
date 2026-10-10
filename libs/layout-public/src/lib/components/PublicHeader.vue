@@ -255,13 +255,15 @@ function onHeaderFocusout(event: { relatedTarget: unknown }): void {
       <!-- Brand: artwork logo thật qua `EcomaLogo` (`scope:shared`, mọi bounded
            context được phụ thuộc). Kích thước điều khiển bằng CSS (fallthrough
            `class` của logo lib) — giữ intrinsic `width`/`height` của `<img>`
-           làm ratio, chỉ đặt `h-*` và để `w-auto` co giãn theo. Accessible name
-           đến từ `alt="ecoma.io"` mặc định của logo lib, tương đương text cũ. -->
+           làm ratio, chỉ đặt `h-*` và để `w-auto` co giãn theo. `h-6` giữ logo
+           cùng tầm thị giác với hàng navigation trong header `h-16`, không
+           lấn spotlight. Accessible name đến từ `alt="ecoma.io"` mặc định của
+           logo lib, tương đương text cũ. -->
       <a
         :href="homeHref"
         class="shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
       >
-        <EcomaLogo class="h-9 w-auto" />
+        <EcomaLogo class="block h-6 w-auto" />
       </a>
 
       <!-- Global navigation — desktop -->
