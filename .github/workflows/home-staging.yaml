@@ -214,8 +214,9 @@ jobs:
           ARTIFACT_DIR: ${{ github.workspace }}/artifact
           GH_TOKEN: ${{ github.token }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        # Script fail → step fail → job fail. Wrangler chạy với cwd=artifact
-        # (script tự set) nên `.output` chính là artifact.
+        # Script fail → step fail → job fail. Script chạy wrangler từ checkout
+        # root và symlink `apps/home/.output` vào artifact đã tải — artifact
+        # (đã verify qua manifest) là thứ được deploy.
         run: npx tsx apps/home/deploy/pipeline/staging-deploy.mts deploy
 
   tag:
@@ -243,6 +244,7 @@ jobs:
         env:
           HEAD_SHA: ${{ needs.context.outputs.head_sha }}
           RUN_ID: ${{ github.run_id }}
-          ARTIFACT_DIR: ${{ github.workspace }}
           GH_TOKEN: ${{ github.token }}
+        # Mode `tag` đọc version từ checkout (apps/home/package.json) — không
+        # cần artifact; checkout này đã ghim đúng SHA đã verify.
         run: npx tsx apps/home/deploy/pipeline/staging-deploy.mts tag

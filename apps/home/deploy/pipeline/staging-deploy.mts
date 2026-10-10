@@ -27,7 +27,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 
 import {
   createCommitStatus,
@@ -37,7 +37,7 @@ import {
 } from './github-run';
 import { evaluateStaleGuard, type CompetingRun } from './runner-guard';
 import { runSmokeChecks } from './smoke-check';
-import { buildReleaseTag } from './release-tag';
+import { buildReleaseTag, readHomeVersion } from './release-tag';
 
 /** Bằng chứng gắn trong artifact build (xem script `build` của workflow). */
 export type BuildManifest = {
@@ -90,7 +90,9 @@ const runId = Number(requireEnv('RUN_ID'));
 if (!Number.isInteger(runId) || runId <= 0) {
   fail(`RUN_ID must be a positive integer, got "${process.env['RUN_ID']}"`);
 }
-const artifactDir = requireEnv('ARTIFACT_DIR');
+// Chỉ mode deploy tiêu thụ artifact — job tag không tải artifact nên không
+// có biến này (xem khối manifest bên dưới).
+const artifactDir = mode === 'deploy' ? requireEnv('ARTIFACT_DIR') : '';
 const repo = requireEnv('GITHUB_REPOSITORY');
 const ghToken = requireEnv('GH_TOKEN');
 const gh: GithubFetchOptions = { ghToken, repo };
@@ -103,22 +105,36 @@ const BRANCH = 'main';
 const PROJECT_NAME = '@ecoma-io/home';
 
 // --- Bước chung: đọc manifest của artifact và khớp với run ---
+//
+// Mode `deploy` cần artifact (thứ sẽ được wrangler deploy); mode `tag` chỉ
+// cần version — đọc trực tiếp từ checkout của SHA đã verify (job tag không
+// tải artifact, không có `ARTIFACT_DIR`, và version phải là version của
+// commit được tag chứ không phải của một artifact nào đó).
 const manifestPath = `${artifactDir}/build-manifest.json`;
 let manifest: BuildManifest;
-try {
-  manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as BuildManifest;
-} catch (error) {
-  fail(`cannot read build manifest at ${manifestPath}: ${String(error)}`);
-}
-if ((manifest as BuildManifest).sourceSha !== headSha) {
-  fail(
-    `build manifest declares sourceSha ${(manifest as BuildManifest).sourceSha} but this run is for ${headSha} — artifact does not belong to this run`,
-  );
-}
-if ((manifest as BuildManifest).workerName !== STAGING_WORKER_NAME) {
-  fail(
-    `build manifest declares worker "${(manifest as BuildManifest).workerName}", expected "${STAGING_WORKER_NAME}" — refusing to deploy to an unknown identity`,
-  );
+if (mode === 'deploy') {
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as BuildManifest;
+  } catch (error) {
+    fail(`cannot read build manifest at ${manifestPath}: ${String(error)}`);
+  }
+  if ((manifest as BuildManifest).sourceSha !== headSha) {
+    fail(
+      `build manifest declares sourceSha ${(manifest as BuildManifest).sourceSha} but this run is for ${headSha} — artifact does not belong to this run`,
+    );
+  }
+  if ((manifest as BuildManifest).workerName !== STAGING_WORKER_NAME) {
+    fail(
+      `build manifest declares worker "${(manifest as BuildManifest).workerName}", expected "${STAGING_WORKER_NAME}" — refusing to deploy to an unknown identity`,
+    );
+  }
+} else {
+  const packageJsonText = readFileSync('apps/home/package.json', 'utf8');
+  manifest = {
+    sourceSha: headSha,
+    version: readHomeVersion(packageJsonText),
+    workerName: STAGING_WORKER_NAME,
+  };
 }
 const verifiedManifest = manifest as BuildManifest;
 
@@ -253,13 +269,22 @@ if (verdict.action === 'skip') {
 }
 
 // --- Bước 3: deploy ---
+// Wrangler chạy từ checkout root (nơi có `wrangler.jsonc` — artifact KHÔNG
+// chứa config): `main`/`assets.directory` trong config là đường tương đối
+// `.output/...`, nên symlink `.output` của checkout trỏ vào artifact đã tải
+// — artifact (đã verify SHA qua manifest) chính là thứ được deploy, không
+// phải `.output` còn sót trong checkout (checkout này là shallow, không
+// build, không thể có `.output` thật — symlink chỉ để wrangler resolve path).
+const checkoutOutputDir = 'apps/home/.output';
+rmSync(checkoutOutputDir, { force: true, recursive: true });
+symlinkSync(artifactDir, checkoutOutputDir, 'dir');
 console.log(
   `[staging] deploying ${headSha} (version ${verifiedManifest.version}) to worker ${STAGING_WORKER_NAME}`,
 );
 try {
   execFileSync('npx', ['wrangler', 'deploy', '--config', 'wrangler.jsonc', '--env', 'staging'], {
     stdio: 'inherit',
-    cwd: artifactDir,
+    cwd: 'apps/home',
     env: { ...process.env, CLOUDFLARE_API_TOKEN: requireEnv('CLOUDFLARE_API_TOKEN') },
   });
 } catch (error) {
