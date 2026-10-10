@@ -1,7 +1,7 @@
 /**
  * Chính sách locale mặc định của `home` — policy riêng của application
  * (`docs/overview/01-architecture.md` A13: chính sách resolve `/` thuộc về
- * caller, không thuộc `i18n-public` hay `layout-public`).
+ * caller, không thuộc `app/i18n` hay `app/layout`).
  *
  * `en` là default locale **explicit** của Home — không bao giờ là
  * `PUBLIC_LOCALES[0]`, vì thứ tự registry không phải chính sách sản phẩm.

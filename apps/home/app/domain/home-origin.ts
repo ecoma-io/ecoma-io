@@ -12,8 +12,8 @@
  * `request.url`, header `Host`, `useRequestURL()` hay bất kỳ state nào của
  * request.
  *
- * Policy này thuộc application, không thuộc `i18n-public` (locale dimension)
- * hay `layout-public` (pathname/topology): hai thư viện đó cố tình không có
+ * Policy này thuộc application, không thuộc `app/i18n` (locale dimension)
+ * hay `app/layout` (pathname/topology): hai thư viện đó cố tình không có
  * khái niệm origin, nên origin không được nhét vào chúng.
  */
 

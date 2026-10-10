@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { LEGAL_CONTENT, LEGAL_SLUGS } from './legal-content';
-import { PUBLIC_LOCALES } from '@ecoma-io/i18n-public';
+import { PUBLIC_LOCALES } from '../i18n/index';
 
 describe('LEGAL_CONTENT', () => {
   it('bao phủ toàn bộ PUBLIC_LOCALES và toàn bộ LEGAL_SLUGS (exact keys)', () => {

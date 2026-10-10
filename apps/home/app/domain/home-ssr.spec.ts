@@ -1,9 +1,9 @@
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 // @vitest-environment node
 import { createSSRApp, type Component } from 'vue';
 import { renderToString } from 'vue/server-renderer';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { PUBLIC_LOCALES } from '@ecoma-io/i18n-public';
+import { PUBLIC_LOCALES } from '../i18n/index';
 
 /**
  * SSR thật cho page Home — render trong môi trường **node**, không DOM.

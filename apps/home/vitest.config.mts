@@ -18,6 +18,15 @@ export default defineConfig(() => ({
       '#shared': new URL('./shared', import.meta.url).pathname,
       '~': new URL('./app', import.meta.url).pathname,
       '~/': new URL('./app/', import.meta.url).pathname,
+      // Virtual module của Nitro (`modules/prerendered-content-manifest.ts`
+      // đăng ký qua hook `nitro:config`, lấp từ kết quả prerender) — ngoài
+      // Nitro không có hook nào chạy, test dùng manifest rỗng: middleware
+      // gate (`server/middleware/prerendered-content-404.ts`) phải pass
+      // through cho mọi path, đúng như dev server trước prerender đầu.
+      'virtual:prerendered-content-paths': new URL(
+        './shared/test-fixtures/prerendered-content-paths.ts',
+        import.meta.url,
+      ).pathname,
     },
   },
   test: {
@@ -26,7 +35,9 @@ export default defineConfig(() => ({
     globals: true,
     environment: 'jsdom',
     // Nuxt dùng `app/` (pages, domain) và `shared/`, không dùng `src/`;
-    // giữ `src`/`tests` để không phá project được generate.
+    // `tests/` chứa content-contract + static-output (chạy trên output build
+    // thật — xem `package.json` target `test` dependsOn `build`); giữ
+    // `src`/`tests` để không phá project được generate.
     include: ['{src,tests,app,shared,server}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     reporters: ['default'],
     coverage: {

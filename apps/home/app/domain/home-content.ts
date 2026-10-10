@@ -1,10 +1,10 @@
 /**
  * Nội dung Home — localized, type-safe, **thuộc sở hữu của application**.
  *
- * Home tự sở hữu content của mình; `layout-public` chỉ sở hữu chrome dùng
+ * Home tự sở hữu content của mình; `app/layout` chỉ sở hữu chrome dùng
  * chung (header/footer/navigation) và không biết content của Home. Cấu trúc
  * `Record<PublicLocale, HomeContent>` khiến việc thêm một locale vào
- * `i18n-public` mà thiếu bản dịch trở thành lỗi type ngay tại khai báo, không
+ * `app/i18n` mà thiếu bản dịch trở thành lỗi type ngay tại khai báo, không
  * phải lỗi runtime.
  *
  * Nội dung ở đây là copy **trung tính, mô tả đúng bề mặt đang tồn tại** —
@@ -13,7 +13,7 @@
  * render được như nhau ở server và client — cùng input cho cùng output.
  */
 
-import type { PublicLocale } from '@ecoma-io/i18n-public';
+import type { PublicLocale } from '../i18n/index';
 
 /**
  * Nội dung một trang Home cho một locale.
@@ -37,7 +37,7 @@ export type HomeContent = {
   readonly docsCta: string;
   /** Nhãn CTA phụ hero trỏ tới blog. */
   readonly blogCta: string;
-  /** Tiêu đề `<h1>` của trang lỗi 404 — render qua `libs/error-pages`. */
+  /** Tiêu đề `<h1>` của trang lỗi 404 — render qua `app/error-pages`. */
   readonly notFoundTitle: string;
   /** Mô tả dưới tiêu đề của trang 404. */
   readonly notFoundDescription: string;

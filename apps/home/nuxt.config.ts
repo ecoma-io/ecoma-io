@@ -14,30 +14,31 @@ export default defineNuxtConfig({
     typeCheck: true,
     tsConfig: {
       extends: '../../../tsconfig.base.json', // Nuxt chép nguyên văn chuỗi này sang `./.nuxt/tsconfig.json`, nên nó phải là đường dẫn tương đối so với thư mục đó
+      include: [
+        '../app/**/*',
+        '../shared/**/*',
+        '../test/**/*',
+        '../modules/**/*.ts',
+        './nuxt.d.ts',
+        '../types/*.d.ts',
+      ],
     },
   },
   imports: {
     autoImport: true,
   },
-  alias: {
-    // Nuxt **thay thế** (không merge) `paths` của tsconfig nền khi sinh
-    // `.nuxt/tsconfig.*.json`; nó chỉ dựng `paths` từ `nuxt.options.alias` và
-    // `typescript.hoist`. Không khai ở đây thì `@ecoma-io/*` trong
-    // `tsconfig.base.json` vô hình với app, và `nuxt build` fail TS2307.
-    // `new URL(..., import.meta.url).pathname` thay cho `fileURLToPath` vì
-    // `runtime:edge` cấm import Node.js builtin (`node:url`).
-    '@ecoma-io/i18n-public': new URL('../../libs/i18n-public/src/index.ts', import.meta.url)
-      .pathname,
-    '@ecoma-io/layout-public': new URL('../../libs/layout-public/src/index.ts', import.meta.url)
-      .pathname,
-    // `layout-public` render brand qua `EcomaLogo` — import bậc hai của app
-    // cũng phải resolve được (TS lẫn Vite), không chỉ imports trực tiếp.
-    '@ecoma-io/logo': new URL('../../libs/logo/src/index.ts', import.meta.url).pathname,
-    '@ecoma-io/error-pages': new URL('../../libs/error-pages/src/index.ts', import.meta.url)
-      .pathname,
-  },
+  // Không còn alias `@ecoma-io/*`: sau khi hợp nhất, i18n/layout/brand/
+  // error-pages là **module app-local** dưới `app/` — import relative trực
+  // tiếp (`app/layout` → `../i18n/index`), Nuxt/Vite resolve như mọi file
+  // thường của app. Không alias nghĩa là không có khái niệm "package dùng
+  // chung" nào sót lại sau khi libs đã biến mất khỏi workspace.
+  modules: [
+    '@nuxt/fonts',
+    'nuxt-content-assets',
+    '@nuxt/content',
+    './modules/prerendered-content-manifest',
+  ],
   css: ['~/assets/css/styles.css'],
-  modules: ['@nuxt/fonts'],
 
   vite: {
     resolve: { tsconfigPaths: true },

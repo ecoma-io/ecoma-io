@@ -31,13 +31,7 @@
           "buildDepsName": "build-deps",
           "watchDepsName": "watch-deps"
         }
-      },
-      "exclude": [
-        "libs/i18n-public/*",
-        "libs/layout-public-sidenav/*",
-        "libs/layout-public/*",
-        "libs/logo/*"
-      ]
+      }
     },
     {
       "plugin": "@nx/oxlint",
@@ -72,12 +66,6 @@
     },
     {
       "plugin": "@nx/js/typescript",
-      "include": [
-        "libs/i18n-public/*",
-        "libs/layout-public-sidenav/*",
-        "libs/layout-public/*",
-        "libs/logo/*"
-      ],
       "options": {
         "typecheck": {
           "targetName": "typecheck"

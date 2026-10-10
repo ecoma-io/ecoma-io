@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildHomeSeo } from './home-seo';
 import { HOME_PRODUCTION_ORIGIN, toProductionUrl } from './home-origin';
-import { PUBLIC_LOCALES } from '@ecoma-io/i18n-public';
+import { PUBLIC_LOCALES } from '../i18n/index';
 
 const enContent = {
   title: 'Ecoma.io — public home',

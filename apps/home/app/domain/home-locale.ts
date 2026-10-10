@@ -8,7 +8,7 @@
  *
  * Không tự phân tích locale: toàn bộ luật cấu trúc (`?`/`#`, `//`, trailing
  * slash, so khớp locale **exact từng byte**) thuộc `parsePublicPath` của
- * `i18n-public`. Vì hàm đó không decode, không lowercase, không repair, nên
+ * `app/i18n`. Vì hàm đó không decode, không lowercase, không repair, nên
  * `/%65n`, `/EN`, `/en/`, `/en/foo`, `/` đều trả `undefined` — đúng hợp đồng
  * strict canonicality mà không cần thêm bảng locale thứ hai.
  *
@@ -16,7 +16,7 @@
  * không cần dựng runtime Nuxt.
  */
 
-import { parsePublicPath, type PublicLocale } from '@ecoma-io/i18n-public';
+import { parsePublicPath, type PublicLocale } from '../i18n/index';
 
 /**
  * Trả về locale khi `pathname` là locale-root của Home, ngược lại `undefined`.

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { PublicShell } from '@ecoma-io/layout-public';
+import { PublicShell } from '../../../layout/index';
 import { parseLegalPage } from '~/domain/legal-locale';
 import { buildLegalSeo } from '~/domain/legal-seo';
 import { LEGAL_CONTENT } from '~/domain/legal-content';

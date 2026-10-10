@@ -26,6 +26,209 @@
 // Export object thuần, không import `defineNitroConfig` từ `nitro/config`:
 // `nitro` là transitive dependency của `nuxt`, không phải dependency trực tiếp
 // của workspace package này, nên pnpm không cho resolve từ đây.
+//
+// ## Ranh giới `@nuxt/content` / Cloudflare runtime
+//
+// Preset `cloudflare-module` làm `@nuxt/content` rewrite cấu hình database
+// sang **D1** (`{ type: 'd1', bindingName: 'DB' }` — nhánh `cloudflare` của
+// `setupNitro` trong `@nuxt/content/dist/module.mjs`). D1 bị cấm cho
+// Git-managed Markdown (ràng buộc của repo: không provision database chỉ để
+// phục vụ content tĩnh).
+//
+// Cách chạy tránh hoàn toàn adapter D1 ở runtime:
+//
+// 1. `@nuxt/content` chọn adapter **lúc request**: với
+//    `import.meta.preset ∈ {'nitro-prerender', 'nitro-dev'}` hoặc
+//    `import.meta.dev`, adapter là sqlite local trên Node; chỉ preset Worker
+//    thật mới đi qua `#content/adapter` → D1 connector
+//    (`runtime/internal/database.server.js`). Nitro chỉ gán
+//    `import.meta.preset = 'prerender'` khi tiến trình prerender chạy với
+//    preset nội bộ `nitro-prerender` — nghĩa là **không** khai preset đó ở
+//    đây; nó đến từ chính tiến trình prerender của Nitro.
+// 2. Mọi **trang content** (`/<locale>/docs/**`, `/<locale>/blog/**`) được
+//    prerender ở build time: query chạy trên Node với sqlite local, HTML +
+//    `_payload.json` nằm trong `.output/public` — Cloudflare phục vụ trực tiếp
+//    từ **static assets** của Worker (`assets.directory` trong
+//    `wrangler.jsonc`), không invoke Worker script. Độ tươi của content =
+//    thời điểm build, đúng semantics của bản static cũ (docs/blogs deploy
+//    assets-only sau mỗi build).
+// 3. Mọi path khác giữ SSR thật trên Worker. Request content path không tồn
+//    tại (`/en/docs/unknown`) bị chặn **trước khi** bất kỳ query nào chạy —
+//    qua manifest các content path được sinh lúc build (virtual module
+//    `virtual:prerendered-content-paths`, lấp bởi hook `prerender:done` ↓) và
+//    tra cứu trong middleware `server/middleware/prerendered-content-404.ts`
+//    (chạy trước renderer; không đặt trong `validate` của route vì app code
+//    bị Vite bundle trước prerender — xem module app-local đăng ký virtual).
+//    Nhờ vậy request lạ không bao giờ chạm `loadDatabaseAdapter`, tức không
+//    bao giờ gặp D1 connector — nó 404 sạch từ middleware, đúng semantics
+//    "unknown content → 404" như bản static cũ (wrangler
+//    `not_found_handling: "404-page"`).
+// 4. Trang prerendered vẫn hydrate: điều hướng client-side giữa các trang
+//    content đọc `_payload.json` (asset tĩnh) thay vì POST
+//    `/__nuxt_content/<collection>/query` lên Worker — route POST đó vẫn tồn
+//    tại trong bundle nhưng không được gọi trong luồng content bình thường.
+//
+// Kết quả: Worker `ecoma-home` giữ SSR cho landing/legal/404, còn content
+// được phục vụ như static asset trong cùng một deployment — không D1, không
+// Worker identity mới.
 export default {
   preset: 'cloudflare-module',
+  hooks: {
+    // `404.html` — artifact mà wrangler `not_found_handling: "404-page"` phục
+    // vụ cho mọi request không khớp asset (xem wrangler.jsonc). Preset
+    // Worker của Nitro **không** seed route này, nên phải tự prerender.
+    //
+    // Hai rào cản cần vượt (giữ nguyên từ `apps/docs` cũ):
+    //
+    // 1. Nuxt hardcode `/404.html` vào `PRERENDER_NO_SSR_ROUTES` — route này
+    //    luôn được render bằng SPA renderer, tức shell rỗng
+    //    (`data-ssr="false"`, không một byte HTML của error.vue). Prerender
+    //    trực tiếp `/404.html` không bao giờ cho ra trang lỗi SSR thật.
+    // 2. Prerenderer của Nitro chỉ ghi file khi response **200** — một route
+    //    không match page nào trả 404 và bị đánh dấu `_route.error`.
+    //
+    // Cách giải: prerender một **URL ảo** `/en/__not-found`. Nó đi đúng
+    // pipeline lỗi chuẩn của Nuxt như mọi URL không tồn tại khác (route
+    // content không match gì → `validate` từ chối → 404 → nitro error handler
+    // localFetch `/__nuxt_error?...` → renderer chạy `error.vue` ở chế độ SSR
+    // thật, đầy đủ `PublicShell` + shared 404 page). Hook `prerender:generate`
+    // chạy sau khi fetch nhưng trước khi ghi: xóa cờ lỗi để route được ghi,
+    // và đổi `fileName` thành `404.html` — đĩa nhận HTML của trang lỗi thật
+    // dưới đúng tên artifact mà wrangler cần.
+    //
+    // Nội dung dùng locale mặc định khi build (`en`, xem `app/error.vue`):
+    // một file tĩnh duy nhất không biết URL bị lỗi thuộc locale nào.
+    //
+    // `failOnError` giữ mặc định true cho mọi route khác; route ảo này được
+    // miễn một cách có kiểm soát (chỉ đúng `route.route` của nó) thay vì tắt
+    // guard toàn cục — một content route thật sự hỏng vẫn làm build đỏ.
+    'prerender:routes': (routes: Set<string>): void => {
+      routes.add('/en/__not-found');
+    },
+    'prerender:generate': (route: {
+      route: string;
+      error?: Error;
+      fileName?: string;
+      skip?: boolean;
+    }): void => {
+      if (route.route === '/en/__not-found') {
+        // Chỉ miễn lỗi **dự kiến** — 404 của route ảo. Lỗi khác (throw trong
+        // `error.vue`/`PublicShell`, renderer 500 — lỗi build thật) phải để
+        // nguyên cờ cho `failOnError` làm build đỏ: nuốt trắng sẽ đổi
+        // `fileName` thành `/404.html`, build xanh nhưng artifact là HTML
+        // hỏng, và wrangler (`not_found_handling: "404-page"`) phục vụ nó cho
+        // **mọi** request không khớp asset. Nitro gắn status vào error object
+        // (`statusCode`, hoặc `status` sau khi Nuxt deprecate tên cũ) nhưng
+        // type tĩnh không khai báo — kiểu cấu trúc cục bộ thay vì cast rộng.
+        type PrerenderRouteError = { statusCode?: unknown; status?: unknown };
+        const status = (route.error as PrerenderRouteError | undefined)?.statusCode;
+        const altStatus = (route.error as PrerenderRouteError | undefined)?.status;
+        if (status === 404 || altStatus === 404) {
+          delete route.error;
+          route.fileName = '/404.html';
+        }
+      }
+      // Payload JSON của route ảo (`/en/__not-found/_payload.json`) bị crawler
+      // queue tiếp từ header `x-nitro-prerender` của response HTML và sẽ được
+      // ghi cạnh **URL gốc**, không cạnh `404.html` đã đổi tên — file rác trong
+      // artifact deploy (không request nào của trình duyệt chạm tới nó, vì
+      // hydration trên URL không tồn tại không bao giờ chạy). Đánh dấu `skip`
+      // ngay tại đây: prerenderer bỏ qua ghi đĩa cho route này.
+      if (route.route === '/en/__not-found/_payload.json') {
+        route.skip = true;
+      }
+    },
+    // Sinh **manifest content path** từ chính kết quả prerender, rồi lấp nó
+    // vào `globalThis` — virtual module `virtual:prerendered-content-paths`
+    // (đăng ký trong `modules/prerendered-content-manifest.ts` qua hook
+    // `nitro:config`) đọc từ đó khi rollup của Nitro load nó. Rollup load
+    // virtual module **sau** prerender — Worker được bundle sau khi prerender
+    // chạy xong, cùng tiến trình — nên manifest luôn khớp artifact
+    // `.output/public` thực tế. Consumer: middleware
+    // `server/middleware/prerendered-content-404.ts`.
+    //
+    // Nguồn dữ liệu là `prerenderedRoutes: PrerenderRoute[]` (`route.route` =
+    // URL đã render thành công và được ghi đĩa; route lỗi 404 của `/en/
+    // __not-found` không có ở đây vì `prerenderedRoutes` chỉ nhận route ghi
+    // thành công). Chỉ path content (docs + blog) được giữ: `/en/__not-found`
+    // không khớp filter mount; landing/legal không cần manifest vì chúng là
+    // route tĩnh của app, không tra cứu DB.
+    //
+    // Middleware `server/middleware/prerendered-content-404.ts` tra cứu tập
+    // này để 404 path lạ **trước khi** query — bít con đường duy nhất dẫn
+    // tới D1 connector (xem phần "Ranh giới" ở đầu file).
+    //
+    // Type param là kiểu cấu trúc cục bộ: Nitro export `PrerenderRoute` qua
+    // type nhưng hook type của nó không tiện import từ file config object
+    // thuần; chỉ hai field này được đọc.
+    'prerender:done': (result: { prerenderedRoutes?: ReadonlyArray<{ route?: string }> }): void => {
+      const routes = (result.prerenderedRoutes ?? [])
+        .map((entry) => entry.route ?? '')
+        .filter((route) => /^\/(en|vi)\/(docs|blog)(\/|$)/u.test(route));
+      (globalThis as Record<string, unknown>).__PRERENDERED_CONTENT_PATHS__ = routes.toSorted();
+    },
+  },
+  // Virtual module `virtual:prerendered-content-paths` — đọc manifest do hook
+  // `prerender:done` vừa ghi vào `globalThis` — KHÔNG đăng ký tại đây mà ở
+  // module app-local `modules/prerendered-content-manifest.ts` (qua hook
+  // `nitro:config`, vốn chạy trước `createNitro` và trước prerenderer con).
+  // Lý do: key `virtual` cấp top-level của file này đi vào `_config` của
+  // config chính, nhưng consumer duy nhất của manifest là
+  // `server/middleware/prerendered-content-404.ts` — middleware thuộc server
+  // bundle chính; đăng ký cùng nơi consumer sống giúp câu chuyện
+  // "specifier → virtual → consumer" nằm trọn trong hai file nhìn thấy nhau.
+  // Function form chạy tại thời điểm rollup **load** module — sau prerender —
+  // nên giá trị luôn là manifest của build hiện tại, không phải state build
+  // trước (nitro.vfs cache chỉ giữ chuỗi đã load trong cùng tiến trình
+  // build). Key phải là **`virtual` cấp top-level** (`nitro.options.virtual`):
+  // nitro chỉ push `virtual(nitro.options.virtual)` vào plugin list của
+  // rollup — một key `rollupConfig.virtual` tự đặt bị nitro bỏ qua im lặng
+  // (đã xác minh trong nitropack/dist/rollup — `getRollupConfig` không đọc
+  // key đó). Plugin `virtual` được push **trước** plugin `alias` (map
+  // `#build` → buildDir), nên ở server bundle specifier này luôn resolve qua
+  // virtual — manifest thật sau prerender, không bao giờ chạm đĩa.
+  prerender: {
+    // Seed tường minh hai landing của mỗi mount. Từ đây crawler đi tiếp qua
+    // link do sidebar/listing render ra, nên **mọi** document/article ở cả
+    // hai locale đều được prerender thành HTML thật. Seed không suy từ content
+    // file: chính route mới là thứ quyết định URL, và crawler đọc đúng URL đó.
+    routes: ['/en/docs', '/vi/docs', '/en/blog', '/vi/blog'],
+    crawlLinks: true,
+    // Crawler đi theo **mọi** link trong HTML, mà shell dùng chung render
+    // global nav, locale switcher và footer với đầy đủ link chéo mount. Trong
+    // app hợp nhất mọi URL đều thuộc cùng Worker, nhưng các surface
+    // non-content được **SSR theo request** — prerender chúng ở đây sẽ chụp
+    // trạng thái build thành artifact tĩnh và đổi semantics phục vụ (SSR mỗi
+    // request → HTML chụp một lần). Giữ chúng ngoài prerender để hành vi
+    // không đổi sau khi hợp nhất.
+    //
+    // `/` không có page tương ứng (chỉ `server/routes/index.get.ts` redirect
+    // 302) — không loại thì crawler báo lỗi route không render được.
+    //
+    // Dùng **regex** chứ không phải string: `ignore` so string bằng
+    // `startsWith`, nên `'/en'` sẽ nuốt luôn `/en/docs`; regex neo hai đầu mới
+    // khớp đúng path cần loại. Cờ `u` là yêu cầu của rule
+    // `require-unicode-regexp` trong oxlint config của repo.
+    //
+    // Lưu ý: `ignore` chặn route **hoàn toàn** (`canPrerender` → skip ngay
+    // trước khi fetch, không bao giờ ghi file), không chỉ chặn crawler —
+    // `/en/__not-found` (route ảo sinh `404.html`, hook `prerender:generate`
+    // trên) vì thế không được đứng ở đây.
+    //
+    // Cố ý **không** dùng `failOnError: false`: giữ nguyên mặc định để một
+    // content route thật sự hỏng vẫn làm build đỏ. Chỉ đúng những entry point
+    // non-content ở trên được miễn.
+    ignore: [
+      /^\/$/u,
+      /^\/en\/?$/u,
+      /^\/vi\/?$/u,
+      // `(?:/[^/]+)?` phủ cả mount root lẫn một resource segment; mọi thứ sâu
+      // hơn một segment (vd `/en/legal/privacy/x`) không bị nuốt — pathname như
+      // vậy nếu lọt vào crawl là hỏng và vẫn phải làm build đỏ.
+      /^\/en\/legal(?:\/[^/]+)?\/?$/u,
+      /^\/vi\/legal(?:\/[^/]+)?\/?$/u,
+      // API nội bộ của app không phải page nào cả.
+      /^\/api\/greet$/u,
+    ],
+  },
 };

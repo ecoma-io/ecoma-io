@@ -15,14 +15,14 @@
   rơi về locale mặc định của app (`HOME_DEFAULT_LOCALE`), không bao giờ
   render trộn hai locale.
 
-  Chỉ 404 được map sang shared page (`libs/error-pages` là pure presenter;
+  Chỉ 404 được map sang shared page (`app/error-pages` là pure presenter;
   app sở hữu quyết định map). 401/500/unknown giữ fallback mặc định của Nuxt
   — không mở rộng map lỗi.
 -->
 <script setup lang="ts">
-import { NotFoundPage, type ErrorPageContent } from '@ecoma-io/error-pages';
-import { PublicShell, buildPublicPath } from '@ecoma-io/layout-public';
-import { parsePublicPath, type PublicLocale } from '@ecoma-io/i18n-public';
+import { NotFoundPage, type ErrorPageContent } from './error-pages/index';
+import { PublicShell, buildPublicPath } from './layout/index';
+import { parsePublicPath, type PublicLocale } from './i18n/index';
 import type { NuxtError } from '#app';
 import { HOME_CONTENT } from '~/domain/home-content';
 import { HOME_DEFAULT_LOCALE } from '#shared/default-locale';
@@ -41,7 +41,7 @@ type ErrorWithUrl = NuxtError & { readonly url?: unknown };
 
 /**
  * Locale cho trang lỗi — parse locale segment đầu của pathname request lỗi
- * qua `parsePublicPath` (chuẩn strict canonicality của `i18n-public`: không
+ * qua `parsePublicPath` (chuẩn strict canonicality của `app/i18n`: không
  * decode, không lowercase, không repair).
  *
  * Nguồn pathname phải phân biệt môi trường:

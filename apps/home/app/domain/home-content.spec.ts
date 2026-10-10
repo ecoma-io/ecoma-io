@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { HOME_CONTENT } from './home-content';
-import { PUBLIC_LOCALES } from '@ecoma-io/i18n-public';
+import { PUBLIC_LOCALES } from '../i18n/index';
 
 describe('HOME_CONTENT', () => {
   it('bao phủ toàn bộ PUBLIC_LOCALES (exact keys)', () => {
