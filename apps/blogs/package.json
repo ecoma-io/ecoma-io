@@ -13,7 +13,7 @@
         "executor": "nx:run-commands",
         "defaultConfiguration": "production",
         "dependsOn": [
-          "build"
+          "build-static"
         ],
         "options": {
           "cwd": "apps/blogs",
@@ -30,6 +30,35 @@
           "cwd": "apps/blogs",
           "command": "npx nuxt prepare"
         }
+      },
+      "typecheck": {
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "^typecheck",
+          "nuxt-prepare"
+        ],
+        "cache": true,
+        "inputs": [
+          "default",
+          "{workspaceRoot}/tsconfig.base.json",
+          {
+            "externalDependencies": [
+              "vue-tsc"
+            ]
+          }
+        ],
+        "options": {
+          "cwd": "apps/blogs",
+          "command": "npx nuxt typecheck"
+        },
+        "//": [
+          "Ghi đè target `typecheck` mặc định của plugin @nx/js (echo no-op):",
+          "Nuxt sinh `.nuxt/tsconfig.*.json` với `noEmit: true`, còn target mặc định",
+          "chạy `tsc --build --emitDeclarationOnly` — hai option đó xung đột nên plugin",
+          "thay bằng echo. `nuxt typecheck` (vue-tsc qua @nuxt/cli) là đường đúng:",
+          "nó hiểu project references Nuxt 4, dùng đúng các `.nuxt/tsconfig.*.json`,",
+          "và bắt được lỗi type thật (đã xác minh với một file chứa TS2322 cố ý)."
+        ]
       },
       "test": {
         "dependsOn": [

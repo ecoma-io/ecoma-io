@@ -1,21 +1,23 @@
 /// <reference types='vitest' />
 import { defineConfig } from 'vite';
+import { nxViteTsPaths } from '@nx/vite/plugins/nx-tsconfig-paths.plugin';
 import vue from '@vitejs/plugin-vue';
 
 export default defineConfig(() => ({
   root: import.meta.dirname,
   cacheDir: '../../node_modules/.vite/apps/blogs',
-  plugins: [vue()],
-  // Bỏ comment dòng dưới nếu bạn dùng workers.
-  // worker: {
-  //   plugins: [],
-  // },
+  // nxViteTsPaths resolve alias `@ecoma-io/*` trong test, vue() transform
+  // component `.vue` — đặt sau vì transform pipeline đọc theo thứ tự.
+  plugins: [nxViteTsPaths(), vue()],
   test: {
     name: '@ecoma-io/blogs',
     watch: false,
     globals: true,
     environment: 'jsdom',
-    include: ['{src,tests,server}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    // `app/` là thư mục source của blogs app (Nuxt 4 `srcDir`), nên phải có trong
+    // glob — các test đặt cạnh component để review dễ thấy test của tầng nào.
+    // `tests/` chứa content-contract test chạy trên file content thật.
+    include: ['{app,src,tests,server}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     reporters: ['default'],
     coverage: {
       reportsDirectory: './test-output/vitest/coverage',

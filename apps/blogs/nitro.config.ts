@@ -14,18 +14,41 @@
 // hiện cảnh báo B5004 khi thấy `nitro.config.ts` — chỉ dev mode, không ảnh hưởng
 // build.
 //
-// Trang này là deploy unit Workers: docs/overview/02-delivery.md §1 xếp `apps`
-// vào làn Workers, deploy bằng Wrangler. Không có preset này thì Nuxt build cho
-// Node server và không emit ra `.output/server/index.mjs` mà `wrangler.jsonc`
-// trỏ tới.
+// `preset: 'static'` — blog là **static site**, không phải ứng dụng SSR.
 //
-// Không dùng `cloudflare` (preset legacy, không emit modern Workers output) và
-// không dùng `cloudflare-pages`: preset Pages ghi ra `dist/_worker.js` cùng
-// `_routes.json`/`_redirects`, lệch với `main` trong wrangler.jsonc.
-//
-// Export object thuần, không import `defineNitroConfig` từ `nitro/config`:
-// `nitro` là transitive dependency của `nuxt`, không phải dependency trực tiếp
-// của workspace package này, nên pnpm không cho resolve từ đây.
+// Cùng lý do với `apps/docs`: `@nuxt/content` chọn database adapter ở thời điểm
+// **request** theo Nitro preset; với preset Workers nó đòi D1 (`bindingName:
+// "DB"`), còn adapter mặc định là sqlite chỉ chạy trên Node. Với `static`, mọi
+// `queryCollection` chạy ở **build time** trên Node — nơi sqlite hợp lệ — và
+// output chỉ còn file tĩnh trong `.output/public`. Sau khi deploy không còn
+// truy vấn content nào ở runtime, nên không cần D1, không cần Worker script.
 export default {
-  preset: 'cloudflare-module',
+  preset: 'static',
+  prerender: {
+    // Seed tường minh hai blog landing. Từ đây crawler đi tiếp qua link do
+    // listing/featured render ra, nên **mọi** article ở cả hai locale đều được
+    // sinh thành HTML thật. Seed không suy từ content file: chính route mới là
+    // thứ quyết định URL, và crawler đọc đúng URL đó.
+    routes: ['/en/blog', '/vi/blog'],
+    crawlLinks: true,
+    // Crawler đi theo **mọi** link trong HTML, mà shell dùng chung
+    // (`layout-public`) còn render global nav, locale switcher và footer. Những
+    // link đó trỏ ra ngoài blog:
+    //
+    //   `/`                       — locale-resolution entry point, không mount nào sở hữu
+    //   `/en`, `/vi`              — locale root, do locale switcher sinh ra
+    //   `/en/docs`, `/vi/docs`    — mount `docs`, deploy unit khác (`apps/docs`)
+    //   `/en/docs/<section>`      — section docs trong global nav + footer
+    //
+    // Chúng 404 một cách đúng đắn (blogs không sở hữu chúng), nên phải loại
+    // khỏi prerender thay vì để build đỏ. Dùng **regex** chứ không phải string:
+    // `ignore` so string bằng `startsWith`, nên `'/en'` sẽ nuốt luôn `/en/blog`;
+    // regex neo hai đầu mới khớp đúng path cần loại. Cờ `u` là yêu cầu của rule
+    // `require-unicode-regexp` trong oxlint config của repo.
+    //
+    // Cố ý **không** dùng `failOnError: false`: giữ nguyên mặc định để một blog
+    // route thật sự hỏng vẫn làm build đỏ. Chỉ đúng những entry point ngoài
+    // blog ở trên được miễn.
+    ignore: [/^\/$/u, /^\/en\/?$/u, /^\/vi\/?$/u, /^\/en\/docs(\/.*)?$/u, /^\/vi\/docs(\/.*)?$/u],
+  },
 };

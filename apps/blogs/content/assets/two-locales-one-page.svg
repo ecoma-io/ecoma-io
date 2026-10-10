@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="320" viewBox="0 0 720 320" role="img" aria-labelledby="tlo-title tlo-desc">
+  <title id="tlo-title">One page, two locales</title>
+  <desc id="tlo-desc">A diagram showing one article slug branching into an English path and a Vietnamese path, with a switch arrow between the two.</desc>
+
+  <rect x="0" y="0" width="720" height="320" fill="#ffffff"/>
+
+  <defs>
+    <style>
+      .label { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+      .mono  { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+    </style>
+    <marker id="tlo-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <!-- Heading -->
+  <text x="360" y="40" text-anchor="middle" class="label" font-size="19" font-weight="700" fill="#0f172a">One page, two locales</text>
+  <text x="360" y="62" text-anchor="middle" class="label" font-size="12" fill="#64748b">The slug stays identical so switching keeps the reader on the same article</text>
+
+  <!-- Source node -->
+  <rect x="60" y="120" width="200" height="72" rx="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="160" y="150" text-anchor="middle" class="label" font-size="14" font-weight="600" fill="#0f172a">One article</text>
+  <text x="160" y="172" text-anchor="middle" class="mono" font-size="12" fill="#475569">slug: url-model</text>
+
+  <!-- EN node -->
+  <rect x="420" y="76" width="240" height="60" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="540" y="101" text-anchor="middle" class="mono" font-size="13" font-weight="600" fill="#0f172a">/en/blog/url-model</text>
+  <text x="540" y="121" text-anchor="middle" class="label" font-size="11" fill="#475569">English text</text>
+
+  <!-- VI node -->
+  <rect x="420" y="176" width="240" height="60" rx="10" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+  <text x="540" y="201" text-anchor="middle" class="mono" font-size="13" font-weight="600" fill="#0f172a">/vi/blog/url-model</text>
+  <text x="540" y="221" text-anchor="middle" class="label" font-size="11" fill="#475569">Vietnamese text</text>
+
+  <!-- Branch arrows -->
+  <line x1="260" y1="144" x2="414" y2="110" stroke="#475569" stroke-width="1.5" marker-end="url(#tlo-arrow)"/>
+  <line x1="260" y1="168" x2="414" y2="202" stroke="#475569" stroke-width="1.5" marker-end="url(#tlo-arrow)"/>
+
+  <!-- Switch arrow between locales -->
+  <line x1="540" y1="136" x2="540" y2="170" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4 4" marker-end="url(#tlo-arrow)"/>
+  <line x1="540" y1="176" x2="540" y2="142" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4 4" marker-end="url(#tlo-arrow)"/>
+  <text x="556" y="158" class="label" font-size="11" fill="#64748b">switch</text>
+</svg>
