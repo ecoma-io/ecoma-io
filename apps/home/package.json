@@ -11,17 +11,20 @@
     "targets": {
       "deploy": {
         "executor": "nx:run-commands",
-        "defaultConfiguration": "production",
         "dependsOn": [
           "build"
         ],
         "options": {
           "cwd": "apps/home",
-          "command": "npx wrangler deploy --config wrangler.jsonc"
+          "command": "echo 'Refusing to deploy: a Wrangler environment is required. Use --configuration=staging or --configuration=production.' && exit 1"
         },
         "configurations": {
-          "development": {},
-          "production": {}
+          "staging": {
+            "command": "npx wrangler deploy --config wrangler.jsonc --env staging"
+          },
+          "production": {
+            "command": "npx wrangler deploy --config wrangler.jsonc --env production"
+          }
         }
       },
       "nuxt-prepare": {

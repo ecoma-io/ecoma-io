@@ -194,7 +194,11 @@ PR source ──build──► Untrusted artifact ──► Trusted deploy workf
 | **Release**        | Một phiên bản có định danh của **một** deploy unit: version + tag + exact Git commit SHA (định dạng tag mục tiêu `{projectName}@{version}`) |
 | **Promotion gate** | Tập điều kiện bắt buộc trước khi một release vào production (liệt kê bên dưới)                                                              |
 
-**Trạng thái hiện tại:** Nx Release **chưa được cấu hình** trong repo — chưa có release config, chưa có tag, chưa có CHANGELOG. Mọi thứ dưới đây là kiến trúc mục tiêu; phần implement phải dựng theo đúng nó (§12). Cơ chế Nx Release ghi version per-deploy-unit (package.json hay cách khác) vẫn là uncertainty mở (§12).
+**Trạng thái hiện tại (deploy unit `home`):** pipeline hai làn đã tồn tại trong repo — `.github/workflows/home-staging.yaml` (làn staging) và `.github/workflows/home-production.yaml` (làn promotion), với helper module trong `apps/home/deploy/pipeline/`. Nx Release đã được cấu hình per-project cho `home` trong `nx.json`: version ghi vào `apps/home/package.json` (`fallbackCurrentVersionResolver: disk`), CHANGELOG ghi vào `apps/home/CHANGELOG.md`, commit release do `nx release` tự tạo với message `chore(home): release {projectName} {version}`. Các deploy unit khác chưa có pipeline (làm theo cùng mẫu khi tới lượt).
+
+**Cách đồng bộ staging ↔ tag của `home` (hiện thực hoá §7.3):** release commit do `nx release` tạo luôn nằm trong tập affected của `home` (nó thay `apps/home/package.json` + CHANGELOG), nên khi commit đó được merge vào `main`, làn staging **deploy chính SHA đó** rồi mới tag (`@ecoma-io/home@{version}` trên SHA đã verify — job `tag` chỉ chạy sau khi smoke pass). Không có SHA dịch: SHA được tag ≡ SHA đã staging ≡ SHA được promote. Tag chỉ được tạo sau staging verification, không bao giờ ghi đè (`staging-deploy.mts` mode `tag`).
+
+**Cơ chế evidence + promotion gate của `home`:** bằng chứng staging là GitHub commit status `home/staging-verified` = success gắn **exact SHA**; promotion (`workflow_dispatch` input `tag` + Environment `production` required-reviewer) kiểm bằng `evaluatePromotionGate` (`apps/home/deploy/pipeline/promotion-gate.ts`): tag đúng pattern release, tag SHA ∈ lịch sử `main`, version tại SHA ≡ version trong tag, status staging = success trên chính SHA đó. Provenance release: job URL của hai run (staging + promotion) được ghi trong mô tả của hai commit status; workflow logs là bản ghi đầy đủ — chưa có store provenance riêng (nếu cần sau này → §12).
 
 **Vòng đời release một deploy unit (mục tiêu):**
 
@@ -206,6 +210,8 @@ PR validation → merge `main`
   → deploy revision đó lên production
   → post-deploy verification → ghi provenance; fail → failure handling, rollback controlled (§8)
 ```
+
+Vòng đời thực tế của `home` khác mục tiêu ở một điểm có chủ đích: **tag được tạo sau staging verification của chính SHA release commit** (không phải sau merge Release PR một cách vô điều kiện) — thứ tự là deploy staging → smoke → tag, nên tag luôn trỏ revision đã verify.
 
 **Release identity — thông tin tối thiểu của một lần deploy production (provenance):**
 
@@ -230,27 +236,32 @@ Post-deploy verification **không** thuộc promotion gate: nó chạy sau khi p
 
 Việc merge Release PR thêm commit version/changelog vào `main`, nên **SHA được tag khác SHA đã deploy staging trước đó**. Nếu bỏ qua điểm này, production có thể deploy một revision chưa từng chạy staging — vi phạm promotion gate.
 
-Yêu cầu kiến trúc cho phần implement (chưa có cơ chế nào tồn tại trong workflow hiện tại):
+Yêu cầu kiến trúc:
 
-- Production workflow **không** chạy trên một SHA trừ khi **đúng SHA đó** có bằng chứng staging verification. Nguồn sự thật của bằng chứng phải là durable state (artifact/job result gắn SHA), không phải suy luận "commit cha đã pass".
-- Việc Release PR chỉ thêm metadata version/changelog (tree content của bản build không đổi) **không** tự thỏa yêu cầu trên — bằng chứng vẫn phải gắn với exact tagged SHA. Cơ chế cụ thể (re-deploy tagged SHA lên staging rồi verify, hay cách khác) do phần implement chốt sau khi xác minh hành vi thật của Nx Release và staging trigger. Không dùng suy luận chưa xác minh.
+- Production workflow **không** chạy trên một SHA trừ khi **đúng SHA đó** có bằng chứng staging verification. Nguồn sự thật của bằng chứng phải là durable state (commit status gắn SHA, job result gắn SHA), không phải suy luận "commit cha đã pass".
+- Việc Release PR chỉ thêm metadata version/changelog (tree content của bản build không đổi) **không** tự thỏa yêu cầu trên — bằng chứng vẫn phải gắn với exact tagged SHA.
+
+Cơ chế `home` đã hiện thực (xem tổng hợp ở §7.2): release commit nằm trong tập affected của unit, nên làn staging deploy chính SHA release commit; tag được tạo **sau** smoke pass, trên SHA đã deploy; promotion kiểm status `home/staging-verified` trên chính SHA của tag. Chuỗi deploy → verify → tag loại trừ trường hợp "SHA được tag chưa từng chạy staging" bằng cấu trúc, không phải bằng quy trình kỷ luật.
 
 ### 7.4 Yêu cầu triển khai hai làn
 
-Chưa có workflow deploy nào trong repo — mọi mục dưới đây là yêu cầu cho phần implement, không phải mô tả trạng thái hiện tại.
+Workflow `home-staging.yaml` và `home-production.yaml` là hiện thực hoá đầu tiên của phần này cho deploy unit `home`; các bullet dưới đây mô tả hợp đồng mà cả hai workflow cùng tuân theo.
 
 **Staging (tự động khi merge `main`, per-unit theo `nx affected`):**
 
-- Build đúng revision merge, deploy lên Worker identity staging (`stg-*`, §4) với cấu hình + credential staging.
-- Smoke test sau deploy; ghi kết quả deploy + verification gắn exact commit SHA.
-- Concurrency guard chống chạy chồng và chống stale run ghi đè staging state không chủ đích (cancel/supercede theo unit + SHA).
+- Trigger `workflow_run` sau CI (`workflows: [CI]`, `branches: [main]`, chỉ nhận `conclusion: success`); mọi quyết định SHA đọc `workflow_run.head_sha` qua env, không bao giờ `github.sha`.
+- Build đúng revision merge trong job **không secret**, upload artifact kèm `build-manifest.json` (SHA + version + worker name); job deploy chỉ dùng artifact khớp manifest của run mình.
+- Deploy lên Worker identity staging (`stg-ecoma-home`, cấu hình env `staging` của `apps/home/wrangler.jsonc`) với credential từ GitHub Environment `staging`.
+- Smoke test HTTP thật sau deploy (`smoke-check.ts`: redirect `/`, SSR locale, noindex header, canonical, favicon); ghi commit status `home/staging-verified` trên exact commit SHA.
+- Concurrency guard: `concurrency.group` không-cancel xếp hàng, cộng stale-run guard (`runner-guard.ts`) chạy lại ngay trước `wrangler deploy` — run cũ hơn nhường run mới hơn cùng SHA; revision stale nhường; quan hệ không xác định được → abort fail-closed kèm status failure.
 
 **Production (promotion, không tự động theo `main`):**
 
-- Chỉ chạy cho release có định danh (§7.2) và staging verification của đúng revision được tag (§7.3).
-- Approval qua GitHub Environment production (§6); cấu hình + credential production riêng (WS3).
-- Post-deploy verification **sau khi deploy xong**; kết quả ghi vào provenance, fail → failure handling với rollback controlled (§8) — không phải điều kiện để bắt đầu deploy (§7.2).
-- Staging và production là hai Worker identity tách biệt; không giả định Cloudflare promote trực tiếp version xuyên identity — phần implement phải xác minh cơ chế Wrangler/Cloudflare được hỗ trợ và deploy lại từ đúng source revision đã verify với cấu hình environment đích. Cơ chế này **chưa xác minh** (§12).
+- Chỉ chạy qua `workflow_dispatch` với input tag; job gắn Environment `production` (required reviewer, credential riêng).
+- Fail-closed trước Wrangler: gate `evaluatePromotionGate` kiểm đủ định danh release, tag SHA ∈ `main`, version tại SHA ≡ tag, staging evidence của chính SHA (§7.3).
+- Production build từ chính commit đã tag (checkout detached rồi build) — artifact production match verified release SHA by construction.
+- Post-deploy verification **sau khi deploy xong**; kết quả ghi commit status `home/production-verified`. **Không auto-rollback** — smoke fail chỉ ghi status failure và dừng; rollback là một promotion có chủ đích của tag cũ (§8).
+- Staging và production là hai Worker identity tách biệt (`stg-ecoma-home` / `ecoma-home`); production được deploy lại từ đúng source revision đã verify với env `production` của Wrangler — không có promote xuyên identity.
 
 Hai làn deploy application tách biệt với provisioning infrastructure: infrastructure thay đổi qua Pulumi workflow riêng (§9); một release application **không** chạy `pulumi up`.
 
@@ -316,12 +327,10 @@ Testing architecture (topology, vị trí unit/contract/E2E test) → `05-code-a
 
 Chỉ chứa **delivery uncertainty**. Architectural decision → `01` §10 · operational uncertainty → `03` §10.
 
+Đã chốt (bằng hiện thực trong repo, xem §7.2/§7.3/§7.4): cách Nx Release ghi version per-deploy-unit (`home` dùng `package.json`, config trong `nx.json`); đồng bộ staging ↔ tag cho `home` (deploy → verify → tag trên cùng SHA); concurrency/stale-run guard staging (`runner-guard.ts`); cơ chế production deploy từ revision đã verify (rebuild từ tagged commit với env `production` — không promote xuyên Worker identity).
+
 | Mục                                                                                                        | Kích hoạt                      |
 | ---------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| Cách Nx Release ghi version cho deploy unit (package.json hay cách khác)                                   | Trước D2a                      |
-| Cơ chế đồng bộ staging verification với revision được tag sau Release PR (§7.3)                            | Trước pipeline production đầu  |
-| Cơ chế deploy + rollback mà Wrangler/Cloudflare hỗ trợ giữa Worker identity staging và production (§7.4)   | Trước pipeline production đầu  |
-| Concurrency/stale-run guard cho deploy workflow staging — cơ chế cụ thể (§7.4)                             | Trước pipeline staging đầu     |
 | Nơi lưu provenance release (§7.2) — artifact, job result hay store khác                                    | Trước pipeline production đầu  |
 | Cơ chế trigger Preview manual (theo PR, branch hay revision; workflow hay CLI) (§5.1)                      | Trước Preview đầu              |
 | Preview database: 1 config chung + schema-per-PR hay chỉ mock                                              | Sau spike D2c                  |

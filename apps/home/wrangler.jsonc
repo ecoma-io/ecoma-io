@@ -5,6 +5,25 @@
   // `assets.directory` là output của `nuxt build --prerender`, phục vụ static
   // asset của app.
   //
+  // Hai **named env** tách biệt production và staging (docs/overview/
+  // 02-delivery.md §1.1, §4): mỗi env là một Worker identity riêng với route
+  // riêng — deploy staging không bao giờ đụng production và ngược lại.
+  //
+  // Quy tắc inherit của Wrangler (đã kiểm chứng trên wrangler 4.149.0,
+  // `wrangler deploy --help` + source `wrangler/config/validation-helpers.ts`):
+  // chỉ các field sau inherit từ top-level xuống env — `name`, `main`,
+  // `assets`, `observability`, `compatibility_date`, `compatibility_flags`,
+  // `workers_dev`, `preview_urls`, `routes`/`route`. **Không** inherit:
+  // `vars`, `secrets` và mọi binding (`d1_databases`, `kv_namespaces`, …).
+  // Vì vậy mọi giá trị phải-difer-theo-env được khai lại tường minh trong env,
+  // còn phần chung ở top-level là phần hai env chia sẻ nguyên vẹn.
+  //
+  // Deploy dùng `wrangler deploy --config wrangler.jsonc --env staging` /
+  // `--env production`. Không có default env: target `deploy` của Nx
+  // (`apps/home/project.json` + `package.json` nx.targets) bắt buộc truyền
+  // configuration — lệnh deploy không chọn env được không pass lint CI
+  // (`apps/home/deploy/pipeline/wrangler-env.spec.ts` chốt bất biến này).
+  //
   // Worker identity lâu dài — PR không tạo Worker mới, Preview chạy dưới
   // identity này. Reference: docs/overview/02-delivery.md §5.
   "$schema": "../../node_modules/wrangler/config-schema.json",
@@ -17,7 +36,7 @@
   // boundary của `runtime:edge`.
   //
   // Cloudflare từ `compatibility_date` 2026-08-04 đã bật sẵn `nodejs_compat`
-  // và `nodejs_compat_v2` nên flag ở trên là thừa về mặt runtime. Nhưng KHÔNG
+  // và `nodejs_compat_v2` nên flag ở đây là thừa về mặt runtime. Nhưng KHÔNG
   // bỏ: Nitro đọc chính config này để tự bật `cloudflare.nodeCompat`
   // (nitropack/dist/presets/cloudflare/utils.mjs — nhánh
   // `userCompatibilityFlags.has("nodejs_compat")`), và nodeCompat là thứ quyết
@@ -37,5 +56,33 @@
   },
   "dev": {
     "port": 4200,
+  },
+  // --- Staging: https://ecoma.io.vn — Worker `stg-ecoma-home` ---
+  "env": {
+    "staging": {
+      "name": "stg-ecoma-home",
+      "routes": [
+        // Custom zone `ecoma.io.vn` — route pattern phủ mọi path của zone.
+        { "pattern": "ecoma.io.vn", "custom_domain": true },
+      ],
+      // `vars` KHÔNG inherit: top-level không khai `vars` nào, và production
+      // (dưới đây) cũng không — `noIndex` chỉ tồn tại ở staging.
+      "vars": {
+        // Xem `nitro.config.ts` (runtimeConfig.public.noIndex) và
+        // `server/middleware/no-index.ts`: staging phải noindex để không bị
+        // crawler index trong khi canonical vẫn trỏ production origin.
+        "NITRO_PUBLIC_NO_INDEX": "true",
+      },
+    },
+    // --- Production: https://ecoma.io — Worker `ecoma-home` ---
+    "production": {
+      "name": "ecoma-home",
+      "routes": [{ "pattern": "ecoma.io", "custom_domain": true }],
+      // Không khai `vars`: production indexable là mặc định (`noIndex: false`
+      // từ `nitro.config.ts`), và không có config runtime nào cần env override
+      // ở production. Secrets của production đi qua GitHub Environment
+      // `production` → `wrangler deploy --env production` với
+      // `CLOUDFLARE_API_TOKEN` — không bao giờ nằm trong file này.
+    },
   },
 }

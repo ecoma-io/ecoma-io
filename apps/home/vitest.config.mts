@@ -26,8 +26,14 @@ export default defineConfig(() => ({
     globals: true,
     environment: 'jsdom',
     // Nuxt dùng `app/` (pages, domain) và `shared/`, không dùng `src/`;
-    // giữ `src`/`tests` để không phá project được generate.
-    include: ['{src,tests,app,shared,server}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    // giữ `src`/`tests` để không phá project được generate. `deploy/` là
+    // tooling CI-side chạy trên Node runner (không thuộc runtime:edge của
+    // app) nhưng vẫn thuộc sở hữu của project `home`, nên spec của nó được
+    // chạy cùng vitest của project.
+    include: [
+      '{src,tests,app,shared,server}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}',
+      'deploy/pipeline/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}',
+    ],
     reporters: ['default'],
     coverage: {
       reportsDirectory: './test-output/vitest/coverage',
