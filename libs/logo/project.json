@@ -1,0 +1,19 @@
+{
+  "name": "logo",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/logo/src",
+  "projectType": "library",
+  "tags": ["type:application", "scope:shared", "runtime:universal"],
+  "// targets": "to see all targets run: nx show project logo --web",
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "//": "Chế độ `--build` (thay cho `--noEmit --composite false`): TS phải build các project reference trước thì `tsconfig.spec.json` mới thấy output `.d.ts` của lib. Cùng lý do, plugin `@nx/js/typescript` cũng chạy `tsc --build tsconfig.json --emitDeclarationOnly`.",
+      "options": {
+        "command": "vue-tsc --build tsconfig.json --emitDeclarationOnly",
+        "cwd": "{projectRoot}"
+      },
+      "inputs": ["default"]
+    }
+  }
+}
