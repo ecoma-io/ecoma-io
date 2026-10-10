@@ -27,7 +27,7 @@ local (Lefthook)
 Mỗi deploy unit đi qua hai làn với nhịp khác nhau (§4, §7.2):
 
 - **Làn staging — tự động:** merge commit liên quan unit vào `main` → deploy revision đó lên staging → smoke test → ghi kết quả gắn với **exact commit SHA**.
-- **Làn production — promotion gate:** chỉ chạy khi một **release** (§7.2) thỏa mọi điều kiện promotion **trước khi deploy**: release có định danh đầy đủ, staging verification pass **cho chính revision được tag**, approval production. Production không bao giờ deploy "commit mới nhất của `main`". **Post-deploy verification** chạy **sau** khi production deploy xong; fail → failure handling (§8) — nó không phải điều kiện để vào production.
+- **Làn production — promotion gate:** chỉ chạy khi một **release** (§7.2) thỏa mọi điều kiện promotion **trước khi deploy**: release có định danh đầy đủ, staging verification pass **cho chính revision được tag**, approval production. Production không bao giờ deploy "commit mới nhất của `main`". **Post-deploy verification** chạy **sau** khi production deploy xong; fail → failure handling với rollback controlled (§8) — nó không phải điều kiện để vào production.
 
 Hai làn dùng hai Worker identity tách biệt (staging `stg-*`, production — §4); không có cơ chế promote version xuyên identity — production deploy lại từ source revision đã verify với cấu hình environment của nó.
 
@@ -204,7 +204,7 @@ PR validation → merge `main`
   → Nx Release: Release PR (version + changelog) → merge → tag {projectName}@{version} tại SHA mới
   → [promotion gate] định danh đầy đủ + staging verification của tagged SHA (§7.3) + approval production
   → deploy revision đó lên production
-  → post-deploy verification → ghi provenance; fail → failure handling (§8)
+  → post-deploy verification → ghi provenance; fail → failure handling, rollback controlled (§8)
 ```
 
 **Release identity — thông tin tối thiểu của một lần deploy production (provenance):**
@@ -222,7 +222,7 @@ PR validation → merge `main`
 2. Staging deploy + verification pass **cho chính revision được tag** (§7.3 — SHA dịch sau Release PR là trường hợp bắt buộc phải xử lý, không được bỏ qua).
 3. Approval production qua GitHub Environment (§6).
 
-Post-deploy verification **không** thuộc promotion gate: nó chạy sau khi production đã deploy (§7.4) và là đầu vào của failure handling, không phải điều kiện để bắt đầu deploy.
+Post-deploy verification **không** thuộc promotion gate: nó chạy sau khi production đã deploy (§7.4) và là đầu vào của failure handling (§8), không phải điều kiện để bắt đầu deploy.
 
 **Ranh giới release:** release độc lập theo deploy unit — release `home` không kéo release unit khác; `nx affected` quyết định unit nào đi qua pipeline. Publish của Nx Release không dùng cho app/service — deploy là job riêng chạy `wrangler deploy`, sinh Worker version bất biến (`04` WV1).
 
@@ -249,7 +249,7 @@ Chưa có workflow deploy nào trong repo — mọi mục dưới đây là yêu
 
 - Chỉ chạy cho release có định danh (§7.2) và staging verification của đúng revision được tag (§7.3).
 - Approval qua GitHub Environment production (§6); cấu hình + credential production riêng (WS3).
-- Post-deploy verification **sau khi deploy xong**; kết quả ghi vào provenance, fail → failure handling (§8) — không phải điều kiện để bắt đầu deploy (§7.2).
+- Post-deploy verification **sau khi deploy xong**; kết quả ghi vào provenance, fail → failure handling với rollback controlled (§8) — không phải điều kiện để bắt đầu deploy (§7.2).
 - Staging và production là hai Worker identity tách biệt; không giả định Cloudflare promote trực tiếp version xuyên identity — phần implement phải xác minh cơ chế Wrangler/Cloudflare được hỗ trợ và deploy lại từ đúng source revision đã verify với cấu hình environment đích. Cơ chế này **chưa xác minh** (§12).
 
 Hai làn deploy application tách biệt với provisioning infrastructure: infrastructure thay đổi qua Pulumi workflow riêng (§9); một release application **không** chạy `pulumi up`.
@@ -265,6 +265,12 @@ Hai làn deploy application tách biệt với provisioning infrastructure: infr
 | Mất dữ liệu/sự cố hạ tầng | Restore PITR theo runbook có audit (`03`) — đây là DR, không phải application rollback                                                     |
 
 Không có đường rollback nào đi qua migration: rollback Worker **không bao giờ** rollback database (`01` invariant 11).
+
+**Khi post-deploy verification production fail (§7.2, §7.4), hành vi tối thiểu bắt buộc:**
+
+1. Ghi release/deployment đó là **failed** trong provenance, kèm toàn bộ kết quả verification — không ghi đè, không xoá.
+2. Trigger procedure incident/failure đã cấu hình (`03` §9) — không dựng hệ thống incident riêng cho delivery.
+3. Rollback là **controlled, không tự động**: trả về Worker version trước đó chỉ theo quyết định có chủ đích của người vận hành, dựa trên provenance; policy rollback tự động (nếu có) phải được chốt tường minh, không mặc định.
 
 **Application rollback** là quay về Worker version đã publish, đã verify — không build lại từ source tree có thể đã đổi (`04` WV1–WV3). Với release production, version cần rollback tới là version của revision trước đó trong provenance (§7.2). Cơ chế rollback giữa hai Worker identity staging/production **chưa xác minh** — cùng yêu cầu xác minh với cơ chế deploy (§7.4, §12).
 
