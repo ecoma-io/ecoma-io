@@ -10,3 +10,9 @@
  * root). Chi tiết: issue #58.
  */
 @source '../../../../../libs/layout-public/**/*.{vue,ts}';
+/*
+ * `error-pages` tham gia cùng cơ chế: template của lib nằm ngoài module graph
+ * tĩnh của app, class utility chỉ có trong `.vue` của lib phải được đăng ký
+ * tường minh hoặc bị rớt khỏi CSS production (issue #58).
+ */
+@source '../../../../../libs/error-pages/**/*.{vue,ts}';

@@ -12,6 +12,10 @@ describe('docs UI strings', () => {
       documentation: 'Documentation',
       breadcrumbs: 'Breadcrumbs',
       sections: 'Sections',
+      notFoundTitle: 'Page not found',
+      notFoundDescription:
+        'The documentation page you are looking for does not exist or has been moved.',
+      notFoundBackToDocs: 'Back to documentation',
     });
     expect(docsUiStrings('vi')).toEqual({
       onThisPage: 'Nội dung',
@@ -21,6 +25,9 @@ describe('docs UI strings', () => {
       documentation: 'Tài liệu',
       breadcrumbs: 'Đường dẫn',
       sections: 'Các phần',
+      notFoundTitle: 'Không tìm thấy trang',
+      notFoundDescription: 'Trang tài liệu bạn tìm không tồn tại hoặc đã được di chuyển.',
+      notFoundBackToDocs: 'Về trang tài liệu',
     });
   });
 

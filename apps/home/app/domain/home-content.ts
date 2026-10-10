@@ -37,6 +37,12 @@ export type HomeContent = {
   readonly docsCta: string;
   /** Nhãn CTA phụ hero trỏ tới blog. */
   readonly blogCta: string;
+  /** Tiêu đề `<h1>` của trang lỗi 404 — render qua `libs/error-pages`. */
+  readonly notFoundTitle: string;
+  /** Mô tả dưới tiêu đề của trang 404. */
+  readonly notFoundDescription: string;
+  /** Nhãn CTA của trang 404 — trỏ về locale-root của URL lỗi. */
+  readonly notFoundCta: string;
 };
 
 /**
@@ -61,6 +67,9 @@ export const HOME_CONTENT: Readonly<Record<PublicLocale, HomeContent>> = Object.
     ]),
     docsCta: 'Read the docs',
     blogCta: 'Visit the blog',
+    notFoundTitle: 'Page not found',
+    notFoundDescription: 'The page you are looking for does not exist.',
+    notFoundCta: 'Go to the homepage',
   }),
   vi: Object.freeze({
     title: 'Ecoma.io — trang chủ public',
@@ -77,5 +86,8 @@ export const HOME_CONTENT: Readonly<Record<PublicLocale, HomeContent>> = Object.
     ]),
     docsCta: 'Đọc tài liệu',
     blogCta: 'Xem blog',
+    notFoundTitle: 'Không tìm thấy trang',
+    notFoundDescription: 'Trang bạn tìm không tồn tại.',
+    notFoundCta: 'Về trang chủ',
   }),
 });

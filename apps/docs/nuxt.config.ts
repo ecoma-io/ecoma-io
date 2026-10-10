@@ -42,6 +42,7 @@ export default defineNuxtConfig({
     // `layout-public` render brand qua `EcomaLogo` — import bậc hai của app
     // cũng phải resolve được (TS lẫn Vite), không chỉ imports trực tiếp.
     '@ecoma-io/logo': resolve('../../libs/logo/src/index.ts'),
+    '@ecoma-io/error-pages': resolve('../../libs/error-pages/src/index.ts'),
   },
   modules: ['@nuxt/fonts', 'nuxt-content-assets', '@nuxt/content'],
   css: ['~/assets/css/styles.css'],
