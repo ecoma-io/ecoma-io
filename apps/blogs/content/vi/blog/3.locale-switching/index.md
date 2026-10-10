@@ -7,6 +7,8 @@ tags:
   - i18n
   - ux
 featured: false
+cover: ../../../assets/two-locales-one-page.svg
+coverAlt: 'Minh họa bìa: hai đường dẫn ngôn ngữ hội tụ về cùng một bố cục trang'
 ---
 
 # Locale switching không bao giờ nói dối

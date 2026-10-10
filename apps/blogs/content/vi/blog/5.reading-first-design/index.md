@@ -7,6 +7,8 @@ tags:
   - design
   - typography
 featured: false
+cover: ../../../assets/cover-reading-first.svg
+coverAlt: 'Minh họa bìa: bố cục một cột hẹp được chọn thay vì bố cục nhiều cột rối rắm'
 ---
 
 # Trang đọc bài không phải trang tài liệu

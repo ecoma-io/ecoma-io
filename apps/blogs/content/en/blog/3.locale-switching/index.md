@@ -7,6 +7,8 @@ tags:
   - i18n
   - ux
 featured: false
+cover: ../../../assets/two-locales-one-page.svg
+coverAlt: 'Cover illustration: two locale paths joining into one shared page layout'
 ---
 
 # Locale switching that never lies

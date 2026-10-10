@@ -7,6 +7,8 @@ tags:
   - deployment
   - cloudflare
 featured: false
+cover: ../../../assets/cover-static-deployment.svg
+coverAlt: 'Minh họa bìa: thư mục các tệp HTML và SVG chảy ra mạng lưới edge CDN'
 ---
 
 # Deploy một blog như static assets

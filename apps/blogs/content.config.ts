@@ -25,6 +25,13 @@ import { defineCollection, defineContentConfig, z } from '@nuxt/content';
  *   đi lên một tầng (`en/blog/<slug>/` → `en/blog/`) rồi sang `assets/`, thứ tự
  *   tham chiếu không đổi theo locale nên Markdown hai bản đọc cùng một asset.
  *
+ * Trường `cover` trong schema là **reference asset tương đối** (ví dụ
+ * `../../../assets/cover-url-model.svg`) — `nuxt-content-assets` walk toàn bộ
+ * frontmatter (`walkMeta`) và rewrite mọi value khớp asset index thành URL
+ * public tại thời điểm build, nên ở runtime `cover` đã là `/assets/...`,
+ * không phải path tương đối nữa. Reference dùng chung thư mục `assets/` của
+ * hai locale vì graphic cover không có chữ language-neutral.
+ *
  * `docs` không khai báo ở đây: content của mount đó thuộc app sở hữu nó.
  * Blogs cũng không bao giờ có content dưới `docs/api`.
  */
@@ -49,6 +56,17 @@ const blogSchema = z.object({
   tags: z.array(z.string()),
   /** Đánh dấu article ứng viên featured trên landing. */
   featured: z.boolean(),
+  /**
+   * Cover image — **tùy chọn**, reference tương đối tới asset colocated
+   * (giống reference trong Markdown body). `nuxt-content-assets` rewrite
+   * value thành URL public `/assets/...` lúc build; article không khai báo
+   * cover render không hình, không bao giờ sinh `<img>` hỏng. Alt text đi
+   * kèm trong `coverAlt` — hai trường đi cùng nhau để informative image
+   * không bao giờ thiếu mô tả.
+   */
+  cover: z.string().optional(),
+  /** Mô tả alt của cover — bắt buộc khi có `cover`, rỗng khi không có. */
+  coverAlt: z.string().optional(),
 });
 
 export default defineContentConfig({

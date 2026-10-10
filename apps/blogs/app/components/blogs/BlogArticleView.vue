@@ -67,6 +67,20 @@ function formatDate(date: string, localeCode: string): string {
       </div>
 
       <!--
+        Cover của article: `aspect-video` + `object-cover` giữ tỉ lệ khung;
+        lazy vì người đọc chưa scroll tới nội dung. Article không cover thì
+        không render `<img>` — không hình hỏng hay placeholder rỗng.
+      -->
+      <img
+        v-if="summary.cover"
+        :src="summary.cover.src"
+        :alt="summary.cover.alt"
+        class="mt-6 aspect-video w-full rounded-lg object-cover"
+        loading="lazy"
+        decoding="async"
+      />
+
+      <!--
         `PublicShell` đã render landmark `<main>` bọc slot này, nên ở đây chỉ
         dùng `<div>`: lồng `<main>` trong `<main>` là HTML không hợp lệ và làm
         hỏng landmark cho screen reader.

@@ -7,6 +7,8 @@ tags:
   - deployment
   - cloudflare
 featured: false
+cover: ../../../assets/cover-static-deployment.svg
+coverAlt: 'Cover illustration: a folder of HTML and SVG files flowing onto a globe of CDN edge nodes'
 ---
 
 # Deploying a blog as static assets

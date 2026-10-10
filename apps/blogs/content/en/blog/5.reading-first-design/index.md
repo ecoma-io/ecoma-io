@@ -7,6 +7,8 @@ tags:
   - design
   - typography
 featured: false
+cover: ../../../assets/cover-reading-first.svg
+coverAlt: 'Cover illustration: a narrow single-column article layout chosen over a cluttered multi-column layout'
 ---
 
 # A reading page is not a documentation page

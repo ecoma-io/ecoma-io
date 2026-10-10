@@ -36,7 +36,7 @@
   editorial vừa deterministic.
 -->
 <script setup lang="ts">
-import { PUBLIC_LOCALES, type PublicLocale } from '@ecoma-io/i18n-public';
+import type { PublicLocale } from '@ecoma-io/i18n-public';
 import { buildPublicPath } from '@ecoma-io/layout-public';
 import BlogArticleView from '~/components/blogs/BlogArticleView.vue';
 // Import tường minh (giống apps/docs): auto-import đăng ký component với
@@ -44,11 +44,17 @@ import BlogArticleView from '~/components/blogs/BlogArticleView.vue';
 // (`BlogLandingView`) không resolve được — SSR render rỗng im lặng.
 import BlogLandingView from '~/components/blogs/BlogLandingView.vue';
 import {
+  normalizeArticleCover,
   pickFeaturedArticle,
   pickRelatedArticles,
   orderArticlesByDateDesc,
   type BlogArticleSummary,
 } from '~/utils/blog-articles';
+import {
+  blogArticleAvailableLocales,
+  blogLandingAvailableLocales,
+  blogTranslationCandidates,
+} from '~/utils/blog-translations';
 import { blogUiStrings } from '~/utils/blog-ui-strings';
 import { buildBlogSeo } from '~/utils/blog-seo';
 import { isBlogRoute, parseBlogRoute } from '~/utils/blog-routing';
@@ -128,6 +134,7 @@ const { data: articles } = await useAsyncData(`blog:articles:${locale.value}`, a
     author: record.author ?? '',
     tags: record.tags ?? [],
     featured: record.featured ?? false,
+    cover: normalizeArticleCover(record.cover, record.coverAlt),
   }));
   return orderArticlesByDateDesc(summaries);
 });
@@ -165,58 +172,37 @@ const relatedArticles = computed<readonly BlogArticleSummary[]>(() => {
 });
 
 /**
- * Locale nào thực sự có bản dịch của **resource này** — suy ra từ chính
- * content, không phải giả định. Resource được định danh bằng pathname bỏ segment
- * locale; một locale được coi là có bản dịch khi tồn tại article ở đúng đường
- * dẫn đó. Nhờ vậy locale switcher của `PublicShell` chỉ link tới bản dịch có
- * thật, và một article chỉ có tiếng Anh không hiện link tiếng Việt hỏng.
+ * Locale nào thực sự có bản dịch của **resource này**.
  *
- * Một **round-trip duy nhất** cho mọi locale: dựng trước candidate path của
- * từng registry locale rồi truy một lần với `where('path', 'IN', paths)` —
- * thay vì một query `.first()` mỗi locale. Locale nào có path trong kết quả là
- * locale đó có bản dịch. Candidate path bị builder từ chối (topology — ví dụ
- * remainder rơi vào mount lồng nhau) đơn giản không nằm trong `IN`, tức locale
- * đó không có bản dịch của resource.
+ * **Landing** (`/en/blog`, `/vi/blog`): route tĩnh của mount — tồn tại ở
+ * **mọi locale của registry**, độc lập với việc locale đó có article hay
+ * không. Blog rỗng vẫn là landing hợp lệ (empty state), và landing của locale
+ * kia vẫn là đích switch hợp lệ. Availability của landing vì vậy được suy
+ * thẳng từ registry (`PUBLIC_LOCALES` + `buildPublicPath`), **không** từ số
+ * article query được — suy từ article sẽ làm switcher biến mất đúng khi blog
+ * đang trống, tức chính lúc landing là surface duy nhất còn lại.
  *
- * **Landing là trường hợp đặc biệt**: `/en/blog` không phải document của
- * collection (chỉ article có file content), nên kiểm tra theo content luôn
- * trả rỗng cho landing dù bản dịch landing luôn tồn tại — mount landing là
- * route tĩnh, có mặt ở mọi locale của registry. Vì vậy landing suy availability
- * từ **danh sách article theo từng locale** (locale có ít nhất một article là
- * locale có blog), còn article kiểm tra theo document như docs.
+ * **Article**: một locale được coi là có bản dịch khi tồn tại article ở đúng
+ * đường dẫn đó trong content — suy từ chính content, không phải giả định.
+ * Nhờ vậy locale switcher của `PublicShell` chỉ link tới bản dịch có thật,
+ * và một article chỉ có tiếng Anh không hiện link tiếng Việt hỏng. Không
+ * bao giờ sinh URL switch cho bản dịch không tồn tại.
+ *
+ * Round-trip duy nhất cho mọi locale ở nhánh article: dựng trước candidate
+ * path của từng registry locale rồi truy một lần với `where('path', 'IN',
+ * paths)` — thay vì một query `.first()` mỗi locale. Candidate path bị
+ * builder từ chối (topology — ví dụ remainder rơi vào mount lồng nhau) đơn
+ * giản không nằm trong `IN`, tức locale đó không có bản dịch của resource.
  */
 const { data: translationAvailability } = await useAsyncData(
   `blog:translations:${route.path}`,
   async () => {
-    // Landing: locale nào có ít nhất một article thì locale đó có landing.
-    // Hai query theo locale — chấp nhận được vì chỉ chạy trên 2 landing.
+    // Landing: mọi locale của registry đều có landing route — không query.
     if (isBlogLanding.value) {
-      const localesWithBlog: PublicLocale[] = [];
-      for (const definition of PUBLIC_LOCALES) {
-        const landing = buildPublicPath({ locale: definition.code, mount: 'blog' });
-        if (landing.kind !== 'localized') {
-          continue;
-        }
-        const records = await queryCollection('blog')
-          .select('path')
-          .where('path', 'LIKE', `${landing.path}/%`)
-          .limit(1)
-          .all();
-        if (records.length > 0) {
-          localesWithBlog.push(definition.code);
-        }
-      }
-      return localesWithBlog;
+      return blogLandingAvailableLocales();
     }
     const resourceRemainder = remainder.value;
-    const candidates = PUBLIC_LOCALES.flatMap((definition) => {
-      const built = buildPublicPath({
-        locale: definition.code,
-        mount: 'blog',
-        path: resourceRemainder,
-      });
-      return built.kind === 'localized' ? [built.path] : [];
-    });
+    const candidates = blogTranslationCandidates(resourceRemainder);
     // `IN ()` không phải SQL hợp lệ: không candidate nào thì không query —
     // không locale nào có bản dịch.
     if (candidates.length === 0) {
@@ -227,14 +213,7 @@ const { data: translationAvailability } = await useAsyncData(
       .where('path', 'IN', candidates)
       .all();
     const existingPaths = new Set(records.map((record) => record.path));
-    return PUBLIC_LOCALES.flatMap((definition) => {
-      const built = buildPublicPath({
-        locale: definition.code,
-        mount: 'blog',
-        path: resourceRemainder,
-      });
-      return built.kind === 'localized' && existingPaths.has(built.path) ? [definition.code] : [];
-    });
+    return blogArticleAvailableLocales(resourceRemainder, existingPaths);
   },
 );
 

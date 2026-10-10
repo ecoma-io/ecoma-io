@@ -20,6 +20,21 @@
  *   không bao giờ bị suy từ dữ liệu ngoài danh sách đã lọc.
  */
 
+/**
+ * Cover đã chuẩn hóa của một article — cặp URL public + alt text.
+ *
+ * `cover` trong database đã được `nuxt-content-assets` rewrite thành URL
+ * public (`/assets/...`) tại thời điểm build, nên helper này chỉ còn việc
+ * chuẩn hóa cặp giá trị: cover không URL hoặc không alt thì coi như không có
+ * cover — component không bao giờ render `<img>` thiếu src hay thiếu alt.
+ */
+export type BlogArticleCover = {
+  /** URL public của ảnh cover (đã resolve), ví dụ `/assets/cover-x.svg`. */
+  readonly src: string;
+  /** Alt text bắt buộc — informative image không được thiếu mô tả. */
+  readonly alt: string;
+};
+
 /** Dữ liệu listing tối thiểu của một article — mọi hàm thuần dưới đây chạy trên shape này. */
 export type BlogArticleSummary = {
   /** Path public canonical, ví dụ `/en/blog/url-model`. */
@@ -33,7 +48,27 @@ export type BlogArticleSummary = {
   readonly author: string;
   readonly tags: readonly string[];
   readonly featured: boolean;
+  /** Cover đã chuẩn hóa — `undefined` khi article không có cover hợp lệ. */
+  readonly cover?: BlogArticleCover;
 };
+
+/**
+ * Chuẩn hóa cặp trường `cover`/`coverAlt` thô từ database thành cover hiển
+ * thị được. `undefined` khi thiếu URL, thiếu alt, hoặc alt rỗng — cả ba đều
+ * nghĩa là "không có cover hiển thị được", thay vì render hình hỏng.
+ */
+export function normalizeArticleCover(
+  cover: string | undefined,
+  coverAlt: string | undefined,
+): BlogArticleCover | undefined {
+  if (typeof cover !== 'string' || cover === '') {
+    return undefined;
+  }
+  if (typeof coverAlt !== 'string' || coverAlt.trim() === '') {
+    return undefined;
+  }
+  return { src: cover, alt: coverAlt };
+}
 
 /**
  * Sắp article theo thứ tự hiển thị: `date` giảm dần, tie-break `stem` tăng.

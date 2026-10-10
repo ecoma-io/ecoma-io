@@ -7,6 +7,8 @@ tags:
   - architecture
   - urls
 featured: true
+cover: ../../../assets/cover-url-model.svg
+coverAlt: 'Minh họa bìa: một thanh địa chỉ tách thành ba segment locale, mount và path'
 ---
 
 # Một mô hình URL cho mọi trang public

@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="cum-title cum-desc">
+  <title id="cum-title">Cover: one URL model</title>
+  <desc id="cum-desc">Cover illustration showing a single address bar splitting into locale, mount, and path segments, stacked like building blocks on a light background.</desc>
+
+  <defs>
+    <style>
+      .label { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+      .mono  { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1280" height="720" fill="#f8fafc"/>
+  <rect x="0" y="620" width="1280" height="100" fill="#e2e8f0"/>
+
+  <!-- address bar -->
+  <rect x="240" y="150" width="800" height="84" rx="42" fill="#ffffff" stroke="#94a3b8" stroke-width="4"/>
+  <circle cx="292" cy="192" r="14" fill="#10b981"/>
+  <text x="340" y="205" class="mono" font-size="34" fill="#0f172a">/en/blog/url-model</text>
+
+  <!-- three segment blocks -->
+  <g>
+    <rect x="250" y="380" width="220" height="120" rx="16" fill="#0f172a"/>
+    <text x="360" y="432" class="label" font-size="30" fill="#ffffff" text-anchor="middle">locale</text>
+    <text x="360" y="470" class="mono" font-size="24" fill="#94a3b8" text-anchor="middle">/en</text>
+  </g>
+  <g>
+    <rect x="530" y="380" width="220" height="120" rx="16" fill="#334155"/>
+    <text x="640" y="432" class="label" font-size="30" fill="#ffffff" text-anchor="middle">mount</text>
+    <text x="640" y="470" class="mono" font-size="24" fill="#94a3b8" text-anchor="middle">/blog</text>
+  </g>
+  <g>
+    <rect x="810" y="380" width="220" height="120" rx="16" fill="#475569"/>
+    <text x="920" y="432" class="label" font-size="30" fill="#ffffff" text-anchor="middle">path</text>
+    <text x="920" y="470" class="mono" font-size="24" fill="#94a3b8" text-anchor="middle">/url-model</text>
+  </g>
+
+  <!-- connectors from address bar to blocks -->
+  <path d="M 420 234 L 360 372" stroke="#94a3b8" stroke-width="4" fill="none"/>
+  <path d="M 640 234 L 640 372" stroke="#94a3b8" stroke-width="4" fill="none"/>
+  <path d="M 860 234 L 920 372" stroke="#94a3b8" stroke-width="4" fill="none"/>
+
+  <!-- platform base -->
+  <text x="640" y="686" class="label" font-size="28" fill="#64748b" text-anchor="middle">ecoma.io</text>
+</svg>

@@ -2,11 +2,12 @@
  * Production origin của public surface Blog.
  *
  * Canonical và `hreflang` **phải** là URL tuyệt đối dưới production domain
- * (`docs/overview/01-architecture.md` §7/A13): `ecoma.io` là production public
- * domain, `ecoma.io.vn` là non-production cho staging + preview. Canonical
- * tương đối được crawler resolve theo **hostname của request đang phục vụ nó**
- * — nghĩa là một bản staging, preview hay `localhost` sẽ tự khai mình là
- * canonical, và search engine có thể index một hostname không phải production.
+ * (`docs/overview/01-architecture.md` §7/A13): `ecoma.io` là domain public
+ * quốc tế, `ecoma.io.vn` là domain cho thị trường Việt Nam — hai domain cùng
+ * thuộc production. Canonical tương đối được crawler resolve theo **hostname
+ * của request đang phục vụ nó** — nghĩa là một bản preview hay `localhost`
+ * sẽ tự khai mình là canonical, và search engine có thể index một hostname
+ * không phải domain canonical của surface này.
  *
  * Vì vậy origin ở đây là **hằng số policy của Blogs**: không bao giờ suy ra từ
  * `request.url`, header `Host`, `useRequestURL()` hay bất kỳ state nào của

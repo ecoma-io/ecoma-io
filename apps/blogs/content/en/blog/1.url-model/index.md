@@ -7,6 +7,8 @@ tags:
   - architecture
   - urls
 featured: true
+cover: ../../../assets/cover-url-model.svg
+coverAlt: 'Cover illustration: a single address bar splitting into locale, mount and path segments'
 ---
 
 # One URL model for every public page

@@ -33,6 +33,20 @@ function formatDate(date: string, localeCode: string): string {
 
 <template>
   <article class="flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <!--
+      Cover: `aspect-video` + `object-cover` giữ tỉ lệ khung bất kể kích thước
+      gốc; `loading="lazy"`/`decoding="async"` vì card nằm dưới fold của
+      listing. Article không cover thì không render `<img>` — không bao giờ
+      có hình hỏng hay placeholder rỗng.
+    -->
+    <img
+      v-if="article.cover"
+      :src="article.cover.src"
+      :alt="article.cover.alt"
+      class="aspect-video w-full object-cover"
+      loading="lazy"
+      decoding="async"
+    />
     <div class="flex flex-1 flex-col p-5">
       <h3 class="text-lg font-semibold tracking-tight text-slate-900">
         <a

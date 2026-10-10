@@ -8,7 +8,7 @@
 -->
 <script setup lang="ts">
 import type { PublicLocale } from '@ecoma-io/i18n-public';
-import { PublicShell } from '@ecoma-io/layout-public';
+import { PublicShell, buildPublicPath } from '@ecoma-io/layout-public';
 import BlogArticleCard from '~/components/blogs/BlogArticleCard.vue';
 import BlogTagList from '~/components/blogs/BlogTagList.vue';
 import type { BlogArticleSummary } from '~/utils/blog-articles';
@@ -28,7 +28,14 @@ const { locale, featured, rest, availableLocales } =
     readonly ui: BlogUiStrings;
   }>();
 
-const currentPath = `/${locale}/blog`;
+/**
+ * Landing path canonical của mount — dựng qua builder của `layout-public`
+ * thay vì concatenate `/${locale}/blog`, để landing đi đúng cùng contract
+ * topology với mọi path public khác của app. Builder trả discriminated union;
+ * với mount hợp lệ nhánh `localized` luôn xảy ra, nên extract sẵn path.
+ */
+const builtPath = buildPublicPath({ locale, mount: 'blog' });
+const currentPath = builtPath.kind === 'localized' ? builtPath.path : '/';
 
 /** Ngày hiển thị theo locale — demo content vẫn format đúng locale. */
 function formatDate(date: string, localeCode: string): string {
@@ -52,6 +59,18 @@ function formatDate(date: string, localeCode: string): string {
         <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">
           {{ ui.featured }}
         </p>
+        <!--
+          Cover của hero: ảnh lớn nhất trang, nên eager decode; `aspect-video`
+          + `object-cover` giữ tỉ lệ khung bất kể kích thước gốc. Featured
+          không cover thì không render `<img>` — không hình hỏng.
+        -->
+        <img
+          v-if="featured.cover"
+          :src="featured.cover.src"
+          :alt="featured.cover.alt"
+          class="mt-4 aspect-video w-full max-w-4xl rounded-lg object-cover"
+          decoding="async"
+        />
         <h1 class="mt-2 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
           <a
             :href="featured.path"
