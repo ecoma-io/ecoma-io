@@ -335,13 +335,14 @@ describe('PublicHeader locale availability', () => {
   });
 
   it('renders the brand logo with fallback size classes and intrinsic ratio intact', () => {
-    // Sizing contract: header đặt `h-9 w-auto` qua class fallthrough của
+    // Sizing contract: header đặt `block h-6 w-auto` qua class fallthrough của
     // EcomaLogo (CSS-only — HTML width/height giữ nguyên cặp intrinsic
-    // 160×46 để `<img>` có ratio, tránh CLS). Pin lại để không ai xoá
-    // `w-auto` (một mình `h-9` bóp méo artwork) hay đè width/height attrs.
+    // 160×46 để `<img>` có ratio, tránh CLS; `block` bỏ descender gap của
+    // inline `<img>`). Pin lại để không ai xoá `w-auto` (một mình `h-6` bóp méo
+    // artwork) hay đè width/height attrs.
     const wrapper = mount(PublicShell, { props: { path: '/en' } });
     const brandImg = wrapper.find('header a[href="/en"] img');
-    expect(brandImg.classes()).toEqual(expect.arrayContaining(['h-9', 'w-auto']));
+    expect(brandImg.classes()).toEqual(expect.arrayContaining(['block', 'h-6', 'w-auto']));
     expect(brandImg.attributes('width')).toBe('160');
     expect(brandImg.attributes('height')).toBe('46');
     expect(brandImg.attributes('alt')).toBe('ecoma.io');
@@ -352,8 +353,18 @@ describe('PublicFooter', () => {
   it('renders shared brand and copyright without application content', () => {
     const wrapper = mount(PublicShell, { props: { path: '/vi/blog' } });
     const footer = wrapper.find('footer');
-    expect(footer.find('a').text()).toBe('ecoma.io');
-    expect(footer.find('a').attributes('href')).toBe('/vi');
+    // Brand footer là artwork logo (img alt="ecoma.io") — anchor brand giữ
+    // toàn bộ contract thị giác: `bg-white` là điều kiện DUY NHẤT giữ wordmark
+    // tối của artwork đọc được trên nền slate-950 (artwork cấm recolor, xem
+    // AGENTS.md), `h-6 w-auto` là sizing CSS-only, `block` bỏ descender gap
+    // để padding plate đều. Pin cả bộ để xoá nhầm một class vẫn đỏ test.
+    const brand = footer.find('a[href="/vi"]');
+    expect(brand.classes()).toContain('bg-white');
+    expect(brand.text()).toBe('');
+    const brandImg = brand.find('img');
+    expect(brandImg.classes()).toEqual(expect.arrayContaining(['block', 'h-6', 'w-auto']));
+    expect(brandImg.attributes('alt')).toBe('ecoma.io');
+    expect(brandImg.attributes('src')).toContain('ecoma-logo-horizontal');
     expect(footer.text()).toContain('© ecoma.io');
   });
 
