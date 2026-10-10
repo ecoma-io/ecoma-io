@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="crf-title crf-desc">
+  <title id="crf-title">Cover: reading-first design</title>
+  <desc id="csd-desc">Cover illustration of a narrow single-column article page with a comfortable text measure, next to a crossed-out three-column layout, on a light background.</desc>
+
+  <defs>
+    <style>
+      .label { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1280" height="720" fill="#f8fafc"/>
+  <rect x="0" y="620" width="1280" height="100" fill="#e2e8f0"/>
+
+  <!-- chosen: narrow reading column -->
+  <g>
+    <rect x="420" y="110" width="440" height="460" rx="20" fill="#ffffff" stroke="#0f172a" stroke-width="6"/>
+    <rect x="470" y="160" width="280" height="34" rx="8" fill="#0f172a"/>
+    <rect x="470" y="220" width="340" height="14" rx="7" fill="#cbd5e1"/>
+    <rect x="470" y="252" width="340" height="14" rx="7" fill="#cbd5e1"/>
+    <rect x="470" y="284" width="300" height="14" rx="7" fill="#cbd5e1"/>
+    <rect x="470" y="330" width="340" height="14" rx="7" fill="#cbd5e1"/>
+    <rect x="470" y="362" width="320" height="14" rx="7" fill="#cbd5e1"/>
+    <rect x="470" y="394" width="340" height="14" rx="7" fill="#cbd5e1"/>
+    <circle cx="908" cy="128" r="24" fill="#10b981"/>
+    <path d="M 896 128 l 8 8 l 16 -16" stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- rejected: three-column docs layout -->
+  <g opacity="0.45">
+    <rect x="130" y="180" width="200" height="340" rx="16" fill="#ffffff" stroke="#94a3b8" stroke-width="4"/>
+    <rect x="150" y="210" width="120" height="12" rx="6" fill="#cbd5e1"/>
+    <rect x="150" y="238" width="150" height="12" rx="6" fill="#e2e8f0"/>
+    <rect x="150" y="266" width="130" height="12" rx="6" fill="#e2e8f0"/>
+    <rect x="1030" y="180" width="120" height="340" rx="16" fill="#ffffff" stroke="#94a3b8" stroke-width="4"/>
+    <rect x="1050" y="210" width="80" height="12" rx="6" fill="#cbd5e1"/>
+    <rect x="1050" y="238" width="70" height="12" rx="6" fill="#e2e8f0"/>
+  </g>
+  <!-- rejection strokes -->
+  <path d="M 130 180 L 330 520 M 1150 180 L 1030 520" stroke="#ef4444" stroke-width="6" stroke-linecap="round" opacity="0.7"/>
+
+  <!-- platform base -->
+  <text x="640" y="686" class="label" font-size="28" fill="#64748b" text-anchor="middle">ecoma.io</text>
+</svg>
