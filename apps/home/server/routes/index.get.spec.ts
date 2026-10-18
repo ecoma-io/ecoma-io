@@ -14,13 +14,13 @@ async function getRoot() {
 }
 
 describe('server/routes/index.get', () => {
-  it('trả về 302 và redirect tới /en (server-side)', async () => {
+  it('returns a 302 and redirects to /en (server-side)', async () => {
     const res = await getRoot();
     expect(res.status).toBe(302);
     expect(res.location).toBe('/en');
   });
 
-  it('không redirect tới / (không tạo loop)', async () => {
+  it('does not redirect to / (no loop)', async () => {
     const res = await getRoot();
     expect(res.location).not.toBe('/');
     expect(res.location).not.toBe('http://localhost/');

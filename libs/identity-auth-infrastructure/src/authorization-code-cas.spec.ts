@@ -232,9 +232,9 @@ async function cleanSeed(migrator: postgres.Sql, hashes: string[]): Promise<void
   `;
 }
 
-describe('redeemAuthorizationCode — tren PostgreSQL that', () => {
+describe('redeemAuthorizationCode — on real PostgreSQL', () => {
   describe.skipIf(!available)('schema', () => {
-    it('adapter khop migration: co cac cot ma migration khai bao', async () => {
+    it('the adapter matches the migration: it has every column the migration declares', async () => {
       // ⚠️ Test này chốt lại chính lớp lỗi đã gặp: câu SQL của adapter tham
       // chiếu một cột mà migration không có, và mọi test khác vẫn có thể xanh
       // nếu chúng không chạy SQL đó. Ở đây ta hỏi database, không hỏi code.
@@ -257,8 +257,8 @@ describe('redeemAuthorizationCode — tren PostgreSQL that', () => {
     });
   });
 
-  describe.skipIf(!available)('single-winner duoi tai tranh', () => {
-    it('HAI yeu cauu trung mot code — DUNG MOT thang', async () => {
+  describe.skipIf(!available)('single-winner under contention', () => {
+    it('TWO requests hit the same code — exactly ONE wins', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedCode(migrator, { hash: 'hash-race-1' });
@@ -297,7 +297,7 @@ describe('redeemAuthorizationCode — tren PostgreSQL that', () => {
       }
     });
 
-    it('BA yeu cauu trung — van DUNG MOT thang', async () => {
+    it('THREE requests hit it — STILL exactly ONE wins', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedCode(migrator, { hash: 'hash-race-3' });
@@ -320,7 +320,7 @@ describe('redeemAuthorizationCode — tren PostgreSQL that', () => {
       }
     });
 
-    it('code het han — KHONG thang, va KHONG phan biet duoc voi da tieu thu', async () => {
+    it('an expired code — nobody wins, and it is indistinguishable from one already consumed', async () => {
       const { runtime, migrator } = await setup();
       try {
         // ⚠️ Transaction vẫn còn hạn; CHỈ code hết hạn. Migration có CHECK
@@ -378,7 +378,7 @@ describe('redeemAuthorizationCode — tren PostgreSQL that', () => {
       }
     });
 
-    it('role runtime KHONG duoc tao bang — DDL la cua migrator', async () => {
+    it('the runtime role must not be created by migration — DDL belongs to the migrator', async () => {
       // ⚠️ Không có test này thì "runtime role bị giới hạn quyền" chỉ là lời
       // hứa trong tài liệu. Nó phải là một khẳng định của suite.
       const { runtime, migrator } = await setup();
@@ -394,8 +394,8 @@ describe('redeemAuthorizationCode — tren PostgreSQL that', () => {
     });
   });
 
-  describe.skipIf(!available)('cap quyen', () => {
-    it('dang `AUTH_TEST_PG_*` de chay cac test single-winner', () => {
+  describe.skipIf(!available)('permission grants', () => {
+    it('set `AUTH_TEST_PG_*` to run the single-winner tests', () => {
       // Marker test: giữ cho suite không bị coi là "pass" khi thực tế là skip
       // toàn bộ. Xem README §"Vì sao PostgreSQL thật".
       expect(available).toBe(true);

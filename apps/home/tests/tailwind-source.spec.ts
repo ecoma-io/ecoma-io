@@ -76,8 +76,8 @@ function vueFilesUnder(directory: string): string[] {
 const STYLESHEET_CSS = readFileSync(STYLESHEET, 'utf8');
 const SOURCE_GLOBS = readSourceGlobs(STYLESHEET_CSS);
 
-describe('Tailwind @source registration của app', () => {
-  it('khai báo ít nhất một @source và mọi base tĩnh đều tồn tại trên đĩa', () => {
+describe('Tailwind @source registration of the app', () => {
+  it('declares at least one @source and every static base exists on disk', () => {
     // Base không tồn tại là lỗi im lặng của Tailwind: registration bị bỏ qua
     // hoàn toàn. Đây là assertion trực tiếp bắt lỗi đếm sai số cấp `..`.
     expect(SOURCE_GLOBS.length).toBeGreaterThan(0);
@@ -88,7 +88,7 @@ describe('Tailwind @source registration của app', () => {
     }
   });
 
-  it('đăng ký thư mục nguồn của @ecoma-io/ui-ecoma-logo', () => {
+  it('registers the source directory of @ecoma-io/ui-ecoma-logo', () => {
     // Không chỉ "tồn tại": base phải thật sự phủ thư mục nguồn library. Một
     // `@source` trỏ nhầm sang thư mục khác vẫn có thể tồn tại trên đĩa, nên
     // kiểm riêng điều kiện này.
@@ -99,7 +99,7 @@ describe('Tailwind @source registration của app', () => {
     expect(coversLibrary).toBe(true);
   });
 
-  it('đăng ký cả file .vue — nơi class Tailwind của logo thực sự nằm', () => {
+  it('also registers .vue files — where the Tailwind classes of the logo actually live', () => {
     // Class `fill-brand`/`fill-foam` nằm trong `EcomaLogo.vue`, không nằm trong
     // `.ts` nào. Một glob chỉ có `.ts` vẫn "phủ đúng thư mục" nhưng không sinh
     // được utility nào — nên phải ghim cả phần mở rộng. Đồng thời khẳng định

@@ -360,7 +360,7 @@ afterAll(async () => {
   // Vitest quản lifecycle connection trong từng test — không có shared handle nào.
 });
 
-describe('back-channel handlers — tren PostgreSQL that', () => {
+describe('back-channel handlers — against a real PostgreSQL', () => {
   beforeAll(async () => {
     if (!available) {
       return;
@@ -374,7 +374,7 @@ describe('back-channel handlers — tren PostgreSQL that', () => {
   });
 
   describe.skipIf(!available)('POST /internal/session/verified', () => {
-    it('CAS thang: pending_browser khong the consume — dieu kien 2 §5.1.0 do DB thuc thi', async () => {
+    it('CAS loses: pending_browser cannot be consumed — §5.1.0 condition 2 enforced by the DB', async () => {
       // ⚠️ `consumeHandleXAndBindIdentity` có `state = 'browser_confirmed'` trong
       // WHERE. Transaction đang `pending_browser` ⇒ CAS thua ⇒ handler phải trả
       // `invalid_request` (điều kiện 2), KHÔNG bind danh tính.
@@ -434,7 +434,7 @@ describe('back-channel handlers — tren PostgreSQL that', () => {
       }
     });
 
-    it('CAS thang + browser_confirmed + grant du scope + account active: granted — continue_url la resume URL, Z duoc CAS', async () => {
+    it('CAS wins + browser_confirmed + granted scope + active account: granted — continue_url is the resume URL, Z is CAS-advanced', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, CLIENT_ID);
@@ -502,7 +502,7 @@ describe('back-channel handlers — tren PostgreSQL that', () => {
       }
     });
 
-    it('account suspended — 422 access_denied, transaction DA consume (khong rollback duoc)', async () => {
+    it('account suspended — 422 access_denied, the transaction WAS consumed (no rollback)', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, CLIENT_ID);
@@ -698,7 +698,7 @@ describe('back-channel handlers — tren PostgreSQL that', () => {
       }
     });
 
-    it('idempotency (a): replay cung event_id cung payload — consent_required tra dung Y tiep tuc', async () => {
+    it('idempotency (a): replay with the same event_id and same payload — consent_required is returned again, continues', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, CLIENT_ID);
@@ -773,7 +773,7 @@ describe('back-channel handlers — tren PostgreSQL that', () => {
       }
     });
 
-    it('idempotency (a) dong 3: cung event_id, payload khac — invalid_request, KHONG ghi de', async () => {
+    it('idempotency (a) line 3: same event_id, different payload — invalid_request, NOT overwritten', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, CLIENT_ID);
@@ -840,7 +840,7 @@ describe('back-channel handlers — tren PostgreSQL that', () => {
       }
     });
 
-    it('handle khong ton tai — 404 invalid_grant, khong oracle', async () => {
+    it('handle does not exist — 404 invalid_grant, no oracle', async () => {
       const { runtime, migrator } = await setup();
       try {
         const handleX = await deriveHandle({
@@ -878,7 +878,7 @@ describe('back-channel handlers — tren PostgreSQL that', () => {
   });
 
   describe.skipIf(!available)('POST /internal/consent/*', () => {
-    it('context: tra client_name/scope/risk_level, KHONG co side effect', async () => {
+    it('context: returns client_name/scope/risk_level, NO side effect', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, CLIENT_ID);
@@ -928,7 +928,7 @@ describe('back-channel handlers — tren PostgreSQL that', () => {
       }
     });
 
-    it('context: ASR khac — 422, khong lo thong tin transaction', async () => {
+    it('context: a different ASR — 422, leaks no transaction information', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, CLIENT_ID);
@@ -961,7 +961,7 @@ describe('back-channel handlers — tren PostgreSQL that', () => {
       }
     });
 
-    it('decide deny: advance TRUOC consume SAU trong cung tx — CHECK khong vi pham, Y + decision la MOT su kien', async () => {
+    it('decide deny: advance BEFORE consume in the same tx — CHECK not violated, Y + decision is ONE event', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, CLIENT_ID);
@@ -1030,7 +1030,7 @@ describe('back-channel handlers — tren PostgreSQL that', () => {
       }
     });
 
-    it('decide approve: grant + scopes + decision la MOT su kien trong tx', async () => {
+    it('decide approve: grant + scopes + decision is ONE event in the tx', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, CLIENT_ID);
@@ -1087,7 +1087,7 @@ describe('back-channel handlers — tren PostgreSQL that', () => {
       }
     });
 
-    it('decide replay cung decision — CUNG outcome, khong grant thu hai, khong decision thu hai', async () => {
+    it('decide replay with the same decision — SAME outcome, no second grant, no second decision', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, CLIENT_ID);
@@ -1148,7 +1148,7 @@ describe('back-channel handlers — tren PostgreSQL that', () => {
       }
     });
 
-    it('decide khac decision sau khi commit — invalid_request, KHONG doi quyet dinh', async () => {
+    it('decide a different decision after commit — invalid_request, decision NOT changed', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, CLIENT_ID);

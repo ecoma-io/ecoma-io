@@ -137,7 +137,7 @@ describe('POST /admin/v1/providers — create (FR-005, §6.1)', () => {
   });
 });
 
-describe('PATCH /admin/v1/providers/:providerId — update và enable/disable (FR-005)', () => {
+describe('PATCH /admin/v1/providers/:providerId — update and enable/disable (FR-005)', () => {
   let db: TestDatabase;
 
   beforeEach(async () => {
@@ -506,7 +506,7 @@ describe('POST /admin/v1/deliveries/:deliveryId/retry — failed → queued (§5
   });
 });
 
-describe('POST /admin/v1/deliveries/:deliveryId/republish — intent mới, không đổi state (§5.6.3)', () => {
+describe('POST /admin/v1/deliveries/:deliveryId/republish — a new intent without changing state (§5.6.3)', () => {
   let db: TestDatabase;
 
   beforeEach(async () => {

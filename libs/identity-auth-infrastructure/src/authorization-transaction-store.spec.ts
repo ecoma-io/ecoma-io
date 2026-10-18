@@ -164,8 +164,8 @@ async function cleanup(migrator: postgres.Sql, transactionIds: string[]): Promis
   `;
 }
 
-describe('authorization-transaction-store — tren PostgreSQL that', () => {
-  describe('migration 0011 — assert tren FILE, chay duoc khong can PostgreSQL', () => {
+describe('authorization-transaction-store — on real PostgreSQL', () => {
+  describe('migration 0011 — asserted against the FILE, runs without PostgreSQL', () => {
     // ⚠️ Probe đã đo được lỗi này trên PostgreSQL thật: psql không bọc transaction
     // COMMIT từng statement, nên khi guard BƯỚC 0 vang trên database có hàng legacy,
     // các bước 1-2 (đổi kiểu) đã kịp COMMIT — guard vang nhưng schema lệch nửa đường
@@ -202,8 +202,8 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
     });
   });
 
-  describe.skipIf(!available)('schema catalog sau migration 0011', () => {
-    it('transaction_id la TEXT, khong con UUID — loai cua cot doc tu database', async () => {
+  describe.skipIf(!available)('schema catalog after migration 0011', () => {
+    it('transaction_id is TEXT, no longer UUID — the column type is read from the database', async () => {
       const { migrator } = await setup();
       try {
         const rows = await migrator<{ data_type: string }[]>`
@@ -218,7 +218,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('ba cot FK lien quan cung la TEXT — detach/re-attach khong de sot cot nao', async () => {
+    it('the three related FK columns are TEXT too — detach/re-attach misses no column', async () => {
       // 0011 đổi cả bốn cột; bỏ sót một cột nghĩa là so khớp text với uuid
       // nổ ngay khi chạy query — nhưng chỉ nổ ở ĐƯỜNG DÙNG CÓ SO KHỚP. Test
       // catalog này bắt nó ở tầng schema, không phải chờ đúng đường dùng.
@@ -246,7 +246,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('CHECK state la dung 6 trang thai canonical — khong con legacy state nao sot', async () => {
+    it('the state CHECK is exactly the 6 canonical states — no legacy state slips through', async () => {
       // ⚠️ Đây là test của chính lỗi 4.2: schema cũ cho `awaiting_login`/
       // `consent_denied`/`already_processed`. CHECK này là ranh giới hợp đồng
       // state machine; lệch một tên là một state "ma" có thể được ghi.
@@ -278,7 +278,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('client_state va nonce duoc phep NULL — RFC 6749 state la optional', async () => {
+    it('client_state and nonce may be NULL — RFC 6749 makes state optional', async () => {
       const { migrator } = await setup();
       try {
         const rows = await migrator<{ column_name: string; is_nullable: string }[]>`
@@ -297,7 +297,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('FK tro dung vao authorization_transactions(transaction_id) — tai bien ke ca sau re-attach', async () => {
+    it('the FK points at authorization_transactions(transaction_id) — still correct after re-attach', async () => {
       const { migrator } = await setup();
       try {
         const rows = await migrator<{ confrelid: string }[]>`
@@ -312,8 +312,8 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
     });
   });
 
-  describe.skipIf(!available)('CRUD va transition qua adapter', () => {
-    it('tao ROI TIM — round-trip day du cac cot, bytea ve base64url', async () => {
+  describe.skipIf(!available)('CRUD and transition through the adapter', () => {
+    it('write then scan — a full round-trip of every column, bytea down to base64url', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, 'client-tx-store-test');
@@ -349,7 +349,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('hash bytea <-> base64url: byte khac nhau cho hash khac nhau, khongbam tho', async () => {
+    it('bytea <-> base64url hashing: different bytes give different hashes, no collisions', async () => {
       // ⚠️ Codec sai (vd. dùng standard base64 thay vì base64url) thường KHÔNG
       // nổ — nó so khớp lệch một cách im lặng. Dùng hai hash chỉ khác suffix
       // để bắt biến dạng: byte cuối 0x00 và 0x01 phải là hai hàng khác nhau.
@@ -378,7 +378,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('khong tim thay khi hash khong ton tai — undefined, khong throw', async () => {
+    it('not found when the hash does not exist — undefined, no throw', async () => {
       const { runtime, migrator } = await setup();
       try {
         const found = await findTransactionByHandleX(runtime as never, {
@@ -391,7 +391,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('client_state co gia tri — duoc luu va tra ve NGUYEN VAN (FR-007)', async () => {
+    it('a client_state with a value — stored and returned VERBATIM (FR-007)', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, 'client-tx-store-test');
@@ -407,7 +407,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('requested_scopes nhieu phan tu — text[] khong bi noi thanh chuoi', async () => {
+    it('multi-element requested_scopes — text[] is not flattened into a string', async () => {
       // ⚠️ Đây là test của lỗi 4.3: DTO cũ mang `scope: string`. Nếu adapter
       // truyền chuỗi 'openid profile' vào cột `text[]`, PostgreSQL từ chối —
       // nhưng nếu test chỉ nhìn "có lưu được" thì sẽ bỏ sót hình dạng.
@@ -428,7 +428,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('transition thanh cong tu pending_browser sang browser_confirmed — tra true', async () => {
+    it('a successful transition from pending_browser to browser_confirmed — returns true', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, 'client-tx-store-test');
@@ -451,7 +451,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('transition tu state sai — TU CHOI (CAS khong tim thay from)', async () => {
+    it('a transition from the wrong state — REJECTED (the CAS finds no matching from)', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, 'client-tx-store-test');
@@ -477,7 +477,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('transaction het han — transition TU CHOI du khi from dung', async () => {
+    it('an expired transaction — transition REJECTED even when from matches', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, 'client-tx-store-test');
@@ -504,7 +504,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('CAS theo from — tu denied khong the tu goi transition ve pending_browser khong chi dinh from', async () => {
+    it('CAS by from — from denied, you cannot transition back to pending_browser without naming from', async () => {
       // ⚠️ PHÂN TẦNG CỐ Ý: CHECK của schema chỉ là ALLOWLIST giá trị; tính
       // HỢP LỆ của bước chuyển (máy trạng thái một chiều) thuộc về domain
       // `canTransition` — adapter CAS chỉ cơ chế so khớp `from`. Test này ghim
@@ -545,7 +545,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('HAI transition dong thoi — DUNG MOT thang thang CAS', async () => {
+    it('TWO simultaneous transitions — exactly ONE wins the CAS', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, 'client-tx-store-test');
@@ -577,8 +577,8 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
     });
   });
 
-  describe.skipIf(!available)('insertAuthorizationCode khop schema 0004', () => {
-    it('ghi code khop FK — sub, granted_scopes text[], nonce nullable duoc chap nhan', async () => {
+  describe.skipIf(!available)('insertAuthorizationCode matches schema 0004', () => {
+    it('writing a code satisfies the FK — sub, granted_scopes text[] and a nullable nonce are all accepted', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, 'client-tx-store-test');
@@ -638,7 +638,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('code tham chieu transaction khong ton tai — FK TU CHOI, adapter khong nu loi', async () => {
+    it('a code referencing a non-existent transaction — the FK rejects it, and the adapter swallows no error', async () => {
       const { runtime, migrator } = await setup();
       try {
         await expect(
@@ -662,8 +662,8 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
     });
   });
 
-  describe.skipIf(!available)('cap quyen', () => {
-    it('dang `AUTH_TEST_PG_*` de chay cac test persistence contract', () => {
+  describe.skipIf(!available)('permission grants', () => {
+    it('set `AUTH_TEST_PG_*` to run the persistence-contract tests', () => {
       // Marker test: giữ cho suite không bị coi là "pass" khi thực tế là skip.
       expect(available).toBe(true);
     });

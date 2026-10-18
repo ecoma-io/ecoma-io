@@ -122,8 +122,8 @@ const TRANSACTION: AuthorizationTransactionRecord = {
   nonce: null,
 };
 
-describe('beginAuthorization — ranh gioi open-redirect', () => {
-  it('redirect_uri CHUA dang ky — loi KHONG duoc redirectable', async () => {
+describe('beginAuthorization — the open-redirect boundary', () => {
+  it('an unregistered redirect_uri — the error is NOT redirectable', async () => {
     // ⚠️ Đây là bất biến quan trọng nhất của /authorize. Nếu lỗi này mang
     // `redirectable: true`, handler sẽ redirect về một URI do kẻ tấn công
     // chọn — đúng định nghĩa open redirect.
@@ -141,7 +141,7 @@ describe('beginAuthorization — ranh gioi open-redirect', () => {
     expect(store.calls).not.toContain('createTransaction');
   });
 
-  it('client khong ton tai — invalid_client, KHONG redirectable', async () => {
+  it('a non-existent client — invalid_client, NOT redirectable', async () => {
     const store = makeStore({ findClient: async () => undefined });
     await expect(
       beginAuthorization({
@@ -155,7 +155,7 @@ describe('beginAuthorization — ranh gioi open-redirect', () => {
     ).rejects.toMatchObject({ code: 'invalid_client', redirectable: false });
   });
 
-  it('client bi vo hieu — KHONG redirectable', async () => {
+  it('a disabled client — NOT redirectable', async () => {
     const store = makeStore({
       findClient: async () => ({
         client_id: 'client-1',
@@ -177,7 +177,7 @@ describe('beginAuthorization — ranh gioi open-redirect', () => {
     ).rejects.toMatchObject({ redirectable: false });
   });
 
-  it('scope ngoai danh sach cho phep — DUOC redirectable (da qua ranh gioi)', async () => {
+  it('a scope outside the allowed list — IS redirectable (the boundary has been crossed)', async () => {
     // Sau khi `redirect_uri` da duoc xac minh, loi MOI duoc phep redirect ve no.
     // Day la ve khac cua cung mot ranh gioi.
     const store = makeStore();
@@ -193,7 +193,7 @@ describe('beginAuthorization — ranh gioi open-redirect', () => {
     ).rejects.toMatchObject({ redirectable: true });
   });
 
-  it('tra ve handle la BAN RO, khong phai hash', async () => {
+  it('the returned handle is the CLEARTEXT, not a hash', async () => {
     const store = makeStore();
     const result = await beginAuthorization({
       store,
@@ -210,7 +210,7 @@ describe('beginAuthorization — ranh gioi open-redirect', () => {
     expect(result.handle).toMatch(/^[A-Za-z0-9_-]{43}$/u);
   });
 
-  it('id MAC DINH phai du dai — `crypto.randomUUID()` se lam moi request hong', async () => {
+  it('the default id must be long enough — `crypto.randomUUID()` would make every request collide', async () => {
     // ⚠️ Regression test cho mot bug co that: id mac dinh ban dau la
     // `crypto.randomUUID()`, ma UUID chi co 36 ky tu trong khi
     // `MIN_TRANSACTION_ID_LENGTH` la 43. Ket qua la MOI request uy quyen nem
@@ -232,7 +232,7 @@ describe('beginAuthorization — ranh gioi open-redirect', () => {
     expect(result.transactionId).toMatch(/^[A-Za-z0-9_-]+$/u);
   });
 
-  it('state cua client duoc giu nguyen de tra lai trong redirect', async () => {
+  it('the client state is preserved so it can be echoed back in the redirect', async () => {
     let captured: { client_state: string | null } | undefined;
     const store = makeStore({
       createTransaction: async (record) => {
@@ -341,8 +341,8 @@ describe('beginAuthorization — ranh gioi open-redirect', () => {
   });
 });
 
-describe('confirmBrowser — chot chan handle theft', () => {
-  it('binding KHONG khop — TU CHOI, va khong redirectable', async () => {
+describe('confirmBrowser — the handle-theft guard', () => {
+  it('the binding does NOT match — REJECTED, and not redirectable', async () => {
     // ⚠️ Day la dieu kien 2 cua §5.1.0. Mot browser khac trinh mot handle da
     // danh cap se khong co cookie __Host-auth-browser khop. Neu check nay bi bo
     // qua thi handle theft du thua: ke tan cong day duoc ket qua xac thuc bang
@@ -360,7 +360,7 @@ describe('confirmBrowser — chot chan handle theft', () => {
     expect(store.calls).not.toContain('transition');
   });
 
-  it('binding KHOP — chuyen sang browser_confirmed', async () => {
+  it('the binding MATCHES — moves to browser_confirmed', async () => {
     const store = makeStore();
     // Bam cua 'binding-cookie-hop-le' phai khop `browser_binding_hash` trong
     // fixture. Tinh bang chinh ham cua domain de khong lap lai logic.
@@ -376,7 +376,7 @@ describe('confirmBrowser — chot chan handle theft', () => {
     expect(store.calls).toContain('transition');
   });
 
-  it('transaction da duoc confirm boi request khac — TU CHOI', async () => {
+  it('the transaction was already confirmed by another request — REJECTED', async () => {
     const store = makeStore({ transition: async () => false });
     const bindingHash = await hashHandle('binding-cookie-hop-le');
 
@@ -396,7 +396,7 @@ describe('confirmBrowser — chot chan handle theft', () => {
 });
 
 describe('completeAuthorization — fail-closed', () => {
-  it('Account KHONG GOI DUOC — khong phat hanh, va loi noi that', async () => {
+  it('Account is NOT called — nothing is issued, and the error stays internal', async () => {
     // ⚠️ Bat bien fail-closed. Khong co nhanh "coi nhu khoa khoe". Neu test nay
     // xanh khi Account nem, thi mot su co Account se thanh mot su co bao mat.
     const store = makeStore();
@@ -413,7 +413,7 @@ describe('completeAuthorization — fail-closed', () => {
     expect(store.calls).not.toContain('insertAuthorizationCode');
   });
 
-  it('Account bi suspended — access_denied, khong phat hanh', async () => {
+  it('Account is suspended — access_denied, nothing is issued', async () => {
     const store = makeStore();
     await expect(
       completeAuthorization({
@@ -428,7 +428,7 @@ describe('completeAuthorization — fail-closed', () => {
     expect(store.calls).not.toContain('insertAuthorizationCode');
   });
 
-  it('transaction chua duoc browser xac nhan — TU CHOI truoc khi goi Account', async () => {
+  it('the transaction has not been confirmed by the browser — REJECTED before Account is called', async () => {
     // ⚠️ Thu tu nay co nghia: kiem tra binding phai chay TRUOC moi thu khac,
     // vi neu handle bi trao thi moi field khac cua hang deu khong dang tin.
     const store = makeStore();
@@ -449,7 +449,7 @@ describe('completeAuthorization — fail-closed', () => {
     expect(checkStatus).not.toHaveBeenCalled();
   });
 
-  it('grant da bi thu hoi — access_denied, khong phat hanh', async () => {
+  it('the grant has been revoked — access_denied, nothing is issued', async () => {
     const store = makeStore({ checkRevocation: async () => 'revoked' });
     await expect(
       completeAuthorization({
@@ -464,7 +464,7 @@ describe('completeAuthorization — fail-closed', () => {
     expect(store.calls).not.toContain('insertAuthorizationCode');
   });
 
-  it('nguoi dung tu choi consent — `access_denied`, va KHONG phat hanh code', async () => {
+  it('the user denies consent — `access_denied`, and NO code is issued', async () => {
     const store = makeStore();
     await expect(
       completeAuthorization({
@@ -480,7 +480,7 @@ describe('completeAuthorization — fail-closed', () => {
     expect(store.calls).not.toContain('insertAuthorizationCode');
   });
 
-  it('transaction da doi trang thai (CAS thua) — KHONG phat hanh code thu hai', async () => {
+  it('the transaction already changed state (lost CAS) — NO second code is issued', async () => {
     // ⚠️ Hai request hoan tat dong thoi: chi mot duoc phat code. `transition`
     // tra false cho ke thua, va o day dieu do phai chan viec phat hanh.
     const store = makeStore({ transition: async () => false });
@@ -497,7 +497,7 @@ describe('completeAuthorization — fail-closed', () => {
     expect(store.calls).not.toContain('insertAuthorizationCode');
   });
 
-  it('duong thanh cong — phat code va luu ban BAM, khong luu ban ro', async () => {
+  it('the happy path — issues a code and stores the HASH, never the cleartext', async () => {
     let saved: Awaited<Parameters<AuthStore['insertAuthorizationCode']>[0]> | undefined;
     const store = makeStore({
       insertAuthorizationCode: async (code) => {
@@ -560,7 +560,7 @@ describe('exchangeAuthorizationCode — PKCE', () => {
   const VERIFIER = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
   const CHALLENGE = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
 
-  it('code_verifier sai GIA TRI dung dinh dang — invalid_grant', async () => {
+  it('a code_verifier with the right format but the wrong value — invalid_grant', async () => {
     const signingKey = await makeSigningKey();
     await expect(
       exchangeAuthorizationCode({
@@ -584,7 +584,7 @@ describe('exchangeAuthorizationCode — PKCE', () => {
     ).rejects.toMatchObject({ code: 'invalid_grant' });
   });
 
-  it('code_verifier sai DINH DANG — invalid_request truoc khi so khop challenge', async () => {
+  it('a code_verifier with the wrong FORMAT — invalid_request before the challenge is compared', async () => {
     const signingKey = await makeSigningKey();
     await expect(
       exchangeAuthorizationCode({
@@ -608,7 +608,7 @@ describe('exchangeAuthorizationCode — PKCE', () => {
     ).rejects.toMatchObject({ code: 'invalid_request' });
   });
 
-  it('code_verifier DUNG — cap token, va access token verify duoc offline', async () => {
+  it('a CORRECT code_verifier — issues a token, and the access token verifies offline', async () => {
     const signingKey = await makeSigningKey();
     const tokens = await exchangeAuthorizationCode({
       account: makeAccount(),
@@ -637,7 +637,7 @@ describe('exchangeAuthorizationCode — PKCE', () => {
     expect(tokens.refreshToken.plaintext).not.toBe(tokens.refreshToken.hash);
   });
 
-  it('Account bi khoa giua luc cap code va luc doi code — KHONG cap token', async () => {
+  it('Account gets locked between code issuance and code exchange — NO token is issued', async () => {
     // Khoang giua hai buoc la co that. Bo lan kiem nay nghia la mot account da
     // bi khoa van nhan duoc token.
     const signingKey = await makeSigningKey();

@@ -133,8 +133,8 @@ async function verify(
   return { result, claims };
 }
 
-describe('A — chữ ký đúng cho từng method', () => {
-  it('GET ký đúng method, path và delivery_id, và verify được bằng secret đó', async () => {
+describe('A — the correct signature for each method', () => {
+  it('GET signs the correct method, path and delivery_id, and that signature verifies with the same secret', async () => {
     const { client, captured } = makeClient();
     await client.getDelivery(DELIVERY_ID);
 
@@ -152,7 +152,7 @@ describe('A — chữ ký đúng cho từng method', () => {
     expect(claims).toHaveLength(1);
   });
 
-  it('GET chỉ mang đúng ba header ký, không có header định danh caller tự khai', async () => {
+  it('GET carries exactly the three signing headers, with no caller-declared identity header', async () => {
     const { client, captured } = makeClient();
     await client.getDelivery(DELIVERY_ID);
 
@@ -166,7 +166,7 @@ describe('A — chữ ký đúng cho từng method', () => {
     expect(captured[0].request.headers.get('x-ecoma-app')).toBeNull();
   });
 
-  it('timestamp là epoch giây dạng chuỗi chữ số, lấy từ đồng hồ injected', async () => {
+  it('timestamp is an epoch-seconds numeric string taken from the injected clock', async () => {
     const { client, captured } = makeClient();
     await client.getDelivery(DELIVERY_ID);
 
@@ -178,7 +178,7 @@ describe('A — chữ ký đúng cho từng method', () => {
     expect(Number(timestamp)).toBe(FIXED_NOW_MS / 1000);
   });
 
-  it('nonce là nonce mạnh và khác nhau giữa hai request', async () => {
+  it('nonce is strong and differs between the two requests', async () => {
     const { client, captured } = makeClient();
     await client.getDelivery(DELIVERY_ID);
     await client.getDelivery(DELIVERY_ID);
@@ -196,7 +196,7 @@ describe('A — chữ ký đúng cho từng method', () => {
     );
   });
 
-  it('chữ ký mang đúng định dạng `v1=<hex>`', async () => {
+  it('the signature carries exactly the `v1=<hex>` format', async () => {
     const { client, captured } = makeClient();
     await client.getDelivery(DELIVERY_ID);
 
@@ -204,7 +204,7 @@ describe('A — chữ ký đúng cho từng method', () => {
     expect(signature).toMatch(/^v1=[0-9a-f]{64}$/u);
   });
 
-  it('POST ký đúng path `/outcome` và verify được với chính byte đã gửi', async () => {
+  it('POST signs the correct `/outcome` path and verifies against the very bytes sent', async () => {
     const { client, captured } = makeClient();
     await client.postDeliveryOutcome(DELIVERY_ID, OUTCOME);
 
@@ -225,7 +225,7 @@ describe('A — chữ ký đúng cho từng method', () => {
     ]);
   });
 
-  it('thân POST gửi đi và thân được ký là cùng một mảng byte', async () => {
+  it('the body POST sends and the body that gets signed are the same byte array', async () => {
     const { client, captured } = makeClient();
     await client.postDeliveryOutcome(DELIVERY_ID, OUTCOME);
 
@@ -238,7 +238,7 @@ describe('A — chữ ký đúng cho từng method', () => {
     expect(wrong.result).toEqual({ ok: false, reason: 'bad_signature' });
   });
 
-  it('POST không có `error_class` thì vẫn gửi body đúng contract', async () => {
+  it('POST without `error_class` still sends a body matching the contract', async () => {
     const { client, captured } = makeClient();
     await client.postDeliveryOutcome(DELIVERY_ID, { outcome: 'sent', dispatch_generation: 1 });
 
@@ -257,8 +257,8 @@ async function signedGet(): Promise<Captured> {
   return captured[0] as Captured;
 }
 
-describe('B — mọi thay đổi trên đường đi đều làm chữ ký mất hiệu lực', () => {
-  it('đổi method thì `bad_signature`', async () => {
+describe('B — any change in transit invalidates the signature', () => {
+  it('changing the method gives `bad_signature`', async () => {
     const call = await signedGet();
     expect((await verify(call, { method: 'POST' })).result).toEqual({
       ok: false,
@@ -266,7 +266,7 @@ describe('B — mọi thay đổi trên đường đi đều làm chữ ký mấ
     });
   });
 
-  it('đổi delivery_id trong path thì `bad_signature`', async () => {
+  it('changing delivery_id in the path gives `bad_signature`', async () => {
     const call = await signedGet();
     expect((await verify(call, { path: '/internal/deliveries/dlv_khac' })).result).toEqual({
       ok: false,
@@ -274,7 +274,7 @@ describe('B — mọi thay đổi trên đường đi đều làm chữ ký mấ
     });
   });
 
-  it('thêm query string vào path thì `bad_signature` — query nằm trong canonical string', async () => {
+  it('adding a query string to the path gives `bad_signature` — the query is part of the canonical string', async () => {
     const call = await signedGet();
     expect((await verify(call, { path: `${DELIVERY_PATH}?debug=1` })).result).toEqual({
       ok: false,
@@ -282,7 +282,7 @@ describe('B — mọi thay đổi trên đường đi đều làm chữ ký mấ
     });
   });
 
-  it('đổi byte thân thì `bad_signature`', async () => {
+  it('changing a body byte gives `bad_signature`', async () => {
     const { client, captured } = makeClient();
     await client.postDeliveryOutcome(DELIVERY_ID, OUTCOME);
     const [call] = captured;
@@ -295,7 +295,7 @@ describe('B — mọi thay đổi trên đường đi đều làm chữ ký mấ
     });
   });
 
-  it('đổi timestamp trong khoảng skew thì `bad_signature`', async () => {
+  it('changing the timestamp within the skew window gives `bad_signature`', async () => {
     const call = await signedGet();
     const headers = { ...headerRecord(call) };
     headers[INTERNAL_TIMESTAMP_HEADER] = String(Number(FIXED_NOW_SECONDS) + 10);
@@ -306,7 +306,7 @@ describe('B — mọi thay đổi trên đường đi đều làm chữ ký mấ
     });
   });
 
-  it('đổi timestamp ra ngoài skew thì `bad_timestamp`, trước cả khi bước chứng minh chữ ký', async () => {
+  it('changing the timestamp outside the skew window gives `bad_timestamp`, before the signature proof step runs', async () => {
     const call = await signedGet();
     const headers = { ...headerRecord(call) };
     headers[INTERNAL_TIMESTAMP_HEADER] = String(Number(FIXED_NOW_SECONDS) - 100_000);
@@ -317,7 +317,7 @@ describe('B — mọi thay đổi trên đường đi đều làm chữ ký mấ
     });
   });
 
-  it('timestamp không phải epoch giây thì `bad_timestamp`', async () => {
+  it('a timestamp that is not epoch seconds gives `bad_timestamp`', async () => {
     const call = await signedGet();
     const headers = { ...headerRecord(call) };
     headers[INTERNAL_TIMESTAMP_HEADER] = new Date(FIXED_NOW_MS).toISOString();
@@ -328,7 +328,7 @@ describe('B — mọi thay đổi trên đường đi đều làm chữ ký mấ
     });
   });
 
-  it('thay nonce bằng nonce yếu thì `weak_nonce`', async () => {
+  it('replacing the nonce with a weak one gives `weak_nonce`', async () => {
     const call = await signedGet();
     const headers = { ...headerRecord(call) };
     // ⚠️ Một UUID v4 "toàn số 0" **không** phải nonce yếu theo `isStrongNonce`: nó khớp
@@ -339,7 +339,7 @@ describe('B — mọi thay đổi trên đường đi đều làm chữ ký mấ
     expect((await verify(call, { headers })).result).toEqual({ ok: false, reason: 'weak_nonce' });
   });
 
-  it('đổi nonce (vẫn mạnh) thì `bad_signature`', async () => {
+  it('changing the nonce (still a strong one) gives `bad_signature`', async () => {
     const call = await signedGet();
     const headers = { ...headerRecord(call) };
     headers[INTERNAL_NONCE_HEADER] = '11111111-2222-4333-8444-555555555555';
@@ -350,7 +350,7 @@ describe('B — mọi thay đổi trên đường đi đều làm chữ ký mấ
     });
   });
 
-  it('đổi chữ ký thì `bad_signature`', async () => {
+  it('changing the signature gives `bad_signature`', async () => {
     const call = await signedGet();
     const headers = { ...headerRecord(call) };
     const signature = headers[INTERNAL_SIGNATURE_HEADER];
@@ -362,7 +362,7 @@ describe('B — mọi thay đổi trên đường đi đều làm chữ ký mấ
     });
   });
 
-  it('bỏ chữ ký thì `missing_header`', async () => {
+  it('removing the signature gives `missing_header`', async () => {
     const call = await signedGet();
     const headers = { ...headerRecord(call) };
     headers[INTERNAL_SIGNATURE_HEADER] = '';
@@ -373,7 +373,7 @@ describe('B — mọi thay đổi trên đường đi đều làm chữ ký mấ
     });
   });
 
-  it('secret khác thì `bad_signature`', async () => {
+  it('a different secret gives `bad_signature`', async () => {
     const call = await signedGet();
     expect((await verify(call, { secret: 'mot-secret-khac' })).result).toEqual({
       ok: false,
@@ -381,7 +381,7 @@ describe('B — mọi thay đổi trên đường đi đều làm chữ ký mấ
     });
   });
 
-  it('GET không mang thân, nên chữ ký của GET không dùng được cho một thân bất kỳ', async () => {
+  it('GET carries no body, so the GET signature cannot stand in for any body', async () => {
     const call = await signedGet();
     expect((await verify(call, { body: new TextEncoder().encode('{}') })).result).toEqual({
       ok: false,
@@ -389,7 +389,7 @@ describe('B — mọi thay đổi trên đường đi đều làm chữ ký mấ
     });
   });
 
-  it('nonce đã bị chiếm thì `replayed_nonce`', async () => {
+  it('an already-consumed nonce gives `replayed_nonce`', async () => {
     const call = await signedGet();
     const request = call.request;
     const nonce = request.headers.get(INTERNAL_NONCE_HEADER) ?? '';
@@ -421,13 +421,13 @@ function headerRecord(call: Captured): Record<string, string> {
   };
 }
 
-describe('C — credential hỏng thì fail trước khi gửi', () => {
-  it('thiếu Worker Secret thì ném lỗi cấu hình, không có giá trị bí mật trong message', () => {
+describe('C — a broken credential fails before anything is sent', () => {
+  it('a missing Worker Secret throws a configuration error with no secret value in the message', () => {
     expect(() => resolveInternalAuthSecret({})).toThrow(InternalDeliveryConfigError);
     expect(() => resolveInternalAuthSecret({})).toThrow(INTERNAL_AUTH_SECRET_ENV);
   });
 
-  it('Worker Secret không phải chuỗi thì ném lỗi cấu hình', () => {
+  it('a Worker Secret that is not a string throws a configuration error', () => {
     for (const value of [undefined, null, 1234, true, {}]) {
       expect(() => resolveInternalAuthSecret({ [INTERNAL_AUTH_SECRET_ENV]: value })).toThrow(
         InternalDeliveryConfigError,
@@ -435,7 +435,7 @@ describe('C — credential hỏng thì fail trước khi gửi', () => {
     }
   });
 
-  it('Worker Secret rỗng hoặc chỉ khoảng trắng thì ném lỗi cấu hình', () => {
+  it('an empty or whitespace-only Worker Secret throws a configuration error', () => {
     for (const value of ['', '   ', '\t\n ']) {
       expect(() => resolveInternalAuthSecret({ [INTERNAL_AUTH_SECRET_ENV]: value })).toThrow(
         InternalDeliveryConfigError,
@@ -443,7 +443,7 @@ describe('C — credential hỏng thì fail trước khi gửi', () => {
     }
   });
 
-  it('message lỗi cấu hình chỉ nêu tên biến, không nêu giá trị', () => {
+  it('the configuration error message names only the variable, never its value', () => {
     // Giá trị bí mật phải **không** xuất hiện trong message, kể cả khi nó tới từ một `env`
     // sai kiểu — chỗ dễ bị `JSON.stringify(value)` nhất.
     const leaky = 'sieu-bi-mat-co-the-bi-ro-ri';
@@ -472,7 +472,7 @@ describe('C — credential hỏng thì fail trước khi gửi', () => {
     expect(messages[3]).toContain('object');
   });
 
-  it('client dựng với secret rỗng/khoảng trắng thì ném lỗi cấu hình và không gọi binding', () => {
+  it('a client built with an empty or whitespace-only secret throws a configuration error and never calls the binding', () => {
     const fetch = vi.fn<(input: Request) => Promise<Response>>();
     for (const secret of ['', '   ']) {
       expect(() => new InternalDeliveryClient({ binding: { fetch }, secret })).toThrow(
@@ -482,7 +482,7 @@ describe('C — credential hỏng thì fail trước khi gửi', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('secret hợp lệ giữ nguyên văn: khoảng trắng thừa KHÔNG bị trim', async () => {
+  it('a valid secret is kept verbatim: the surrounding whitespace is NOT trimmed', async () => {
     // Ký bằng secret có khoảng trắng thừa, rồi verify bằng chính nó — và bằng bản đã trim.
     // Nếu client lưu bản đã trim, chữ ký gửi đi sẽ không verify được với secret thật.
     const padded = `  ${SECRET}  `;
@@ -496,7 +496,7 @@ describe('C — credential hỏng thì fail trước khi gửi', () => {
     });
   });
 
-  it('secret đọc qua resolveInternalAuthSecret cũng giữ nguyên văn, không bị trim', async () => {
+  it('a secret read through resolveInternalAuthSecret is also kept verbatim, not trimmed', async () => {
     // Đường composition root: `resolveInternalAuthSecret(env)` rồi truyền kết quả vào client.
     // Nếu hàm đó trả bản đã trim thì chữ ký không bao giờ verify được với secret thật, mà
     // client thì vẫn "chạy" — nên phải ghim riêng đường này, không chỉ ghim constructor.
@@ -512,7 +512,7 @@ describe('C — credential hỏng thì fail trước khi gửi', () => {
     });
   });
 
-  it('secret rỗng và secret chỉ khoảng trắng là hai lỗi cấu hình phân biệt được', () => {
+  it('an empty secret and a whitespace-only secret are two distinguishable configuration errors', () => {
     const messages = ['', '   '].map((value) => {
       try {
         resolveInternalAuthSecret({ [INTERNAL_AUTH_SECRET_ENV]: value });
@@ -529,7 +529,7 @@ describe('C — credential hỏng thì fail trước khi gửi', () => {
     expect(messages[0]).not.toBe(messages[1]);
   });
 
-  it('một request đầy đủ không ghi ra console — không secret, không chữ ký, không thân', async () => {
+  it('a full request writes nothing to the console — no secret, no signature, no body', async () => {
     const spies = (['log', 'info', 'warn', 'error', 'debug', 'trace'] as const).map((method) =>
       vi.spyOn(console, method).mockImplementation(() => undefined),
     );
@@ -548,8 +548,8 @@ describe('C — credential hỏng thì fail trước khi gửi', () => {
   });
 });
 
-describe('D — ranh giới response: trả nguyên, không phân loại, không retry', () => {
-  it('mọi status của private interface đi thẳng về tầng gọi, không ném, không đổi status', async () => {
+describe('D — response boundary: returned as-is, never classified, never retried', () => {
+  it('every status from the private interface goes straight through to the calling layer, no throw, no status change', async () => {
     // 401/403 là chuyện credential **nội bộ**, không phải credential provider; 404 là
     // chuyện delivery không tồn tại, không phải kết quả gửi mail; 409/422/429/5xx cũng vậy.
     const statuses = [200, 400, 401, 403, 404, 409, 413, 422, 429, 500, 502, 503];
@@ -565,7 +565,7 @@ describe('D — ranh giới response: trả nguyên, không phân loại, không
     }
   });
 
-  it('lỗi mạng từ binding ném ra nguyên vẹn, không bị phân loại hay gói lại', async () => {
+  it('a network error from the binding is rethrown as-is, neither classified nor wrapped', async () => {
     const boom = new TypeError('fetch failed');
     const { client } = makeClient({
       response: () => {
@@ -575,7 +575,7 @@ describe('D — ranh giới response: trả nguyên, không phân loại, không
     await expect(client.getDelivery(DELIVERY_ID)).rejects.toBe(boom);
   });
 
-  it('không retry: một lời gọi client = đúng một lần binding.fetch', async () => {
+  it('no retry: one client call = exactly one binding.fetch', async () => {
     for (const status of [401, 404, 429, 500, 503]) {
       const { client, fetch } = makeClient({ response: () => new Response(null, { status }) });
       await client.getDelivery(DELIVERY_ID);
@@ -584,7 +584,7 @@ describe('D — ranh giới response: trả nguyên, không phân loại, không
     }
   });
 
-  it('không phân loại status thành kết quả provider nào', async () => {
+  it('no status is classified as any provider result', async () => {
     const { client } = makeClient({
       response: () =>
         new Response(JSON.stringify({ result: 'applied', status: 'sent' }), { status: 200 }),
@@ -598,8 +598,8 @@ describe('D — ranh giới response: trả nguyên, không phân loại, không
   });
 });
 
-describe('E — hợp đồng khác: input hỏng, route, và ranh giới runtime', () => {
-  it('outcome không hợp lệ theo contract bị từ chối trước khi gửi, không gửi request rác', async () => {
+describe('E — other contracts: invalid input, routes, and runtime boundaries', () => {
+  it('an outcome invalid per the contract is rejected before sending, so no garbage request goes out', async () => {
     const { client, fetch } = makeClient();
     const invalid: unknown[] = [
       { outcome: 'khong-ton-tai', dispatch_generation: 1 },
@@ -617,7 +617,7 @@ describe('E — hợp đồng khác: input hỏng, route, và ranh giới runtim
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('outcome hợp lệ thì gửi **giá trị đã qua contract**, không gửi object thô', async () => {
+  it('a valid outcome sends the **contract-processed value**, not the raw object', async () => {
     // `validatePostDeliveryOutcomeRequest` chuẩn hoá lại value; client gửi `validated.value`
     // nên trường không thuộc schema không bao giờ lọt ra dây.
     const { client, captured } = makeClient();
@@ -630,13 +630,13 @@ describe('E — hợp đồng khác: input hỏng, route, và ranh giới runtim
     );
   });
 
-  it('delivery_id rỗng bị từ chối trước khi gửi', async () => {
+  it('an empty delivery_id is rejected before sending', async () => {
     const { client, fetch } = makeClient();
     await expect(client.getDelivery('')).rejects.toThrow(InternalDeliveryRequestError);
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('delivery_id có ký tự phân đoạn path vẫn nằm trong một phân đoạn duy nhất', async () => {
+  it('a delivery_id with path separator characters still stays within a single segment', async () => {
     const { client, captured } = makeClient();
     await client.getDelivery('a/b/../../../secret');
 
@@ -647,7 +647,7 @@ describe('E — hợp đồng khác: input hỏng, route, và ranh giới runtim
     expect(pathname).toBe('/internal/deliveries/a%2Fb%2F..%2F..%2F..%2Fsecret');
   });
 
-  it('delivery_id là dot-segment bị từ chối, không gửi tới route khác', async () => {
+  it('a delivery_id that is a dot-segment is rejected, so nothing is sent to another route', async () => {
     const { client, fetch } = makeClient();
     // Chỉ `.` và `..` là dot-segment sau khi `encodeURIComponent`: chuỗi có `/` (vd `../..`)
     // được mã hoá thành `%2F` nên nó là **một** phân đoạn hợp lệ, và URL parser không cắt
@@ -658,13 +658,13 @@ describe('E — hợp đồng khác: input hỏng, route, và ranh giới runtim
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('delivery_id chứa surrogate lẻ bị từ chối chứ không làm vỡ runtime', async () => {
+  it('a delivery_id containing a lone surrogate is rejected instead of breaking the runtime', async () => {
     const { client, fetch } = makeClient();
     await expect(client.getDelivery('a\uD800b')).rejects.toThrow(InternalDeliveryRequestError);
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('runtime code không import Node builtin và không dùng `crypto.subtle` trực tiếp', () => {
+  it('the runtime code imports no Node builtin and does not call `crypto.subtle` directly', () => {
     const source = readFileSync(join(import.meta.dirname, 'internal-delivery-client.ts'), 'utf8');
     expect(source).not.toMatch(/from ['"]node:/u);
     expect(source).not.toMatch(/require\(['"]node:/u);
@@ -674,7 +674,7 @@ describe('E — hợp đồng khác: input hỏng, route, và ranh giới runtim
     expect(source).toMatch(/from '@ecoma-io\/identity-auth-contracts'/u);
   });
 
-  it('kho nonce không nằm trong worker này: client không nhận D1 và không tự lưu nonce', () => {
+  it('the nonce store does not live in this worker: the client takes no D1 and does not persist nonces itself', () => {
     const source = readFileSync(join(import.meta.dirname, 'internal-delivery-client.ts'), 'utf8');
     expect(source).not.toMatch(/D1Database/u);
     expect(source).not.toMatch(/\bprepare\s*\(/u);
@@ -682,14 +682,14 @@ describe('E — hợp đồng khác: input hỏng, route, và ranh giới runtim
     expect(source).not.toMatch(/Map<string, InternalAuthHeaders>|#cached/u);
   });
 
-  it('client không biết hostname của control plane: chỉ qua binding truyền vào', () => {
+  it('the client does not know the control plane hostname: it comes only through the injected binding', () => {
     const source = readFileSync(join(import.meta.dirname, 'internal-delivery-client.ts'), 'utf8');
     // Không có `fetch` toàn cục: mọi request đi qua binding do composition root tiêm vào.
     expect(source).not.toMatch(/(?<![\w.$])await fetch\(/u);
     expect(source).not.toMatch(/env\.[A-Z_]+_URL/u);
   });
 
-  it('contract của request không đổi: các path dùng đúng trong tài liệu', async () => {
+  it('the request contract is unchanged: the paths used are exactly the documented ones', async () => {
     const { client, captured } = makeClient();
     await client.getDelivery(DELIVERY_ID);
     await client.postDeliveryOutcome(DELIVERY_ID, OUTCOME);
@@ -699,7 +699,7 @@ describe('E — hợp đồng khác: input hỏng, route, và ranh giới runtim
     ]);
   });
 
-  it('`validatePostDeliveryOutcomeRequest` được dùng đúng bản contract (không chép lại luật)', async () => {
+  it('`validatePostDeliveryOutcomeRequest` uses the real contract implementation (no re-implemented rules)', async () => {
     const { client, captured } = makeClient();
     await client.postDeliveryOutcome(DELIVERY_ID, OUTCOME);
     // Nếu client chép lại luật validate, một thay đổi ở contract sẽ không lan tới đây.

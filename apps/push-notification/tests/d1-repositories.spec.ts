@@ -44,7 +44,7 @@ import {
 /** Lease đủ dài cho mọi assertion, và **không** phụ thuộc `Date.now()`. */
 const LEASE_MS = 60_000;
 
-describe('schema thật — index và CHECK là guard, không phải chú thích', () => {
+describe('the real schema — index and CHECK are guards, not annotations', () => {
   let db: TestDatabase;
 
   beforeEach(async () => {
@@ -141,7 +141,7 @@ describe('schema thật — index và CHECK là guard, không phải chú thích
   });
 });
 
-describe('claimDelivery — guarded write, thắng/thua trong một statement', () => {
+describe('claimDelivery — guarded write, win or lose in a single statement', () => {
   let db: TestDatabase;
 
   beforeEach(async () => {
@@ -335,7 +335,7 @@ describe('claimDelivery — guarded write, thắng/thua trong một statement', 
   });
 });
 
-describe('fenced write — generation cũ bị chặn', () => {
+describe('fenced write — a stale generation is blocked', () => {
   let db: TestDatabase;
 
   beforeEach(async () => {
@@ -456,7 +456,7 @@ describe('fenced write — generation cũ bị chặn', () => {
   });
 });
 
-describe('release idempotency — gọi lặp là no-op, không phải lỗi', () => {
+describe('release idempotency — a repeated call is a no-op, not an error', () => {
   let db: TestDatabase;
 
   beforeEach(async () => {
@@ -516,7 +516,7 @@ describe('release idempotency — gọi lặp là no-op, không phải lỗi', (
   });
 });
 
-describe('partial unique index — dồn intent bị chặn ở tầng database', () => {
+describe('partial unique index — coalescing intents is blocked at the database layer', () => {
   let db: TestDatabase;
 
   beforeEach(async () => {
@@ -688,7 +688,7 @@ describe('partial unique index — dồn intent bị chặn ở tầng database'
   });
 });
 
-describe('outbox — claimDue, publisher success guard, và backoff', () => {
+describe('outbox — claimDue, the publisher success guard, and backoff', () => {
   let db: TestDatabase;
 
   beforeEach(async () => {
@@ -1054,7 +1054,7 @@ describe('reconciliation a1 + a4', () => {
   });
 });
 
-describe('idempotency — scope đầy đủ và replay', () => {
+describe('idempotency — full scope and replay', () => {
   let db: TestDatabase;
 
   beforeEach(async () => {
@@ -1130,7 +1130,7 @@ describe('idempotency — scope đầy đủ và replay', () => {
   });
 });
 
-describe('rate limit — từ chối thì KHÔNG tiêu slot', () => {
+describe('rate limit — a rejected request does NOT consume a slot', () => {
   let db: TestDatabase;
 
   beforeEach(async () => {

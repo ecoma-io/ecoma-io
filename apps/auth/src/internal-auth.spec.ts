@@ -313,7 +313,7 @@ describe('internal-auth contract (auth-side view)', () => {
     expect(Number.isInteger(NONCE_CLAIM_CONNECT_TIMEOUT_SECONDS)).toBe(true);
   });
 
-  it('dung cung mot khoa advisory voi cac spec PostgreSQL khac', () => {
+  it('shares one advisory lock with the other PostgreSQL specs', () => {
     // Test trên **file nguồn**, không cần database — và nó phải chạy cả khi không có
     // PostgreSQL: thiếu nó thì hai spec lặng lẽ dùng hai khoá khác nhau và lock mất
     // tác dụng, mà triệu chứng chỉ là một suite đỏ ngẫu nhiên.
@@ -333,8 +333,8 @@ describe('internal-auth contract (auth-side view)', () => {
   });
 });
 
-describe('fail closed khi kho nonce khong goi duoc', () => {
-  it('makeNonceGuard NEM, khong bao gio tra ve false', async () => {
+describe('fail closed when the nonce store cannot be reached', () => {
+  it('makeNonceGuard THROWS, NEVER returns false', async () => {
     // ⚠️ `false` nghĩa là "nonce chưa từng thấy" — và `verifyRequest` coi đó là `ok`.
     // Một lỗi hạ tầng bị nuốt thành `false` biến mọi envelope đã ký thành replayable
     // trong suốt thời gian DB chết, và **không** test tuần tự nào bắt được.
@@ -347,7 +347,7 @@ describe('fail closed khi kho nonce khong goi duoc', () => {
     );
   });
 
-  it('isAuthenticatedInternalRequest dich loi DB thanh `db_unreachable`, khong phai `ok`', async () => {
+  it('isAuthenticatedInternalRequest turns the DB failure into `db_unreachable`, NOT `ok`', async () => {
     // Composition thật: request ký hợp lệ, chữ ký đúng, `claimNonce` ném vì DB chết.
     // Kết quả phải là từ chối — và là `db_unreachable` (⇒ 503 trong `main.ts`), không
     // phải một `ok` và cũng không phải `bad_signature` (⇒ 401), vì hai mã đó nói sai
@@ -365,7 +365,7 @@ describe('fail closed khi kho nonce khong goi duoc', () => {
     expect(result).toEqual({ ok: false, reason: 'db_unreachable' });
   });
 
-  it('chu ky SAI khong cham toi kho nonce — `bad_signature`, khong phai `db_unreachable`', async () => {
+  it('a BAD signature never touches the nonce store — `bad_signature`, NOT `db_unreachable`', async () => {
     // ⚠️ Đây là thứ tự kiểm của `verifyRequest`, và thứ tự mới là bảo vệ: callback
     // `claimNonce` chỉ chạy SAU khi chữ ký được chứng minh. Nếu nó chạy trước, một kẻ
     // đọc được nonce thật từ proxy log hay `wrangler tail` có thể gửi envelope với
@@ -391,7 +391,7 @@ describe('fail closed khi kho nonce khong goi duoc', () => {
     expect(result).toEqual({ ok: false, reason: 'bad_signature' });
   });
 
-  it('khong co nhanh "bo qua replay guard": claimNonce luon tro vao kho nonce', () => {
+  it('no "skip the replay guard" branch: claimNonce always goes to the nonce store', () => {
     // ⚠️ Test này thay cho một test CŨ đang ghim điều ngược lại. Bản cũ cho
     // `isAuthenticatedInternalRequest` nhận `hyperdrive: null` và ghim rằng request vẫn
     // được **chấp nhận** (`ok: true`) — tức là ghim một cửa sổ replay vô hạn làm "hành vi
@@ -418,7 +418,7 @@ describe('fail closed khi kho nonce khong goi duoc', () => {
   });
 });
 
-describe.skipIf(!available)('makeNonceGuard tren PostgreSQL that', () => {
+describe.skipIf(!available)('makeNonceGuard against a real PostgreSQL', () => {
   // Giữ khoá suite cho hết vòng đời — xem JSDoc của `NONCE_SUITE_LOCK_KEY`. Spec
   // bên lib dọn và đếm **toàn bảng** `auth.internal_nonces`, nên hai suite không được
   // chạm cùng bảng cùng lúc.
@@ -445,7 +445,7 @@ describe.skipIf(!available)('makeNonceGuard tren PostgreSQL that', () => {
     await suiteLock.end({ timeout: 1 });
   });
 
-  it('lan dau chap nhan, envelope y nguyen bi tu choi la replayed_nonce', async () => {
+  it('first acceptance, then the same envelope is rejected as `replayed_nonce`', async () => {
     await withStore(async () => {
       const envelopeTimestamp = Math.floor(Date.now() / 1000);
       const nonce = createNonce();
@@ -494,7 +494,7 @@ describe.skipIf(!available)('makeNonceGuard tren PostgreSQL that', () => {
     });
   });
 
-  it('retry nghiep vu hop le: envelope MOI, cung payload — duoc chap nhan', async () => {
+  it('a legitimate retry with a NEW envelope but the same payload is accepted', async () => {
     // ⚠️ Phân biệt với test trên, và đây là chỗ dễ làm hỏng nhất khi "sửa cho test
     // replay xanh": hai lần gửi **cùng nội dung nghiệp vụ** nhưng envelope mới (nonce
     // mới) là một lần thử lại hợp lệ, không phải replay. Siết nonce tới mức chặn luôn
@@ -528,7 +528,7 @@ describe.skipIf(!available)('makeNonceGuard tren PostgreSQL that', () => {
     });
   });
 
-  it('TTL neo theo timestamp cua ENVELOPE, khong theo dong ho cua verifier', async () => {
+  it('TTL is pinned to the ENVELOPE timestamp, NOT the verifier clock', async () => {
     // ⚠️ Envelope được ký với timestamp **lùi về quá khứ** (trong cửa sổ skew) để
     // phân biệt hai cách neo. Neo đúng: `expires_at = timestamp + skew + buffer`, nên
     // khoảng cách tới timestamp của envelope đúng bằng `skew + buffer` bất kể ta chạy
@@ -594,7 +594,7 @@ describe.skipIf(!available)('makeNonceGuard tren PostgreSQL that', () => {
     });
   });
 
-  it('isAuthenticatedInternalRequest chap nhan mot lan roi tu choi envelope do', async () => {
+  it('isAuthenticatedInternalRequest accepts once, then rejects that envelope', async () => {
     // Ghép tầng composition thật với store thật: `main.ts` gọi đúng hàm này cho
     // `POST /internal/session/verified`, rồi dịch `ok:false` thành 401 và
     // `db_unreachable` thành 503. Đây là đường mà một request nội bộ thật đi qua.

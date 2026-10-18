@@ -79,7 +79,7 @@ async function readShimSource(): Promise<string> {
   }
 }
 
-describe('shim @ecoma-io/identity-auth-contracts — DTO, không khai lại', () => {
+describe('shim @ecoma-io/identity-auth-contracts — DTOs, not redeclarations', () => {
   it('binds every re-exported DTO value to the IDENTICAL object of the canonical module', () => {
     // So danh tính object chứ không so nội dung: một mảng khai lại với đúng bảy phần tử
     // hôm nay vẫn là bản thứ hai, và sẽ lệch vào ngày ai đó thêm phần tử thứ tám ở một

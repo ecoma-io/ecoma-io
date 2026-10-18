@@ -289,12 +289,12 @@ function skewAndBuffer(): { skew: number; buffer: number } {
   return { skew: Number(skew[1]), buffer: Number(buffer[1]) };
 }
 
-describe('advisory lock dung chung giua cac spec PostgreSQL', () => {
+describe('advisory lock shared across the PostgreSQL specs', () => {
   // Không nằm trong `skipIf`: đây là test trên **file nguồn**, không cần database.
   // Và nó phải chạy cả khi không có PostgreSQL — thiếu nó thì hai spec PG lặng lẽ
   // dùng hai khoá khác nhau, lock mất tác dụng, và triệu chứng duy nhất là một
   // suite đỏ ngẫu nhiên vì `relation "oauth_clients" already exists`.
-  it('authorization-code-cas.spec.ts dung cung khoa dung schema', () => {
+  it('authorization-code-cas.spec.ts uses the same key and the same schema', () => {
     const source = readFileSync(
       join(import.meta.dirname, 'authorization-code-cas.spec.ts'),
       'utf8',
@@ -304,7 +304,7 @@ describe('advisory lock dung chung giua cac spec PostgreSQL', () => {
     expect(Number((declared?.[1] ?? '').replaceAll('_', ''))).toBe(SCHEMA_SETUP_LOCK_KEY);
   });
 
-  it('authorization-transaction-store.spec.ts dung cung khoa dung schema', () => {
+  it('authorization-transaction-store.spec.ts uses the same key and the same schema', () => {
     const source = readFileSync(
       join(import.meta.dirname, 'authorization-transaction-store.spec.ts'),
       'utf8',
@@ -314,7 +314,7 @@ describe('advisory lock dung chung giua cac spec PostgreSQL', () => {
     expect(Number((declared?.[1] ?? '').replaceAll('_', ''))).toBe(SCHEMA_SETUP_LOCK_KEY);
   });
 
-  it('app cua auth dung cung khoa dung schema VA cung khoa giu suite', () => {
+  it('the auth app uses the same key and the same schema AND shares one key across the suite', () => {
     // ⚠️ Cả **hai** khoá, không chỉ khoá schema: thiếu khoá suite thì hai suite chạm
     // cùng `auth.internal_nonces` song song, và test `count(*)` toàn bảng ở dưới đỏ vì
     // hàng của suite kia — một lần đỏ đã đo được, không phải giả thuyết.
@@ -331,7 +331,7 @@ describe('advisory lock dung chung giua cac spec PostgreSQL', () => {
   });
 });
 
-describe('migration 0010 — assert tren FILE, chay duoc khong can PostgreSQL', () => {
+describe('migration 0010 — asserted against the FILE, runs without PostgreSQL', () => {
   // ⚠️ Vì sao nhóm này tách khỏi các test PostgreSQL, và vì sao nó **không** nằm trong
   // `skipIf`: `applyMigrations` chỉ áp migration khi schema CHƯA có, nên trên một
   // database đã dựng, sửa file migration **không** làm schema đang chạy đổi theo — và
@@ -346,7 +346,7 @@ describe('migration 0010 — assert tren FILE, chay duoc khong can PostgreSQL', 
   // Và nhóm này chạy **cả khi không có PostgreSQL**: đặt phần file-assert bên trong một
   // test `skipIf` nghĩa là máy không có DB không kiểm được migration chút nào — một
   // khoảng trống im lặng đúng ở lớp quyết định schema sẽ lên production.
-  it('expires_at phai NOT NULL va khong co DEFAULT', () => {
+  it('expires_at must be NOT NULL and have no DEFAULT', () => {
     const createTable = /CREATE TABLE[\S\s]*?auth\.internal_nonces\s*\(([\S\s]*?)\)\s*;/u.exec(
       readMigration0010(),
     );
@@ -355,7 +355,7 @@ describe('migration 0010 — assert tren FILE, chay duoc khong can PostgreSQL', 
     expect(column?.groups?.['definition']?.toUpperCase()).not.toContain('DEFAULT');
   });
 
-  it('grant runtime dung hai quyen, khong co UPDATE/DELETE/TRUNCATE/ALL', () => {
+  it('the runtime grant has two privileges only, no UPDATE/DELETE/TRUNCATE/ALL', () => {
     // Nới `expires_at` của một nonce đã ghi là nới cửa sổ replay — sửa dữ liệu kiểm
     // soát bảo mật — nên nó phải bị chặn ở tầng grant. Grant là **lớp enforce thật**:
     // `verifyRequest` không hề biết có grant nào tồn tại.
@@ -387,7 +387,7 @@ describe('migration 0010 — assert tren FILE, chay duoc khong can PostgreSQL', 
   });
 });
 
-describe('recordNonce — auth.internal_nonces tren PostgreSQL that', () => {
+describe('recordNonce — auth.internal_nonces on real PostgreSQL', () => {
   // Giữ khoá suite cho hết vòng đời: các test dưới đây `DELETE` toàn bảng và assert
   // `count(*)` toàn bảng, nên chúng chỉ đúng khi không suite nào khác chạm cùng bảng.
   // Xem JSDoc của `NONCE_SUITE_LOCK_KEY`.
@@ -412,8 +412,8 @@ describe('recordNonce — auth.internal_nonces tren PostgreSQL that', () => {
     await suiteLock.end({ timeout: 1 });
   });
 
-  describe.skipIf(!available)('schema va adapter', () => {
-    it('adapter khop migration: claim ghi nonce moi va bao da thay khi trinh lai', async () => {
+  describe.skipIf(!available)('schema and adapter', () => {
+    it('the adapter matches the migration: a claim writes a new nonce and records the change on retry', async () => {
       // ⚠️ Test này chốt đúng lớp lỗi đã gặp ở `authorization-code-cas.spec.ts`:
       // câu SQL của adapter tham chiếu một cột mà migration không có, và mọi test
       // khác vẫn xanh nếu chúng không chạy SQL đó. Ở đây ta hỏi database, không hỏi code.
@@ -432,7 +432,7 @@ describe('recordNonce — auth.internal_nonces tren PostgreSQL that', () => {
       });
     });
 
-    it('khong co DEFAULT tren expires_at — caller phai neo TTL, database khong duoc tu dien', async () => {
+    it('no DEFAULT on expires_at — the caller must anchor the TTL, the database must not guess', async () => {
       // ⚠️ Test hành vi ở trên KHÔNG bắt được `DEFAULT now()`: nó luôn truyền
       // `expires_at` tường minh nên default không bao giờ kích hoạt. Đây là chỗ dễ
       // tự lừa nhất của cả suite — thêm default vào SQL làm một test xanh hơn và làm
@@ -463,7 +463,7 @@ describe('recordNonce — auth.internal_nonces tren PostgreSQL that', () => {
       });
     });
 
-    it('co index tren expires_at, dung truy van duy nhat ma bang phuc vu', async () => {
+    it('there is an index on expires_at, used by the only query the service makes', async () => {
       // Prune là `DELETE … WHERE expires_at < now()`. Không có index thì prune quét
       // cả bảng, và prune chậm là prune bị bỏ — nghĩa là nonce cũ nằm lại.
       await withStore(async (_runtime, migrator) => {
@@ -478,8 +478,8 @@ describe('recordNonce — auth.internal_nonces tren PostgreSQL that', () => {
     });
   });
 
-  describe.skipIf(!available)('chong replay', () => {
-    it('nhan mot lan, tu choi moi lan trinh lai sau do', async () => {
+  describe.skipIf(!available)('replay protection', () => {
+    it('the first attempt is accepted, and every later attempt is rejected', async () => {
       await withStore(async (runtime, migrator) => {
         await clearNonces(migrator);
         const expiry = Math.floor(Date.now() / 1000) + 3_600;
@@ -491,7 +491,7 @@ describe('recordNonce — auth.internal_nonces tren PostgreSQL that', () => {
       });
     });
 
-    it('hai caller cung nonce chay SONG SONG — dung mot thang', async () => {
+    it('two callers with the same nonce run CONCURRENTLY — exactly one wins', async () => {
       // Hai **pool** riêng (hai connection thật), cùng race trên một câu `INSERT`.
       //
       // ⚠️ Bản trước của test này chạy hai `client.begin(...)` và truyền **transaction**
@@ -585,12 +585,12 @@ describe('recordNonce — auth.internal_nonces tren PostgreSQL that', () => {
       ['NaN', Number.NaN],
       ['Infinity', Number.POSITIVE_INFINITY],
       ['-Infinity', Number.NEGATIVE_INFINITY],
-      ['so am', -1],
-      ['so 0', 0],
-      ['so thap phan', Math.floor(Date.now() / 1000) + 3_600.5],
-      ['epoch mili giay (loi don vi)', (Math.floor(Date.now() / 1000) + 3_600) * 1_000],
-      ['vuot tran MAX_NONCE_EXPIRY_EPOCH_SECONDS', MAX_NONCE_EXPIRY_EPOCH_SECONDS + 1],
-    ])('tu choi expiry khong hop le tai TANG LUU TRU, fail closed: %s', async (_label, expiry) => {
+      ['negative number', -1],
+      ['zero', 0],
+      ['fractional number', Math.floor(Date.now() / 1000) + 3_600.5],
+      ['millisecond epoch (wrong unit)', (Math.floor(Date.now() / 1000) + 3_600) * 1_000],
+      ['beyond MAX_NONCE_EXPIRY_EPOCH_SECONDS', MAX_NONCE_EXPIRY_EPOCH_SECONDS + 1],
+    ])('rejects an invalid expiry at STORAGE TIME, fail closed: %s', async (_label, expiry) => {
       // ⚠️ `recordNonce` là **hàm export** và là điểm ghi duy nhất vào bảng nonce, nên
       // nó phải tự bảo vệ bất biến của mình — không được tin `config.ts` hay người gọi.
       // Không có test này thì một `NaN` từ config đi thẳng vào `to_timestamp($2)`, ghi
@@ -623,7 +623,7 @@ describe('recordNonce — auth.internal_nonces tren PostgreSQL that', () => {
       });
     });
 
-    it('nonce la duy nhat theo tung service nhan — kho cua service khac khong gate duoc', async () => {
+    it('the nonce is unique per receiving service — another service key cannot be gated on it', async () => {
       // ⚠️ Đây là biến thể mutation-detectable của "nonce là duy nhất theo từng
       // service": `db-auth` và `db-account` là hai database nên một nonce chiếm ở
       // bên này không bao giờ hiện ở bên kia. Trong một database, thứ duy nhất giữ
@@ -684,7 +684,7 @@ describe('recordNonce — auth.internal_nonces tren PostgreSQL that', () => {
       }
     });
 
-    it('TTL cua nonce song qua het cua so replay cua envelope', async () => {
+    it('the nonce TTL outlives the envelope replay window', async () => {
       // Hằng của giao thức, không phải tuỳ chọn: `verifyRequest` chấp nhận khi
       // `|now − timestamp| ≤ skew`, nên envelope hết replayable đúng tại
       // `timestamp + skew` và nonce phải sống quá mốc đó (cộng buffer cho prune theo
@@ -715,7 +715,7 @@ describe('recordNonce — auth.internal_nonces tren PostgreSQL that', () => {
   });
 
   describe.skipIf(!available)('prune', () => {
-    it('prune xoa nonce het han va giu nonce con song', async () => {
+    it('prune deletes expired nonces and keeps live ones', async () => {
       await withStore(async (runtime, migrator) => {
         await clearNonces(migrator);
         const now = Math.floor(Date.now() / 1000);
@@ -876,7 +876,7 @@ describe('recordNonce — auth.internal_nonces tren PostgreSQL that', () => {
       });
     });
 
-    it('runtime KHONG co UPDATE — khong noi rong duoc cua so da ghi', async () => {
+    it('the runtime has NO UPDATE — nothing can widen the already-recorded window', async () => {
       // Nới `expires_at` của một nonce đã ghi là nới cửa sổ replay. Đây là "sửa dữ
       // liệu kiểm soát bảo mật", nên phải bị chặn ở tầng grant chứ không hy vọng
       // tầng ứng dụng không làm.
@@ -890,7 +890,7 @@ describe('recordNonce — auth.internal_nonces tren PostgreSQL that', () => {
       });
     });
 
-    it('runtime CO dung SELECT, INSERT — va khong hon', async () => {
+    it('the runtime has exactly SELECT, INSERT — and nothing more', async () => {
       // Grant là lớp enforce; `verifyRequest` không hề biết có grant nào tồn tại.
       // Nếu sau này ai đó thêm `UPDATE`, `DELETE` hay `TRUNCATE` vào `0010`, mọi test hành vi
       // vẫn xanh và chỉ mất bảo vệ — nên test này giữ ranh giới ở đúng tầng nó được
@@ -909,7 +909,7 @@ describe('recordNonce — auth.internal_nonces tren PostgreSQL that', () => {
       });
     });
 
-    it('runtime KHONG co DELETE — mot ban ghi nonce khong bi xoa qua serving path', async () => {
+    it('the runtime has NO DELETE — a nonce record cannot be deleted through the serving path', async () => {
       // ⚠️ Đây là bất biến bảo mật, không phải chi tiết grant. Một nonce còn hiệu lực bị xoá
       // là cửa sổ replay mở lại cho đúng envelope đó. Prune là job của `ecoma_auth_migrator`
       // (học thuyết retention của `0009`), nên đường serving path không được có `DELETE`.
@@ -925,7 +925,7 @@ describe('recordNonce — auth.internal_nonces tren PostgreSQL that', () => {
   });
 
   describe.skipIf(!available)('fail closed', () => {
-    it('kho nonce khong goi duoc ⇒ recordNonce NEM, khong bao gio tra ve false', async () => {
+    it('if the nonce key is unreachable, recordNonce THROWS and never returns false', async () => {
       // ⚠️ Đây là tính chất bảo mật quan trọng nhất của cả file. `recordNonce` trả
       // `false` nghĩa là "nonce chưa từng thấy" — và `verifyRequest` coi đó là
       // `ok`. Nếu một lỗi hạ tầng (DB chết, pool hết hạn, connection refused) bị
@@ -967,8 +967,8 @@ describe('recordNonce — auth.internal_nonces tren PostgreSQL that', () => {
     });
   });
 
-  describe.skipIf(!available)('cap quyen', () => {
-    it('dang `AUTH_TEST_PG_*` de chay cac test replay', () => {
+  describe.skipIf(!available)('permission grants', () => {
+    it('set `AUTH_TEST_PG_*` to run the replay tests', () => {
       // Marker test: giữ cho suite không bị coi là "pass" khi thực tế là skip toàn
       // bộ. Xem README §"Chạy test CAS trên PostgreSQL thật".
       expect(available).toBe(true);
@@ -987,8 +987,8 @@ describe('recordNonce — auth.internal_nonces tren PostgreSQL that', () => {
  */
 const queryableReturning = (result: unknown) => ({ unsafe: async () => result }) as never;
 
-describe('recordNonce — guard hinh dang tra ve, khong can PostgreSQL', () => {
-  it('nem khi Queryable tra ve hinh dang khac mang, thay vi dien giai thanh false', async () => {
+describe('recordNonce — the return-shape guard, no PostgreSQL needed', () => {
+  it('throws when Queryable returns an unexpected shape, instead of interpreting it as false', async () => {
     // ⚠️ **Mutation-test, không phải assert trang trí.** Gỡ guard trong `postgres.ts` thì
     // promise RESOLVE `undefined === 0` = `false` — nghĩa là "nonce chưa từng thấy" — và
     // mọi request đã dùng đi qua: replay guard tắt hẳn, im lặng. Assert này đỏ đúng ở
@@ -1009,7 +1009,7 @@ describe('recordNonce — guard hinh dang tra ve, khong can PostgreSQL', () => {
     );
   });
 
-  it('cuc tinh cua length: mot hang la "nonce moi", khong hang la "da thay"', async () => {
+  it('the meaning of length: one row means "new nonce", not "already seen"', async () => {
     // Chốt chiều của `inserted.length === 0`, thứ mà `RETURNING` tồn tại để phục vụ:
     // chèn được ⇒ một hàng ⇒ nonce MỚI ⇒ `false`. Đụng UNIQUE ⇒ không hàng ⇒ ĐÃ THẤY
     // ⇒ `true`. Đảo chiều ở đây là từ chối mọi request hợp lệ (hoặc mở toang guard), và

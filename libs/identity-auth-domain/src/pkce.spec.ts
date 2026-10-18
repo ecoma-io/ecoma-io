@@ -12,40 +12,40 @@ import { OAuthProtocolError } from './errors';
 const VERIFIER = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
 
 describe('parseCodeChallenge', () => {
-  it('chap nhan S256 voi challenge 43 ky tu', () => {
+  it('accepts S256 with a 43-character challenge', () => {
     const challenge = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
     const parsed = parseCodeChallenge({ codeChallenge: challenge, codeChallengeMethod: 'S256' });
     expect(parsed.codeChallenge).toBe(challenge);
     expect(parsed.codeChallengeMethod).toBe('S256');
   });
 
-  it('tu choi plain (FR-010 / AC-007)', () => {
+  it('rejects plain (FR-010 / AC-007)', () => {
     // PKCE downgrade sang plain la T-03.
     expect(() =>
       parseCodeChallenge({ codeChallenge: VERIFIER, codeChallengeMethod: 'plain' }),
     ).toThrow(OAuthProtocolError);
   });
 
-  it('tu choi thieu code_challenge_method — khong co mac dinh', () => {
+  it('rejects a missing code_challenge_method — there is no default', () => {
     // Mac dinh ngam la duong downgrade: client cu khong gui method, server cho qua.
     expect(() =>
       parseCodeChallenge({ codeChallenge: VERIFIER, codeChallengeMethod: undefined }),
     ).toThrow(/thieu code_challenge_method/u);
   });
 
-  it('tu choi thieu code_challenge', () => {
+  it('rejects a missing code_challenge', () => {
     expect(() =>
       parseCodeChallenge({ codeChallenge: undefined, codeChallengeMethod: 'S256' }),
     ).toThrow(/thieu code_challenge/u);
   });
 
-  it('tu choi challenge sai do dai (khong phai 43 ky tu)', () => {
+  it('rejects a challenge of the wrong length (not 43 characters)', () => {
     expect(() => parseCodeChallenge({ codeChallenge: 'abc', codeChallengeMethod: 'S256' })).toThrow(
       /khong dung dinh dang S256/u,
     );
   });
 
-  it('tu choi challenge co padding base64', () => {
+  it('rejects a challenge with base64 padding', () => {
     expect(() =>
       parseCodeChallenge({ codeChallenge: `${'a'.repeat(42)}=`, codeChallengeMethod: 'S256' }),
     ).toThrow(/khong dung dinh dang S256/u);
@@ -53,20 +53,20 @@ describe('parseCodeChallenge', () => {
 });
 
 describe('computeS256Challenge / verifyCodeChallenge', () => {
-  it('khop voi vector kiem chung RFC 7636 appendix B', async () => {
+  it('matches the RFC 7636 appendix B test vector', async () => {
     // Vector chinh thuc cua RFC: verifier -> challenge.
     const challenge = await computeS256Challenge(VERIFIER);
     expect(challenge).toBe('E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM');
   });
 
-  it('verifier dung challenge da luu: khop', async () => {
+  it('the correct verifier against the stored challenge: matches', async () => {
     const challenge = await computeS256Challenge(VERIFIER);
     await expect(
       verifyCodeChallenge({ codeVerifier: VERIFIER, expectedChallenge: challenge }),
     ).resolves.toBe(true);
   });
 
-  it('verifier sai: khong khop', async () => {
+  it('a wrong verifier: does not match', async () => {
     const challenge = await computeS256Challenge(VERIFIER);
     await expect(
       verifyCodeChallenge({
@@ -76,37 +76,37 @@ describe('computeS256Challenge / verifyCodeChallenge', () => {
     ).resolves.toBe(false);
   });
 
-  it('challenge dung 43 ky tu base64url khong padding', async () => {
+  it('the challenge is 43 base64url characters with no padding', async () => {
     const challenge = await computeS256Challenge(VERIFIER);
     expect(challenge).toMatch(/^[A-Za-z0-9_-]{43}$/u);
   });
 });
 
 describe('assertValidCodeVerifier', () => {
-  it('chap nhan verifier 43 ky tu', () => {
+  it('accepts a 43-character verifier', () => {
     expect(() => assertValidCodeVerifier(VERIFIER)).not.toThrow();
   });
 
-  it('chap nhan verifier 128 ky tu', () => {
+  it('accepts a 128-character verifier', () => {
     expect(() => assertValidCodeVerifier('a'.repeat(128))).not.toThrow();
   });
 
-  it('tu choi verifier ngan hon 43', () => {
+  it('rejects a verifier shorter than 43', () => {
     expect(() => assertValidCodeVerifier('a'.repeat(42))).toThrow(OAuthProtocolError);
   });
 
-  it('tu choi verifier dai hon 128', () => {
+  it('rejects a verifier longer than 128', () => {
     expect(() => assertValidCodeVerifier('a'.repeat(129))).toThrow(OAuthProtocolError);
   });
 
-  it('tu choi ky tu ngoai bang charset RFC 7636', () => {
+  it('rejects characters outside the RFC 7636 charset', () => {
     // '+' va '/' la base64 chuan, khong thuocc [A-Za-z0-9-._~].
     expect(() => assertValidCodeVerifier(`${'a'.repeat(42)}+`)).toThrow(OAuthProtocolError);
     expect(() => assertValidCodeVerifier(`${'a'.repeat(42)}/`)).toThrow(OAuthProtocolError);
     expect(() => assertValidCodeVerifier(`${'a'.repeat(42)}=`)).toThrow(OAuthProtocolError);
   });
 
-  it('tu choi verifier rong', () => {
+  it('rejects an empty verifier', () => {
     expect(() => assertValidCodeVerifier('')).toThrow(OAuthProtocolError);
   });
 });

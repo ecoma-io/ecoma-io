@@ -20,7 +20,7 @@ const TX_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const TX_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
 describe('deriveHandle', () => {
-  it('sinh handle 43 ky tu base64url', async () => {
+  it('derives a 43-character base64url handle', async () => {
     const handle = await deriveHandle({
       key: K_AUTH,
       transactionId: TX_A,
@@ -29,7 +29,7 @@ describe('deriveHandle', () => {
     expect(handle).toMatch(/^[A-Za-z0-9_-]{43}$/u);
   });
 
-  it('tinh lai cho cung gia trong MOT transaction', async () => {
+  it('recomputes the same value for the same transaction', async () => {
     const first = await deriveHandle({
       key: K_AUTH,
       transactionId: TX_A,
@@ -43,7 +43,7 @@ describe('deriveHandle', () => {
     expect(first).toBe(second);
   });
 
-  it('domain separation: cung transaction, ba domain, ba gia tri khac nhau', async () => {
+  it('domain separation: same transaction, three domains, three distinct values', async () => {
     // FR-016l. Neu ba domain ra cung gia tri, handle loai nay dung duoc cho
     // loai kia va state machine mat het y nghia.
     const values = await Promise.all(
@@ -54,7 +54,7 @@ describe('deriveHandle', () => {
     expect(new Set(values).size).toBe(3);
   });
 
-  it('khac transaction cho ra handle khac nhau', async () => {
+  it('a different transaction yields a different handle', async () => {
     const a = await deriveHandle({
       key: K_AUTH,
       transactionId: TX_A,
@@ -68,7 +68,7 @@ describe('deriveHandle', () => {
     expect(a).not.toBe(b);
   });
 
-  it('khac khoa cho ra handle khac nhau', async () => {
+  it('a different key yields a different handle', async () => {
     const a = await deriveHandle({
       key: K_AUTH,
       transactionId: TX_A,
@@ -82,7 +82,7 @@ describe('deriveHandle', () => {
     expect(a).not.toBe(b);
   });
 
-  it('khong chua transaction_id trong plaintext', async () => {
+  it('transaction_id is never embedded in plaintext', async () => {
     const handle = await deriveHandle({
       key: K_AUTH,
       transactionId: TX_A,
@@ -91,19 +91,19 @@ describe('deriveHandle', () => {
     expect(handle).not.toContain(TX_A);
   });
 
-  it('tu choi transaction_id qua ngan', async () => {
+  it('rejects a too-short transaction_id', async () => {
     await expect(
       deriveHandle({ key: K_AUTH, transactionId: 'abc', domain: HANDLE_DOMAINS.loginHandoff }),
     ).rejects.toThrow(/qua ngan/u);
   });
 
-  it('tu choi transaction_id khong phai base64url', async () => {
+  it('rejects a transaction_id that is not base64url', async () => {
     await expect(
       deriveHandle({ key: K_AUTH, transactionId: `${TX_A}+`, domain: HANDLE_DOMAINS.loginHandoff }),
     ).rejects.toThrow(/base64url/u);
   });
 
-  it('tu choi domain la', async () => {
+  it('rejects an unknown domain', async () => {
     await expect(
       deriveHandle({
         key: K_AUTH,
@@ -113,7 +113,7 @@ describe('deriveHandle', () => {
     ).rejects.toThrow(/domain khong hop le/u);
   });
 
-  it('tu choi khoa dai sai', async () => {
+  it('rejects a key of the wrong length', async () => {
     await expect(
       deriveHandle({ key: 'c2hvcnQ', transactionId: TX_A, domain: HANDLE_DOMAINS.loginHandoff }),
     ).rejects.toThrow(/32 byte/u);
@@ -121,7 +121,7 @@ describe('deriveHandle', () => {
 });
 
 describe('lengthPrefixed', () => {
-  it('la injective: ("ab","c") va ("a","bc") phai ra hai chuoi byte khac nhau', () => {
+  it('is injective: ("ab","c") and ("a","bc") produce different byte strings', () => {
     // Khong length-prefix thi ca hai cho cung mot thong diep HMAC. Do la duong
     // thuc de vuot domain separation khi mot phan input do caller chon.
     const enc = new TextEncoder();
@@ -130,7 +130,7 @@ describe('lengthPrefixed', () => {
     expect(new Uint8Array(a)).not.toEqual(new Uint8Array(b));
   });
 
-  it('khong cat ngan khi mot truong rong o giua', () => {
+  it('does not truncate on an empty middle field', () => {
     const enc = new TextEncoder();
     const withEmpty = lengthPrefixed([enc.encode('ab'), enc.encode(''), enc.encode('cd')]);
     const without = lengthPrefixed([enc.encode('abcd')]);
@@ -139,7 +139,7 @@ describe('lengthPrefixed', () => {
 });
 
 describe('hashHandle', () => {
-  it('khong luu plaintext — hash khac gia tri handle', async () => {
+  it('never stores plaintext — the hash differs from the handle', async () => {
     const handle = await deriveHandle({
       key: K_AUTH,
       transactionId: TX_A,
@@ -150,7 +150,7 @@ describe('hashHandle', () => {
     expect(hash).toMatch(/^[A-Za-z0-9_-]{43}$/u);
   });
 
-  it('tinh lai cho cung handle', async () => {
+  it('recomputes the same hash for the same handle', async () => {
     const hash1 = await hashHandle('abc');
     const hash2 = await hashHandle('abc');
     expect(hash1).toBe(hash2);
@@ -158,21 +158,21 @@ describe('hashHandle', () => {
 });
 
 describe('timingSafeEqual', () => {
-  it('bang chuoi bang', () => {
+  it('identical strings are equal', () => {
     expect(timingSafeEqual('abc', 'abc')).toBe(true);
   });
 
-  it('khac ky tu o giua', () => {
+  it('a differing character in the middle is not equal', () => {
     expect(timingSafeEqual('abc', 'abd')).toBe(false);
   });
 
-  it('khac do dai', () => {
+  it('a differing length is not equal', () => {
     expect(timingSafeEqual('abc', 'abcd')).toBe(false);
   });
 });
 
 describe('assertHandleBelongsToTransaction', () => {
-  it('handle dung domain va transaction: qua', async () => {
+  it('a handle with the right domain and transaction passes', async () => {
     const handle = await deriveHandle({
       key: K_AUTH,
       transactionId: TX_A,
@@ -188,7 +188,7 @@ describe('assertHandleBelongsToTransaction', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('handle cua transaction khac: bi tu choi', async () => {
+  it('a handle from another transaction: REJECTS', async () => {
     // FR-016q — chuyen handle sang transaction khac phai that bai.
     const handleYOfA = await deriveHandle({
       key: K_AUTH,
@@ -205,7 +205,7 @@ describe('assertHandleBelongsToTransaction', () => {
     ).rejects.toThrow(OAuthProtocolError);
   });
 
-  it('handle dung domain sai (Y duoc dung nhu Z): bi tu choi', async () => {
+  it('a valid handle with the wrong domain (Y presented as Z): REJECTS', async () => {
     // Domain separation phai chan duoc ca viec tra ve dung handle.
     const handleY = await deriveHandle({
       key: K_AUTH,

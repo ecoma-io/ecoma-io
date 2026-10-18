@@ -100,8 +100,8 @@ const STYLESHEET_CSS = readFileSync(STYLESHEET, 'utf8');
 const SOURCE_GLOBS = readSourceGlobs(STYLESHEET_CSS);
 const RELATIVE_IMPORTS = relativeImportsOf(STYLESHEET_CSS);
 
-describe('Tailwind @source registration của app', () => {
-  it('khai báo ít nhất một @source và mọi base tĩnh đều tồn tại trên đĩa', () => {
+describe('app Tailwind @source registration', () => {
+  it('declares at least one @source and every static base exists on disk', () => {
     // Base không tồn tại là lỗi im lặng của Tailwind: registration bị bỏ qua
     // hoàn toàn. Đây là assertion trực tiếp bắt lỗi đếm sai số cấp `..`.
     expect(SOURCE_GLOBS.length).toBeGreaterThan(0);
@@ -112,7 +112,7 @@ describe('Tailwind @source registration của app', () => {
     }
   });
 
-  it('đăng ký thư mục nguồn của @ecoma-io/ui-app-shell', () => {
+  it('registers the source directory of @ecoma-io/ui-app-shell', () => {
     // Không chỉ "tồn tại": base phải thật sự phủ thư mục nguồn library. Một
     // `@source` trỏ nhầm sang thư mục khác vẫn có thể tồn tại trên đĩa, nên
     // kiểm riêng điều kiện này.
@@ -123,7 +123,7 @@ describe('Tailwind @source registration của app', () => {
     expect(coversLibrary).toBe(true);
   });
 
-  it('đăng ký cả file .vue — nơi class Tailwind của shell thực sự nằm', () => {
+  it('registers .vue files too — where the shell Tailwind classes actually live', () => {
     // Class của shell nằm trong các `.vue` của library, không nằm trong `.ts`
     // nào. Một glob chỉ có `.ts` vẫn "phủ đúng thư mục" nhưng không sinh được
     // utility nào — nên phải ghim cả phần mở rộng. Đồng thời khẳng định thực tế
@@ -142,7 +142,7 @@ describe('Tailwind @source registration của app', () => {
     expect(extensions.includes('vue')).toBe(true);
   });
 
-  it('@import CSS của library bằng đường dẫn tương đối trỏ đúng entry thật', () => {
+  it('@imports the library CSS by a relative path pointing at the real entry', () => {
     // Entry CSS của library là nguồn của design token (`@theme`) lẫn layer
     // utility của shell, nên nếu import trỏ sai thì shell mất cả hai — và mất
     // theo kiểu im lặng nếu đích sai lại **tồn tại**.

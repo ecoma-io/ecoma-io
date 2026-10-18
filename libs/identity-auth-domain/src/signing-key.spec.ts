@@ -23,7 +23,7 @@ describe('SigningKeyProvider.fromPem', () => {
   const PEM_BEGIN = `${DASHES}BEGIN PRIVATE KEY${DASHES}`;
   const PEM_END = `${DASHES}END PRIVATE KEY${DASHES}`;
 
-  it('TU CHOI khi thieu Worker Secret — KHONG sinh khoa tam', async () => {
+  it('REJECTS a missing Worker Secret — never derives a key', async () => {
     // Luật fail-closed. Provider thieu secret phai nem loi de Worker khong cap
     // token, chứ khong phai tu sinh khoa de chay tiep: khoa sinh luc startup
     // doi moi lan deploy, lam JWKS doi va token da cap khong con verify duoc.
@@ -36,19 +36,19 @@ describe('SigningKeyProvider.fromPem', () => {
     );
   });
 
-  it('TU CHOI PEM khong phai PKCS#8', async () => {
+  it('REJECTS a PEM that is not PKCS#8', async () => {
     const sec1 = `${DASHES}BEGIN EC PRIVATE KEY${DASHES}\na\n${DASHES}END EC PRIVATE KEY${DASHES}`;
     await expect(SigningKeyProvider.fromPem({ pem: sec1, kid: 'k1' })).rejects.toThrow(/PKCS#8/u);
   });
 
-  it('nap duoc PEM PKCS#8 that va tra kid da truyen vao', async () => {
+  it('parses a valid PKCS#8 PEM and returns the passed kid', async () => {
     const pem = await makePem();
     const provider = await SigningKeyProvider.fromPem({ pem, kid: 'kid-2026-01' });
     expect(provider.kid).toBe('kid-2026-01');
     await expect(provider.privateKey()).resolves.toBeInstanceOf(CryptoKey);
   });
 
-  it('TU CHOI PEM hong — nem loi ro rang', async () => {
+  it('REJECTS a malformed PEM — throws a typed error', async () => {
     // PEM bao truc khong giai ma duoc thi WebCrypto nem DOMException
     // `InvalidCharacterError`. Assert THE CLASS chu khong assert cau chuoi
     // thong diep — cau chuoi la cua thu vien va co the doi; viec key bi tu choi
@@ -67,7 +67,7 @@ describe('SigningKeyProvider.fromPem', () => {
     expect((thrown as DOMException).name).toBe('InvalidCharacterError');
   });
 
-  it('TU CHOI PEM lap lai nhieu lan — khong bao gio ReDoS', async () => {
+  it('REJECTS a heavily repeated PEM — never a ReDoS', async () => {
     // ⚠️ Regression (CodeQL `js/polynomial-redos`). Bản trước dò PEM bằng
     // `/` + PEM_BEGIN + `[\s\S]+` + PEM_END + `/`.
     //
@@ -100,7 +100,7 @@ describe('SigningKeyProvider.fromPem', () => {
     expect(elapsed).toBeLessThan(300);
   });
 
-  it('TU CHOI PEM rong giua BEGIN va END', async () => {
+  it('REJECTS a PEM that is empty between BEGIN and END', async () => {
     // `BEGIN…END` liền nhau thoả điều kiện prefix/suffix nhưng không có DER.
     await expect(
       SigningKeyProvider.fromPem({
@@ -111,21 +111,21 @@ describe('SigningKeyProvider.fromPem', () => {
   });
 });
 
-describe('SigningKeyProvider.publicJwk — khong ro private key', () => {
-  it('JWK chi co dung cac truong cong khai', async () => {
+describe('SigningKeyProvider.publicJwk — leaks no private key', () => {
+  it('the JWK contains only the public fields', async () => {
     const provider = await SigningKeyProvider.fromPem({ pem: await makePem(), kid: 'kid-1' });
     const jwk = await provider.publicJwk();
 
     expect(Object.keys(jwk).toSorted()).toEqual(['alg', 'crv', 'kid', 'kty', 'use', 'x', 'y']);
   });
 
-  it('KHONG co truong `d` — thuoc tinh rieng tu cua private key EC', async () => {
+  it('NO `d` field — the EC private-key-only attribute', async () => {
     const provider = await SigningKeyProvider.fromPem({ pem: await makePem(), kid: 'kid-1' });
     const jwk = await provider.publicJwk();
     expect(jwk).not.toHaveProperty('d');
   });
 
-  it('toan bo gia tri la chuoi base64url, khong rong', async () => {
+  it('every value is a non-empty base64url string', async () => {
     const provider = await SigningKeyProvider.fromPem({ pem: await makePem(), kid: 'kid-1' });
     const jwk = await provider.publicJwk();
     expect(jwk.x).toMatch(/^[A-Za-z0-9_-]+$/u);
@@ -134,7 +134,7 @@ describe('SigningKeyProvider.publicJwk — khong ro private key', () => {
     expect(jwk.y.length).toBeGreaterThan(0);
   });
 
-  it('khong ro PEM o bat ky dau', async () => {
+  it('leaks no part of the PEM anywhere', async () => {
     const pem = await makePem();
     const provider = await SigningKeyProvider.fromPem({ pem, kid: 'kid-1' });
     const serialized = JSON.stringify(await provider.publicJwk());
@@ -146,7 +146,7 @@ describe('SigningKeyProvider.publicJwk — khong ro private key', () => {
     expect(serialized).not.toContain('PRIVATE KEY');
   });
 
-  it('alg va kty dung chuan ES256', async () => {
+  it('alg and kty follow the ES256 standard', async () => {
     const provider = await SigningKeyProvider.fromPem({ pem: await makePem(), kid: 'kid-1' });
     const jwk = await provider.publicJwk();
     expect(jwk.alg).toBe(SIGNING_ALGORITHM);
@@ -155,7 +155,7 @@ describe('SigningKeyProvider.publicJwk — khong ro private key', () => {
     expect(jwk.use).toBe('sig');
   });
 
-  it('cung private key, hai provider cho cung kid phai cho cung public JWK', async () => {
+  it('the same private key with the same kid in two providers yields the same public JWK', async () => {
     // Tinh tien: khoa phai bat bien giua cac lan deploy.
     const pem = await makePem();
     const a = await (await SigningKeyProvider.fromPem({ pem, kid: 'kid-1' })).publicJwk();
@@ -163,8 +163,8 @@ describe('SigningKeyProvider.publicJwk — khong ro private key', () => {
     expect(a).toEqual(b);
   });
 });
-describe('SigningKeyProvider — handle ky phai NON-EXTRACTABLE', () => {
-  it('crypto.subtle.exportKey tu choi handle ky', async () => {
+describe('SigningKeyProvider — the signing handle must be NON-EXTRACTABLE', () => {
+  it('crypto.subtle.exportKey REJECTS the signing handle', async () => {
     const provider = await SigningKeyProvider.fromPem({ pem: await makePem(), kid: 'kid-1' });
     const signingKey = await provider.privateKey();
 
@@ -175,7 +175,7 @@ describe('SigningKeyProvider — handle ky phai NON-EXTRACTABLE', () => {
     await expect(crypto.subtle.exportKey('jwk', signingKey)).rejects.toThrow(/not extractable/u);
   });
 
-  it('handle ky van ky duoc', async () => {
+  it('the signing handle can still sign', async () => {
     const provider = await SigningKeyProvider.fromPem({ pem: await makePem(), kid: 'kid-1' });
     const signingKey = await provider.privateKey();
 
@@ -188,7 +188,7 @@ describe('SigningKeyProvider — handle ky phai NON-EXTRACTABLE', () => {
     expect(signature.byteLength).toBeGreaterThan(0);
   });
 
-  it('privateKey() va key() tra cung mot handle', async () => {
+  it('privateKey() and key() return the same handle', async () => {
     const provider = await SigningKeyProvider.fromPem({ pem: await makePem(), kid: 'kid-1' });
     expect(await provider.privateKey()).toBe(await provider.key());
   });

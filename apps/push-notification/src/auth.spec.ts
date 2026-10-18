@@ -102,7 +102,7 @@ describe('authenticateRuntimeCaller — shared secret + principal', () => {
   });
 });
 
-describe('authenticateBearer — Admin API và Application API', () => {
+describe('authenticateBearer — Admin API and Application API', () => {
   it('accepts a bearer token case-insensitively in the scheme', () => {
     // ⚠️ Scheme của `Authorization` không phân biệt hoa/thường theo RFC 7235. Chỉ chấp
     // nhận `Bearer` viết hoa chữ B sẽ từ chối một client hợp lệ theo spec.
@@ -183,7 +183,7 @@ describe('readBearerToken', () => {
   });
 });
 
-describe('constantTimeEquals — so sánh không phụ thuộc vị trí byte khác nhau', () => {
+describe('constantTimeEquals — a comparison that does not depend on where the bytes differ', () => {
   it('returns true only for identical strings', () => {
     expect(constantTimeEquals('secret', 'secret')).toBe(true);
     expect(constantTimeEquals('', '')).toBe(true);

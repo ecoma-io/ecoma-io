@@ -80,7 +80,7 @@ function decisionFor(
   return { action: decisions[0]?.action ?? '', reason: decisions[0]?.reason ?? '' };
 }
 
-describe('reconcileDeliveries — bảng quyết định a1..a6 trên D1 thật', () => {
+describe('reconcileDeliveries — the a1..a6 decision table on a real D1', () => {
   let db: TestDatabase;
   let fixture: PortFixture;
   let scope: SeededScope;
@@ -416,7 +416,7 @@ describe('reconcileDeliveries — bảng quyết định a1..a6 trên D1 thật'
   });
 });
 
-describe('reconcileOutbox — (a) chỉ đếm, không tự phục hồi', () => {
+describe('reconcileOutbox — (a) only counts, never self-repairs', () => {
   let db: TestDatabase;
   let fixture: PortFixture;
   let scope: SeededScope;

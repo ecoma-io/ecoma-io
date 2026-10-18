@@ -42,7 +42,7 @@ function makeEnv(overrides: Partial<AuthEnv> = {}): AuthEnv {
 }
 
 describe('loadAuthConfig — fail-closed', () => {
-  it('naph duoc cau hinh day du', async () => {
+  it('loads a complete configuration', async () => {
     const config = await loadAuthConfig(makeEnv());
     expect(config.issuer).toBe('https://auth.ecoma.io');
     expect(config.audience).toBe('https://api.ecoma.io');
@@ -50,7 +50,7 @@ describe('loadAuthConfig — fail-closed', () => {
     expect(config.handleKeyVersion).toBe(1);
   });
 
-  it('THIEU signing key — nem, KHONG sinh khoa tam', async () => {
+  it('MISSING signing key — throws, NEVER generates a fake key', async () => {
     // ⚠️ Đây là D4. Một khoá sinh lúc khởi động đổi mỗi lần deploy: JWKS đổi
     // theo và mọi token đã cấu không còn verify được.
     await expect(loadAuthConfig(makeEnv({ AUTH_SIGNING_KEY: undefined }))).rejects.toThrow(
@@ -58,13 +58,13 @@ describe('loadAuthConfig — fail-closed', () => {
     );
   });
 
-  it('THIEU Hyperdrive binding — nem', async () => {
+  it('MISSING Hyperdrive binding — throws', async () => {
     await expect(loadAuthConfig(makeEnv({ HYPERDRIVE: undefined }))).rejects.toThrow(
       /HYPERDRIVE|db-auth/u,
     );
   });
 
-  it('THIEU ACCOUNT_SERVICE — nem, vi khong the fail-closed', async () => {
+  it('MISSING ACCOUNT_SERVICE — throws, because it cannot fail-closed', async () => {
     // ⚠️ Không có binding tới Account thì không có cách nào hỏi trạng thái
     // account, và "không hỏi được coi như khoẻ" đúng là lỗ hổng.
     await expect(loadAuthConfig(makeEnv({ ACCOUNT_SERVICE: undefined }))).rejects.toThrow(
@@ -72,13 +72,13 @@ describe('loadAuthConfig — fail-closed', () => {
     );
   });
 
-  it('secret rong (chua whitespace) cung bi tu choi', async () => {
+  it('empty secret, whitespace only, is also rejected', async () => {
     await expect(loadAuthConfig(makeEnv({ AUTH_HANDLE_KEY: '   ' }))).rejects.toThrow(
       /AUTH_HANDLE_KEY/u,
     );
   });
 
-  it('KHONG co gia tri mac dinh cho bat ky secret nao', async () => {
+  it('NO default value for any secret', async () => {
     // Lặp qua từng secret: thiếu bất kỳ cái nào cũng phải ném.
     const secrets = [
       'AUTH_SIGNING_KEY',
@@ -111,7 +111,7 @@ describe('loadAuthConfig — fail-closed', () => {
     );
   });
 
-  it('PEM khong phai PKCS#8 — nem ro rang', async () => {
+  it('PEM is not PKCS#8 — throws loudly', async () => {
     await expect(
       loadAuthConfig(
         makeEnv({
@@ -122,7 +122,7 @@ describe('loadAuthConfig — fail-closed', () => {
     ).rejects.toThrow(/PKCS#8/u);
   });
 
-  it('thong diep loi KHONG chua gia tri secret', async () => {
+  it('error message NEVER contains a secret value', async () => {
     // ⚠️ Một thông báo lỗi chứa secret là một secret nằm trong log.
     let message = '';
     try {
@@ -249,8 +249,8 @@ describe('AUTH_INTERNAL_SKEW_SECONDS — a protocol constant, not a free-form fi
   });
 });
 
-describe('JWKS — chi cong bo khoa cong khai', () => {
-  it('public JWK khong co truong rieng tu', async () => {
+describe('JWKS — publishes only the public key', () => {
+  it('the public JWK has no private field', async () => {
     const config = await loadAuthConfig(makeEnv());
     const jwk = await config.signingKeyProvider.publicJwk();
 
@@ -259,7 +259,7 @@ describe('JWKS — chi cong bo khoa cong khai', () => {
     expect(Object.keys(jwk).toSorted()).toEqual(['alg', 'crv', 'kid', 'kty', 'use', 'x', 'y']);
   });
 
-  it('PEM khong xuat hien trong JWKS', async () => {
+  it('PEM does not appear in the JWKS', async () => {
     const config = await loadAuthConfig(makeEnv());
     const serialized = JSON.stringify(await config.signingKeyProvider.publicJwk());
 
@@ -271,7 +271,7 @@ describe('JWKS — chi cong bo khoa cong khai', () => {
     expect(serialized).not.toContain(body);
   });
 
-  it('provider dung chung JWKS ma SigningKeyProvider sinh ra', async () => {
+  it('the provider shares the JWKS that SigningKeyProvider produces', async () => {
     // Hai chỗ dựng JWKS khác nhau là hai bề mặt công khai có thể lệch.
     const config = await loadAuthConfig(makeEnv());
     const direct = await SigningKeyProvider.fromPem({ pem, kid: 'kid-2026-01' });

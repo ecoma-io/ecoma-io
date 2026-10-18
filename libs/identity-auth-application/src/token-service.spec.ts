@@ -20,27 +20,27 @@ async function makeSigningKey(): Promise<SigningKeyProvider> {
   return SigningKeyProvider.fromPem({ pem, kid: 'kid-test' });
 }
 
-describe('assertAccessTokenTtl — tran TTL la do tre thu hoi', () => {
-  it('chap nhan TTL trong tran', () => {
+describe('assertAccessTokenTtl — the TTL bounds are the revocation delay', () => {
+  it('accepts a TTL inside the bounds', () => {
     expect(() => assertAccessTokenTtl(300)).not.toThrow();
     expect(() => assertAccessTokenTtl(MAX_ACCESS_TOKEN_TTL_SECONDS)).not.toThrow();
   });
 
-  it('TU CHOI TTL vuot tran — vi tran bang do tre thu hoi', () => {
+  it('REJECTS a TTL past the bounds — because those bounds are the revocation delay', () => {
     // Access token verify offline nen khong the thu hoi som. Mot TTL 24h
     // nghia la grant bi thu hoi van dung duoc 24h nua.
     expect(() => assertAccessTokenTtl(86400)).toThrow(/vuot tran|do tre thu hoi/u);
   });
 
-  it('TU CHOI TTL khong duong hoac khong nguyen', () => {
+  it('REJECTS a TTL that is negative or non-integer', () => {
     expect(() => assertAccessTokenTtl(0)).toThrow(/nguyen duong/u);
     expect(() => assertAccessTokenTtl(-1)).toThrow(/nguyen duong/u);
     expect(() => assertAccessTokenTtl(1.5)).toThrow(/nguyen duong/u);
   });
 });
 
-describe('createRefreshToken — opaque, chi luu ban bam', () => {
-  it('plaintext va hash KHAC nhau, va hash khong chua plaintext', async () => {
+describe('createRefreshToken — opaque, only the hash is stored', () => {
+  it('the plaintext and the hash DIFFER, and the hash does not contain the plaintext', async () => {
     const token = await createRefreshToken({ familyId: 'fam-1' });
 
     // Bat bien quan trong nhat: ban luu KHONG duoc la ban dung. Neu hash ===
@@ -50,27 +50,27 @@ describe('createRefreshToken — opaque, chi luu ban bam', () => {
     expect(token.plaintext).not.toContain(token.hash);
   });
 
-  it('hai lan sinh cho plaintext khac nhau', async () => {
+  it('two generations for different plaintexts', async () => {
     const a = await createRefreshToken({ familyId: 'fam-1' });
     const b = await createRefreshToken({ familyId: 'fam-1' });
     expect(a.plaintext).not.toBe(b.plaintext);
     expect(a.hash).not.toBe(b.hash);
   });
 
-  it('plaintext du entropy va dung charset base64url', async () => {
+  it('the plaintext carries enough entropy and uses the base64url charset', async () => {
     const token = await createRefreshToken({ familyId: 'fam-1' });
     // 32 byte -> 43 ky tu base64url khong padding.
     expect(token.plaintext).toMatch(/^[A-Za-z0-9_-]{43}$/u);
   });
 
-  it('family id duoc giu nguyen de thu hoi ca ho', async () => {
+  it('the family id is preserved so the whole family can be revoked', async () => {
     const token = await createRefreshToken({ familyId: 'fam-abc' });
     expect(token.familyId).toBe('fam-abc');
   });
 });
 
-describe('buildJwks — chi cong bo khoa cong khai', () => {
-  it('khong bao gio chua truong `d`', () => {
+describe('buildJwks — publishes only the public key', () => {
+  it('never contains a `d` field', () => {
     // Bat bien cua JWKS. Mot truong `d` trong response cong khai la mot lan ro
     // private key ra internet.
     const jwks = buildJwks([
@@ -85,8 +85,8 @@ describe('buildJwks — chi cong bo khoa cong khai', () => {
   });
 });
 
-describe('issueAccessToken — ky ES256, claims day du', () => {
-  it('token verify duoc bang public key tu JWKS — tuc la offline validation', async () => {
+describe('issueAccessToken — signs with ES256, full claim set', () => {
+  it('the token verifies against the public key from JWKS — that is, offline validation', async () => {
     const signingKey = await makeSigningKey();
     // ⚠️ Dung thoi gian THAT, khong truyen `currentDate` cho `jwtVerify`. Mot
     // moc thoi gian gia se khien test kiem tra duong `jwtVerify` da bi goi
@@ -124,7 +124,7 @@ describe('issueAccessToken — ky ES256, claims day du', () => {
     expect(protectedHeader.alg).toBe(JWT_SIGNING_ALG);
   });
 
-  it('header co `kid` de chon dung khoa trong JWKS khi xoay khoa', async () => {
+  it('the header carries `kid` so key rotation picks the right JWKS key', async () => {
     const signingKey = await makeSigningKey();
     const nowSeconds = Math.floor(Date.now() / 1000);
     const token = await issueAccessToken({
@@ -149,7 +149,7 @@ describe('issueAccessToken — ky ES256, claims day du', () => {
     expect(header.typ).toBe('at+jwt');
   });
 
-  it('TU CHOI ky mot token co TTL vuot tran', async () => {
+  it('REJECTS signing a token whose TTL is past the bounds', async () => {
     const signingKey = await makeSigningKey();
     const nowSeconds = Math.floor(Date.now() / 1000);
     await expect(

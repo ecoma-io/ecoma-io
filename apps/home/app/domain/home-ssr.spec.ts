@@ -83,15 +83,15 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('SSR render của app/pages/[locale]/index.vue', () => {
-  it('chạy trong môi trường node — không có DOM (điều kiện của một SSR test thật)', () => {
+describe('SSR render of app/pages/[locale]/index.vue', () => {
+  it('runs in a node environment — no DOM (the condition of a real SSR test)', () => {
     // Nếu environment là jsdom thì các khẳng định dưới đây không còn chứng minh
     // được đường server-render nữa; chốt lại để không âm thầm mất tính chất đó.
     expect(typeof document).toBe('undefined');
     expect(typeof window).toBe('undefined');
   });
 
-  it('/en: server render ra HTML có h1/header/footer và không lỗi/không cảnh báo', async () => {
+  it('/en: server renders HTML with h1/header/footer and no errors/warnings', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation((): void => undefined);
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation((): void => undefined);
 
@@ -111,7 +111,7 @@ describe('SSR render của app/pages/[locale]/index.vue', () => {
     expect(warnSpy).not.toHaveBeenCalled();
   });
 
-  it('/en: head input có lang=en, title, description, canonical tuyệt đối + hai alternates', async () => {
+  it('/en: head input has lang=en, title, description, absolute canonical + two alternates', async () => {
     const { head } = await renderOnServer('/en');
 
     expect(head.htmlAttrs?.lang).toBe('en');
@@ -127,7 +127,7 @@ describe('SSR render của app/pages/[locale]/index.vue', () => {
     expect(alternates.find((a) => a.hreflang === 'vi-VN')?.href).toBe('https://ecoma.io/vi');
   });
 
-  it('/vi: server render ra nội dung tiếng Việt, head có lang=vi-VN và canonical /vi', async () => {
+  it('/vi: server renders Vietnamese content, head has lang=vi-VN and canonical /vi', async () => {
     const { html, head } = await renderOnServer('/vi');
 
     expect(html).toContain('Mọi trang đều được phục vụ dưới một locale prefix');
@@ -140,14 +140,14 @@ describe('SSR render của app/pages/[locale]/index.vue', () => {
     );
   });
 
-  it('hai locale server-render ra hai HTML khác nhau — không rò nội dung qua lại', async () => {
+  it('the two locales server-render different HTML — no content leaks between them', async () => {
     const en = await renderOnServer('/en');
     const viRender = await renderOnServer('/vi');
     expect(en.html).not.toBe(viRender.html);
     expect(en.head).not.toEqual(viRender.head);
   });
 
-  it('deterministic: hai lần server render cùng path cho cùng HTML và cùng head', async () => {
+  it('deterministic: two server renders of the same path yield the same HTML and head', async () => {
     const first = await renderOnServer('/en');
     const second = await renderOnServer('/en');
     expect(second.html).toBe(first.html);

@@ -5,11 +5,11 @@ import { assertRegisteredRedirectUri } from './authorize-request';
 import { OAuthProtocolError } from './errors';
 
 describe('redirectUriMatches (exact)', () => {
-  it('khop khi chuoi bang nhau', () => {
+  it('matches when the strings are equal', () => {
     expect(redirectUriMatches('https://app.example/cb', 'https://app.example/cb')).toBe(true);
   });
 
-  it('TU CHOI prefix — ranh gioi duong dan la dau /, khong phai ky tu ke tiep (T-04)', () => {
+  it('REJECTS a prefix — the path boundary is the leading /, not the next character (T-04)', () => {
     // Dang ky `https://app.example/cb` thi KHONG duoc khop
     // `https://app.example/cb-attacker.example/`. Day la cach redirect URI
     // attack chuan khai thac.
@@ -18,7 +18,7 @@ describe('redirectUriMatches (exact)', () => {
     ).toBe(false);
   });
 
-  it('TU CHOI bo qua query string', () => {
+  it('REJECTS ignoring the query string', () => {
     expect(
       redirectUriMatches(
         'https://app.example/cb?next=https://evil.example',
@@ -27,34 +27,34 @@ describe('redirectUriMatches (exact)', () => {
     ).toBe(false);
   });
 
-  it('TU CHOI bo qua trailing slash', () => {
+  it('REJECTS ignoring a trailing slash', () => {
     expect(redirectUriMatches('https://app.example/cb/', 'https://app.example/cb')).toBe(false);
   });
 
-  it('TU CHOI lech chu hoa chu thuong', () => {
+  it('REJECTS a letter-case difference', () => {
     expect(redirectUriMatches('https://app.example/CB', 'https://app.example/cb')).toBe(false);
     expect(redirectUriMatches('https://APP.example/cb', 'https://app.example/cb')).toBe(false);
   });
 
-  it('TU CHOI lech scheme', () => {
+  it('REJECTS a scheme difference', () => {
     expect(redirectUriMatches('http://app.example/cb', 'https://app.example/cb')).toBe(false);
   });
 
-  it('TU CHOI protocol-relative `//evil.example` — dang duong nhay nang cao', () => {
+  it('REJECTS protocol-relative `//evil.example` — a high-severity attack form', () => {
     expect(redirectUriMatches('//evil.example/cb', 'https://app.example/cb')).toBe(false);
   });
 
-  it('TU CHOI subdomain — wildcard la khong duoc phep', () => {
+  it('REJECTS a subdomain — wildcards are not allowed', () => {
     expect(redirectUriMatches('https://evil.app.example/cb', 'https://app.example/cb')).toBe(false);
   });
 
-  it('TU CHOI userinfo: `https://app.example@evil.example` tro ve evil', () => {
+  it('REJECTS userinfo: `https://app.example@evil.example` resolves to evil', () => {
     expect(
       redirectUriMatches('https://app.example@evil.example/cb', 'https://app.example/cb'),
     ).toBe(false);
   });
 
-  it('TU CHOI port khac', () => {
+  it('REJECTS a different port', () => {
     expect(redirectUriMatches('https://app.example:8443/cb', 'https://app.example/cb')).toBe(false);
   });
 });
@@ -65,32 +65,32 @@ describe('redirectUriMatches (loopback, client native)', () => {
     allowedHosts: new Set(['127.0.0.1', '::1']),
   };
 
-  it('cho phep doi CONG', () => {
+  it('allows a PORT change', () => {
     expect(
       redirectUriMatches('http://127.0.0.1:55555/cb', 'http://127.0.0.1:12345/cb', policy),
     ).toBe(true);
   });
 
-  it('TU CHOI doi HOST', () => {
+  it('REJECTS a HOST change', () => {
     // Chi cong duoc doi. Host la ranh gioi duyet may.
     expect(
       redirectUriMatches('http://evil.example:12345/cb', 'http://127.0.0.1:12345/cb', policy),
     ).toBe(false);
   });
 
-  it('TU CHOI doi PATH', () => {
+  it('REJECTS a PATH change', () => {
     expect(
       redirectUriMatches('http://127.0.0.1:12345/other', 'http://127.0.0.1:12345/cb', policy),
     ).toBe(false);
   });
 
-  it('TU CHOI doi SCHEME', () => {
+  it('REJECTS a SCHEME change', () => {
     expect(
       redirectUriMatches('https://127.0.0.1:12345/cb', 'http://127.0.0.1:12345/cb', policy),
     ).toBe(false);
   });
 
-  it('TU CHOI host khong nam trong allowlist', () => {
+  it('REJECTS a host not in the allowlist', () => {
     expect(
       redirectUriMatches('http://localhost:12345/cb', 'http://127.0.0.1:12345/cb', policy),
     ).toBe(false);
@@ -98,24 +98,24 @@ describe('redirectUriMatches (loopback, client native)', () => {
 });
 
 describe('assertWellFormedRedirectUri', () => {
-  it('chap nhan https', () => {
+  it('accepts https', () => {
     expect(() => assertWellFormedRedirectUri('https://app.example/cb')).not.toThrow();
   });
 
-  it('TU CHOI fragment — browser cat fragment khi chuyen huong nen no khong bao gio toi duoc server', () => {
+  it('REJECTS a fragment — browsers strip it on redirect, so it never reaches the server', () => {
     expect(() => assertWellFormedRedirectUri('https://app.example/cb#frag')).toThrow(/fragment/u);
   });
 
-  it('TU CHOI http tru loopback', () => {
+  it('REJECTS http outside loopback', () => {
     expect(() => assertWellFormedRedirectUri('http://app.example/cb')).toThrow(/loopback/u);
   });
 
-  it('chap nhan http loopback', () => {
+  it('accepts http loopback', () => {
     expect(() => assertWellFormedRedirectUri('http://127.0.0.1:12345/cb')).not.toThrow();
     expect(() => assertWellFormedRedirectUri('http://localhost:12345/cb')).not.toThrow();
   });
 
-  it('TU CHOI scheme khac http(s) — javascript:, data: la XSS/open redirect', () => {
+  it('REJECTS a non-http(s) scheme — javascript:, data: are XSS/open redirect', () => {
     // Hai chuoi nay VAN parse duoc thanh URL hop le (protocol `javascript:` /
     // `data:`), nen bo qua kiem tra protocol se cho chung qua.
     expect(() => assertWellFormedRedirectUri('javascript:alert(1)')).toThrow(/http hoac https/u);
@@ -124,13 +124,13 @@ describe('assertWellFormedRedirectUri', () => {
     );
   });
 
-  it('TU CHOI chuoi khong phai URL', () => {
+  it('REJECTS a string that is not a URL', () => {
     expect(() => assertWellFormedRedirectUri('khong-phai-url')).toThrow(/URL hop le/u);
   });
 });
 
 describe('assertRegisteredRedirectUri', () => {
-  it('qua khi URI nam trong danh sach dang ky', () => {
+  it('passes when the URI is in the registered list', () => {
     expect(() =>
       assertRegisteredRedirectUri('https://app.example/cb', ['https://app.example/cb'], {
         kind: 'exact',
@@ -138,7 +138,7 @@ describe('assertRegisteredRedirectUri', () => {
     ).not.toThrow();
   });
 
-  it('TU CHOI URI khong dang ky', () => {
+  it('REJECTS an unregistered URI', () => {
     expect(() =>
       assertRegisteredRedirectUri('https://evil.example/cb', ['https://app.example/cb'], {
         kind: 'exact',
@@ -146,13 +146,13 @@ describe('assertRegisteredRedirectUri', () => {
     ).toThrow(OAuthProtocolError);
   });
 
-  it('TU CHOI khi danh sach rong', () => {
+  it('REJECTS when the list is empty', () => {
     expect(() =>
       assertRegisteredRedirectUri('https://app.example/cb', [], { kind: 'exact' }),
     ).toThrow(OAuthProtocolError);
   });
 
-  it('khong bao gio redirect khi URI hong — redirectable phai false', () => {
+  it('never redirects on an invalid URI — redirectable must be false', () => {
     // Loi sai kinh dien: handler nao do bat loi roi redirect toi redirect_uri
     // chua duoc xac minh => open redirect. Loi phai ra `redirectable=false`.
     let thrown: unknown;
@@ -168,7 +168,7 @@ describe('assertRegisteredRedirectUri', () => {
     expect((thrown as OAuthProtocolError).redirectable).toBe(false);
   });
 
-  it('chi mot trong nhieu URI dang ky khop duoc chon', () => {
+  it('only one of several registered URIs needs to match', () => {
     const registered = ['https://a.example/cb', 'https://b.example/cb'];
     expect(() =>
       assertRegisteredRedirectUri('https://b.example/cb', registered, { kind: 'exact' }),

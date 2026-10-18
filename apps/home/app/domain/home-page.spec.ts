@@ -45,7 +45,7 @@ function render(path: string) {
 }
 
 describe('app/pages/[locale]/index.vue', () => {
-  it('render nội dung tiếng Anh và truyền pathname hiện tại xuống shell', () => {
+  it('renders English content and passes the current pathname down to the shell', () => {
     const wrapper = render('/en');
     const text = wrapper.text();
 
@@ -58,7 +58,7 @@ describe('app/pages/[locale]/index.vue', () => {
     expect(wrapper.find('footer').exists()).toBe(true);
   });
 
-  it('render nội dung tiếng Việt khi pathname là /vi', () => {
+  it('renders Vietnamese content when pathname is /vi', () => {
     const wrapper = render('/vi');
     const text = wrapper.text();
 
@@ -67,14 +67,14 @@ describe('app/pages/[locale]/index.vue', () => {
     expect(wrapper.find('header a[href="/vi"]').exists()).toBe(true);
   });
 
-  it('mỗi locale render nội dung riêng — không rò nội dung locale kia', () => {
+  it('each locale renders its own content — no leakage of the other locale', () => {
     const enText = render('/en').text();
     const viText = render('/vi').text();
     expect(enText).not.toContain('Mọi trang đều được phục vụ');
     expect(viText).not.toContain('Every page is served');
   });
 
-  it('không truyền availableLocales — Home tồn tại ở mọi locale của registry', () => {
+  it('does not pass availableLocales — Home exists at every registry locale', () => {
     // Mặc định của shell là toàn bộ registry: locale hiện tại hiển thị dạng
     // `span[aria-current]`, locale còn lại là link có `hreflang`. Nếu Home
     // giới hạn locale thì switcher sẽ chỉ có đúng một mục và mất link switch.
@@ -85,7 +85,7 @@ describe('app/pages/[locale]/index.vue', () => {
     expect(header.findAll('nav[aria-label="Language"] li')).toHaveLength(2);
   });
 
-  it('markup tĩnh đầy đủ sau mount: h1, brand và danh sách nội dung', () => {
+  it('static markup after mount: h1, brand, and content list', () => {
     // Test này **không** phải SSR test — nó mount trong jsdom. Kiểm chứng đường
     // server-render thật (môi trường node, `renderToString`, không DOM) nằm ở
     // `home-ssr.spec.ts`; `<head>` thật trong response nằm ở runtime smoke.

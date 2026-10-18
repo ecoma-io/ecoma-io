@@ -36,7 +36,7 @@ import { callRaw, callRoute, callRuntimeClaim } from './app-env';
  * thì test đổi env sẽ đọc config của test trước và **xanh sai**.
  */
 
-describe('401 trước lookup — private delivery runtime API', () => {
+describe('401 before the lookup — private delivery runtime API', () => {
   let db: TestDatabase;
 
   beforeEach(async () => {
@@ -156,7 +156,7 @@ describe('401 trước lookup — private delivery runtime API', () => {
   });
 });
 
-describe('401 trước lookup — Admin API và Application API', () => {
+describe('401 before the lookup — Admin API and Application API', () => {
   let db: TestDatabase;
 
   beforeEach(async () => {

@@ -111,10 +111,10 @@ function buttonCursorRules(rules: readonly ParsedRule[]): ParsedRule[] {
   return rules.filter((rule) => BUTTON_SELECTOR.test(rule.prelude) && SETS_CURSOR.test(rule.body));
 }
 
-describe('app-shell.css đặt mặc định con trỏ button trong @layer base', () => {
+describe('app-shell.css sets a default cursor for button inside @layer base', () => {
   const rules = rulesOf(appShellCss);
 
-  it('scanner thật sự tìm thấy rule con-trỏ cho button', () => {
+  it('the scanner actually finds the cursor rule for button', () => {
     // Nếu scanner hỏng (selector hay cách đặt con trỏ đổi) thì test dưới sẽ
     // xanh vì không tìm thấy rule nào — "passing by absence". Ghim tồn tại trước.
     const found = buttonCursorRules(rules);
@@ -123,7 +123,7 @@ describe('app-shell.css đặt mặc định con trỏ button trong @layer base'
     expect(found.some((rule) => /\[type/u.test(rule.prelude))).toBe(true);
   });
 
-  it('mọi rule đặt con trỏ cho button đều nằm trong @layer base, không để trần', () => {
+  it('every rule setting the cursor for button is inside @layer base, none left bare', () => {
     const offenders = buttonCursorRules(rules)
       .map((rule) => ({ selector: rule.prelude, layers: layerChainOf(rule.ancestors) }))
       .filter((rule) => rule.layers.at(-1) !== 'base');
