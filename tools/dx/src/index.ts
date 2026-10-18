@@ -20,5 +20,8 @@ export const app = defineCommand({
     'semgrep-scan': () => import('./semgrep-scan.js').then((m) => m.default),
     'commit-signing': () => import('./commit-signing-command.js').then((m) => m.default),
     'provision-gate': () => import('./provision-gate-command.js').then((m) => m.default),
+    'local-deploy': () => import('./local-deploy-command.js').then((m) => m.default),
+    'local-status': () => import('./local-status-command.js').then((m) => m.default),
+    'local-destroy': () => import('./local-destroy-command.js').then((m) => m.default),
   },
 });

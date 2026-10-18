@@ -1,3 +1,215 @@
+/**
+ * Chương trình Pulumi của `home-deploy` — deploy unit của `apps/home` ở LAN
+ * LOCAL deployment.
+ *
+ * Phạm vi: chỉ phục vụ stack `local-<namespace>` (Docker runtime). Staging và
+ * production của `home` đi đường Cloudflare Workers qua Wrangler
+ * (`apps/home/wrangler.jsonc`) và **không** đi qua chương trình này.
+ *
+ * Ranh giới ownership: `home-deploy` KHÔNG tự tạo network, Traefik hay
+ * PostgreSQL. Nó đọc chúng qua Pulumi stack reference tới `platform-deploy`
+ * (producer của contract `PlatformOutputs` ở
+ * `tools/dx/src/platform-outputs-contract.ts`) rồi join vào network đó. Không có
+ * shared database access và không có resource dùng chung nào ở đây.
+ *
+ * Mọi tên resource đều đi qua `dockerResourceName(ns, kind)` để hai worktree
+ * chạy cạnh nhau trên một host không bao giờ trùng tên; `ns` là hash ổn định
+ * của absolute worktree root.
+ */
+
+import * as docker from '@pulumi/docker';
+import * as dockerBuild from '@pulumi/docker-build';
 import * as pulumi from '@pulumi/pulumi';
 
-pulumi.log.info("It's work");
+// `tools/dx` là workspace project `type:tooling`, còn deploy unit là
+// `type:deployment`. Import **nguồn** (`.js` → `.ts` resolve với `nodenext`) là
+// chủ ý: hai deploy unit phải dùng CHUNG một định nghĩa namespace và contract
+// outputs, và Pulumi runtime `nodejs` chạy thẳng `index.ts` — không có bước
+// build `tools/dx` nào chạy trước để sinh package. Copy hàm vào deploy unit
+// sẽ tạo hai nơi định nghĩa cùng một thứ và để chúng lệch nhau.
+//
+// `@nx/enforce-module-boundaries` cấm import xuyên project bằng đường dẫn
+// tương đối theo mặc định; ở đây ngoại lệ đó được bật tường minh cho đúng hai
+// dòng này thay vì nới luật ở `.oxlintrc.json` — nới ở config là mở cho MỌI
+// project, còn disable ở đúng chỗ thì giữ được ranh giới cho phần còn lại của
+// repo.
+// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
+import { dockerResourceName, worktreeNamespace } from '../../tools/dx/src/deploy-namespace';
+// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do dòng trên
+import { LOCAL_ROOT_HOSTNAME } from '../../tools/dx/src/platform-outputs-contract';
+
+/** Cổng nội bộ mà Nitro preset `node-server` nghe (khớp `EXPOSE`/`ENV PORT` của image). */
+const HOME_INTERNAL_PORT = 3000;
+
+/**
+ * Entrypoint HTTPS của Traefik — nơi client gõ `https://fbi.com`.
+ *
+ * Cần đúng tên này để đặt tên router/service không trùng với router/service của
+ * deploy unit khác. Namespace nằm trong tên vì Traefik đọc label **toàn cục**:
+ * hai worktree có hai network riêng nhưng chung một Traefik provider, tên
+ * không có namespace sẽ khiến router của worktree sau đè router của worktree
+ * trước.
+ */
+const traefikPrefix = (ns: string): string => `home-${ns}`;
+
+// Config bag `namespace` — CÙNG tên bag với điều `platform-deploy` nhận, vì
+// orchestration truyền một bộ `--config namespace:...` duy nhất cho cả hai
+// project. `new pulumi.Config()` không đối số sẽ đọc bag theo tên project
+// (`home-deploy:...`) và không bao giờ thấy key orchestration truyền.
+const conf = new pulumi.Config('namespace');
+
+// Absolute worktree root — nguồn duy nhất của namespace. Cùng config key với
+// điều `platform-deploy` nhận, nên hai stack luôn cùng namespace.
+const worktreeRoot = conf.require('worktreeRoot');
+const ns = worktreeNamespace(worktreeRoot);
+
+// Stack reference **đầy đủ** tới stack platform của chính worktree này, do
+// orchestration (`tools/dx/src/local-deploy.ts`) ghép và truyền qua
+// `--config`. Đọc từ config thay vì tự dựng `file://<dir>/local-<ns>`: backend
+// `file://` và cách Pulumi resolve stack reference là chi tiết của
+// orchestration; tự ghép chuỗi ở đây tạo ra một đường suy đoán thứ hai cho
+// cùng một stack và chỗ nào lệch là deploy sai worktree.
+const platform = new pulumi.StackReference(conf.require('platformStackRef'));
+
+const networkName = platform.getOutput('networkName') as pulumi.Output<string>;
+const traefikHostPort = platform.getOutput('traefikHostPort') as pulumi.Output<number>;
+const postgresHost = platform.getOutput('postgresHost') as pulumi.Output<string>;
+const postgresPort = platform.getOutput('postgresPort') as pulumi.Output<number>;
+const platformNamespace = platform.getOutput('namespace') as pulumi.Output<string>;
+
+// Fail-closed khi hai stack không thuộc cùng một worktree.
+//
+// Cả hai đều tự suy namespace từ `worktreeRoot` nên **lệch chỉ xảy ra** khi
+// orchestration truyền `platformStackRef` trỏ sang stack platform của worktree
+// khác — và lúc đó mọi thứ vẫn "chạy": container tên theo namespace A nhưng
+// join network của B, image đúng, build xanh, chỉ là `https://fbi.com` trỏ sang
+// home của worktree khác. So sánh tường minh ở đây biến lỗi đó thành lỗi
+// deploy.
+//
+// Kết quả được EXPORT (`namespaceVerified`, cuối file) chứ không bỏ rơi:
+// Pulumi chỉ await những output có trong graph, nên một `apply()` mà kết quả bị
+// vứt đi có thể nuốt exception thành rejection không ai nghe — đúng trường hợp
+// lỗi im lặng mà check này sinh ra để chặn. Export nó thành output thật thì
+// throw trong `apply` làm `pulumi up` fail.
+const verifiedNamespace = pulumi.output(platformNamespace).apply((upstreamNs) => {
+  if (upstreamNs !== ns) {
+    throw new Error(
+      `platformStackRef trỏ sang stack của namespace khác: ` +
+        `platform export "${upstreamNs}" còn worktree này là "${ns}". ` +
+        `Hai stack phải cùng worktree — nếu không, home sẽ join nhầm network.`,
+    );
+  }
+  return ns;
+});
+
+/**
+ * Image local của `apps/home`.
+ *
+ * Build context là **repo root** chứ không phải `apps/home`: `pnpm-lock.yaml`,
+ * `pnpm-workspace.yaml`, `patches/` và workspace package `libs/ui-ecoma-logo`
+ * đều nằm ở root, và Dockerfile cần chúng để `pnpm install --frozen-lockfile`.
+ *
+ * `builder.name = 'default'` là bắt buộc trên máy builder docker driver: khi
+ * không khai, provider 0.0.22 tự tạo builder `docker-container` mới và boot
+ * nó trong 30s (`host.go`, hàm boot builder) — trên Docker rootless bước boot
+ * đó timeout đều với "booting builder: context deadline exceeded". Trỏ thẳng
+ * vào builder `default` (docker driver, sẵn có trên mọi cài Docker với
+ * buildx) bỏ trọn bước boot. Xoá dòng này chỉ khi chuyển sang builder riêng.
+ *
+ * `load: true` + `push: false` nạp image vào Docker daemon cục bộ — local
+ * deployment không có registry nào để push.
+ */
+const image = new dockerBuild.Image(dockerResourceName(ns, 'home-image'), {
+  context: { location: worktreeRoot },
+  dockerfile: { location: `${worktreeRoot}/apps/home/Dockerfile` },
+  tags: [`ecoma-home-${ns}:local`],
+  builder: { name: 'default' },
+  load: true,
+  push: false,
+});
+
+/**
+ * Container của `apps/home`.
+ *
+ * `image.ref` (output của docker-build) chứ không phải chuỗi tag: truyền output
+ * làm cho Pulumi **thay container** khi digest image đổi, thay vì chỉ so sánh
+ * tên tag bất biến.
+ *
+ * KHÔNG có `ports`: home không publish cổng ra host — mọi request đi qua Traefik
+ * của platform. Đây là bất biến của local platform, không phải thiếu sót.
+ */
+const home = new docker.Container(dockerResourceName(ns, 'home'), {
+  name: dockerResourceName(ns, 'home'),
+  image: image.ref,
+  networksAdvanced: [{ name: networkName, aliases: ['ecoma-home'] }],
+  // `envs` (không phải `environment`): `@pulumi/docker` nhận cặp `KEY=VALUE` dạng
+  // mảng chuỗi — shape của `docker run -e`, không phải map như Compose.
+  envs: [
+    `PORT=${HOME_INTERNAL_PORT}`,
+    'NODE_ENV=production',
+    // `fbi.com:<port>` — port Traefik thực sự được Docker cấp, đọc từ output
+    // platform chứ không hard-code (xem `buildRootHost` trong contract).
+    pulumi.interpolate`ROOT_HOST=${LOCAL_ROOT_HOSTNAME}:${traefikHostPort}`,
+    // Thông tin kết nối PostgreSQL do platform export. PR này chưa có app code
+    // đọc chúng; đặt sẵn ở đây để deploy unit sau đó không phải sửa lại
+    // contract outputs.
+    pulumi.interpolate`POSTGRES_HOST=${postgresHost}`,
+    pulumi.interpolate`POSTGRES_PORT=${postgresPort}`,
+  ],
+  labels: [
+    { label: 'traefik.enable', value: 'true' },
+    {
+      // Khai network của ROUTER này cho Traefik, KHÔNG phải sở thích: không có
+      // label này, Docker provider của MỌI Traefik trên host (mỗi worktree một
+      // Traefik) đều thấy container này qua socket dùng chung và đăng ký router
+      // `Host(fbi.com)` của nó — hai worktree chỉ ra HAI router cùng rule trên
+      // MỘT Traefik, và router trúng backend ở network khác thì request treo
+      // vĩnh viễn (đã kiểm thực nghiệm: smoke lúc xanh lúc treo tuỳ router
+      // Traefik chọn). Platform bọc lưới bằng
+      // `--providers.docker.constraints=Label('traefik.docker.network', <network>)`
+      // nên label này vừa chọn IP đúng network cho backend, vừa là điều kiện
+      // lọc container vào router của đúng worktree.
+      label: 'traefik.docker.network',
+      value: networkName,
+    },
+    {
+      label: `traefik.http.routers.${traefikPrefix(ns)}.rule`,
+      value: `Host(\`${LOCAL_ROOT_HOSTNAME}\`)`,
+    },
+    {
+      label: `traefik.http.routers.${traefikPrefix(ns)}.entrypoints`,
+      value: 'websecure',
+    },
+    { label: `traefik.http.routers.${traefikPrefix(ns)}.tls`, value: 'true' },
+    {
+      label: `traefik.http.services.${traefikPrefix(ns)}.loadbalancer.server.port`,
+      value: String(HOME_INTERNAL_PORT),
+    },
+  ],
+  healthcheck: {
+    // Runtime `node-server` không có health endpoint riêng, nên check bằng HTTP
+    // thật tới `/`. `/` trả 302 sang `/en` — 302 là phản hồi khỏe (SSR đã sẵn
+    // sàng), nên chỉ coi là hỏng khi >= 500 hoặc fetch throw.
+    tests: [
+      'CMD',
+      'node',
+      '-e',
+      // Cổng lấy từ cùng hằng số với `ENV PORT` của image, không hard-code lần
+      // thứ hai trong một string khác.
+      `fetch('http://127.0.0.1:${HOME_INTERNAL_PORT}/')` +
+        `.then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))`,
+    ],
+    interval: '10s',
+    timeout: '5s',
+    retries: 12,
+    // Nuxt SSR cold start + prerender content lúc khởi động có thể vượt 30s trên
+    // host chậm; chỉ sau `startPeriod` mới tính `retries`.
+    startPeriod: '30s',
+  },
+});
+
+export const imageRef = image.ref;
+export const containerName = home.name;
+export const containerId = home.id;
+/** Namespace đã khớp stack platform — xem check fail-closed ở trên. */
+export const namespaceVerified = verifiedNamespace;

@@ -1,0 +1,39 @@
+# `.dockerignore` cho `apps/home`.
+#
+# PHẠM VI: file này CHỈ có hiệu lực khi build context là chính `apps/home`
+# (`docker build apps/home`). `home-deploy` truyền context là **repo root** (pnpm
+# workspace cần `pnpm-lock.yaml`, `patches/`, `libs/ui-ecoma-logo` ở root), mà
+# Docker chỉ đọc `.dockerignore` ở gốc context — với context repo root, file
+# này bị bỏ qua. Việc lọc context ở gốc repo là phạm vi của root
+# `.dockerignore`, không thuộc app này.
+#
+# Nội dung liệt kê dưới đây là tập pattern chuẩn của Nuxt/pnpm, giữ để có một
+# đường build single-app đúng ngay khi ai đó cần.
+
+# Dependency — không bao giờ copy vào image.
+node_modules
+**/node_modules
+
+# Kết quả build Nuxt: image được tạo TỪ `.output`, nên `.output` chỉ là input
+# trung gian và copy nó vào context chỉ làm build chậm.
+.nuxt
+.output
+.nitro
+.cache
+.data
+
+# Lockfile/metadata sinh tự động.
+*.log
+.eslintcache
+**/*.tsbuildinfo
+
+# Test và công cụ dev không dùng khi build image.
+tests
+vitest.config.mts
+Dockerfile
+.dockerignore
+
+# Git — image không cần VCS metadata.
+.git
+.gitignore
+.github

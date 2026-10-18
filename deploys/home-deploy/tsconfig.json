@@ -1,7 +1,23 @@
 {
+  // `index.ts` import hai helper **nguồn** của `tools/dx` (không phải package đã
+  // build): `../../tools/dx/src/*.js` là cách duy nhất hai deploy unit dùng
+  // chung một nguồn sự thật cho namespace và contract outputs, thay vì copy
+  // hàm vào hai nơi rồi để chúng lệch nhau. Đuôi `.js` là chuẩn `nodenext`:
+  // `tools/dx/package.json` khai `"type": "module"` nên TypeScript phải resolve
+  // specifier như ESM.
+  //
+  // Hệ quả bắt buộc: `rootDir` phải nới lên **workspace root** (`../..`) —
+  // mặc định `rootDir` là thư mục project nên `tools/dx/src/*.ts` nằm ngoài nó
+  // và `tsc` fail với TS6059. `files` cũng phải liệt kê tường minh hai file đó
+  // vì project `composite` bắt buộc mọi file trong graph đều được khai.
+  //
+  // Đổi lại, output của `tsc --build` nằm ở `bin/deploys/home-deploy/` và
+  // `bin/tools/dx/` thay vì `bin/index.js`. Pulumi không dùng output này —
+  // runtime `nodejs` chạy thẳng `index.ts`.
   "compilerOptions": {
     "strict": true,
     "outDir": "bin",
+    "rootDir": "../..",
     "target": "es2020",
     "module": "nodenext",
     "moduleResolution": "nodenext",
@@ -12,7 +28,15 @@
     "noImplicitReturns": true,
     "forceConsistentCasingInFileNames": true,
     "composite": true,
-    "declaration": true
+    "declaration": true,
+    // Pulumi program chạy trên Node và import helper của `tools/dx` đọc
+    // `node:fs`/`node:path`, nên khai ambient types của Node tường minh thay vì
+    // để mặc định "mọi @types trong node_modules".
+    "types": ["node"]
   },
-  "files": ["index.ts"]
+  "files": [
+    "index.ts",
+    "../../tools/dx/src/deploy-namespace.ts",
+    "../../tools/dx/src/platform-outputs-contract.ts"
+  ]
 }
