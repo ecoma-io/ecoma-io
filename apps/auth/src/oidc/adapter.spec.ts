@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import postgres from 'postgres';
@@ -8,6 +8,11 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { PostgresClientLike } from '@ecoma-io/identity-auth-infrastructure';
 
 import { PostgresAdapter } from './adapter';
+import {
+  probeDocker,
+  startAuthDatabase,
+  type AuthDatabase,
+} from '../../tests/integration/harness.ts';
 
 /**
  * Spec cho PostgresAdapter (`src/oidc/adapter.ts`) — phần test không được phủ bởi
@@ -20,34 +25,23 @@ import { PostgresAdapter } from './adapter';
  *
  * ⚠️ Vì sao PostgreSQL thật thay vì stub Queryable: phần lõi của adapter là SQL và
  * CHECK của schema — một stub trả mảng là schema thứ hai, xanh trên sai. Thiếu
- * `AUTH_TEST_PG_*` thì SKIP (khác một pass trông y hệt — report phải nói rõ).
+ * Docker thì SKIP (khác một pass trông y hệt — report phải nói rõ).
  */
 
-const HOST = process.env['AUTH_TEST_PG_HOST'];
-const PORT = process.env['AUTH_TEST_PG_PORT'];
-const DATABASE = process.env['AUTH_TEST_PG_DATABASE'];
-const RUNTIME_USER = process.env['AUTH_TEST_PG_USER'];
-const RUNTIME_PASSWORD = process.env['AUTH_TEST_PG_PASSWORD'];
-const MIGRATOR_USER = process.env['AUTH_TEST_PG_MIGRATOR_USER'];
-const MIGRATOR_PASSWORD = process.env['AUTH_TEST_PG_MIGRATOR_PASSWORD'];
+/** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
+const dockerAvailable = await probeDocker();
 
-const available =
-  HOST !== undefined &&
-  PORT !== undefined &&
-  DATABASE !== undefined &&
-  RUNTIME_USER !== undefined &&
-  MIGRATOR_USER !== undefined;
-
-const MIGRATIONS_DIR = join(import.meta.dirname, '../../../apps/auth/migrations');
-
-/** Khoá advisory DÙNG CHUNG với mọi spec PG khác — không trùng là deadlock/đổ schema. */
-const SCHEMA_SETUP_LOCK_KEY = 8_274_411;
+/** Container riêng của file này, dựng một lần trong `beforeAll`. */
+let db: AuthDatabase;
 
 function base() {
+  if (db === undefined) {
+    throw new Error('database container is not running');
+  }
   return {
-    host: HOST as string,
-    port: Number(PORT as string),
-    database: DATABASE as string,
+    host: db.host,
+    port: db.port,
+    database: db.database,
     prepare: false,
   } as const;
 }
@@ -55,8 +49,8 @@ function base() {
 function connectRuntime(): postgres.Sql {
   return postgres({
     ...base(),
-    user: RUNTIME_USER as string,
-    password: RUNTIME_PASSWORD,
+    user: db.runtimeUser,
+    password: db.runtimePassword,
     max: 5,
   });
 }
@@ -64,31 +58,10 @@ function connectRuntime(): postgres.Sql {
 function connectMigrator(): postgres.Sql {
   return postgres({
     ...base(),
-    user: MIGRATOR_USER as string,
-    password: MIGRATOR_PASSWORD,
+    user: db.migratorUser,
+    password: db.migratorPassword,
     max: 1,
   });
-}
-
-async function applyMigrations(migrator: postgres.Sql): Promise<void> {
-  await migrator.unsafe('SELECT pg_advisory_lock($1)', [SCHEMA_SETUP_LOCK_KEY]);
-  try {
-    const existing = await migrator<{ table_name: string }[]>`
-      SELECT table_name FROM information_schema.tables
-       WHERE table_schema = 'auth' AND table_name = 'oidc_state'
-    `;
-    if (existing.length > 0) {
-      return;
-    }
-    const files = readdirSync(MIGRATIONS_DIR)
-      .filter((name) => name.endsWith('.sql'))
-      .toSorted();
-    for (const file of files) {
-      await migrator.unsafe(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'));
-    }
-  } finally {
-    await migrator.unsafe('SELECT pg_advisory_unlock($1)', [SCHEMA_SETUP_LOCK_KEY]);
-  }
 }
 
 const IDS: string[] = [];
@@ -140,7 +113,7 @@ function asClient(runtime: postgres.Sql): PostgresClientLike {
   return runtime as unknown as PostgresClientLike;
 }
 
-describe.skipIf(!available)('PostgresAdapter', () => {
+describe.skipIf(!dockerAvailable)('PostgresAdapter', () => {
   const PAYLOAD = {
     accountId: 'sub-adapter-spec-00000000000000000000000000',
     clientId: 'client-adapter-spec',
@@ -151,12 +124,12 @@ describe.skipIf(!available)('PostgresAdapter', () => {
   let migrator: postgres.Sql;
 
   beforeAll(async () => {
-    const mig = connectMigrator();
-    await applyMigrations(mig);
-    await mig.end({ timeout: 1 });
+    // Schema đã sẵn sàng bên trong `startAuthDatabase` (migration chạy một lần
+    // lúc container lên, bằng credential migrator thật).
+    db = await startAuthDatabase();
     runtime = connectRuntime();
     migrator = connectMigrator();
-  });
+  }, 180_000);
 
   afterAll(async () => {
     await runtime?.end({ timeout: 1 });

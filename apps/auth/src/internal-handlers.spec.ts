@@ -1,6 +1,3 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import postgres from 'postgres';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -19,6 +16,7 @@ import type { Provider } from 'oidc-provider';
 import { createAuthorizationStore } from './authorization-store';
 import { runSessionVerified } from './session-verified-handler';
 import { runConsentContext, runConsentDecide } from './consent-handler';
+import { probeDocker, startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
 
 /**
  * Hai back-channel handlers trên PostgreSQL THẬT: `session/verified` (CAS consume X
@@ -30,8 +28,8 @@ import { runConsentContext, runConsentDecide } from './consent-handler';
  * thứ tự advance/consume SAI sẽ xanh trên stub nhưng vỡ ngay trên schema thật
  * (CHECK violation). Đúng bài học của `authorization-transaction-store.spec.ts`.
  *
- * ⚠️ Thiếu `AUTH_TEST_PG_*` thì SKIP — và một skip trông y hệt một pass; report
- * phải nói rõ phần chưa verify nếu biến không có.
+ * ⚠️ Thiếu Docker (nên không có PostgreSQL) thì SKIP — và một skip trông y hệt một
+ * pass; report phải nói rõ phần chưa verify nếu môi trường không có Docker.
  *
  * Provider là STUB HÌNH DẠNG: các handler chỉ dùng `provider.Interaction` qua
  * `attachInteractionResult`, mà hàm đó trả `undefined` khi correlator không tra
@@ -41,31 +39,20 @@ import { runConsentContext, runConsentDecide } from './consent-handler';
  * end-to-end trong môi trường Node.
  */
 
-const HOST = process.env['AUTH_TEST_PG_HOST'];
-const PORT = process.env['AUTH_TEST_PG_PORT'];
-const DATABASE = process.env['AUTH_TEST_PG_DATABASE'];
-const RUNTIME_USER = process.env['AUTH_TEST_PG_USER'];
-const RUNTIME_PASSWORD = process.env['AUTH_TEST_PG_PASSWORD'];
-const MIGRATOR_USER = process.env['AUTH_TEST_PG_MIGRATOR_USER'];
-const MIGRATOR_PASSWORD = process.env['AUTH_TEST_PG_MIGRATOR_PASSWORD'];
+/** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
+const dockerAvailable = await probeDocker();
 
-const available =
-  HOST !== undefined &&
-  PORT !== undefined &&
-  DATABASE !== undefined &&
-  RUNTIME_USER !== undefined &&
-  MIGRATOR_USER !== undefined;
-
-const MIGRATIONS_DIR = join(import.meta.dirname, '../../../apps/auth/migrations');
-
-/** Khoá advisory DÙNG CHUNG với mọi spec PG khác — không trùng là deadlock/đổ schema. */
-const SCHEMA_SETUP_LOCK_KEY = 8_274_411;
+/** Container riêng của file này, dựng một lần trong `beforeAll`. */
+let db: AuthDatabase;
 
 function base() {
+  if (db === undefined) {
+    throw new Error('database container is not running');
+  }
   return {
-    host: HOST as string,
-    port: Number(PORT as string),
-    database: DATABASE as string,
+    host: db.host,
+    port: db.port,
+    database: db.database,
     prepare: false,
   } as const;
 }
@@ -73,8 +60,8 @@ function base() {
 function connectRuntime(max = 10): postgres.Sql {
   return postgres({
     ...base(),
-    user: RUNTIME_USER as string,
-    password: RUNTIME_PASSWORD,
+    user: db.runtimeUser,
+    password: db.runtimePassword,
     max,
   });
 }
@@ -82,37 +69,14 @@ function connectRuntime(max = 10): postgres.Sql {
 function connectMigrator(): postgres.Sql {
   return postgres({
     ...base(),
-    user: MIGRATOR_USER as string,
-    password: MIGRATOR_PASSWORD,
+    user: db.migratorUser,
+    password: db.migratorPassword,
     max: 1,
   });
 }
 
-async function applyMigrations(migrator: postgres.Sql): Promise<void> {
-  await migrator.unsafe('SELECT pg_advisory_lock($1)', [SCHEMA_SETUP_LOCK_KEY]);
-  try {
-    const existing = await migrator<{ table_name: string }[]>`
-      SELECT table_name FROM information_schema.tables
-       WHERE table_schema = 'auth' AND table_name = 'authorization_codes'
-    `;
-    if (existing.length > 0) {
-      return;
-    }
-    const files = readdirSync(MIGRATIONS_DIR)
-      .filter((name) => name.endsWith('.sql'))
-      .toSorted();
-    for (const file of files) {
-      await migrator.unsafe(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'));
-    }
-  } finally {
-    await migrator.unsafe('SELECT pg_advisory_unlock($1)', [SCHEMA_SETUP_LOCK_KEY]);
-  }
-}
-
 async function setup(): Promise<{ runtime: postgres.Sql; migrator: postgres.Sql }> {
-  const migrator = connectMigrator();
-  await applyMigrations(migrator);
-  return { runtime: connectRuntime(), migrator };
+  return { runtime: connectRuntime(), migrator: connectMigrator() };
 }
 
 /* ------------------------------------------------------------------ */
@@ -361,19 +325,21 @@ afterAll(async () => {
 });
 
 describe('back-channel handlers — against a real PostgreSQL', () => {
+  // Container riêng của file này: schema được dựng một lần lúc container lên
+  // (bên trong `startAuthDatabase`, bằng credential migrator thật), các test
+  // tự mở cặp client qua `setup()` và tự đóng trong `finally`.
   beforeAll(async () => {
-    if (!available) {
+    if (!dockerAvailable) {
       return;
     }
-    const migrator = connectMigrator();
-    try {
-      await applyMigrations(migrator);
-    } finally {
-      await migrator.end({ timeout: 1 });
-    }
+    db = await startAuthDatabase();
+  }, 180_000);
+
+  afterAll(async () => {
+    await db.stop();
   });
 
-  describe.skipIf(!available)('POST /internal/session/verified', () => {
+  describe.skipIf(!dockerAvailable)('POST /internal/session/verified', () => {
     it('CAS loses: pending_browser cannot be consumed — §5.1.0 condition 2 enforced by the DB', async () => {
       // ⚠️ `consumeHandleXAndBindIdentity` có `state = 'browser_confirmed'` trong
       // WHERE. Transaction đang `pending_browser` ⇒ CAS thua ⇒ handler phải trả
@@ -877,7 +843,7 @@ describe('back-channel handlers — against a real PostgreSQL', () => {
     });
   });
 
-  describe.skipIf(!available)('POST /internal/consent/*', () => {
+  describe.skipIf(!dockerAvailable)('POST /internal/consent/*', () => {
     it('context: returns client_name/scope/risk_level, NO side effect', async () => {
       const { runtime, migrator } = await setup();
       try {

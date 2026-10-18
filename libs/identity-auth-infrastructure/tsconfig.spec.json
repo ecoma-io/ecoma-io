@@ -9,6 +9,10 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "forceConsistentCasingInFileNames": true,
+    // Spec import harness bằng phần mở rộng thật (`../tests/integration/harness.ts`):
+    // Vitest cần nó khi chạy, và đây là điều kiện để `import.meta.dirname` được type
+    // đúng — cùng cách `tsconfig.db.json` của `apps/account` đã ghi lại.
+    "allowImportingTsExtensions": true,
     "types": ["vitest/globals", "vitest/importMeta", "vite/client", "node", "vitest"]
   },
   "include": [
@@ -16,6 +20,7 @@
     "vite.config.mts",
     "vitest.config.ts",
     "vitest.config.mts",
+    "tests/**/*.ts",
     "src/**/*.test.ts",
     "src/**/*.spec.ts",
     "src/**/*.test.tsx",

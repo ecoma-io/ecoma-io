@@ -726,7 +726,12 @@
       //
       // Giữ đúng nguyên tắc của block trên: chỉ exemption, không nới rule ở
       // đâu khác; Worker code của app vẫn chịu ràng buộc `runtime:edge`.
-      "files": ["apps/*/tests/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}"],
+      // `libs/*/tests/**` cùng luật: harness của `identity-auth-infrastructure`
+      // là tooling Node y hệt, chỉ khác thư mục gốc của project.
+      "files": [
+        "apps/*/tests/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}",
+        "libs/*/tests/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}"
+      ],
       "rules": {
         "no-console": "off",
         "no-restricted-imports": "off",

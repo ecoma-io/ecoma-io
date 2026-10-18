@@ -37,12 +37,11 @@
  *      được bằng JWKS đó.
  *   9. Replay `session/verified` cùng event_id → idempotency §5.1.5a: cùng outcome.
  *
- * ⚠️ Thiếu `AUTH_TEST_PG_*` ⇒ SKIP toàn bộ — skip không phải pass; report phải nêu.
+ * ⚠️ Thiếu Docker (nên không có PostgreSQL) ⇒ SKIP toàn bộ — skip không phải pass;
+ * report phải nêu.
  */
 
 import type { Server } from 'node:http';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 import postgres from 'postgres';
 import { exportPKCS8, generateKeyPair, importJWK, jwtVerify } from 'jose';
@@ -53,68 +52,32 @@ import { createPostgresClient } from '@ecoma-io/identity-auth-infrastructure';
 
 import { PROVIDER_ROUTES } from './oidc/provider';
 import { loadAuthConfig, type AuthEnv } from './config';
+import { probeDocker, startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
 
 /* ------------------------------------------------------------------ */
 /* PostgreSQL harness — cùng luật với internal-handlers.spec.ts        */
 /* ------------------------------------------------------------------ */
 
-const HOST = process.env['AUTH_TEST_PG_HOST'];
-const PORT = process.env['AUTH_TEST_PG_PORT'];
-const DATABASE = process.env['AUTH_TEST_PG_DATABASE'];
-const RUNTIME_USER = process.env['AUTH_TEST_PG_USER'];
-const RUNTIME_PASSWORD = process.env['AUTH_TEST_PG_PASSWORD'];
-const MIGRATOR_USER = process.env['AUTH_TEST_PG_MIGRATOR_USER'];
-const MIGRATOR_PASSWORD = process.env['AUTH_TEST_PG_MIGRATOR_PASSWORD'];
+/** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
+const dockerAvailable = await probeDocker();
 
-const available =
-  HOST !== undefined &&
-  PORT !== undefined &&
-  DATABASE !== undefined &&
-  RUNTIME_USER !== undefined &&
-  MIGRATOR_USER !== undefined;
-
-const MIGRATIONS_DIR = join(import.meta.dirname, '../../../apps/auth/migrations');
-const SCHEMA_SETUP_LOCK_KEY = 8_274_411;
+/** Container riêng của file này, dựng một lần trong `beforeAll`. */
+let db: AuthDatabase;
 
 function base() {
+  if (db === undefined) {
+    throw new Error('database container is not running');
+  }
   return {
-    host: HOST as string,
-    port: Number(PORT as string),
-    database: DATABASE as string,
+    host: db.host,
+    port: db.port,
+    database: db.database,
     prepare: false,
   } as const;
 }
 
 function connectRuntime(max = 10): postgres.Sql {
-  return postgres({ ...base(), user: RUNTIME_USER as string, password: RUNTIME_PASSWORD, max });
-}
-
-function connectMigrator(): postgres.Sql {
-  return postgres({
-    ...base(),
-    user: MIGRATOR_USER as string,
-    password: MIGRATOR_PASSWORD,
-    max: 1,
-  });
-}
-
-async function applyMigrations(migrator: postgres.Sql): Promise<void> {
-  await migrator.unsafe('SELECT pg_advisory_lock($1)', [SCHEMA_SETUP_LOCK_KEY]);
-  try {
-    const existing = await migrator<{ table_name: string }[]>`
-      SELECT table_name FROM information_schema.tables
-       WHERE table_schema = 'auth' AND table_name = 'authorization_codes'
-    `;
-    if (existing.length > 0) return;
-    const files = readdirSync(MIGRATIONS_DIR)
-      .filter((n) => n.endsWith('.sql'))
-      .toSorted();
-    for (const file of files) {
-      await migrator.unsafe(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'));
-    }
-  } finally {
-    await migrator.unsafe('SELECT pg_advisory_unlock($1)', [SCHEMA_SETUP_LOCK_KEY]);
-  }
+  return postgres({ ...base(), user: db.runtimeUser, password: db.runtimePassword, max });
 }
 
 /* ------------------------------------------------------------------ */
@@ -257,7 +220,7 @@ async function bootProvider(pem: string): Promise<void> {
 function makeEnv(pem: string): AuthEnv {
   return {
     HYPERDRIVE: {
-      connectionString: `postgres://${RUNTIME_USER}:${RUNTIME_PASSWORD}@${HOST}:${PORT}/${DATABASE}`,
+      connectionString: `postgres://${db.runtimeUser}:${db.runtimePassword}@${db.host}:${db.port}/${db.database}`,
     },
     ACCOUNT_SERVICE: {
       fetch: async () => new Response(JSON.stringify({ status: 'active' })),
@@ -279,15 +242,12 @@ function makeEnv(pem: string): AuthEnv {
 /* ------------------------------------------------------------------ */
 
 beforeAll(async () => {
-  if (!available) return;
-  const migrator = connectMigrator();
-  try {
-    await applyMigrations(migrator);
-  } finally {
-    await migrator.end({ timeout: 1 });
-  }
+  if (!dockerAvailable) return;
+  // Schema đã sẵn sàng bên trong `startAuthDatabase` (migration chạy một lần
+  // lúc container lên, bằng credential migrator thật).
+  db = await startAuthDatabase();
   runtimeSql = connectRuntime();
-});
+}, 180_000);
 
 afterAll(async () => {
   nodeServer?.close();
@@ -296,52 +256,51 @@ afterAll(async () => {
   // (`authorization_transactions_event_id_uniq`) — suite chỉ lặp lại được trên
   // database chưa từng chạy.internal-handlers.spec dọn theo cùng bộ luật.
   try {
-    if (runtimeSql !== undefined) {
-      // Thứ tự tuân theo FK: scopes → grants → consent → codes → audit →
-      // oidc_state → transactions (mọi subquery bám marker fixture của SUITE NÀY).
-      await runtimeSql.unsafe(`
-        DELETE FROM auth.client_grant_scopes
-          WHERE grant_id IN (
-            SELECT id FROM auth.oauth_grants WHERE sub LIKE 'sub-fullflow-%')
-      `);
-      await runtimeSql.unsafe(`
-        DELETE FROM auth.oauth_grants WHERE sub LIKE 'sub-fullflow-%'
-      `);
-      await runtimeSql.unsafe(`
-        DELETE FROM auth.oauth_consent_decisions
-          WHERE authorization_transaction_id IN (
-            SELECT transaction_id FROM auth.authorization_transactions
-              WHERE event_id LIKE 'evt-fullflow-%')
-      `);
-      await runtimeSql.unsafe(`
-        DELETE FROM auth.authorization_codes
-          WHERE authorization_transaction_id IN (
-            SELECT transaction_id FROM auth.authorization_transactions
-              WHERE event_id LIKE 'evt-fullflow-%')
-      `);
-      // ⚠️ authorization_audit_events KHÔNG dọn: append-only (0009 thu DELETE
-      // khỏi runtime role) — hàng audit của lần chạy trước ở lại là đúng thiết
-      // kế, không phải rác; khối catch dưới không cứu được một câu bị từ chối
-      // vì các DELETE sau nó trong cùng try đã không chạy.
-      // Interaction/Session/Grant của provider nằm trong oidc_state — dọn theo
-      // client và theo transaction correlator trước khi xoá transaction.
-      await runtimeSql.unsafe(`
-        DELETE FROM auth.oidc_state
-          WHERE payload->>'clientId' = 'client-fullflow-pg-test'
-             OR payload->>'accountId' = 'sub-fullflow-000000000000000000000000000'
-      `);
-      await runtimeSql.unsafe(`
-        DELETE FROM auth.authorization_transactions
-          WHERE event_id LIKE 'evt-fullflow-%'
-      `);
-    }
+    // Thứ tự tuân theo FK: scopes → grants → consent → codes → audit →
+    // oidc_state → transactions (mọi subquery bám marker fixture của SUITE NÀY).
+    await runtimeSql.unsafe(`
+      DELETE FROM auth.client_grant_scopes
+        WHERE grant_id IN (
+          SELECT id FROM auth.oauth_grants WHERE sub LIKE 'sub-fullflow-%')
+    `);
+    await runtimeSql.unsafe(`
+      DELETE FROM auth.oauth_grants WHERE sub LIKE 'sub-fullflow-%'
+    `);
+    await runtimeSql.unsafe(`
+      DELETE FROM auth.oauth_consent_decisions
+        WHERE authorization_transaction_id IN (
+          SELECT transaction_id FROM auth.authorization_transactions
+            WHERE event_id LIKE 'evt-fullflow-%')
+    `);
+    await runtimeSql.unsafe(`
+      DELETE FROM auth.authorization_codes
+        WHERE authorization_transaction_id IN (
+          SELECT transaction_id FROM auth.authorization_transactions
+            WHERE event_id LIKE 'evt-fullflow-%')
+    `);
+    // ⚠️ authorization_audit_events KHÔNG dọn: append-only (0009 thu DELETE
+    // khỏi runtime role) — hàng audit của lần chạy trước ở lại là đúng thiết
+    // kế, không phải rác; khối catch dưới không cứu được một câu bị từ chối
+    // vì các DELETE sau nó trong cùng try đã không chạy.
+    // Interaction/Session/Grant của provider nằm trong oidc_state — dọn theo
+    // client và theo transaction correlator trước khi xoá transaction.
+    await runtimeSql.unsafe(`
+      DELETE FROM auth.oidc_state
+        WHERE payload->>'clientId' = 'client-fullflow-pg-test'
+           OR payload->>'accountId' = 'sub-fullflow-000000000000000000000000000'
+    `);
+    await runtimeSql.unsafe(`
+      DELETE FROM auth.authorization_transactions
+        WHERE event_id LIKE 'evt-fullflow-%'
+    `);
   } catch {
     // Dọn thất bại không được che kết quả test; database test xem như dùng một lần.
   }
-  await runtimeSql?.end({ timeout: 1 });
+  await runtimeSql.end({ timeout: 1 });
+  await db.stop();
 });
 
-describe.skipIf(!available)(
+describe.skipIf(!dockerAvailable)(
   'oidc-provider full flow — against a real PostgreSQL (acceptance)',
   () => {
     it('walks the whole §5.1.2: authorize → provider → confirm → verified → decide → resume → token', async () => {

@@ -1,10 +1,9 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import postgres from 'postgres';
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   insertAuthorizationCode,
@@ -12,6 +11,12 @@ import {
   findTransactionByHandleX,
   transitionTransaction,
 } from './authorization-transaction-store';
+import {
+  MIGRATIONS_DIR,
+  probeDocker,
+  startAuthDatabase,
+  type AuthDatabase,
+} from '../tests/integration/harness.ts';
 
 /**
  * Hợp đồng persistence của `authorization_transactions` trên PostgreSQL THẬT.
@@ -28,31 +33,18 @@ import {
  * về quyền production.
  */
 
-const HOST = process.env['AUTH_TEST_PG_HOST'];
-const PORT = process.env['AUTH_TEST_PG_PORT'];
-const DATABASE = process.env['AUTH_TEST_PG_DATABASE'];
-const RUNTIME_USER = process.env['AUTH_TEST_PG_USER'];
-const RUNTIME_PASSWORD = process.env['AUTH_TEST_PG_PASSWORD'];
-const MIGRATOR_USER = process.env['AUTH_TEST_PG_MIGRATOR_USER'];
-const MIGRATOR_PASSWORD = process.env['AUTH_TEST_PG_MIGRATOR_PASSWORD'];
+const dockerAvailable = await probeDocker();
 
-const available =
-  HOST !== undefined &&
-  PORT !== undefined &&
-  DATABASE !== undefined &&
-  RUNTIME_USER !== undefined &&
-  MIGRATOR_USER !== undefined;
-
-const MIGRATIONS_DIR = join(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../../apps/auth/migrations',
-);
+let db: AuthDatabase;
 
 function base() {
+  if (db === undefined) {
+    throw new Error('database container is not running');
+  }
   return {
-    host: HOST as string,
-    port: Number(PORT as string),
-    database: DATABASE as string,
+    host: db.host,
+    port: db.port,
+    database: db.database,
     prepare: false,
   } as const;
 }
@@ -60,8 +52,8 @@ function base() {
 function connectRuntime(max = 10): postgres.Sql {
   return postgres({
     ...base(),
-    user: RUNTIME_USER as string,
-    password: RUNTIME_PASSWORD,
+    user: db.runtimeUser,
+    password: db.runtimePassword,
     max,
   });
 }
@@ -69,44 +61,15 @@ function connectRuntime(max = 10): postgres.Sql {
 function connectMigrator(): postgres.Sql {
   return postgres({
     ...base(),
-    user: MIGRATOR_USER as string,
-    password: MIGRATOR_PASSWORD,
+    user: db.migratorUser,
+    password: db.migratorPassword,
     max: 1,
   });
 }
 
-/**
- * Khoá advisory DÙNG CHUNG với mọi spec PG khác — `internal-nonces.spec.ts`
- * có test parity đọc chính file này để kiểm tra con số. Số khác ở đây = một
- * suite đỏ ngẫu nhiên vì hai tiến trình cùng dựng schema.
- */
-const SCHEMA_SETUP_LOCK_KEY = 8_274_411;
-
-async function applyMigrations(migrator: postgres.Sql): Promise<void> {
-  await migrator.unsafe('SELECT pg_advisory_lock($1)', [SCHEMA_SETUP_LOCK_KEY]);
-  try {
-    const existing = await migrator<{ table_name: string }[]>`
-      SELECT table_name FROM information_schema.tables
-       WHERE table_schema = 'auth' AND table_name = 'authorization_codes'
-    `;
-    if (existing.length > 0) {
-      return;
-    }
-    const files = readdirSync(MIGRATIONS_DIR)
-      .filter((name) => name.endsWith('.sql'))
-      .toSorted();
-    for (const file of files) {
-      await migrator.unsafe(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'));
-    }
-  } finally {
-    await migrator.unsafe('SELECT pg_advisory_unlock($1)', [SCHEMA_SETUP_LOCK_KEY]);
-  }
-}
-
+/** Dựng container + schema rồi trả về cặp client runtime/migrator đã sẵn sàng. */
 async function setup(): Promise<{ runtime: postgres.Sql; migrator: postgres.Sql }> {
-  const migrator = connectMigrator();
-  await applyMigrations(migrator);
-  return { runtime: connectRuntime(), migrator };
+  return { runtime: connectRuntime(), migrator: connectMigrator() };
 }
 
 /* ------------------------------------------------------------------ */
@@ -165,6 +128,19 @@ async function cleanup(migrator: postgres.Sql, transactionIds: string[]): Promis
 }
 
 describe('authorization-transaction-store — on real PostgreSQL', () => {
+  // Container riêng của file này, dựng một lần cho cả suite; các test tự mở
+  // cặp client qua `setup()` và tự đóng trong `finally`.
+  beforeAll(async () => {
+    if (!dockerAvailable) {
+      return;
+    }
+    db = await startAuthDatabase();
+  }, 180_000);
+
+  afterAll(async () => {
+    await db.stop();
+  });
+
   describe('migration 0011 — asserted against the FILE, runs without PostgreSQL', () => {
     // ⚠️ Probe đã đo được lỗi này trên PostgreSQL thật: psql không bọc transaction
     // COMMIT từng statement, nên khi guard BƯỚC 0 vang trên database có hàng legacy,
@@ -202,7 +178,7 @@ describe('authorization-transaction-store — on real PostgreSQL', () => {
     });
   });
 
-  describe.skipIf(!available)('schema catalog after migration 0011', () => {
+  describe.skipIf(!dockerAvailable)('schema catalog after migration 0011', () => {
     it('transaction_id is TEXT, no longer UUID — the column type is read from the database', async () => {
       const { migrator } = await setup();
       try {
@@ -312,7 +288,7 @@ describe('authorization-transaction-store — on real PostgreSQL', () => {
     });
   });
 
-  describe.skipIf(!available)('CRUD and transition through the adapter', () => {
+  describe.skipIf(!dockerAvailable)('CRUD and transition through the adapter', () => {
     it('write then scan — a full round-trip of every column, bytea down to base64url', async () => {
       const { runtime, migrator } = await setup();
       try {
@@ -577,7 +553,7 @@ describe('authorization-transaction-store — on real PostgreSQL', () => {
     });
   });
 
-  describe.skipIf(!available)('insertAuthorizationCode matches schema 0004', () => {
+  describe.skipIf(!dockerAvailable)('insertAuthorizationCode matches schema 0004', () => {
     it('writing a code satisfies the FK — sub, granted_scopes text[] and a nullable nonce are all accepted', async () => {
       const { runtime, migrator } = await setup();
       try {
@@ -662,10 +638,28 @@ describe('authorization-transaction-store — on real PostgreSQL', () => {
     });
   });
 
-  describe.skipIf(!available)('permission grants', () => {
-    it('set `AUTH_TEST_PG_*` to run the persistence-contract tests', () => {
-      // Marker test: giữ cho suite không bị coi là "pass" khi thực tế là skip.
-      expect(available).toBe(true);
+  describe.skipIf(!dockerAvailable)('permission grants', () => {
+    it('the runtime cannot CREATE a table in the auth schema', async () => {
+      // Thay cho marker test cũ của hình thức chia sẻ database qua biến môi
+      // trường ("set … to run the persistence-contract tests") — marker ấy hết
+      // ý nghĩa khi database tự dựng bằng testcontainers. Vị trí của nó giờ là
+      // một assert thật về ranh quyền: role runtime chỉ DML, và đây là lớp
+      // enforce thật (catalog), không phải một quy ước trong review.
+      const { runtime, migrator } = await setup();
+      try {
+        await expect(
+          runtime.unsafe('CREATE TABLE should_not_work (id text PRIMARY KEY)'),
+        ).rejects.toThrow(/permission denied/iu);
+        const rows = await migrator<
+          { n: string }[]
+        >`SELECT count(*)::text AS n FROM information_schema.tables
+           WHERE table_schema = 'auth' AND table_name = 'should_not_work'`;
+        expect(rows[0]?.n).toBe('0');
+      } finally {
+        await migrator.unsafe('DROP TABLE IF EXISTS should_not_work');
+        await runtime.end({ timeout: 1 });
+        await migrator.end({ timeout: 1 });
+      }
     });
   });
 });

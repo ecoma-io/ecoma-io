@@ -1,27 +1,7 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-
-import {
-  DEFAULT_SKEW_SECONDS,
-  INTERNAL_NONCE_HEADER,
-  INTERNAL_SIGNATURE_HEADER,
-  INTERNAL_TIMESTAMP_HEADER,
-  NONCE_TTL_BUFFER_SECONDS,
-  createNonce,
-  signRequest,
-  verifyRequest,
-} from '@ecoma-io/identity-auth-contracts';
-import { createPostgresClient } from '@ecoma-io/identity-auth-infrastructure';
-
-import {
-  NONCE_CLAIM_CONNECT_TIMEOUT_SECONDS,
-  isAuthenticatedInternalRequest,
-  makeNonceGuard,
-  signInternalRequest,
-} from './account-client';
 
 /**
  * Đường xác thực nội bộ của `auth`, nhìn từ chính composition root của nó.
@@ -34,59 +14,46 @@ import {
  *     là tính chất bảo mật quan trọng nhất của file: nếu lỗi hạ tầng bị nuốt thành
  *     "nonce chưa từng thấy" thì mọi envelope đã ký trở thành replayable trong suốt
  *     thời gian DB chết, và không test tuần tự nào bắt được.
- *  3. **`makeNonceGuard` trên PostgreSQL thật** — chỉ chạy khi có `AUTH_TEST_PG_*`.
- *     ⚠️ **Thiếu biến thì SKIP, và một skip trông y hệt một pass.** PR phải nói rõ
- *     phần đó chưa verify nếu CI không set biến.
+ *  3. **`makeNonceGuard` trên PostgreSQL thật** — chỉ chạy khi runner có Docker.
+ *     ⚠️ **Thiếu Docker thì SKIP, và một skip trông y hệt một pass.** PR phải nói rõ
+ *     phần đó chưa verify nếu môi trường không có Docker.
  *
  * ⚠️ Test này **áp chính các file `apps/auth/migrations/*.sql`**, không khai một bảng
  * riêng: một bảng do test tự chế là schema thứ hai, và test xanh trên schema thứ hai
- * không nói được gì về production. Cùng lý do và cùng khoá advisory với
- * `libs/identity-auth-infrastructure/src/internal-nonces.spec.ts` và
- * `authorization-code-cas.spec.ts` — ba spec dựng schema trên cùng một database.
+ * không nói được gì về production.
+ *
+ * ⚠️ Database PostgreSQL đến từ **testcontainers**, dựng một container riêng cho
+ * chính file này (`startAuthDatabase`): suite bên lib
+ * (`libs/identity-auth-infrastructure/src/internal-nonces.spec.ts`) dọn và đếm toàn
+ * bảng `auth.internal_nonces`, nên một database dùng chung là nguồn xung đột lịch
+ * chạy — container riêng làm các test "sở hữu schema" thành đúng, và xoá luôn nhu
+ * cầu advisory lock của hình thức cũ.
  */
 
-const HOST = process.env['AUTH_TEST_PG_HOST'];
-const PORT = process.env['AUTH_TEST_PG_PORT'];
-const DATABASE = process.env['AUTH_TEST_PG_DATABASE'];
-const RUNTIME_USER = process.env['AUTH_TEST_PG_USER'];
-const RUNTIME_PASSWORD = process.env['AUTH_TEST_PG_PASSWORD'];
-const MIGRATOR_USER = process.env['AUTH_TEST_PG_MIGRATOR_USER'];
-const MIGRATOR_PASSWORD = process.env['AUTH_TEST_PG_MIGRATOR_PASSWORD'];
+import {
+  DEFAULT_SKEW_SECONDS,
+  INTERNAL_NONCE_HEADER,
+  INTERNAL_SIGNATURE_HEADER,
+  INTERNAL_TIMESTAMP_HEADER,
+  NONCE_TTL_BUFFER_SECONDS,
+  createNonce,
+  signRequest,
+  verifyRequest,
+} from '@ecoma-io/identity-auth-contracts';
+import { createPostgresClient } from '@ecoma-io/identity-auth-infrastructure';
+import { probeDocker, startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
 
-const available =
-  HOST !== undefined &&
-  PORT !== undefined &&
-  DATABASE !== undefined &&
-  RUNTIME_USER !== undefined &&
-  MIGRATOR_USER !== undefined;
+import {
+  NONCE_CLAIM_CONNECT_TIMEOUT_SECONDS,
+  isAuthenticatedInternalRequest,
+  makeNonceGuard,
+  signInternalRequest,
+} from './account-client';
 
-const MIGRATIONS_DIR = join(import.meta.dirname, '../migrations');
+/** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
+const dockerAvailable = await probeDocker();
 
-/**
- * Khoá advisory cho bước dựng schema — **phải trùng** hằng cùng tên ở
- * `libs/identity-auth-infrastructure/src/internal-nonces.spec.ts` và
- * `authorization-code-cas.spec.ts`.
- *
- * ⚠️ Không trùng thì lock mất tác dụng và triệu chứng duy nhất là một suite đỏ ngẫu
- * nhiên vì `relation "oauth_clients" already exists`: Vitest chạy song song theo file,
- * `nx run-many -t test` chạy song song theo project.
- */
-const SCHEMA_SETUP_LOCK_KEY = 8_274_411;
-
-/**
- * Khoá advisory giữ suốt suite — **phải trùng** hằng cùng tên ở
- * `libs/identity-auth-infrastructure/src/internal-nonces.spec.ts`.
- *
- * ⚠️ Cần cả hai khoá, không chỉ khoá schema. `SCHEMA_SETUP_LOCK_KEY` chỉ tuần tự hoá
- * bước `CREATE`; nó không ngăn hai suite chạm cùng dữ liệu. `auth.internal_nonces` là
- * bảng **dùng chung**, và spec bên lib `DELETE` toàn bảng rồi assert `count(*)` toàn
- * bảng — nên chạy song song thì hàng của suite này lọt vào phép đếm đó. Đã đo được:
- * `nx run-many -t test` cho hai project song song làm `count(*)` trả `2` thay vì `1`.
- *
- * Thứ tự lấy khoá nhất quán giữa các suite (`suite` rồi mới `schema`) nên không có
- * chu trình khoá. Khoá là session-scoped nên nó nằm trên một connection duy nhất.
- */
-const NONCE_SUITE_LOCK_KEY = 3_771_002;
+let db: AuthDatabase;
 
 /** Secret HMAC dùng chung trong test — không phải secret thật, chỉ để ký/verify. */
 const SECRET = 'test-internal-hmac-secret-0123456789abcdef';
@@ -112,9 +79,12 @@ interface TestBinding {
 }
 
 function bindingFor(user: string, password: string | undefined): TestBinding {
-  const host = HOST as string;
-  const port = Number(PORT as string);
-  const database = DATABASE as string;
+  if (db === undefined) {
+    throw new Error('database container is not running');
+  }
+  const host = db.host;
+  const port = db.port;
+  const database = db.database;
   return {
     connectionString: `postgres://${user}:${encodeURIComponent(password ?? '')}@${host}:${port}/${database}`,
     host,
@@ -176,43 +146,15 @@ async function signedRequest(params: {
   };
 }
 
-/** Dựng schema bằng chính các file migration của `apps/auth`, dưới advisory lock. */
-async function ensureSchema(): Promise<void> {
-  const migrator = createPostgresClient(bindingFor(MIGRATOR_USER as string, MIGRATOR_PASSWORD));
-  try {
-    await migrator.unsafe('SELECT pg_advisory_lock($1)', [SCHEMA_SETUP_LOCK_KEY]);
-    try {
-      const existing = await migrator.unsafe<{ table_name: string }>(
-        `SELECT table_name FROM information_schema.tables
-          WHERE table_schema = 'auth' AND table_name = 'internal_nonces'`,
-      );
-      if (existing.length > 0) {
-        return;
-      }
-      // ⚠️ Thứ tự số trong tên file là thứ tự áp dụng. Migration không dùng
-      // `CREATE TABLE IF NOT EXISTS` (README giải thích vì sao), nên re-runnable đến
-      // từ việc kiểm tra ở trên — dưới lock, để hai tiến trình không cùng `CREATE`.
-      const files = readdirSync(MIGRATIONS_DIR)
-        .filter((name) => name.endsWith('.sql'))
-        .toSorted();
-      for (const file of files) {
-        await migrator.unsafe(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'));
-      }
-    } finally {
-      await migrator.unsafe('SELECT pg_advisory_unlock($1)', [SCHEMA_SETUP_LOCK_KEY]);
-    }
-  } finally {
-    await migrator.end({ timeout: 1 });
-  }
-}
-
 /** Chạy `body` với một client runtime và một client migrator, rồi đóng cả hai. */
 async function withStore(
   body: (runtime: ReturnType<typeof createPostgresClient>) => Promise<void>,
 ): Promise<void> {
-  await ensureSchema();
-  const migrator = createPostgresClient(bindingFor(MIGRATOR_USER as string, MIGRATOR_PASSWORD));
-  const runtime = createPostgresClient(bindingFor(RUNTIME_USER as string, RUNTIME_PASSWORD));
+  if (db === undefined) {
+    throw new Error('database container is not running');
+  }
+  const migrator = createPostgresClient(bindingFor(db.migratorUser, db.migratorPassword));
+  const runtime = createPostgresClient(bindingFor(db.runtimeUser, db.runtimePassword));
   try {
     await migrator.unsafe('DELETE FROM auth.internal_nonces');
     await body(runtime);
@@ -313,10 +255,14 @@ describe('internal-auth contract (auth-side view)', () => {
     expect(Number.isInteger(NONCE_CLAIM_CONNECT_TIMEOUT_SECONDS)).toBe(true);
   });
 
-  it('shares one advisory lock with the other PostgreSQL specs', () => {
-    // Test trên **file nguồn**, không cần database — và nó phải chạy cả khi không có
-    // PostgreSQL: thiếu nó thì hai spec lặng lẽ dùng hai khoá khác nhau và lock mất
-    // tác dụng, mà triệu chứng chỉ là một suite đỏ ngẫu nhiên.
+  it('shares no database with the other PostgreSQL specs', () => {
+    // Thay cho test "shares one advisory lock" của hình thức cũ: hai suite PG
+    // (spec này và `internal-nonces.spec.ts` bên lib) từng chia sẻ một database
+    // qua biến môi trường, nên chúng cần advisory lock để không giành schema và
+    // dữ liệu. Giờ mỗi spec file tự dựng container riêng (`startAuthDatabase`),
+    // không còn tài nguyên dùng chung nào để giành — và test này ghim chính tính
+    // chất đó trên nguồn: nếu ai đó đưa lại một connection string dùng chung, test
+    // đỏ trước khi khoá cũ được viết lại.
     const other = readFileSync(
       join(
         import.meta.dirname,
@@ -324,12 +270,13 @@ describe('internal-auth contract (auth-side view)', () => {
       ),
       'utf8',
     );
-    const schemaKey = /SCHEMA_SETUP_LOCK_KEY = ([\d_]+)/u.exec(other);
-    const suiteKey = /NONCE_SUITE_LOCK_KEY = ([\d_]+)/u.exec(other);
-    expect(schemaKey).not.toBeNull();
-    expect(suiteKey).not.toBeNull();
-    expect(Number((schemaKey?.[1] ?? '').replaceAll('_', ''))).toBe(SCHEMA_SETUP_LOCK_KEY);
-    expect(Number((suiteKey?.[1] ?? '').replaceAll('_', ''))).toBe(NONCE_SUITE_LOCK_KEY);
+    const here = readFileSync(join(import.meta.dirname, 'internal-auth.spec.ts'), 'utf8');
+    // Tách chuỗi để pattern không tự khớp chính nguồn chứa nó.
+    const legacyEnv = ['AUTH_TEST_', 'PG_'].join('');
+    for (const source of [other, here]) {
+      expect(source).toContain('startAuthDatabase');
+      expect(source).not.toContain(legacyEnv);
+    }
   });
 });
 
@@ -418,38 +365,26 @@ describe('fail closed when the nonce store cannot be reached', () => {
   });
 });
 
-describe.skipIf(!available)('makeNonceGuard against a real PostgreSQL', () => {
-  // Giữ khoá suite cho hết vòng đời — xem JSDoc của `NONCE_SUITE_LOCK_KEY`. Spec
-  // bên lib dọn và đếm **toàn bảng** `auth.internal_nonces`, nên hai suite không được
-  // chạm cùng bảng cùng lúc.
-  let suiteLock: ReturnType<typeof postgres> | undefined;
-
+describe.skipIf(!dockerAvailable)('makeNonceGuard against a real PostgreSQL', () => {
+  // Container riêng của file này, dựng một lần cho cả suite. Spec bên lib dọn và
+  // đếm **toàn bảng** `auth.internal_nonces` — container riêng bảo đảm nó không bao
+  // giờ nhìn thấy hàng của suite này (và ngược lại) mà không cần khoá nào.
   beforeAll(async () => {
-    suiteLock = postgres({
-      host: HOST as string,
-      port: Number(PORT as string),
-      user: MIGRATOR_USER as string,
-      password: MIGRATOR_PASSWORD ?? '',
-      database: DATABASE as string,
-      max: 1,
-      prepare: false,
-    });
-    await suiteLock.unsafe('SELECT pg_advisory_lock($1)', [NONCE_SUITE_LOCK_KEY]);
-  }, 30_000);
-
-  afterAll(async () => {
-    if (suiteLock === undefined) {
+    if (!dockerAvailable) {
       return;
     }
-    await suiteLock.unsafe('SELECT pg_advisory_unlock($1)', [NONCE_SUITE_LOCK_KEY]);
-    await suiteLock.end({ timeout: 1 });
+    db = await startAuthDatabase();
+  }, 180_000);
+
+  afterAll(async () => {
+    await db.stop();
   });
 
   it('first acceptance, then the same envelope is rejected as `replayed_nonce`', async () => {
     await withStore(async () => {
       const envelopeTimestamp = Math.floor(Date.now() / 1000);
       const nonce = createNonce();
-      const binding = bindingFor(RUNTIME_USER as string, RUNTIME_PASSWORD);
+      const binding = bindingFor(db.runtimeUser, db.runtimePassword);
       const guard = (): ((n: string, t: number) => Promise<boolean>) =>
         makeNonceGuard(binding, DEFAULT_SKEW_SECONDS);
 
@@ -503,7 +438,7 @@ describe.skipIf(!available)('makeNonceGuard against a real PostgreSQL', () => {
     // của khoá nghiệp vụ (`event_id`), không phải của nonce.
     await withStore(async () => {
       const envelopeTimestamp = Math.floor(Date.now() / 1000);
-      const binding = bindingFor(RUNTIME_USER as string, RUNTIME_PASSWORD);
+      const binding = bindingFor(db.runtimeUser, db.runtimePassword);
       const payload = '{"sub":"sub_2","outcome":"verified"}';
 
       for (let attempt = 0; attempt < 2; attempt++) {
@@ -561,7 +496,7 @@ describe.skipIf(!available)('makeNonceGuard against a real PostgreSQL', () => {
         secret: SECRET,
         now: String(now),
         claimNonce: makeNonceGuard(
-          bindingFor(RUNTIME_USER as string, RUNTIME_PASSWORD),
+          bindingFor(db.runtimeUser, db.runtimePassword),
           DEFAULT_SKEW_SECONDS,
         ),
       });
@@ -599,7 +534,7 @@ describe.skipIf(!available)('makeNonceGuard against a real PostgreSQL', () => {
     // `POST /internal/session/verified`, rồi dịch `ok:false` thành 401 và
     // `db_unreachable` thành 503. Đây là đường mà một request nội bộ thật đi qua.
     await withStore(async () => {
-      const binding = bindingFor(RUNTIME_USER as string, RUNTIME_PASSWORD);
+      const binding = bindingFor(db.runtimeUser, db.runtimePassword);
       const nowMs = Date.now();
       const nonce = createNonce();
       const { request, body } = await signedRequest({
@@ -650,7 +585,7 @@ describe.skipIf(!available)('makeNonceGuard against a real PostgreSQL', () => {
       const envelopeTimestamp = now - 60;
       const nonce = createNonce();
       const customSkew = 120;
-      const binding = bindingFor(RUNTIME_USER as string, RUNTIME_PASSWORD);
+      const binding = bindingFor(db.runtimeUser, db.runtimePassword);
 
       const result = await verifyRequest({
         method: 'POST',

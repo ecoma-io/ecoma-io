@@ -103,7 +103,7 @@ const DOCKER_PROBE_ENV = 'ECOMA_ACCOUNT_DOCKER_PROBE';
  * Khi probe thất bại:
  * - In một cảnh báo tiếng Anh (một lần mỗi lần chạy) nêu rõ bao nhiêu suite sẽ
  *   bị skip — skip im lặng với exit 0 mới là thứ che mất test.
- * - Nếu `ACCOUNT_REQUIRE_DOCKER=1` (CI đặt biến này) thì **ném lỗi** thay vì
+ * - Nếu `ECOMA_REQUIRE_DOCKER=1` (CI đặt biến này) thì **ném lỗi** thay vì
  *   trả `false`: runner REQUIRE Docker thì vắng Docker là sự cố, không phải
  *   lý do để bỏ qua một nửa suite.
  */
@@ -154,11 +154,11 @@ async function runDockerProbe(): Promise<boolean> {
   // trong code (xem AGENTS.md — console output giữ tiếng Anh).
   console.warn(
     `Docker is unavailable: the ${suiteCount} integration suite(s) guarded by probeDocker will be SKIPPED and this run still exits 0. ` +
-      'Set ACCOUNT_REQUIRE_DOCKER=1 to turn the skipped suites into a hard failure.',
+      'Set ECOMA_REQUIRE_DOCKER=1 to turn the skipped suites into a hard failure.',
   );
-  if (process.env['ACCOUNT_REQUIRE_DOCKER'] === '1') {
+  if (process.env['ECOMA_REQUIRE_DOCKER'] === '1') {
     throw new Error(
-      'ACCOUNT_REQUIRE_DOCKER=1 but the Docker probe failed; refusing to skip the integration suites.',
+      'ECOMA_REQUIRE_DOCKER=1 but the Docker probe failed; refusing to skip the integration suites.',
     );
   }
   return false;

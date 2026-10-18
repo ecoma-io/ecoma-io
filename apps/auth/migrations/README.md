@@ -274,53 +274,38 @@ consent≠grant §3.4, signing keys §3.5, no-FK §3.6, máy trạng thái §5.1
 
 ## Chạy test trên PostgreSQL thật
 
-Ba spec trong `libs/identity-auth-infrastructure/src/` **không** dùng fake:
-`authorization-code-cas.spec.ts` (tính đúng đắn của CAS nằm ở hành vi khoá hàng của
-PostgreSQL dưới `READ COMMITTED`), `authorization-transaction-store.spec.ts` (hợp đồng
+Bảy spec PG **không** dùng fake: ba spec trong `libs/identity-auth-infrastructure/src/`
+(`authorization-code-cas.spec.ts` — tính đúng đắn của CAS nằm ở hành vi khoá hàng của
+PostgreSQL dưới `READ COMMITTED`; `authorization-transaction-store.spec.ts` — hợp đồng
 persistence của `authorization_transactions` — catalog schema sau `0011`, codec
-`bytea`↔base64url, CAS transition) và `internal-nonces.spec.ts` (tính đúng đắn của
-replay guard nằm ở việc PostgreSQL quyết định thắng thua bằng ràng buộc UNIQUE). Một
-fake `Map` cho đúng một winner và vẫn dạy ta tin rằng `SELECT` rồi `UPDATE`/`INSERT`
-là atomic.
+`bytea`↔base64url, CAS transition; `internal-nonces.spec.ts` — tính đúng đắn của replay
+guard nằm ở việc PostgreSQL quyết định thắng thua bằng ràng buộc UNIQUE) và bốn spec
+PG của `apps/auth/src/`. Một fake `Map` cho đúng một winner và vẫn dạy ta tin rằng
+`SELECT` rồi `UPDATE`/`INSERT` là atomic.
 
-⚠️ **Không có `AUTH_TEST_PG_*` thì test SKIP, và một skip trông y hệt một pass.**
-CI đã set biến này cho job `unit-test` (service container `postgres:17-alpine` +
-bước provisioning hai role trong `.github/workflows/ci.yaml`), nên các suite PG
-chạy thật trên runner thay vì skip. Chạy tay ngoài CI thì tự set theo mẫu bên
-dưới; nếu môi trường của bạn không set, PR phải ghi rõ phần đó chưa verify. Xem
-PR body §Test evidence.
+⚠️ **PostgreSQL đến từ testcontainers.** Mỗi spec file tự dựng **một container**
+`postgres:17-alpine` riêng (`startAuthDatabase` trong `tests/integration/harness.ts`
+của từng project), provisioning hai role đúng trình tự operator ở
+§"Vai trò của operator" (migrator có DDL, runtime chỉ DML), rồi apply **chính các file
+trong thư mục này** bằng credential `ecoma_auth_migrator` thật — nên nó kiểm adapter
+với đúng schema production. Một bảng do test tự chế là một schema thứ hai, và test
+xanh trên schema thứ hai không nói được gì về production — đó là điều đã xảy ra: bản
+test đầu dựng cột `code_id`/`scope` trong khi schema thật có
+`id uuid`/`code_hash`/`granted_scopes text[]`.
 
-⚠️ **Cả ba spec dựng schema dưới CÙNG một advisory lock** (hằng
-`SCHEMA_SETUP_LOCK_KEY` ở đầu mỗi file, có test assert các bên khai cùng số). Vitest
-chạy song song theo file và `nx run-many -t test` chạy song song theo project, nên
-không có lock thì hai tiến trình cùng thấy "bảng chưa có" rồi cùng `CREATE`, và
-người thua nhận `relation "oauth_clients" already exists` — một suite đỏ vì lịch
-chạy chứ không vì hành vi.
+⚠️ **Không có Docker thì test SKIP, và một skip trông y hệt một pass.** CI đặt
+`ECOMA_REQUIRE_DOCKER=1` cho job `unit-test`, biến một runner vắng Docker thành lỗi
+thật thay vì một nửa suite skip với exit 0. Chạy tay chỉ cần Docker daemon đang chạy:
 
 ```bash
-docker run -d --name ecoma-auth-pg -p 55432:5432 -e POSTGRES_PASSWORD=postgres postgres:17-alpine
-
-# Hai role, tách bạch — role runtime KHÔNG được DDL.
-docker exec ecoma-auth-pg psql -U postgres -c "CREATE ROLE ecoma_auth_migrator LOGIN PASSWORD 'migrator-pw'"
-docker exec ecoma-auth-pg psql -U postgres -c "CREATE ROLE ecoma_auth_runtime LOGIN PASSWORD 'runtime-pw'"
-docker exec ecoma-auth-pg psql -U postgres -c "CREATE DATABASE db_auth_verify"
-
-AUTH_TEST_PG_HOST=127.0.0.1 \
-AUTH_TEST_PG_PORT=55432 \
-AUTH_TEST_PG_DATABASE=db_auth_verify \
-AUTH_TEST_PG_USER=ecoma_auth_runtime \
-AUTH_TEST_PG_PASSWORD=runtime-pw \
-AUTH_TEST_PG_MIGRATOR_USER=ecoma_auth_migrator \
-AUTH_TEST_PG_MIGRATOR_PASSWORD=migrator-pw \
-  pnpm nx test identity-auth-infrastructure --skip-nx-cache
+pnpm nx test @ecoma-io/identity-auth-infrastructure --skip-nx-cache
+pnpm nx test @ecoma-io/auth --skip-nx-cache
 ```
 
 ⚠️ **`--skip-nx-cache` là bắt buộc.** Nx cache theo input của task; một lần chạy
 xanh được cache lại, và lần sau cùng input sẽ trả kết quả cũ mà không chạy gì —
 kể cả khi database đã đổi.
 
-⚠️ Test **áp chính các file trong thư mục này** (nếu schema chưa có), nên nó kiểm
-adapter với đúng schema production. Một bảng do test tự chế là một schema thứ
-hai, và test xanh trên schema thứ hai không nói được gì về production — đó là
-điều đã xảy ra: bản test đầu dựng cột `code_id`/`scope` trong khi schema thật có
-`id uuid`/`code_hash`/`granted_scopes text[]`.
+⚠️ Vì mỗi spec file có **container riêng**, các suite không chia sẻ schema hay dữ
+liệu — advisory lock giữa các spec của hình thức cũ (một database dùng chung qua biến
+`AUTH_TEST_PG_*`) đã bị xoá cùng lý do nó từng tồn tại.
