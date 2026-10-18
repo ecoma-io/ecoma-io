@@ -28,6 +28,7 @@ import sessionRoute from '../../server/api/auth/session.get';
 import verifyRoute from '../../server/api/auth/verify.post';
 import { writeLog } from '../../server/utils/logger';
 import { OTP_ACR } from '../../server/lib/session';
+import { insertChallenge } from '../../server/lib/otp';
 import {
   ACCOUNT_DATABASE,
   type AccountDatabase,
@@ -789,12 +790,12 @@ describe.skipIf(!dockerAvailable)('email OTP flow end-to-end', () => {
   });
 
   it('answers 204 for concurrent challenges racing the one-active constraint', async () => {
-    // Race thật của partial UNIQUE index: hai request vượt qua được cooldown
-    // (cả hai đọc challenge active trước khi consume-trước-ghi của request kia
-    // hoàn tất), cùng tới insertChallenge. Thứ tự thắng không kiểm soát được,
-    // nhưng mọi kết cục phải là 204 — người thắng nhận mail (0 hoặc 1 mail tuỳ
-    // hai request có cùng thấy cooldown không bị chặn không), người thua im
-    // lặng; không bao giờ 503 unique violation.
+    // Hai request song song cùng tới insertChallenge: pre-check cooldown của route
+    // nằm ngoài transaction nên không tuần tự hoá được gì — guard trong
+    // transaction (`SELECT … FOR UPDATE` + isResendBlocked) mới là thứ đóng kẽ hở.
+    // Cả hai kết cục bị chặn đều phải 204: người thắng nhận mail (0 hoặc 1 mail tuỳ
+    // hai request có cùng thấy cooldown không bị chặn không), người thua im lặng;
+    // không bao giờ 503 unique violation, và không bao giờ hai mail.
     const mail = installMailStub();
     try {
       const responses = await Promise.all([
@@ -806,8 +807,76 @@ describe.skipIf(!dockerAvailable)('email OTP flow end-to-end', () => {
         expect(response.status).toBe(204);
         expect(await response.text()).toBe('');
       }
-      // Người thắng duy nhất (nếu có) gửi đúng một mail; người thua không gửi.
       expect(mail.sent.length).toBeLessThanOrEqual(1);
+    } finally {
+      mail.restore();
+    }
+  });
+
+  it('rejects the second challenge in a cooldown race deterministically via the in-transaction guard', async () => {
+    // Hồi quy cho kẽ hở race đo được trên CI (mail.sent == 2): pre-check cooldown
+    // của route đọc ngoài transaction, nên T2 có thể vượt pre-check khi bảng còn
+    // trống rồi consume chính hàng T1 vừa commit trong kẽ trước khi T2 tới
+    // insertChallenge. Kịch bản T1-đã-commit-rồi chỉ tái hiện được nửa sau của race
+    // qua route (T2 dừng ở pre-check cooldown trước khi chạm insert), nên nửa đó
+    // được pin trực tiếp trên contract của insertChallenge: khi còn hàng active
+    // trong cooldown, nó phải trả `null` (không consume hàng cũ — seen bằng
+    // `consumed_at IS NULL` không đổi), KHÔNG insert hàng mới, KHÔNG ném 23505.
+    // Kết hợp test song song phía trên (sự kiện không kiểm soát được) và test unit
+    // khác, contract này đóng kín cả hai nửa của race.
+    const mail = installMailStub();
+    try {
+      // T1 đi trọn luồng: commit + gửi đúng một mail.
+      await post('/api/auth/challenge', { email: EMAIL_MAIN });
+      expect(mail.sent).toHaveLength(1);
+
+      const client = await db.connect();
+      let activeId: string;
+      try {
+        const { rows } = await client.query<{ id: string; code_digest: string }>(
+          `SELECT id, code_digest FROM account.otp_challenges WHERE consumed_at IS NULL`,
+        );
+        expect(rows).toHaveLength(1);
+        const row = rows[0];
+        if (row === undefined) {
+          throw new Error('expected exactly one active challenge row');
+        }
+        activeId = row.id;
+      } finally {
+        await client.end();
+      }
+
+      // T2 gọi đúng đoạn code production gọi: insertChallenge trên hàng active còn
+      // trong cooldown ⇒ `null`, hàng T1 nguyên vẹn, tổng số hàng không đổi.
+      const pool = await db.createRuntimePool();
+      try {
+        const outcome = await insertChallenge(pool, {
+          addressHash: await (
+            await import('node:crypto')
+          )
+            .createHash('sha256')
+            .update(EMAIL_MAIN.trim().toLowerCase())
+            .digest('hex'),
+          digest: 'a'.repeat(64),
+          purpose: 'login',
+          expiresAt: new Date(Date.now() + 600_000),
+          resendCooldownSeconds: 60,
+        });
+        expect(outcome).toBeNull();
+      } finally {
+        await pool.end();
+      }
+
+      const after = await db.connect().then(async (c2) => {
+        try {
+          const { rows } = await c2.query<{ id: string }>(`SELECT id FROM account.otp_challenges`);
+          return rows;
+        } finally {
+          await c2.end();
+        }
+      });
+      expect(after).toHaveLength(1);
+      expect(after[0]?.id).toBe(activeId);
     } finally {
       mail.restore();
     }

@@ -55,6 +55,7 @@ import {
   OTP_PURPOSE_LOGIN,
   OTP_RATE_LIMIT_HOUR_WINDOW_SECONDS,
   OTP_RATE_LIMIT_SHORT_WINDOW_SECONDS,
+  OTP_RESEND_COOLDOWN_SECONDS,
   OTP_TTL_SECONDS,
   resolveOtpTarget,
 } from '../../lib/otp';
@@ -131,12 +132,19 @@ export default defineEventHandler(async (event) => {
       const target = resolveOtpTarget(await lookupVerifiedAddress(pool, hash));
 
       try {
-        await insertChallenge(pool, {
+        const inserted = await insertChallenge(pool, {
           addressHash: hash,
           digest: material.digest,
           purpose: OTP_PURPOSE_LOGIN,
           expiresAt,
+          resendCooldownSeconds: OTP_RESEND_COOLDOWN_SECONDS,
         });
+        if (inserted === null) {
+          // Thua cooldown **trong** transaction: request song song vừa commit một
+          // challenge còn trong 60s. Đây cùng họ với pre-check cooldown ở trên —
+          // branch bị chặn bình thường, về `silently_rejected` (204).
+          return 'silently_rejected' as const;
+        }
       } catch (error) {
         if (isUniqueViolation(error)) {
           // Thua race: request song song vừa consume/insert trước. Đây là nhánh
