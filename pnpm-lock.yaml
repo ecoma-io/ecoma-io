@@ -761,6 +761,9 @@ importers:
       '@commitlint/parse':
         specifier: ^21.2.3
         version: 21.2.3
+      '@node-rs/xxhash':
+        specifier: 1.7.8
+        version: 1.7.8
       citty:
         specifier: ^0.2.2
         version: 0.2.2

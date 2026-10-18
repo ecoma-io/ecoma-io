@@ -76,6 +76,11 @@ tsconfig.tsbuildinfo
 # - Passphrase chỉ sống ở `PULUMI_CONFIG_PASSPHRASE`/`PULUMI_CONFIG_PASSPHRASE_FILE`
 #   ngoài repo.
 .pulumi/
+# State backend `file://` của local deployment — nằm trong worktree
+# (`.pulumi-local-state/.pulumi/...`) và chứa ciphertext secret (password
+# PostgreSQL). Pattern `.pulumi/` ở trên đã che nó, nhưng entry tường minh
+# giữ Contracts: đổi tên thư mục state không âm thầm đưa secret vào Git.
+.pulumi-local-state/
 Pulumi.*.yaml
 
 

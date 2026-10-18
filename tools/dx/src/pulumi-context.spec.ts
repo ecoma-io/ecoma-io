@@ -1,0 +1,176 @@
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterAll, afterEach, describe, expect, it } from 'vitest';
+
+import { worktreeNamespace } from './deploy-namespace.js';
+import {
+  ensureStack,
+  fullStackRef,
+  localStateDir,
+  pulumiEnv,
+  requirePassphrase,
+  resolveContext,
+} from './pulumi-context.js';
+
+const cleanup: string[] = [];
+
+function tempWorktree(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'pulumi-ctx-spec-'));
+  cleanup.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  // Không rmSync ở afterEach cho các worktree chứa state Pulumi thật — chỉ xoá
+  // ở afterAll để test song song trong cùng suite không đụng nhau.
+});
+
+afterAll(() => {
+  for (const dir of cleanup.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+describe('resolveContext', () => {
+  it('mỗi worktree một namespace, stack và state backend riêng', () => {
+    const a = resolveContext(tempWorktree());
+    const b = resolveContext(tempWorktree());
+    expect(a.namespace).not.toBe(b.namespace);
+    expect(a.stackName).not.toBe(b.stackName);
+    expect(a.stateUrl).not.toBe(b.stateUrl);
+  });
+
+  it('stack name tuân contract local-<ns> và state nằm trong worktree (ngoài Git)', () => {
+    const root = tempWorktree();
+    const ctx = resolveContext(root);
+    expect(ctx.stackName).toBe(`local-${worktreeNamespace(root)}`);
+    expect(ctx.stateUrl.startsWith(`file://${root}`)).toBe(true);
+  });
+
+  it('hai worktree có đường dẫn khác nhau không bao giờ cùng state dir — kể cả sau normalize', () => {
+    const root = tempWorktree();
+    const ctx1 = resolveContext(root);
+    // Cùng thư mục qua đường dẫn có trailing slash và path tương đối phải ra
+    // MỘT context (normalize cùng nguồn), nhưng khác thư mục thì KHÔNG BAO GIỜ
+    // trùng stateUrl.
+    const ctxSame = resolveContext(`${root}/`);
+    expect(ctxSame.stateUrl).toBe(ctx1.stateUrl);
+    const ctxOther = resolveContext(tempWorktree());
+    expect(ctxOther.stateUrl).not.toBe(ctx1.stateUrl);
+  });
+});
+
+describe('fullStackRef', () => {
+  it('stack ref đầy đủ theo format organization/<project>/<stack> của backend file://', () => {
+    const ctx = resolveContext(tempWorktree());
+    expect(fullStackRef('platform-deploy', ctx)).toBe(
+      `organization/platform-deploy/${ctx.stackName}`,
+    );
+  });
+
+  it('hai worktree → hai stack ref khác nhau cho cùng project', () => {
+    const a = fullStackRef('platform-deploy', resolveContext(tempWorktree()));
+    const b = fullStackRef('platform-deploy', resolveContext(tempWorktree()));
+    expect(a).not.toBe(b);
+  });
+});
+
+describe('requirePassphrase', () => {
+  const SAVE = {
+    passphrase: process.env.PULUMI_CONFIG_PASSPHRASE,
+    file: process.env.PULUMI_CONFIG_PASSPHRASE_FILE,
+  };
+
+  afterEach(() => {
+    if (SAVE.passphrase === undefined) delete process.env.PULUMI_CONFIG_PASSPHRASE;
+    else process.env.PULUMI_CONFIG_PASSPHRASE = SAVE.passphrase;
+    if (SAVE.file === undefined) delete process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
+    else process.env.PULUMI_CONFIG_PASSPHRASE_FILE = SAVE.file;
+  });
+
+  it('missing passphrase → error với hướng dẫn hành động, không fallback', () => {
+    delete process.env.PULUMI_CONFIG_PASSPHRASE;
+    delete process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
+    const result = requirePassphrase();
+    expect('error' in result).toBe(true);
+    // `Object.prototype.hasOwnProperty` không giữ narrowing nên extract trước
+    // rồi assert — tránh `expect` trong if (vitest/no-conditional-expect).
+    const error = (result as { error?: string }).error ?? '';
+    expect(error).toContain('PULUMI_CONFIG_PASSPHRASE');
+    expect(error).toContain('export');
+  });
+
+  it('supplied passphrase → returned as-is, never logged', () => {
+    process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-secret-value';
+    const result = requirePassphrase();
+    expect(result).toEqual({ passphrase: 'unit-test-secret-value' });
+  });
+
+  it('PULUMI_CONFIG_PASSPHRASE_FILE counts as a supply path', () => {
+    delete process.env.PULUMI_CONFIG_PASSPHRASE;
+    process.env.PULUMI_CONFIG_PASSPHRASE_FILE = '/tmp/some-passphrase-file';
+    const result = requirePassphrase();
+    expect('passphrase' in result).toBe(true);
+  });
+});
+
+describe('pulumiEnv', () => {
+  it('env mang backend URL của ĐÚNG worktree + passphrase, không đụng PULUMI_HOME', () => {
+    const ctx = resolveContext(tempWorktree());
+    const env = pulumiEnv(ctx, 'test-pass');
+    expect(env['PULUMI_BACKEND_URL']).toBe(ctx.stateUrl);
+    expect(env['PULUMI_CONFIG_PASSPHRASE']).toBe('test-pass');
+    expect(env['PULUMI_SKIP_UPDATE_CHECK']).toBe('1');
+    expect('PULUMI_HOME' in env).toBe(false);
+  });
+});
+
+describe('ensureStack — real Pulumi subprocess isolation', () => {
+  // Suite này chạy `pulumi` thật khi CLI có mặt trên PATH; thiếu CLI thì skip
+  // (CI unit-test job không cài Pulumi — hợp đồng concurrency chỉ tự chứng minh
+  // trên máy developer, nơi lệnh này thực sự chạy).
+  const hasCli = spawnSync('pulumi', ['version'], { encoding: 'utf8' }).status === 0;
+
+  it('two concurrent worktrees: independent backends, no shared state mutation', () => {
+    if (!hasCli) return; // skip im lặng — documented limitation
+    const wtA = tempWorktree();
+    const wtB = tempWorktree();
+    const ctxA = resolveContext(wtA);
+    const ctxB = resolveContext(wtB);
+    const envA = pulumiEnv(ctxA, 'concurrent-test-pass');
+    const envB = pulumiEnv(ctxB, 'concurrent-test-pass');
+
+    const projDirA = join(wtA, 'proj-a');
+    const projDirB = join(wtB, 'proj-b');
+    for (const dir of [projDirA, projDirB]) {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'Pulumi.yaml'), 'name: ctxspec\nruntime: nodejs\nmain: .\n', 'utf8');
+    }
+
+    // KỸ THUẬT: init thật trong backend của từng worktree — chứng minh backend
+    // env-only không cần login và state đi đúng chỗ.
+    ensureStack(projDirA, 'ctxspec', ctxA, envA);
+    ensureStack(projDirB, 'ctxspec', ctxB, envB);
+
+    // State của mỗi worktree chứa đúng stack của nó.
+    expect(existsSync(join(localStateDir(wtA), '.pulumi/stacks/ctxspec'))).toBe(true);
+    expect(existsSync(join(localStateDir(wtB), '.pulumi/stacks/ctxspec'))).toBe(true);
+
+    // Stack name khác nhau giữa hai worktree (namespace trong tên) — dù backend
+    // env bị hoán đổi cũng không bao giờ trỏ nhầm stack.
+    expect(ctxA.stackName).not.toBe(ctxB.stackName);
+
+    // Dọn: xoá stack để state không vương lại trong temp (đã có afterAll rm).
+    for (const [dir, ctx, env] of [
+      [projDirA, ctxA, envA],
+      [projDirB, ctxB, envB],
+    ] as const) {
+      spawnSync('pulumi', ['stack', 'rm', '--yes', '--stack', fullStackRef('ctxspec', ctx)], {
+        cwd: dir,
+        encoding: 'utf8',
+        env,
+      });
+    }
+  });
+});

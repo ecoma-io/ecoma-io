@@ -4,13 +4,8 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import {
-  localDeploy,
-  DEPLOY_STEPS,
-  upsertLocalEnv,
-  type LocalDeployContext,
-  resolveContext,
-} from './local-deploy.js';
+import { localDeploy, classifyStackOutput, DEPLOY_STEPS, upsertLocalEnv } from './local-deploy.js';
+import { resolveContext, type LocalDeployContext } from './pulumi-context.js';
 import { worktreeNamespace } from './deploy-namespace.js';
 
 const cleanup: string[] = [];
@@ -108,5 +103,77 @@ describe('localDeploy previewOnly', () => {
     // bao giờ được ghi trong preview mode.
     localDeploy({ worktreeRoot: root, previewOnly: true });
     expect(existsSync(join(root, '.env'))).toBe(false);
+  });
+
+  it('missing passphrase → exit 1 TRƯỚC khi chạm Pulumi, không tạo state dir', () => {
+    const root = tempWorktree();
+    const saved = process.env.PULUMI_CONFIG_PASSPHRASE;
+    delete process.env.PULUMI_CONFIG_PASSPHRASE;
+    delete process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
+    try {
+      const exit = localDeploy({ worktreeRoot: root, previewOnly: true });
+      expect(exit).toBe(1);
+      // Fail-early nghĩa là KHÔNG có thư mục state nào được tạo ra — mutation
+      // chưa bắt đầu thì không để lại dấu vết nửa chừng.
+      expect(existsSync(join(root, '.pulumi-local-state'))).toBe(false);
+      expect(existsSync(join(root, '.env'))).toBe(false);
+    } finally {
+      if (saved !== undefined) process.env.PULUMI_CONFIG_PASSPHRASE = saved;
+    }
+  });
+});
+
+describe('classifyStackOutput — local-status state machine', () => {
+  it('exit 0 + `{}` (stack init, chưa từng up) → no-outputs, KHÔNG phải deployed', () => {
+    const result = classifyStackOutput({ status: 0, stdout: '{}\n', stderr: '' });
+    expect(result).toEqual({ state: 'no-outputs' });
+  });
+
+  it('exit 0 + outputs đầy đủ → deployed kèm outputs', () => {
+    const outputs = { traefikHostPort: 34942, namespace: 'wtest' };
+    const result = classifyStackOutput({
+      status: 0,
+      stdout: `${JSON.stringify(outputs)}\n`,
+      stderr: '',
+    });
+    expect(result).toEqual({ state: 'deployed', outputs });
+  });
+
+  it('exit != 0 + "no stack named" → no-stack (chưa init — KHÔNG phải backend error)', () => {
+    const result = classifyStackOutput({
+      status: 6,
+      stdout: '',
+      stderr: "error: no stack named 'local-wabc' found",
+    });
+    expect(result).toEqual({ state: 'no-stack' });
+  });
+
+  it('exit != 0 + backend không mở được → backend-error (exit code của status phải khác 0)', () => {
+    const result = classifyStackOutput({
+      status: 1,
+      stdout: '',
+      stderr: 'error: unable to open state directory "file:///x": no such file or directory',
+    });
+    expect(result.state).toBe('backend-error');
+    // Extract bằng cast để tránh `expect` trong if (vitest/no-conditional-expect);
+    // state đã được assert ngay trên nên cast này luôn đúng.
+    const detail = (result as { detail?: string }).detail ?? '';
+    expect(detail).toContain('unable to open state directory');
+  });
+
+  it('exit 0 + stdout không phải JSON → parse-error (không nuốt thành no-outputs)', () => {
+    const result = classifyStackOutput({ status: 0, stdout: 'not-json{{', stderr: '' });
+    expect(result.state).toBe('parse-error');
+  });
+
+  it('exit != 0 + lỗi không nhận diện được → backend-error với dòng lỗi đầu, KHÔNG phải no-stack', () => {
+    const result = classifyStackOutput({
+      status: 1,
+      stdout: '',
+      stderr: 'error: something unprecedented went wrong',
+    });
+    expect(result.state).toBe('backend-error');
+    const detail = (result as { detail?: string }).detail ?? '';
+    expect(detail).toContain('something unprecedented');
   });
 });

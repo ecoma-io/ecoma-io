@@ -13,24 +13,33 @@
  * Preview và apply là hai thao tác phân biệt: command này là đường apply thật
  * (thay đổi Docker resource thật của máy developer), được gọi tường minh;
  * đường an toàn/dry-run của Nx/CI vẫn là target `provision` (provision-gate).
+ *
+ * Mọi lệnh Pulumi chạy qua context cô lập của `pulumi-context.ts`:
+ * `PULUMI_BACKEND_URL` theo worktree + `--stack organization/<project>/<stack>`
+ * tường minh — không `pulumi login`, không selected-stack toàn cục, hai worktree
+ * deploy song song không đụng CLI state của nhau (kiểm thực nghiệm — docs
+ * `04-platform-facts.md` §2.16 PU12–PU13).
  */
 
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import {
-  dockerResourceName,
-  normalizeWorktreeRoot,
-  pulumiStackName,
-  worktreeNamespace,
-} from './deploy-namespace.js';
+import { dockerResourceName } from './deploy-namespace.js';
 import {
   buildRootHost,
   LOCAL_ENV_OWNED_KEYS,
   ROOT_HOST_ENV_KEY,
 } from './platform-outputs-contract.js';
+import {
+  fullStackRef,
+  pulumiEnv,
+  pulumiRun,
+  requirePassphrase,
+  resolveContext,
+} from './pulumi-context.js';
+import type { LocalDeployContext } from './pulumi-context.js';
 import { ROOT_DIR } from './utils.js';
 
 /** Kết quả một bước exec shell — fail-closed: caller phải kiểm `status`. */
@@ -54,86 +63,12 @@ function exec(command: string, args: string[], cwd: string, env?: NodeJS.Process
   };
 }
 
-/** Vị trí backend `file://` cho state Pulumi local — ngoài Git, theo worktree. */
-function localStateDir(worktreeRoot: string): string {
-  return join(worktreeRoot, '.pulumi-local-state');
-}
+/** Tên Nx project của hai deploy unit — dùng cho stack ref đầy đủ và exec cwd. */
+const PLATFORM_PROJECT = 'platform-deploy';
+const HOME_PROJECT = 'home-deploy';
 
-/**
- * Context chạy của một worktree: mọi lệnh Pulumi đều suy từ ba giá trị này.
- * Giữ một chỗ để platform và home dùng ĐÚNG cùng một backend và stack — lệch
- * một chữ là hai stack khác nhau và isolation vỡ.
- */
-export interface LocalDeployContext {
-  worktreeRoot: string;
-  namespace: string;
-  stackName: string;
-  stateUrl: string;
-}
-
-export function resolveContext(worktreeRootInput?: string): LocalDeployContext {
-  const worktreeRoot = normalizeWorktreeRoot(worktreeRootInput ?? ROOT_DIR);
-  const namespace = worktreeNamespace(worktreeRoot);
-  return {
-    worktreeRoot,
-    namespace,
-    stackName: pulumiStackName(namespace),
-    stateUrl: `file://${localStateDir(worktreeRoot)}`,
-  };
-}
-
-/** Env dùng chung cho mọi lệnh Pulumi trong luồng này. */
-function pulumiEnv(): NodeJS.ProcessEnv {
-  // Passphrase cục bộ của state local: state này chỉ chứa resource Docker của
-  // máy developer, không phải state staging/production. Nó KHÔNG phải secret
-  // của môi trường thật và không bao giờ rời khỏi worktree. `PULUMI_SKIP_UPDATE_CHECK`
-  // bỏ một round-trip mạng không cần thiết khỏi mỗi lệnh.
-  return {
-    ...process.env,
-    PULUMI_CONFIG_PASSPHRASE: process.env.PULUMI_CONFIG_PASSPHRASE ?? 'ecoma-local-only',
-    PULUMI_SKIP_UPDATE_CHECK: '1',
-  };
-}
-
-/**
- * Stack Pulumi phải tồn tại trước khi `up`/`preview`/`output` chạy được: trên
- * state backend `file://` mới, `--stack local-<ns>` chưa trỏ tới stack nào và
- * Pulumi fail với "no stack named". Idempotent — `stack init` trên stack có sẵn
- * là lỗi và bị bỏ qua; hỏi backend bằng `stack select` thì tốn thêm một lần
- * exec cho mỗi lệnh nên dùng đường "init-then-ignore".
- */
-function ensureStack(projectDir: string, ctx: LocalDeployContext): void {
-  mkdirSync(localStateDir(ctx.worktreeRoot), { recursive: true });
-  const login = exec('pulumi', ['login', ctx.stateUrl], projectDir, pulumiEnv());
-  if (login.status !== 0) {
-    throw new Error(`pulumi login ${ctx.stateUrl} thất bại:\n${login.stderr}`);
-  }
-  const init = exec('pulumi', ['stack', 'init', ctx.stackName], projectDir, pulumiEnv());
-  // Exit 0: vừa tạo mới. Exit != 0: stack đã tồn tại (hoặc lỗi thật) — phân biệt
-  // bằng `stack select`': select thành công nghĩa là stack có thật và init lỗi
-  // chỉ là "đã có sẵn".
-  if (init.status !== 0) {
-    const select = exec('pulumi', ['stack', 'select', ctx.stackName], projectDir, pulumiEnv());
-    if (select.status !== 0) {
-      throw new Error(
-        `pulumi stack init/select ${ctx.stackName} thất bại:\n${init.stderr}\n${select.stderr}`,
-      );
-    }
-  }
-}
-
-/** Chạy một lệnh Pulumi trong một deploy project; fail → throw kèm stderr. */
-function pulumiRun(projectDir: string, args: string[], ctx: LocalDeployContext): string {
-  const env = pulumiEnv();
-  // `--stack` mọi lệnh + chọn backend qua `pulumi login file://` — hai project
-  // trong cùng worktree dùng đúng một state location.
-  const fullArgs = ['--stack', ctx.stackName, ...args];
-  ensureStack(projectDir, ctx);
-  const run = exec('pulumi', fullArgs, projectDir, env);
-  if (run.status !== 0) {
-    throw new Error(`pulumi ${fullArgs.join(' ')} thất bại:\n${run.stderr || run.stdout}`);
-  }
-  return run.stdout;
+function projectDir(project: string): string {
+  return join(ROOT_DIR, 'deploys', project);
 }
 
 /**
@@ -165,15 +100,18 @@ export function upsertLocalEnv(worktreeRoot: string, rootHost: string): { envPat
   return { envPath };
 }
 
-/** Đọc outputs của platform stack sau khi `up` — fail-closed khi thiếu key. */
+/**
+ * Đọc outputs của platform stack sau khi `up` — fail-closed khi thiếu key.
+ */
 export function readPlatformOutputs(
-  projectDir: string,
+  platformDir: string,
   ctx: LocalDeployContext,
+  env: NodeJS.ProcessEnv,
 ): {
   traefikHostPort: number;
   rootHost: string;
 } {
-  const stdout = pulumiRun(projectDir, ['stack', 'output', '--json'], ctx);
+  const stdout = pulumiRun(platformDir, PLATFORM_PROJECT, ['stack', 'output', '--json'], ctx, env);
   let outputs: Record<string, unknown>;
   try {
     outputs = JSON.parse(stdout) as Record<string, unknown>;
@@ -210,6 +148,25 @@ export interface LocalDeployOptions {
   skipSmoke?: boolean;
 }
 
+/** Chạy pulumi cho MỘT project trong luồng local; lỗi → in stderr rồi return 1. */
+function runProjectStep(
+  label: string,
+  project: string,
+  args: string[],
+  ctx: LocalDeployContext,
+  env: NodeJS.ProcessEnv,
+): boolean {
+  try {
+    pulumiRun(projectDir(project), project, args, ctx, env);
+    return true;
+  } catch (error) {
+    console.error(
+      `[local-deploy] ${label} thất bại: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return false;
+  }
+}
+
 /**
  * Luồng đầy đủ: platform → outputs → .env → home → smoke.
  *
@@ -219,9 +176,19 @@ export interface LocalDeployOptions {
  */
 export function localDeploy(options: LocalDeployOptions = {}): number {
   const ctx = resolveContext(options.worktreeRoot);
-  const platformDir = join(ROOT_DIR, 'deploys/platform-deploy');
-  const homeDir = join(ROOT_DIR, 'deploys/home-deploy');
-  const configArgs = [
+
+  console.log(`[local-deploy] worktree=${ctx.worktreeRoot} namespace=${ctx.namespace}`);
+
+  // Passphrase bắt buộc — fail TRƯỚC khi chạm Pulumi hay Docker nào. Thiếu
+  // passphrase mà để CLI tự fail giữa chừng là mutation dở dang vô ích.
+  const pass = requirePassphrase();
+  if ('error' in pass) {
+    console.error(`[local-deploy] ${pass.error}`);
+    return 1;
+  }
+  const env = pulumiEnv(ctx, pass.passphrase);
+
+  const sharedConfigArgs = [
     '--config',
     `namespace:worktreeRoot=${ctx.worktreeRoot}`,
     // Key stack reference CŨ từng được ghi không prefix (`home-deploy:...`,
@@ -231,19 +198,13 @@ export function localDeploy(options: LocalDeployOptions = {}): number {
     `home-deploy:platformStackRef=`,
   ];
 
-  console.log(`[local-deploy] worktree=${ctx.worktreeRoot} namespace=${ctx.namespace}`);
-
   // 1. Platform up (hoặc preview). Lỗi Pulumi (không login được backend, preview
   //    fail) dừng toàn luồng — .env chỉ được ghi sau khi outputs thật tồn tại.
-  //    Secret `postgres:password` được sinh ngẫu nhiên MỘT LẦM duy nhất trên
-  //    stack mới, rồi đọc lại từ backend ở mọi lần chạy sau — regen mỗi lần chạy
-  //    sẽ khiến container Postgres rebuild không lý do.
   console.log('[local-deploy] platform up/preview…');
   try {
-    ensureStack(platformDir, ctx);
-    // Secret sinh ngẫu nhiên MỘT LẦM duy nhất trên stack mới, rồi đọc lại từ
-    // backend ở mọi lần chạy sau — regen mỗi lần chạy sẽ khiến container
-    // Postgres rebuild không lý do.
+    // Secret `postgres:password` sinh ngẫu nhiên MỘT LẦM duy nhất trên stack
+    // mới, rồi đọc lại từ backend ở mọi lần chạy sau — regen mỗi lần chạy sẽ
+    // khiến container Postgres rebuild không lý do.
     //
     // Bước này chạy CẢ khi `--preview`: preview vẫn phải evaluate chương trình,
     // và `requireSecret` fail ngay trên stack chưa có key — preview "an toàn"
@@ -251,17 +212,30 @@ export function localDeploy(options: LocalDeployOptions = {}): number {
     // apply gì cả: nó chỉ ghi config của stack, chưa đụng Docker.
     const secret = exec(
       'pulumi',
-      ['config', 'get', 'postgres:password', '--stack', ctx.stackName, '--secret'],
-      platformDir,
-      pulumiEnv(),
+      // KHÔNG có cờ `--secret` ở `config get`: CLI 3.267 từ chối `unknown flag`
+      // (đo thật), secret get trả plaintext của giá trị đã mã hoá mà không cần
+      // cờ; cờ `--secret` chỉ thuộc về `config set`. Lỗi cờ từng khiến mỗi lần
+      // chạy sinh mật khẩu MỚI đè lên mật khẩu cũ — container Postgres hiện hữu
+      // không còn khớp secret state sau lần apply kế tiếp.
+      ['config', 'get', 'postgres:password', '--stack', fullStackRef(PLATFORM_PROJECT, ctx)],
+      projectDir(PLATFORM_PROJECT),
+      env,
     );
     if (secret.status !== 0 || secret.stdout.trim().length === 0) {
       const pw = randomBytes(24).toString('base64url');
       const setSecret = exec(
         'pulumi',
-        ['config', 'set', 'postgres:password', pw, '--stack', ctx.stackName, '--secret'],
-        platformDir,
-        pulumiEnv(),
+        [
+          'config',
+          'set',
+          'postgres:password',
+          pw,
+          '--stack',
+          fullStackRef(PLATFORM_PROJECT, ctx),
+          '--secret',
+        ],
+        projectDir(PLATFORM_PROJECT),
+        env,
       );
       if (setSecret.status !== 0) {
         throw new Error(`pulumi config set postgres:password thất bại:\n${setSecret.stderr}`);
@@ -272,73 +246,115 @@ export function localDeploy(options: LocalDeployOptions = {}): number {
     }
     const platformAction = options.previewOnly === true ? 'preview' : 'up';
     const platformArgs =
-      platformAction === 'preview' ? ['preview', ...configArgs] : ['up', '--yes', ...configArgs];
-    pulumiRun(platformDir, platformArgs, ctx);
+      platformAction === 'preview'
+        ? ['preview', ...sharedConfigArgs]
+        : ['up', '--yes', ...sharedConfigArgs];
+    pulumiRun(projectDir(PLATFORM_PROJECT), PLATFORM_PROJECT, platformArgs, ctx, env);
   } catch (error) {
     console.error(`[local-deploy] ${error instanceof Error ? error.message : String(error)}`);
     return 1;
   }
-  if (options.previewOnly === true) {
-    console.log('[local-deploy] preview xong — không apply gì.');
+
+  // 2. Đọc outputs thực tế (port do Docker cấp chỉ tồn tại sau up). Preview
+  //    KHÔNG đọc outputs — Docker chưa cấp port, không gì để đọc.
+  if (options.previewOnly !== true) {
+    console.log('[local-deploy] đọc outputs platform…');
+    let outputs: { traefikHostPort: number; rootHost: string };
+    try {
+      outputs = readPlatformOutputs(projectDir(PLATFORM_PROJECT), ctx, env);
+    } catch (error) {
+      console.error(`[local-deploy] ${error instanceof Error ? error.message : String(error)}`);
+      return 1;
+    }
+
+    // 3. Cập nhật .env (chỉ key thuộc workflow).
+    const { envPath } = upsertLocalEnv(ctx.worktreeRoot, outputs.rootHost);
+    console.log(`[local-deploy] ${ROOT_HOST_ENV_KEY}=${outputs.rootHost} đã ghi vào ${envPath}`);
+
+    // 4. Home up — image build + container + routing labels.
+    console.log('[local-deploy] home up…');
+    const homeOk = runProjectStep(
+      'home up',
+      HOME_PROJECT,
+      [
+        'up',
+        '--yes',
+        ...sharedConfigArgs,
+        // Stack reference format đã kiểm chứng THỰC NGHIỆM trên SDK 3.270 + backend
+        // `file://`: `organization/<project>/<stack>`. Org segment phải là literal
+        // `organization` (backend `file://` hiện tại của Pulumi chỉ chấp nhận org
+        // này — bất kỳ tên nào khác fail "organization name must be 'organization'");
+        // backend nào được consult là backend trong `PULUMI_BACKEND_URL` của env,
+        // không phải chuỗi URL trong ref. Format kiểu
+        // `file://<stateDir>/<project>/<stack>` hoạt động trên SDK cũ (≤ 3.268)
+        // nhưng SDK 3.270 từ chối với "a stack name may not be empty". Sai format
+        // làm StackReference không resolve và `getOutput` trả rỗng/failed — home
+        // không thể deploy.
+        //
+        // Prefix `namespace:` là BẮT BUỘC khớp cách `home-deploy` đọc
+        // (`new pulumi.Config('namespace')`): cờ `--config` không prefix thì
+        // Pulumi ghi vào bag theo project (`home-deploy:...`) — lệch bag là
+        // "Missing required configuration variable 'namespace:platformStackRef'"
+        // trên worktree mới, dù lệnh chạy có vẻ thành công.
+        '--config',
+        `namespace:platformStackRef=organization/platform-deploy/${ctx.stackName}`,
+      ],
+      ctx,
+      env,
+    );
+    if (!homeOk) return 1;
+
+    // 5. Smoke HTTPS qua Traefik với certificate local.
+    if (options.skipSmoke !== true) {
+      const smoke = exec(
+        'node',
+        [join(ROOT_DIR, 'tools/dx/src/local-smoke.mjs'), outputs.rootHost],
+        ROOT_DIR,
+      );
+      if (smoke.status !== 0) {
+        console.error(`[local-deploy] smoke HTTPS thất bại:\n${smoke.stdout}\n${smoke.stderr}`);
+        return 1;
+      }
+      console.log(`[local-deploy] smoke OK: https://${outputs.rootHost}/`);
+    }
+
+    console.log(
+      `[local-deploy] hoàn tất — truy cập https://${outputs.rootHost}/ ` +
+        `(certificate local cần được trust thủ công trên máy developer).`,
+    );
     return 0;
   }
 
-  // 2. Đọc outputs thực tế (port do Docker cấp chỉ tồn tại sau up).
-  console.log('[local-deploy] đọc outputs platform…');
-  const { rootHost } = readPlatformOutputs(platformDir, ctx);
-
-  // 3. Cập nhật .env (chỉ key thuộc workflow).
-  const { envPath } = upsertLocalEnv(ctx.worktreeRoot, rootHost);
-  console.log(`[local-deploy] ${ROOT_HOST_ENV_KEY}=${rootHost} đã ghi vào ${envPath}`);
-
-  // 4. Home up — image build + container + routing labels.
-  console.log('[local-deploy] home up…');
-  pulumiRun(
-    homeDir,
+  // 6. Preview nhánh: platform preview ĐÃ chạy ở bước 1; giờ preview home.
+  //
+  // Preview home TRƯỚC platform apply: StackReference vào stack platform chưa
+  // từng `up` trả outputs `undefined` — preview "xanh" nhưng vô nghĩa (đã kiểm
+  // thực nghiệm: stack init-chưa-up → preview exit 0, mọi output undefined).
+  // Platform ĐÃ up (luồng preview chạy sau một apply thật) thì outputs thật →
+  // preview home kiểm được wiring thật. Stack platform CHƯA TỒN TẠI trong
+  // backend thì preview home fail rõ `unknown stack` — cũng là lỗi tường minh.
+  console.log('[local-deploy] home preview…');
+  const homePreviewOk = runProjectStep(
+    'home preview',
+    HOME_PROJECT,
     [
-      'up',
-      '--yes',
-      ...configArgs,
-      // Stack reference format đã kiểm chứng THỰC NGHIỆM trên SDK 3.270 + backend
-      // `file://`: `organization/<project>/<stack>`. Org segment phải là literal
-      // `organization` (backend `file://` hiện tại của Pulumi chỉ chấp nhận org
-      // này — bất kỳ tên nào khác fail "organization name must be 'organization'");
-      // backend nào được consult là backend đã `pulumi login` trong bước
-      // `ensureStack`, không phải chuỗi URL trong ref. Format kiểu
-      // `file://<stateDir>/<project>/<stack>` hoạt động trên SDK cũ (≤ 3.268)
-      // nhưng SDK 3.270 từ chối với "a stack name may not be empty". Sai format
-      // làm StackReference không resolve và `getOutput` trả rỗng/failed — home
-      // không thể deploy.
-      //
-      // Prefix `namespace:` là BẮT BUỘC khớp cách `home-deploy` đọc
-      // (`new pulumi.Config('namespace')`): cờ `--config` không prefix thì
-      // Pulumi ghi vào bag theo project (`home-deploy:...`) — lệch bag là
-      // "Missing required configuration variable 'namespace:platformStackRef'"
-      // trên worktree mới, dù lệnh chạy có vẻ thành công.
+      'preview',
+      ...sharedConfigArgs,
       '--config',
       `namespace:platformStackRef=organization/platform-deploy/${ctx.stackName}`,
     ],
     ctx,
+    env,
   );
-
-  // 5. Smoke HTTPS qua Traefik với certificate local.
-  if (options.skipSmoke !== true) {
-    const smoke = exec(
-      'node',
-      [join(ROOT_DIR, 'tools/dx/src/local-smoke.mjs'), rootHost],
-      ROOT_DIR,
+  if (!homePreviewOk) {
+    console.error(
+      '[local-deploy] preview home thất bại — nếu platform chưa từng `up` thật thì đây là ' +
+        'giới hạn đã biết: outputs của stack reference là `undefined` trước apply đầu ' +
+        'tiên, chạy `pnpm dx local-deploy` (apply) trước rồi mới preview được wiring home.',
     );
-    if (smoke.status !== 0) {
-      console.error(`[local-deploy] smoke HTTPS thất bại:\n${smoke.stdout}\n${smoke.stderr}`);
-      return 1;
-    }
-    console.log(`[local-deploy] smoke OK: https://${rootHost}/`);
+    return 1;
   }
-
-  console.log(
-    `[local-deploy] hoàn tất — truy cập https://${rootHost}/ ` +
-      `(certificate local cần được trust thủ công trên máy developer).`,
-  );
+  console.log('[local-deploy] preview xong (platform + home) — không apply gì.');
   return 0;
 }
 
@@ -359,23 +375,36 @@ export function localDeploy(options: LocalDeployOptions = {}): number {
  */
 export function localDestroy(options: { worktreeRoot?: string; removeData?: boolean }): number {
   const ctx = resolveContext(options.worktreeRoot);
-  const platformDir = join(ROOT_DIR, 'deploys/platform-deploy');
-  const homeDir = join(ROOT_DIR, 'deploys/home-deploy');
   const volumeName = dockerResourceName(ctx.namespace, 'postgres-volume');
 
+  // Passphrase bắt buộc: `destroy` nạp stack config (PU4) nên không có
+  // passphrase là CLI exit 1 giữa chừng — home đã destroy nhưng platform chưa.
+  const pass = requirePassphrase();
+  if ('error' in pass) {
+    console.error(`[local-destroy] ${pass.error}`);
+    return 1;
+  }
+  const env = pulumiEnv(ctx, pass.passphrase);
+
   console.log('[local-deploy] home destroy…');
-  pulumiRun(
-    homeDir,
+  const homeOk = runProjectStep(
+    'home destroy',
+    HOME_PROJECT,
     ['destroy', '--yes', '--config', `namespace:worktreeRoot=${ctx.worktreeRoot}`],
     ctx,
+    env,
   );
+  if (!homeOk) return 1;
 
   console.log('[local-deploy] platform destroy…');
-  pulumiRun(
-    platformDir,
+  const platformOk = runProjectStep(
+    'platform destroy',
+    PLATFORM_PROJECT,
     ['destroy', '--yes', '--config', `namespace:worktreeRoot=${ctx.worktreeRoot}`],
     ctx,
+    env,
   );
+  if (!platformOk) return 1;
 
   if (options.removeData === true) {
     console.warn(
@@ -397,7 +426,81 @@ export function localDestroy(options: { worktreeRoot?: string; removeData?: bool
   return 0;
 }
 
-/** In trạng thái hiện tại: namespace, stack, và outputs platform nếu có. */
+/**
+ * Phân loại trạng thái stack platform — nguồn duy nhất cho `localStatus`.
+ *
+ * Kết quả PHẢI phân biệt được "chưa deploy" với "backend hỏng": gộp hai trạng
+ * thái là cách status nói dối — backend không đọc được bị bắn ra thành "chưa
+ * deploy" và người dùng chạy `local-deploy` vào một backend đang hỏng.
+ */
+export type PlatformStatusResult =
+  | { state: 'no-stack' }
+  | { state: 'no-outputs' }
+  | { state: 'deployed'; outputs: Record<string, unknown> }
+  | { state: 'backend-error'; detail: string }
+  | { state: 'parse-error'; detail: string };
+
+/** Hàm phân loại thuần — test được không cần Pulumi thật (inject exec command). */
+export function classifyStackOutput(result: ExecResult): PlatformStatusResult {
+  if (result.status === 0) {
+    if (result.stdout.trim().length === 0) {
+      // Không xảy ra với `--json` (thường luôn in `{}`) nhưng fail-closed vẫn đúng hơn im lặng.
+      return { state: 'no-outputs' };
+    }
+    try {
+      const outputs = JSON.parse(result.stdout) as Record<string, unknown>;
+      if (Object.keys(outputs).length === 0) {
+        // `stack output --json` exit 0 với `{}` = stack init nhưng CHƯA từng up.
+        return { state: 'no-outputs' };
+      }
+      return { state: 'deployed', outputs };
+    } catch (error) {
+      return {
+        state: 'parse-error',
+        detail: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+  const combined = `${result.stderr}\n${result.stdout}`;
+  if (/no stack named/iu.test(combined)) {
+    return { state: 'no-stack' };
+  }
+  if (
+    /unable to open state directory|unable to find backend|cannot connect|dial tcp|permission denied/iu.test(
+      combined,
+    )
+  ) {
+    return { state: 'backend-error', detail: combined.trim() };
+  }
+  // Lỗi không nhận diện được → backend-error (không nuốt). stderr có thể chứa
+  // path backend — không in path nhạy cảm, chỉ in dòng lỗi đầu.
+  const firstLine = combined
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  return { state: 'backend-error', detail: firstLine ?? 'lỗi Pulumi không xác định' };
+}
+
+/** Truy vấn trạng thái stack platform — read-only, qua context đúng worktree. */
+export function queryPlatformStatus(
+  ctx: LocalDeployContext,
+  env: NodeJS.ProcessEnv,
+): PlatformStatusResult {
+  const result = exec(
+    'pulumi',
+    ['stack', 'output', '--json', '--stack', fullStackRef(PLATFORM_PROJECT, ctx)],
+    projectDir(PLATFORM_PROJECT),
+    env,
+  );
+  return classifyStackOutput(result);
+}
+
+/**
+ * In trạng thái hiện tại: namespace, stack, và trạng thái platform stack.
+ *
+ * READ-ONLY: không tạo stack, không deploy, không ghi `.env`, không destroy gì.
+ * Thất bại backend/parse → exit != 0 (không nuốt lỗi thật thành "chưa deploy").
+ */
 export function localStatus(options: { worktreeRoot?: string }): number {
   const ctx = resolveContext(options.worktreeRoot);
   console.log(`namespace:      ${ctx.namespace}`);
@@ -417,19 +520,41 @@ export function localStatus(options: { worktreeRoot?: string }): number {
     if (line !== undefined) console.log(`.env ${ROOT_HOST_ENV_KEY}:  ${line.split('=')[1]}`);
   }
 
-  const platformDir = join(ROOT_DIR, 'deploys/platform-deploy');
-  const outputs = exec(
-    'pulumi',
-    ['stack', 'output', '--json', '--stack', ctx.stackName],
-    platformDir,
-    pulumiEnv(),
-  );
-  if (outputs.status === 0 && outputs.stdout.trim().length > 0) {
-    console.log(`platform outputs: ${outputs.stdout.trim()}`);
-  } else {
-    console.log('platform outputs: (chưa có — chạy pnpm dx local-deploy trước)');
+  // Passphrase bắt buộc ngay cả khi chỉ ĐỌC outputs: `stack output` nạp stack
+  // config (PU4), thiếu passphrase là exit 1 — phải báo đúng lý do, không nuốt
+  // thành "chưa deploy".
+  const pass = requirePassphrase();
+  if ('error' in pass) {
+    console.error(`[local-status] ${pass.error}`);
+    return 1;
   }
-  return 0;
+  const env = pulumiEnv(ctx, pass.passphrase);
+
+  const status = queryPlatformStatus(ctx, env);
+  switch (status.state) {
+    case 'no-stack': {
+      console.log('platform:       chưa có stack trong backend — chạy pnpm dx local-deploy');
+      return 0;
+    }
+    case 'no-outputs': {
+      console.log(
+        'platform:       stack có sẵn nhưng chưa up (outputs rỗng) — chạy pnpm dx local-deploy',
+      );
+      return 0;
+    }
+    case 'deployed': {
+      console.log(`platform outputs: ${JSON.stringify(status.outputs)}`);
+      return 0;
+    }
+    case 'parse-error': {
+      console.error(`[local-status] outputs platform không parse được JSON: ${status.detail}`);
+      return 1;
+    }
+    case 'backend-error': {
+      console.error(`[local-status] lỗi Pulumi/backend: ${status.detail}`);
+      return 1;
+    }
+  }
 }
 
 /** Keys mà luồng này sở hữu — export để test và để review chặn đè key lạ. */

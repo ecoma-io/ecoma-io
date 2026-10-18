@@ -18,6 +18,10 @@
 
 Namespace = `w` + 12 hex đầu của xxHash64 trên **absolute worktree root đã normalize** (`tools/dx/src/deploy-namespace.ts`). Mọi tên Docker resource (`ecoma-<ns>-<kind>`) và tên Pulumi stack (`local-<ns>`) đều mang namespace; state Pulumi là `file://` trong `.pulumi-local-state/` của từng worktree. Hai worktree có thể deploy song song trên một host mà không đụng tài nguyên nào của nhau.
 
+Cách ly còn phủ tới CLI state của Pulumi: mọi lệnh chạy với `PULUMI_BACKEND_URL` trỏ state của worktree và `--stack` đầy đủ `organization/<project>/<stack>` (`tools/dx/src/pulumi-context.ts`) — không `pulumi login` toàn cục, không selected-stack chia sẻ (fact đo được: `04-platform-facts.md` §2.16 PU12–PU13).
+
+Build context Docker của home là **repo root** (pnpm workspace cần lockfile + `libs/ui-ecoma-logo`), được lọc bằng `.dockerignore` ở root: whitelist các path build cần, loại mọi thứ khác — gồm `.env*`, state Pulumi, `.git`, `node_modules`, key TLS — để secret và artifact máy developer không đi vào builder (`tools/dx/src/docker-context.spec.ts` kiểm hợp đồng này).
+
 Routing của Traefik phải lọc theo network của worktree (`--providers.docker.constraints` + label `traefik.docker.network` trên container home): không filter thì Docker provider của **mỗi** Traefik trên host thấy container `traefik.enable=true` của **mọi** worktree qua socket dùng chung, đăng ký router trùng rule `Host(fbi.com)` và request có thể trúng backend ở network không nối tới — treo thay vì lỗi.
 
 ## Port và URL

@@ -213,7 +213,14 @@ const traefik = new docker.Container('traefik', {
     },
     {
       // Docker socket: Traefik cần ĐỌC container labels để dựng router.
-      // Read-only là đủ — Traefik không cần quyền tạo/điều khiển container.
+      //
+      // ⚠️ `readOnly: true` KHÔNG phải ranh giới bảo mật: cờ chỉ chặn ghi qua
+      // filesystem, không giới hạn Docker API — process nào trong container
+      // (RCE, path traversal...) vẫn gọi được `POST /containers/create` với
+      // bind-mount `/:/host` là leo thang đặc quyền trên host. Socket proxy
+      // giới hạn GET-only là giảm thiểu đúng nghĩa, chưa có ở đây — đánh đổi
+      // được ghi nhận ở docs (`03-operations.md` §giới hạn đã biết), không
+      // phải thiếu sót vô hình.
       //
       // Máy chạy rootless Docker đặt socket ở `/run/user/<uid>/docker.sock`
       // (đó là giá trị `DOCKER_HOST` mà Docker CLI của máy đang dùng), KHÔNG

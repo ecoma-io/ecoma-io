@@ -36,6 +36,8 @@ import * as pulumi from '@pulumi/pulumi';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
 import { dockerResourceName, worktreeNamespace } from '../../tools/dx/src/deploy-namespace';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do dòng trên
+import type { PlatformOutputs } from '../../tools/dx/src/platform-outputs-contract';
+// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do dòng trên
 import { LOCAL_ROOT_HOSTNAME } from '../../tools/dx/src/platform-outputs-contract';
 
 /** Cổng nội bộ mà Nitro preset `node-server` nghe (khớp `EXPOSE`/`ENV PORT` của image). */
@@ -71,11 +73,34 @@ const ns = worktreeNamespace(worktreeRoot);
 // cùng một stack và chỗ nào lệch là deploy sai worktree.
 const platform = new pulumi.StackReference(conf.require('platformStackRef'));
 
-const networkName = platform.getOutput('networkName') as pulumi.Output<string>;
-const traefikHostPort = platform.getOutput('traefikHostPort') as pulumi.Output<number>;
-const postgresHost = platform.getOutput('postgresHost') as pulumi.Output<string>;
-const postgresPort = platform.getOutput('postgresPort') as pulumi.Output<number>;
-const platformNamespace = platform.getOutput('namespace') as pulumi.Output<string>;
+/**
+ * Đọc MỘT output từ stack reference với ràng buộc fail-closed theo contract.
+ *
+ * `getOutput` trả `undefined` (không ném lỗi) khi key không còn được export —
+ * ép kiểu `as` trần trụi biến tên output đổi thành deploy "xanh" nhưng rỗng:
+ * `ROOT_HOST=fbi.com:undefined`, label `traefik.docker.network` trống, và vì
+ * platform lọc theo label đó nên container bị loại khỏi config → 404/502 thay
+ * vì lỗi deploy. Helper này biến lệch contract thành lỗi deploy tường minh.
+ */
+function requirePlatformOutput<K extends keyof PlatformOutputs>(
+  key: K,
+): pulumi.Output<PlatformOutputs[K]> {
+  return pulumi.output(platform.getOutput(key)).apply((raw) => {
+    if (raw === undefined || raw === null) {
+      throw new Error(
+        `platformStackRef không export "${key}" — contract PlatformOutputs đã đổi, ` +
+          `không thể deploy home với cấu hình rỗng.`,
+      );
+    }
+    return raw as PlatformOutputs[K];
+  });
+}
+
+const networkName = requirePlatformOutput('networkName');
+const traefikHostPort = requirePlatformOutput('traefikHostPort');
+const postgresHost = requirePlatformOutput('postgresHost');
+const postgresPort = requirePlatformOutput('postgresPort');
+const platformNamespace = requirePlatformOutput('namespace');
 
 // Fail-closed khi hai stack không thuộc cùng một worktree.
 //
