@@ -16,14 +16,14 @@ import { describe, expect, it } from 'vitest';
  * Bỏ `setupFiles` khỏi config là spec này đỏ ngay. Test này và config đi thành
  * một cặp: không đổi cái này mà quên cái kia.
  */
-describe('global của môi trường jsdom do setupFiles cài', () => {
-  it('có matchMedia, ResizeObserver và IntersectionObserver mà không cần import gì thêm', () => {
+describe('globals of the jsdom environment installed by setupFiles', () => {
+  it('provides matchMedia, ResizeObserver and IntersectionObserver without any extra import', () => {
     expect(typeof window.matchMedia).toBe('function');
     expect(typeof globalThis.ResizeObserver).toBe('function');
     expect(typeof globalThis.IntersectionObserver).toBe('function');
   });
 
-  it('matchMedia trả về MediaQueryList có matches là boolean', () => {
+  it('matchMedia returns a MediaQueryList whose matches is a boolean', () => {
     const query = window.matchMedia('(min-width: 768px)');
 
     expect(query).toBeDefined();

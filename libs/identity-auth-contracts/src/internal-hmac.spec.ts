@@ -92,7 +92,7 @@ const REMOVED_NAMES = [
   'EXTERNAL_HEADER_TIMESTAMP',
 ] as const;
 
-describe('shim @ecoma-io/identity-auth-contracts — một bản cài đặt, không phải hai', () => {
+describe('shim @ecoma-io/identity-auth-contracts — a single installation, not two', () => {
   it('re-exports every protocol symbol of the canonical module', () => {
     for (const name of RE_EXPORTED_VALUES) {
       expect(name in shim).toBe(true);

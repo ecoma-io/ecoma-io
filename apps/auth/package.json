@@ -10,6 +10,10 @@
     "@ecoma-io/identity-contracts": "workspace:*",
     "oidc-provider": "9.12.2"
   },
+  "devDependencies": {
+    "@testcontainers/postgresql": "12.2.1",
+    "testcontainers": "12.2.1"
+  },
   "nx": {
     "tags": [
       "type:composition",

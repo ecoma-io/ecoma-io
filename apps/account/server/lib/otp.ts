@@ -337,9 +337,31 @@ export function isResendBlocked(lastCreatedAt: Date, nowMs: number): boolean {
  * resend đi qua đúng một đường. Transaction rollback khi `INSERT` ném — hàng cũ
  * được trả lại trạng thái active, không mất mát.
  *
- * @returns Hàng đã ghi (để route biết `id` và `expires_at` khi cần), hoặc ném lỗi
- *   unique violation từ DB — caller (route) phải coi ném là điều kiện cạnh tranh
- *   đã thua và trả 429, **không** retry ngầm.
+ * ⚠️ Guard cooldown phải nằm **trong** transaction này, không chỉ ở pre-check của
+ * route: pre-check đọc ngoài transaction, nên hai request song song có thể cùng
+ * thấy "không bị chặn" rồi cùng tới đây. Không có guard thì request đến sau
+ * consume chính hàng vừa được request trước commit (mới sinh, còn trong cooldown)
+ * và insert thành công — hai mail cho hai request cùng lúc, vi phạm đúng điều
+ * route hứa. Cần **hai** lớp, vì READ COMMITTED cho mỗi statement một snapshot
+ * riêng — một lớp duy nhất để lọt:
+ *
+ *  1. `SELECT … FOR UPDATE` khoá hàng active **nhìn thấy được** rồi mới kiểm
+ *     cooldown: hàng đã commit trước khi transaction bắt đầu thì trả `null` ngay,
+ *     không consume, không insert, không ném.
+ *  2. Consume-`UPDATE` chỉ consume hàng **ngoài** cooldown. Statement này có
+ *     snapshot mới riêng, nên một hàng commit **sau** `SELECT` của transaction
+ *     này vẫn đụng được — không có điều kiện thì nó consume đúng hàng mới đó rồi
+ *     `INSERT` thắng (đo được: test race vẫn thấy 2 mail dù có lớp 1). Với điều
+ *     kiện, hàng mới còn cooldown không bị consume, và `INSERT` va partial UNIQUE
+ *     index → 23505 → caller coi như thua race.
+ *
+ * Lỗi flaky của `otp-flow-e2e.spec.ts` trên CI là bằng chứng đo được của kẽ hở
+ * này; cả hai lớp đều được chạy thật khi xác minh bản sửa.
+ *
+ * @returns Hàng đã ghi (để route biết `id` và `expires_at` khi cần); `null` khi
+ *   hàng active hiện tại còn trong cooldown — caller (route) coi `null` lẫn lỗi
+ *   unique violation như điều kiện bị chặn bình thường của luồng và trả 204 im
+ *   lặng, **không** retry ngầm.
  */
 export async function insertChallenge(
   pool: QueryablePool,
@@ -348,16 +370,44 @@ export async function insertChallenge(
     digest: string;
     purpose: string;
     expiresAt: Date;
+    /** Cửa sổ cooldown resend — policy của caller, route truyền thẳng hằng của module. */
+    resendCooldownSeconds: number;
   },
-): Promise<{ id: string; expiresAt: Date }> {
+): Promise<{ id: string; expiresAt: Date } | null> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // Lớp 1: khoá hàng active nhìn thấy được trước khi đọc `created_at`, để phép
+    // đọc và phép ghi phía dưới thành một điểm tuần tự đối với hàng đó. `now()`
+    // của một transaction là cố định, còn `created_at` do `INSERT` của
+    // transaction khác ghi — so sánh qua `isResendBlocked` giữ đúng một định nghĩa
+    // cooldown cho cả route và đây.
+    const active = await client.query<{ id: string; created_at: Date }>(
+      `SELECT id, created_at
+         FROM account.otp_challenges
+        WHERE address_hash = $1 AND purpose = $2 AND consumed_at IS NULL
+        ORDER BY created_at DESC
+        LIMIT 1
+        FOR UPDATE`,
+      [params.addressHash, params.purpose],
+    );
+    const activeRow = active.rows[0];
+    if (activeRow !== undefined && isResendBlocked(activeRow.created_at, Date.now())) {
+      // Cooldown còn hiệu lực: không consume, không ghi. COMMIT để nhả khoá và
+      // trả `null` — đây là branch bị chặn bình thường, không phải lỗi.
+      await client.query('COMMIT');
+      return null;
+    }
+    // Lớp 2: chỉ consume hàng ngoài cooldown — hàng sinh ra trong cooldown là hàng
+    // của một request khác thắng gần đây, request này không được cướp. Hàng commit
+    // sau `SELECT` ở trên chỉ lọt qua statement này, và với điều kiện thì nó kết
+    // thúc ở 23505 của `INSERT` dưới thay vì thành mail thứ hai.
     await client.query(
       `UPDATE account.otp_challenges
           SET consumed_at = now()
-        WHERE address_hash = $1 AND purpose = $2 AND consumed_at IS NULL`,
-      [params.addressHash, params.purpose],
+        WHERE address_hash = $1 AND purpose = $2 AND consumed_at IS NULL
+          AND created_at <= now() - ($3 * interval '1 second')`,
+      [params.addressHash, params.purpose, params.resendCooldownSeconds],
     );
     const inserted = await client.query<{ id: string; expires_at: Date }>(
       `INSERT INTO account.otp_challenges (address_hash, code_digest, purpose, expires_at)

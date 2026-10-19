@@ -610,7 +610,7 @@ describe('AppShell responsive sidebar', () => {
     expect(document.body.querySelector('[data-slot="sidebar"][data-mobile="true"]')).toBeNull();
   });
 
-  it('mở sẵn sidebar trên desktop, và nút ở header thu gọn rồi mở lại được', async () => {
+  it('opens the sidebar by default on desktop, and the header button collapses then reopens it', async () => {
     const wrapper = mountShell({ preferences: { themeColor: 'default', direction: 'ltr' } });
 
     await flushPromises();

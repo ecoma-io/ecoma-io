@@ -10,7 +10,7 @@
  *
  * Kết quả được đăng ký qua `process.env` (worker kế thừa khi fork) trong
  * {@link probeDocker}; khi probe thất bại, harness in cảnh báo tiếng Anh (nêu
- * đúng số suite sẽ skip) và — nếu `ACCOUNT_REQUIRE_DOCKER=1` — ném lỗi làm
+ * đúng số suite sẽ skip) và — nếu `ECOMA_REQUIRE_DOCKER=1` — ném lỗi làm
  * **toàn bộ** lần chạy đỏ, thay vì bỏ qua nửa suite với exit 0.
  */
 

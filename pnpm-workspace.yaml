@@ -25,7 +25,8 @@ allowBuilds:
   workerd: true
   sharp: true
   # Kéo theo bởi `testcontainers` → `dockerode` → `docker-modem` → `ssh2`, dùng
-  # cho integration test `db-account`. Cả hai đều là **devDependency** nên không
+  # cho các integration suite PostgreSQL (`apps/account`, `apps/auth`,
+  # `libs/identity-auth-infrastructure`). Cả hai đều là **devDependency** nên không
   # bao giờ vào bundle Worker.
   #
   # `cpu-features` build native bằng `node-gyp`; `ssh2` bọc nó trong `try {} catch {}`

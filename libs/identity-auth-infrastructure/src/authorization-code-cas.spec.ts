@@ -1,12 +1,9 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import postgres from 'postgres';
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { redeemAuthorizationCode } from './authorization-code-cas';
+import { probeDocker, startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
 
 /**
  * CAS của authorization code trên PostgreSQL THẬT.
@@ -33,34 +30,26 @@ import { redeemAuthorizationCode } from './authorization-code-cas';
  * - `ecoma_auth_runtime` chạy CAS — đúng role production dùng.
  * Nếu CAS chạy được bằng superuser thì test không chứng minh được gì về
  * production: nó chỉ chứng minh rằng superuser làm được mọi thứ.
+ *
+ * ⚠️ Database PostgreSQL đến từ **testcontainers**, dựng một container riêng cho
+ * chính file này (`startAuthDatabase`): schema được dựng một lần lúc container
+ * lên, migration chạy bằng đúng credential migrator thật. Không còn database dùng
+ * chung qua biến môi trường, nên advisory lock của hình thức cũ không còn gì để
+ * bảo vệ và đã bị xoá.
  */
 
-const HOST = process.env['AUTH_TEST_PG_HOST'];
-const PORT = process.env['AUTH_TEST_PG_PORT'];
-const DATABASE = process.env['AUTH_TEST_PG_DATABASE'];
-const RUNTIME_USER = process.env['AUTH_TEST_PG_USER'];
-const RUNTIME_PASSWORD = process.env['AUTH_TEST_PG_PASSWORD'];
-/** Role có quyền DDL. Không có thì skip luôn phần tạo schema. */
-const MIGRATOR_USER = process.env['AUTH_TEST_PG_MIGRATOR_USER'];
-const MIGRATOR_PASSWORD = process.env['AUTH_TEST_PG_MIGRATOR_PASSWORD'];
+const dockerAvailable = await probeDocker();
 
-const available =
-  HOST !== undefined &&
-  PORT !== undefined &&
-  DATABASE !== undefined &&
-  RUNTIME_USER !== undefined &&
-  MIGRATOR_USER !== undefined;
-
-const MIGRATIONS_DIR = join(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../../apps/auth/migrations',
-);
+let db: AuthDatabase;
 
 function base() {
+  if (db === undefined) {
+    throw new Error('database container is not running');
+  }
   return {
-    host: HOST as string,
-    port: Number(PORT as string),
-    database: DATABASE as string,
+    host: db.host,
+    port: db.port,
+    database: db.database,
     prepare: false,
   } as const;
 }
@@ -69,74 +58,25 @@ function base() {
 function connectRuntime(max = 10): postgres.Sql {
   return postgres({
     ...base(),
-    user: RUNTIME_USER as string,
-    password: RUNTIME_PASSWORD,
+    user: db.runtimeUser,
+    password: db.runtimePassword,
     max,
   });
 }
 
-/** Kết nối bằng role DDL, chỉ để dựng schema. */
+/** Kết nối bằng role DDL, dọn dữ liệu giữa các test. */
 function connectMigrator(): postgres.Sql {
   return postgres({
     ...base(),
-    user: MIGRATOR_USER as string,
-    password: MIGRATOR_PASSWORD,
+    user: db.migratorUser,
+    password: db.migratorPassword,
     max: 1,
   });
 }
 
-/**
- * Dựng schema bằng chính các file migration của `apps/auth`.
- *
- * ⚠️ **Chỉ chạy khi schema chưa có, và đây là cố ý.** Migration KHÔNG dùng
- * `CREATE TABLE IF NOT EXISTS` — README giải thích rõ: `CREATE TABLE IF NOT
- * EXISTS` im lặng bỏ qua một bảng đang tồn tại với schema KHÁC, tức là biến một
- * sai lệch thật thành im lặng. Re-runnable đến từ **runner** nhớ lịch sử, không
- * từ kiểu `CREATE`. Test này không có runner, nên nó tự kiểm tra trước.
- *
- * ⚠️ **Và "kiểm tra rồi tạo" phải nằm dưới advisory lock.** Test không phải tiến
- * trình duy nhất dựng schema này: `internal-nonces.spec.ts` trong cùng thư mục áp
- * đúng bộ file đó lên đúng database đó, và Vitest chạy hai file **song song**;
- * `nx run-many -t test` còn chạy song song theo project. Không có lock thì hai
- * bên cùng thấy "bảng chưa có" rồi cùng `CREATE`, và người thua nhận
- * `relation "oauth_clients" already exists` — một suite đỏ vì lịch chạy, không vì
- * hành vi. Đây là lỗi đã quan sát được, không phải phòng xa.
- *
- * Khoá là theo (database, key), nên cùng một số ở mọi spec PG là đúng.
- * `internal-nonces.spec.ts` assert hai file dùng cùng một khoá.
- */
-const SCHEMA_SETUP_LOCK_KEY = 8_274_411;
-
-async function applyMigrations(migrator: postgres.Sql): Promise<void> {
-  await migrator.unsafe('SELECT pg_advisory_lock($1)', [SCHEMA_SETUP_LOCK_KEY]);
-  try {
-    const existing = await migrator<{ table_name: string }[]>`
-      SELECT table_name FROM information_schema.tables
-       WHERE table_schema = 'auth' AND table_name = 'authorization_codes'
-    `;
-    if (existing.length > 0) {
-      return;
-    }
-
-    const files = readdirSync(MIGRATIONS_DIR)
-      .filter((name) => name.endsWith('.sql'))
-      // Thứ tự số trong tên file là thứ tự áp dụng; so chuỗi là đủ vì tất cả đều
-      // gốc đều 4 chữ số.
-      .toSorted();
-
-    for (const file of files) {
-      await migrator.unsafe(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'));
-    }
-  } finally {
-    await migrator.unsafe('SELECT pg_advisory_unlock($1)', [SCHEMA_SETUP_LOCK_KEY]);
-  }
-}
-
-/** Dựng schema rồi trả về client runtime đã sẵn sàng. */
+/** Dựng container + schema rồi trả về cặp client runtime/migrator đã sẵn sàng. */
 async function setup(): Promise<{ runtime: postgres.Sql; migrator: postgres.Sql }> {
-  const migrator = connectMigrator();
-  await applyMigrations(migrator);
-  return { runtime: connectRuntime(), migrator };
+  return { runtime: connectRuntime(), migrator: connectMigrator() };
 }
 
 /**
@@ -232,9 +172,22 @@ async function cleanSeed(migrator: postgres.Sql, hashes: string[]): Promise<void
   `;
 }
 
-describe('redeemAuthorizationCode — tren PostgreSQL that', () => {
-  describe.skipIf(!available)('schema', () => {
-    it('adapter khop migration: co cac cot ma migration khai bao', async () => {
+describe('redeemAuthorizationCode — on real PostgreSQL', () => {
+  // Container riêng của file này, dựng một lần cho cả suite; các test tự mở
+  // cặp client qua `setup()` và tự đóng trong `finally`.
+  beforeAll(async () => {
+    if (!dockerAvailable) {
+      return;
+    }
+    db = await startAuthDatabase();
+  }, 180_000);
+
+  afterAll(async () => {
+    await db?.stop();
+  });
+
+  describe.skipIf(!dockerAvailable)('schema', () => {
+    it('the adapter matches the migration: it has every column the migration declares', async () => {
       // ⚠️ Test này chốt lại chính lớp lỗi đã gặp: câu SQL của adapter tham
       // chiếu một cột mà migration không có, và mọi test khác vẫn có thể xanh
       // nếu chúng không chạy SQL đó. Ở đây ta hỏi database, không hỏi code.
@@ -257,8 +210,8 @@ describe('redeemAuthorizationCode — tren PostgreSQL that', () => {
     });
   });
 
-  describe.skipIf(!available)('single-winner duoi tai tranh', () => {
-    it('HAI yeu cauu trung mot code — DUNG MOT thang', async () => {
+  describe.skipIf(!dockerAvailable)('single-winner under contention', () => {
+    it('TWO requests hit the same code — exactly ONE wins', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedCode(migrator, { hash: 'hash-race-1' });
@@ -297,7 +250,7 @@ describe('redeemAuthorizationCode — tren PostgreSQL that', () => {
       }
     });
 
-    it('BA yeu cauu trung — van DUNG MOT thang', async () => {
+    it('THREE requests hit it — STILL exactly ONE wins', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedCode(migrator, { hash: 'hash-race-3' });
@@ -320,7 +273,7 @@ describe('redeemAuthorizationCode — tren PostgreSQL that', () => {
       }
     });
 
-    it('code het han — KHONG thang, va KHONG phan biet duoc voi da tieu thu', async () => {
+    it('an expired code — nobody wins, and it is indistinguishable from one already consumed', async () => {
       const { runtime, migrator } = await setup();
       try {
         // ⚠️ Transaction vẫn còn hạn; CHỈ code hết hạn. Migration có CHECK
@@ -378,7 +331,7 @@ describe('redeemAuthorizationCode — tren PostgreSQL that', () => {
       }
     });
 
-    it('role runtime KHONG duoc tao bang — DDL la cua migrator', async () => {
+    it('the runtime role must not be created by migration — DDL belongs to the migrator', async () => {
       // ⚠️ Không có test này thì "runtime role bị giới hạn quyền" chỉ là lời
       // hứa trong tài liệu. Nó phải là một khẳng định của suite.
       const { runtime, migrator } = await setup();
@@ -394,11 +347,28 @@ describe('redeemAuthorizationCode — tren PostgreSQL that', () => {
     });
   });
 
-  describe.skipIf(!available)('cap quyen', () => {
-    it('dang `AUTH_TEST_PG_*` de chay cac test single-winner', () => {
-      // Marker test: giữ cho suite không bị coi là "pass" khi thực tế là skip
-      // toàn bộ. Xem README §"Vì sao PostgreSQL thật".
-      expect(available).toBe(true);
+  describe.skipIf(!dockerAvailable)('permission grants', () => {
+    it('the runtime cannot CREATE a table in the auth schema', async () => {
+      // Thay cho marker test cũ của hình thức chia sẻ database qua biến môi
+      // trường ("set … to run the single-winner tests") — marker ấy hết ý nghĩa
+      // khi database tự dựng bằng testcontainers. Vị trí của nó giờ là một assert
+      // thật về ranh quyền: role runtime chỉ DML, và đây là lớp enforce thật
+      // (catalog), không phải một quy ước trong review.
+      const { runtime, migrator } = await setup();
+      try {
+        await expect(
+          runtime.unsafe('CREATE TABLE should_not_work (id text PRIMARY KEY)'),
+        ).rejects.toThrow(/permission denied/iu);
+        const rows = await migrator<
+          { n: string }[]
+        >`SELECT count(*)::text AS n FROM information_schema.tables
+           WHERE table_schema = 'auth' AND table_name = 'should_not_work'`;
+        expect(rows[0]?.n).toBe('0');
+      } finally {
+        await migrator.unsafe('DROP TABLE IF EXISTS should_not_work');
+        await runtime.end({ timeout: 1 });
+        await migrator.end({ timeout: 1 });
+      }
     });
   });
 });

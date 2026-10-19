@@ -70,7 +70,7 @@ const bytes = (value: string): Uint8Array => new TextEncoder().encode(value);
  */
 const LOCAL_DECLARATIONS_ALLOWED = ['allowsIssuance'] as const;
 
-describe('entry thật `@ecoma-io/identity-auth-contracts` — bề mặt runtime', () => {
+describe('real entry `@ecoma-io/identity-auth-contracts` — runtime surface', () => {
   it('exposes the account-status allowlist as a runtime value, not only as a type', () => {
     // ⚠️ Đây là hàm mà `AccountClient` của `apps/auth` dùng để kiểm response. Nó là
     // validator **runtime**, nên `import type` sẽ biên dịch rồi nổ ở runtime; và một bản

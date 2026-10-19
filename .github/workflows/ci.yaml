@@ -55,27 +55,14 @@ jobs:
     name: unit-test
     runs-on: ubuntu-26.04
     timeout-minutes: 30
-    # PostgreSQL thật cho các suite replay/atomicity/retention của
-    # `identity-auth-infrastructure` và `apps/auth`. Các suite đó SKIP im lặng khi
-    # thiếu `AUTH_TEST_PG_*`, và một skip trông y hệt một pass — nên runner phải
-    # cung cấp database thật thay vì để kho nonce được kiểm tra bằng Map trong bộ
-    # nhớ. Hai role tách bạch như runbook ở `apps/auth/migrations/README.md`:
-    # migrator có DDL, runtime chỉ DML. Password ở đây là của database nhúng ném
-    # đi sau mỗi job, không phải credential của môi trường thật; các migration
-    # không đọc secret nào.
-    services:
-      postgres:
-        image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
-        env:
-          POSTGRES_DB: db_auth_verify
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d db_auth_verify"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+    # PostgreSQL thật cho các suite integration của `apps/account`,
+    # `identity-auth-infrastructure` và `apps/auth` đến từ **testcontainers**:
+    # mỗi spec file tự dựng một container `postgres:17-alpine`, provision hai role
+    # đúng runbook `apps/auth/migrations/README.md` (migrator có DDL, runtime chỉ
+    # DML) và apply migration bằng credential migrator thật. Không có service
+    # container hay biến `AUTH_TEST_PG_*` nào ở đây nữa — runner chỉ cần có Docker.
+    # Password trong harness là của database nhúng ném đi sau mỗi run, không phải
+    # credential của môi trường thật; các migration không đọc secret nào.
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -121,20 +108,14 @@ jobs:
           targets: test
           affected: ${{ !inputs.force }}
         env:
-          AUTH_TEST_PG_HOST: 127.0.0.1
-          AUTH_TEST_PG_PORT: '5432'
-          AUTH_TEST_PG_DATABASE: db_auth_verify
-          AUTH_TEST_PG_USER: ecoma_auth_runtime
-          AUTH_TEST_PG_PASSWORD: runtime-pw
-          AUTH_TEST_PG_MIGRATOR_USER: ecoma_auth_migrator
-          AUTH_TEST_PG_MIGRATOR_PASSWORD: migrator-pw
-          # `apps/account` chạy các suite tích hợp của nó bằng testcontainers, và
-          # `probeDocker()` mặc định chỉ CẢNH BÁO rồi để chúng skip với exit 0.
-          # Đặt cờ này biến một runner vắng Docker thành lỗi thật: một suite bị
-          # skip vì hạ tầng không được phép trông giống một suite đã pass. Đo
-          # được trên runner `ubuntu-26.04`: Docker 29.4.2 có sẵn, nên cờ này
-          # không thêm việc gì mới — nó chỉ đổi cách thất bại.
-          ACCOUNT_REQUIRE_DOCKER: '1'
+          # Cả ba project có suite integration PostgreSQL (`apps/account`,
+          # `identity-auth-infrastructure`, `apps/auth`) đều chạy bằng
+          # testcontainers, và `probeDocker()` mặc định chỉ CẢNH BÁO rồi để suite
+          # skip với exit 0. Đặt cờ này biến một runner vắng Docker thành lỗi
+          # thật: một suite bị skip vì hạ tầng không được phép trông giống một
+          # suite đã pass. Đo được trên runner `ubuntu-26.04`: Docker có sẵn,
+          # nên cờ này không thêm việc gì mới — nó chỉ đổi cách thất bại.
+          ECOMA_REQUIRE_DOCKER: '1'
 
   build:
     name: build

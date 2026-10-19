@@ -92,7 +92,7 @@ function envWithout(variable: string): Record<string, string> {
   return Object.fromEntries(Object.entries(COMPLETE_ENV).filter(([name]) => name !== variable));
 }
 
-describe('resolvePushNotificationConfig — fail closed trên sáu tham số SLA', () => {
+describe('resolvePushNotificationConfig — fails closed on the six SLA parameters', () => {
   it('has exactly six SLA variables under test', () => {
     // ⚠️ Test bảo vệ chính **danh sách** này: nếu một SLA thứ bảy được thêm vào mã mà danh
     // sách ở đây không đổi, mọi test bên dưới vẫn xanh và service lại fail-open trên một tham

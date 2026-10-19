@@ -32,18 +32,18 @@ function returnedObjectOf(code: string): string {
   return '';
 }
 
-describe('lang trên <html> do app sở hữu', () => {
-  it('app.vue đặt lang, không chỉ dựa vào shell', () => {
+describe('the app owns the lang attribute on the <html> element', () => {
+  it('app.vue sets lang, rather than relying on the shell alone', () => {
     expect(APP_VUE_CODE).toMatch(/\blang\s*:/u);
     expect(APP_VUE_CODE).not.toMatch(/\blang\s*:\s*'en'/u);
   });
 
-  it('lang là một phần của htmlAttrs gộp cùng shell, không phải useHead thứ hai', () => {
+  it('lang is part of the htmlAttrs merged with the shell, not a second useHead', () => {
     expect(APP_VUE_CODE).toMatch(/htmlAttrs\s*:\s*\{[^}]*\blang\s*:/u);
     expect(APP_VUE_CODE).toMatch(/\.\.\.htmlAttrs\b/u);
   });
 
-  it('vẫn truyền bodyAttrs của shell sang useHead', () => {
+  it('still forwards the shell bodyAttrs to useHead', () => {
     const returned = returnedObjectOf(APP_VUE_CODE);
     expect(returned).toMatch(/htmlAttrs\s*:/u);
     expect(returned).toMatch(/\bbodyAttrs\b/u);

@@ -104,7 +104,7 @@ describe('WebCryptoCredentialCipher — roundtrip', () => {
   });
 });
 
-describe('WebCryptoCredentialCipher — sai khóa và ciphertext hỏng', () => {
+describe('WebCryptoCredentialCipher — wrong key and corrupted ciphertext', () => {
   it('rejects decrypting with a different key of the same version slot', async () => {
     const written = await k1Only().encrypt('material');
     // ⚠️ Một keyring **khác** với cùng tên version: đây là hình dạng của một operator đã
@@ -173,7 +173,7 @@ describe('WebCryptoCredentialCipher — sai khóa và ciphertext hỏng', () => 
   });
 });
 
-describe('WebCryptoCredentialCipher — routing theo version của record', () => {
+describe('WebCryptoCredentialCipher — routing follows the version of the record', () => {
   it('reads a K1 record with K1 even after K2 becomes current', async () => {
     // ⚠️ **Đây là kịch bản §7.2/§7.3 cấm.** `§7.3`: `K1 active → K2 introduced (đọc K1+K2,
     // ghi mới dùng K2)`. Nếu `decrypt` mặc định sang `currentVersion` thì toàn bộ credential
@@ -217,7 +217,7 @@ describe('WebCryptoCredentialCipher — routing theo version của record', () =
   });
 });
 
-describe('WebCryptoCredentialCipher — khởi tạo fail sớm', () => {
+describe('WebCryptoCredentialCipher — fails early on initialisation', () => {
   it('refuses to construct when the current version is absent from the keyring', () => {
     // ⚠️ Fail **lúc khởi tạo**, không phải lúc ghi credential đầu tiên: lúc ghi thì lỗi xảy
     // ra giữa một rotation, khi đã có credential trong D1 cần version không có trong keyring.

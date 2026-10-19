@@ -94,7 +94,7 @@ afterEach(() => {
 });
 
 describe('SidebarProvider open state', () => {
-  it('mở sẵn trên desktop khi không truyền gì', () => {
+  it('opens by default on desktop when nothing is passed', () => {
     const wrapper = mountSidebarSidebar();
 
     expect(sidebarState(wrapper)).toBe('expanded');
@@ -105,7 +105,7 @@ describe('SidebarProvider open state', () => {
     expect(wrapper.find('[data-slot="sidebar"]').attributes('data-collapsible')).toBe('');
   });
 
-  it('thu gọn rồi mở lại được bằng cùng một nút', async () => {
+  it('collapses then reopens with the same button', async () => {
     const wrapper = mountSidebarSidebar();
 
     await toggleViaRail(wrapper);
@@ -116,13 +116,13 @@ describe('SidebarProvider open state', () => {
     expect(sidebarState(wrapper)).toBe('expanded');
   });
 
-  it('tôn trọng `defaultOpen` ở chế độ uncontrolled', () => {
+  it('honours `defaultOpen` in uncontrolled mode', () => {
     const wrapper = mountSidebarSidebar({ props: { defaultOpen: false } });
 
     expect(sidebarState(wrapper)).toBe('collapsed');
   });
 
-  it('tôn trọng prop `open` ở chế độ controlled, và không tự đổi trạng thái', async () => {
+  it('honours the `open` prop in controlled mode, and does not change state on its own', async () => {
     const wrapper = mountSidebarSidebar({ props: { open: false } });
 
     expect(sidebarState(wrapper)).toBe('collapsed');
@@ -134,7 +134,7 @@ describe('SidebarProvider open state', () => {
     expect(sidebarState(wrapper)).toBe('collapsed');
   });
 
-  it('phát `update:open` khi trạng thái uncontrolled đổi', async () => {
+  it('emits `update:open` when the uncontrolled state changes', async () => {
     const wrapper = mountSidebarSidebar({ props: { defaultOpen: true } });
 
     await toggleViaRail(wrapper);
@@ -142,7 +142,7 @@ describe('SidebarProvider open state', () => {
     expect(wrapper.emitted('update:open')).toEqual([[false]]);
   });
 
-  it('khôi phục trạng thái đã lưu lúc mount, sau hydration', async () => {
+  it('restores the persisted state at mount, after hydration', async () => {
     document.cookie = `${SIDEBAR_COOKIE}=false; path=/`;
 
     const wrapper = mountSidebarSidebar();
@@ -152,7 +152,7 @@ describe('SidebarProvider open state', () => {
     expect(sidebarState(wrapper)).toBe('collapsed');
   });
 
-  it('không phát `update:open` khi chỉ khôi phục trạng thái đã lưu', async () => {
+  it('does not emit `update:open` when only restoring the persisted state', async () => {
     document.cookie = `${SIDEBAR_COOKIE}=false; path=/`;
 
     const wrapper = mountSidebarSidebar();

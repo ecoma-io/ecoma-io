@@ -81,7 +81,7 @@ function rejectionDetail(result: UseCaseResult<{ readonly valid: true }>): strin
   return result.detail;
 }
 
-describe('validatePushEndpoint — điều kiện 1..3: scheme, parse, userinfo', () => {
+describe('validatePushEndpoint — conditions 1..3: scheme, parse, userinfo', () => {
   it.each([
     ['an empty string', '', 'endpoint_empty'],
     ['a non-https scheme', 'http://fcm.googleapis.com/send', 'endpoint_not_https'],
@@ -138,7 +138,7 @@ describe('validatePushEndpoint — điều kiện 1..3: scheme, parse, userinfo'
   });
 });
 
-describe('validatePushEndpoint — điều kiện 4: IP literal và dải private', () => {
+describe('validatePushEndpoint — condition 4: IP literals and private ranges', () => {
   // ⚠️ Mỗi dòng là **một dạng biểu diễn khác nhau** của cùng một địa chỉ, hoặc một dải
   // khác nhau. Chỉ kiểm `127.0.0.1` thì `http://2130706433/`, `https://[::1]/` và
   // `https://0x7f000001/` đều lọt — và chúng là ba cách viết của **cùng một** loopback.
@@ -177,7 +177,7 @@ describe('validatePushEndpoint — điều kiện 4: IP literal và dải privat
   });
 });
 
-describe('validatePushEndpoint — điều kiện 5: allowlist theo ranh giới nhãn', () => {
+describe('validatePushEndpoint — condition 5: allowlist matched at label boundaries', () => {
   it('accepts each host of the default allowlist', () => {
     // ⚠️ Ba host là ba Browser Push Service mà v1 thật sự cần. Nếu một cái bị bỏ khỏi danh
     // sách mặc định thì người dùng của trình duyệt tương ứng không đăng ký được subscription
@@ -283,7 +283,7 @@ describe('validatePushEndpoint — điều kiện 5: allowlist theo ranh giới 
   });
 });
 
-describe('validatePushEndpoint — endpoint được chấp nhận giữ nguyên chuỗi gốc', () => {
+describe('validatePushEndpoint — an accepted endpoint keeps the original string', () => {
   it('returns the original endpoint string unchanged so endpoint_hash stays stable', () => {
     // ⚠️ `endpoint` trả về là chuỗi sẽ **lưu vào D1**, còn `host` chỉ là chuẩn hoá để so
     // allowlist. Nếu hàm trả `value.endpoint` là bản chuẩn hoá, path/query sẽ bị đổi hoặc
@@ -333,7 +333,7 @@ describe('validatePushEndpoint — endpoint được chấp nhận giữ nguyên
   });
 });
 
-describe('revalidateStoredEndpoint — phân biệt endpoint sai với row hỏng', () => {
+describe('revalidateStoredEndpoint — tells a wrong endpoint apart from a corrupted row', () => {
   // ⚠️ Lượt quét định kỳ cần phân biệt hai tình huống: "endpoint sai → disable subscription"
   // và "row hỏng → để lượt sau". Một union `ok:false` không nói lời được, nên hàm này trả
   // `UseCaseResult` với hai `reason` khác nhau.

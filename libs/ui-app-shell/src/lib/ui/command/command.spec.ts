@@ -106,8 +106,8 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-describe('Command lọc lại khi danh sách item thay đổi trong lúc đang search', () => {
-  it('lọc item mount sau khi từ khoá đã bật, và cập nhật filtered.count', async () => {
+describe('Command re-filters when the item list changes during an active search', () => {
+  it('filters an item that mounts after the keyword is active, and updates filtered.count', async () => {
     const { items, itemTexts, command, wrapper } = mountCommand(['apple']);
 
     mountedWrappers.push(wrapper);
@@ -128,7 +128,7 @@ describe('Command lọc lại khi danh sách item thay đổi trong lúc đang s
     expect(command().filterState.filtered.count).toBe(1);
   });
 
-  it('xoá kết quả lọc cũ khi bỏ hết từ khoá', async () => {
+  it('clears the previous filter results when every keyword is removed', async () => {
     const { command, wrapper } = mountCommand(['apple', 'banana']);
 
     mountedWrappers.push(wrapper);
@@ -224,8 +224,8 @@ describe('Command re-filters on registry changes that keep the item count', () =
   });
 });
 
-describe('Command không giữ lại dấu vết của item đã unmount trong lúc search', () => {
-  it('gỡ item khỏi bảng filtered.items khi nó unmount giữa lúc đang search', async () => {
+describe('Command does not keep a trace of items unmounted during a search', () => {
+  it('removes an item from filtered.items when it unmounts mid-search', async () => {
     const { items, command, wrapper } = mountCommand(['apple', 'appetite']);
 
     mountedWrappers.push(wrapper);
@@ -254,7 +254,7 @@ describe('Command không giữ lại dấu vết của item đã unmount trong l
     expect(command().filterState.filtered.items.has(idOfText(command(), 'appetite'))).toBe(true);
   });
 
-  it('gỡ item khỏi allGroups khi nó unmount, để group không bị coi là còn item khớp', async () => {
+  it('removes an item from allGroups when it unmounts, so the group is not treated as still holding a matching item', async () => {
     const { items, itemTexts, command, wrapper } = mountCommand(['apple']);
 
     mountedWrappers.push(wrapper);
@@ -288,8 +288,8 @@ describe('Command không giữ lại dấu vết của item đã unmount trong l
   });
 });
 
-describe('CommandItem ngoài CommandGroup', () => {
-  it('render được khi không có CommandGroup bao ngoài', async () => {
+describe('CommandItem outside CommandGroup', () => {
+  it('renders when there is no wrapping CommandGroup', async () => {
     // List phẳng là cách compose hợp lệ, và type context đã khai `id?: string`.
     // `useCommandGroup()` không fallback sẽ ném
     // `Injection Symbol(CommandGroupContext) not found` ngay lúc setup.

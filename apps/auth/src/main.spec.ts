@@ -105,7 +105,7 @@ describe('GET /health', () => {
 });
 
 describe('GET /.well-known/openid-configuration', () => {
-  it('khai bao dung endpoint provider thuc su mount', async () => {
+  it('declares the endpoints the provider actually mounts', async () => {
     // ⚠️ Provider (oidc-provider) là bộ máy thật; discovery của Hono chỉ shadow
     // với các giá trị đúng — `/authorize` là namespace ECOMA (glue), còn
     // `/auth` là route authorization của provider; `/jwks.json` của provider.
@@ -121,7 +121,7 @@ describe('GET /.well-known/openid-configuration', () => {
     expect(body.response_types_supported).toEqual(['code']);
   });
 
-  it('dung issuer tu config o MOI endpoint, khong hardcode', async () => {
+  it('uses the issuer from config at EVERY endpoint, never hardcoded', async () => {
     // ⚠️ Regression: `issuer` trong discovery và `iss` trong access token là
     // MỘT điều kiện so khớp ở phía resource server. Nếu discovery hardcode
     // còn token ký theo config, hai bên lệch nhau — và sự lệch đó chỉ lộ ra
@@ -138,7 +138,7 @@ describe('GET /.well-known/openid-configuration', () => {
     expect(body.issuer).not.toBe('https://auth.ecoma.io');
   });
 
-  it('revocation duoc khai (RFC 7009 bat), introspection/userinfo khong', async () => {
+  it('revocation is declared (RFC 7009 enabled), introspection/userinfo are not', async () => {
     // ⚠️ Khai một endpoint không tồn tại là hướng client vào một 404 — nhưng
     // NGƯỢC lại cũng sai: revocation đã implement (features.revocation) thì
     // phải được quảng bá, nếu không client không biết nó có.
@@ -154,7 +154,7 @@ describe('GET /.well-known/openid-configuration', () => {
     expect(body).not.toHaveProperty('userinfo_endpoint');
   });
 
-  it('RFC 8414 shadow cung tra dung document', async () => {
+  it('the RFC 8414 shadow serves the same document', async () => {
     const body = (await (await get('/.well-known/oauth-authorization-server')).json()) as Record<
       string,
       unknown
@@ -165,7 +165,7 @@ describe('GET /.well-known/openid-configuration', () => {
 });
 
 describe('GET /.well-known/jwks.json', () => {
-  it('chi cong bo khoa cong khai — qua JWKS cua provider', async () => {
+  it('exposes only the public key — via the provider JWKS', async () => {
     // ⚠️ `/jwks.json` bây giờ là route của oidc-provider (bridge Node), không
     // còn là handler hand-rolled. Trong test Node môi trường, `cloudflare:node`
     // không import được — runtime dựng thất bại. Cách kiểm đúng cho môi trường
@@ -179,7 +179,7 @@ describe('GET /.well-known/jwks.json', () => {
     expect(text).not.toContain('"d"');
   });
 
-  it('response KHONG chua private key material duoi bat ky hinh thuc nao', async () => {
+  it('the response NEVER contains private key material in any form', async () => {
     const text = await (await get('/.well-known/jwks.json')).text();
 
     expect(text).not.toContain(pem);
@@ -190,8 +190,8 @@ describe('GET /.well-known/jwks.json', () => {
   });
 });
 
-describe('provider routes — cầu Node trong test Node là 500, KHÔNG BAO GIỜ fake 200', () => {
-  it('/auth (authorization cua provider) khong tra 200 trong moi truong test Node', async () => {
+describe('provider routes — the Node bridge is 500 under Node tests and NEVER a faked 200', () => {
+  it('/auth (the provider authorization endpoint) never returns 200 under any Node test environment', async () => {
     // ⚠️ `cloudflare:node` chỉ tồn tại trên workerd. Trong vitest (Node), việc
     // dựng runtime thất bại — response phải là 500 (lỗi hạ tầng của môi trường
     // test), không phải 200 rỗng, và không phải 404 (route phải đăng ký).
@@ -199,19 +199,19 @@ describe('provider routes — cầu Node trong test Node là 500, KHÔNG BAO GI�
     expect(response.status).not.toBe(200);
   });
 
-  it('/authorize/complete tra 404 — khong co route nay', async () => {
+  it('/authorize/complete returns 404 — no such route', async () => {
     // §5.1.4 đặt `/authorize/complete` trong docs nhưng glue hiện tại trả
     // continue_url = resume URL của provider; route không được đăng ký ⇒ 404.
     expect((await get('/authorize/complete')).status).toBe(404);
   });
 
-  it('root tra 404 — khong co UI o day', async () => {
+  it('root returns 404 — no UI here', async () => {
     expect((await get('/')).status).toBe(404);
   });
 });
 
-describe('POST /internal/session/verified — xac thuc truoc, nghiep vu sau', () => {
-  it('khong co chu ky — 401, KHONG phai 501', async () => {
+describe('POST /internal/session/verified — authenticate first, business logic after', () => {
+  it('no signature — 401, NOT 501', async () => {
     // ⚠️ Thứ tự la mot phan cua hop dong: xac thuc truoc, nghiep vu sau. Neu
     // route tra 501 cho request khong chu ky thi no da xu ly du lieu cua
     // ke goi chua duoc xac thuc — va 501 cho request hop le la cau tra loi.
@@ -223,7 +223,7 @@ describe('POST /internal/session/verified — xac thuc truoc, nghiep vu sau', ()
     expect(body).not.toHaveProperty('detail');
   });
 
-  it('than dung BANG han muc — khong bi 413 (bien la `>`, khong phai `>=`)', async () => {
+  it('a body exactly AT the limit — not 413 (the boundary is `>`, not `>=`)', async () => {
     // ⚠️ Bien cua mot gioi han la thu de sai nhat: doi `total > limit` thanh
     // `total >= limit` khong lam test nao do — muon bat duoc phai co mot ca dung
     // BANG nguong. Body day dai dung 64 KiB, nen no phai di QUA buoc kiem kich
@@ -241,7 +241,7 @@ describe('POST /internal/session/verified — xac thuc truoc, nghiep vu sau', ()
     expect(response.status).toBe(401);
   });
 
-  it('Content-Length vuot han muc — 413 TRUOC khi doc byte nao', async () => {
+  it('Content-Length over the limit — 413 BEFORE reading any byte', async () => {
     const response = await app.request(
       '/internal/session/verified',
       {
@@ -255,7 +255,7 @@ describe('POST /internal/session/verified — xac thuc truoc, nghiep vu sau', ()
     expect(response.status).toBe(413);
   });
 
-  it('chunked khong co Content-Length — 413 khi vuot han muc trong khi doc stream', async () => {
+  it('chunked without Content-Length — 413 once the limit is passed while reading the stream', async () => {
     // ⚠️ Day chinh la lo OOM: `arrayBuffer()` nạp het payload truoc roi moi so,
     // nen chunked vuot han muc van cham bo nho. `readBodyLimited` phai tu choi
     // GIUA chung khi tong chunk vuot 64 KiB. Body day la ReadableStream truc
@@ -282,7 +282,7 @@ describe('POST /internal/session/verified — xac thuc truoc, nghiep vu sau', ()
     expect(response.status).toBe(413);
   });
 
-  it('khong ro ly do cu the trong response — khong thanh oracle', async () => {
+  it('no specific reason in the response — it is not an oracle', async () => {
     const response = await app.request(
       '/internal/session/verified',
       {
@@ -479,7 +479,7 @@ describe('internal rejection log', () => {
 });
 
 describe('routing', () => {
-  it('khong route nao o goc den khi duoc dinh nghia', async () => {
+  it('no route at the root until one is defined', async () => {
     expect((await get('/')).status).toBe(404);
   });
 });

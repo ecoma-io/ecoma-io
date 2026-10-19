@@ -1,10 +1,9 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import postgres from 'postgres';
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   insertAuthorizationCode,
@@ -12,6 +11,12 @@ import {
   findTransactionByHandleX,
   transitionTransaction,
 } from './authorization-transaction-store';
+import {
+  MIGRATIONS_DIR,
+  probeDocker,
+  startAuthDatabase,
+  type AuthDatabase,
+} from '../tests/integration/harness.ts';
 
 /**
  * Hợp đồng persistence của `authorization_transactions` trên PostgreSQL THẬT.
@@ -28,31 +33,18 @@ import {
  * về quyền production.
  */
 
-const HOST = process.env['AUTH_TEST_PG_HOST'];
-const PORT = process.env['AUTH_TEST_PG_PORT'];
-const DATABASE = process.env['AUTH_TEST_PG_DATABASE'];
-const RUNTIME_USER = process.env['AUTH_TEST_PG_USER'];
-const RUNTIME_PASSWORD = process.env['AUTH_TEST_PG_PASSWORD'];
-const MIGRATOR_USER = process.env['AUTH_TEST_PG_MIGRATOR_USER'];
-const MIGRATOR_PASSWORD = process.env['AUTH_TEST_PG_MIGRATOR_PASSWORD'];
+const dockerAvailable = await probeDocker();
 
-const available =
-  HOST !== undefined &&
-  PORT !== undefined &&
-  DATABASE !== undefined &&
-  RUNTIME_USER !== undefined &&
-  MIGRATOR_USER !== undefined;
-
-const MIGRATIONS_DIR = join(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../../apps/auth/migrations',
-);
+let db: AuthDatabase;
 
 function base() {
+  if (db === undefined) {
+    throw new Error('database container is not running');
+  }
   return {
-    host: HOST as string,
-    port: Number(PORT as string),
-    database: DATABASE as string,
+    host: db.host,
+    port: db.port,
+    database: db.database,
     prepare: false,
   } as const;
 }
@@ -60,8 +52,8 @@ function base() {
 function connectRuntime(max = 10): postgres.Sql {
   return postgres({
     ...base(),
-    user: RUNTIME_USER as string,
-    password: RUNTIME_PASSWORD,
+    user: db.runtimeUser,
+    password: db.runtimePassword,
     max,
   });
 }
@@ -69,44 +61,15 @@ function connectRuntime(max = 10): postgres.Sql {
 function connectMigrator(): postgres.Sql {
   return postgres({
     ...base(),
-    user: MIGRATOR_USER as string,
-    password: MIGRATOR_PASSWORD,
+    user: db.migratorUser,
+    password: db.migratorPassword,
     max: 1,
   });
 }
 
-/**
- * Khoá advisory DÙNG CHUNG với mọi spec PG khác — `internal-nonces.spec.ts`
- * có test parity đọc chính file này để kiểm tra con số. Số khác ở đây = một
- * suite đỏ ngẫu nhiên vì hai tiến trình cùng dựng schema.
- */
-const SCHEMA_SETUP_LOCK_KEY = 8_274_411;
-
-async function applyMigrations(migrator: postgres.Sql): Promise<void> {
-  await migrator.unsafe('SELECT pg_advisory_lock($1)', [SCHEMA_SETUP_LOCK_KEY]);
-  try {
-    const existing = await migrator<{ table_name: string }[]>`
-      SELECT table_name FROM information_schema.tables
-       WHERE table_schema = 'auth' AND table_name = 'authorization_codes'
-    `;
-    if (existing.length > 0) {
-      return;
-    }
-    const files = readdirSync(MIGRATIONS_DIR)
-      .filter((name) => name.endsWith('.sql'))
-      .toSorted();
-    for (const file of files) {
-      await migrator.unsafe(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'));
-    }
-  } finally {
-    await migrator.unsafe('SELECT pg_advisory_unlock($1)', [SCHEMA_SETUP_LOCK_KEY]);
-  }
-}
-
+/** Dựng container + schema rồi trả về cặp client runtime/migrator đã sẵn sàng. */
 async function setup(): Promise<{ runtime: postgres.Sql; migrator: postgres.Sql }> {
-  const migrator = connectMigrator();
-  await applyMigrations(migrator);
-  return { runtime: connectRuntime(), migrator };
+  return { runtime: connectRuntime(), migrator: connectMigrator() };
 }
 
 /* ------------------------------------------------------------------ */
@@ -164,8 +127,21 @@ async function cleanup(migrator: postgres.Sql, transactionIds: string[]): Promis
   `;
 }
 
-describe('authorization-transaction-store — tren PostgreSQL that', () => {
-  describe('migration 0011 — assert tren FILE, chay duoc khong can PostgreSQL', () => {
+describe('authorization-transaction-store — on real PostgreSQL', () => {
+  // Container riêng của file này, dựng một lần cho cả suite; các test tự mở
+  // cặp client qua `setup()` và tự đóng trong `finally`.
+  beforeAll(async () => {
+    if (!dockerAvailable) {
+      return;
+    }
+    db = await startAuthDatabase();
+  }, 180_000);
+
+  afterAll(async () => {
+    await db?.stop();
+  });
+
+  describe('migration 0011 — asserted against the FILE, runs without PostgreSQL', () => {
     // ⚠️ Probe đã đo được lỗi này trên PostgreSQL thật: psql không bọc transaction
     // COMMIT từng statement, nên khi guard BƯỚC 0 vang trên database có hàng legacy,
     // các bước 1-2 (đổi kiểu) đã kịp COMMIT — guard vang nhưng schema lệch nửa đường
@@ -202,8 +178,8 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
     });
   });
 
-  describe.skipIf(!available)('schema catalog sau migration 0011', () => {
-    it('transaction_id la TEXT, khong con UUID — loai cua cot doc tu database', async () => {
+  describe.skipIf(!dockerAvailable)('schema catalog after migration 0011', () => {
+    it('transaction_id is TEXT, no longer UUID — the column type is read from the database', async () => {
       const { migrator } = await setup();
       try {
         const rows = await migrator<{ data_type: string }[]>`
@@ -218,7 +194,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('ba cot FK lien quan cung la TEXT — detach/re-attach khong de sot cot nao', async () => {
+    it('the three related FK columns are TEXT too — detach/re-attach misses no column', async () => {
       // 0011 đổi cả bốn cột; bỏ sót một cột nghĩa là so khớp text với uuid
       // nổ ngay khi chạy query — nhưng chỉ nổ ở ĐƯỜNG DÙNG CÓ SO KHỚP. Test
       // catalog này bắt nó ở tầng schema, không phải chờ đúng đường dùng.
@@ -246,7 +222,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('CHECK state la dung 6 trang thai canonical — khong con legacy state nao sot', async () => {
+    it('the state CHECK is exactly the 6 canonical states — no legacy state slips through', async () => {
       // ⚠️ Đây là test của chính lỗi 4.2: schema cũ cho `awaiting_login`/
       // `consent_denied`/`already_processed`. CHECK này là ranh giới hợp đồng
       // state machine; lệch một tên là một state "ma" có thể được ghi.
@@ -278,7 +254,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('client_state va nonce duoc phep NULL — RFC 6749 state la optional', async () => {
+    it('client_state and nonce may be NULL — RFC 6749 makes state optional', async () => {
       const { migrator } = await setup();
       try {
         const rows = await migrator<{ column_name: string; is_nullable: string }[]>`
@@ -297,7 +273,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('FK tro dung vao authorization_transactions(transaction_id) — tai bien ke ca sau re-attach', async () => {
+    it('the FK points at authorization_transactions(transaction_id) — still correct after re-attach', async () => {
       const { migrator } = await setup();
       try {
         const rows = await migrator<{ confrelid: string }[]>`
@@ -312,8 +288,8 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
     });
   });
 
-  describe.skipIf(!available)('CRUD va transition qua adapter', () => {
-    it('tao ROI TIM — round-trip day du cac cot, bytea ve base64url', async () => {
+  describe.skipIf(!dockerAvailable)('CRUD and transition through the adapter', () => {
+    it('write then scan — a full round-trip of every column, bytea down to base64url', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, 'client-tx-store-test');
@@ -349,7 +325,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('hash bytea <-> base64url: byte khac nhau cho hash khac nhau, khongbam tho', async () => {
+    it('bytea <-> base64url hashing: different bytes give different hashes, no collisions', async () => {
       // ⚠️ Codec sai (vd. dùng standard base64 thay vì base64url) thường KHÔNG
       // nổ — nó so khớp lệch một cách im lặng. Dùng hai hash chỉ khác suffix
       // để bắt biến dạng: byte cuối 0x00 và 0x01 phải là hai hàng khác nhau.
@@ -378,7 +354,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('khong tim thay khi hash khong ton tai — undefined, khong throw', async () => {
+    it('not found when the hash does not exist — undefined, no throw', async () => {
       const { runtime, migrator } = await setup();
       try {
         const found = await findTransactionByHandleX(runtime as never, {
@@ -391,7 +367,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('client_state co gia tri — duoc luu va tra ve NGUYEN VAN (FR-007)', async () => {
+    it('a client_state with a value — stored and returned VERBATIM (FR-007)', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, 'client-tx-store-test');
@@ -407,7 +383,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('requested_scopes nhieu phan tu — text[] khong bi noi thanh chuoi', async () => {
+    it('multi-element requested_scopes — text[] is not flattened into a string', async () => {
       // ⚠️ Đây là test của lỗi 4.3: DTO cũ mang `scope: string`. Nếu adapter
       // truyền chuỗi 'openid profile' vào cột `text[]`, PostgreSQL từ chối —
       // nhưng nếu test chỉ nhìn "có lưu được" thì sẽ bỏ sót hình dạng.
@@ -428,7 +404,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('transition thanh cong tu pending_browser sang browser_confirmed — tra true', async () => {
+    it('a successful transition from pending_browser to browser_confirmed — returns true', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, 'client-tx-store-test');
@@ -451,7 +427,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('transition tu state sai — TU CHOI (CAS khong tim thay from)', async () => {
+    it('a transition from the wrong state — REJECTED (the CAS finds no matching from)', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, 'client-tx-store-test');
@@ -477,7 +453,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('transaction het han — transition TU CHOI du khi from dung', async () => {
+    it('an expired transaction — transition REJECTED even when from matches', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, 'client-tx-store-test');
@@ -504,7 +480,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('CAS theo from — tu denied khong the tu goi transition ve pending_browser khong chi dinh from', async () => {
+    it('CAS by from — from denied, you cannot transition back to pending_browser without naming from', async () => {
       // ⚠️ PHÂN TẦNG CỐ Ý: CHECK của schema chỉ là ALLOWLIST giá trị; tính
       // HỢP LỆ của bước chuyển (máy trạng thái một chiều) thuộc về domain
       // `canTransition` — adapter CAS chỉ cơ chế so khớp `from`. Test này ghim
@@ -545,7 +521,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('HAI transition dong thoi — DUNG MOT thang thang CAS', async () => {
+    it('TWO simultaneous transitions — exactly ONE wins the CAS', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, 'client-tx-store-test');
@@ -577,8 +553,8 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
     });
   });
 
-  describe.skipIf(!available)('insertAuthorizationCode khop schema 0004', () => {
-    it('ghi code khop FK — sub, granted_scopes text[], nonce nullable duoc chap nhan', async () => {
+  describe.skipIf(!dockerAvailable)('insertAuthorizationCode matches schema 0004', () => {
+    it('writing a code satisfies the FK — sub, granted_scopes text[] and a nullable nonce are all accepted', async () => {
       const { runtime, migrator } = await setup();
       try {
         await seedClient(migrator, 'client-tx-store-test');
@@ -638,7 +614,7 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
       }
     });
 
-    it('code tham chieu transaction khong ton tai — FK TU CHOI, adapter khong nu loi', async () => {
+    it('a code referencing a non-existent transaction — the FK rejects it, and the adapter swallows no error', async () => {
       const { runtime, migrator } = await setup();
       try {
         await expect(
@@ -662,10 +638,28 @@ describe('authorization-transaction-store — tren PostgreSQL that', () => {
     });
   });
 
-  describe.skipIf(!available)('cap quyen', () => {
-    it('dang `AUTH_TEST_PG_*` de chay cac test persistence contract', () => {
-      // Marker test: giữ cho suite không bị coi là "pass" khi thực tế là skip.
-      expect(available).toBe(true);
+  describe.skipIf(!dockerAvailable)('permission grants', () => {
+    it('the runtime cannot CREATE a table in the auth schema', async () => {
+      // Thay cho marker test cũ của hình thức chia sẻ database qua biến môi
+      // trường ("set … to run the persistence-contract tests") — marker ấy hết
+      // ý nghĩa khi database tự dựng bằng testcontainers. Vị trí của nó giờ là
+      // một assert thật về ranh quyền: role runtime chỉ DML, và đây là lớp
+      // enforce thật (catalog), không phải một quy ước trong review.
+      const { runtime, migrator } = await setup();
+      try {
+        await expect(
+          runtime.unsafe('CREATE TABLE should_not_work (id text PRIMARY KEY)'),
+        ).rejects.toThrow(/permission denied/iu);
+        const rows = await migrator<
+          { n: string }[]
+        >`SELECT count(*)::text AS n FROM information_schema.tables
+           WHERE table_schema = 'auth' AND table_name = 'should_not_work'`;
+        expect(rows[0]?.n).toBe('0');
+      } finally {
+        await migrator.unsafe('DROP TABLE IF EXISTS should_not_work');
+        await runtime.end({ timeout: 1 });
+        await migrator.end({ timeout: 1 });
+      }
     });
   });
 });

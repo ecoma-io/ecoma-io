@@ -103,7 +103,7 @@ const DOCKER_PROBE_ENV = 'ECOMA_ACCOUNT_DOCKER_PROBE';
  * Khi probe thất bại:
  * - In một cảnh báo tiếng Anh (một lần mỗi lần chạy) nêu rõ bao nhiêu suite sẽ
  *   bị skip — skip im lặng với exit 0 mới là thứ che mất test.
- * - Nếu `ACCOUNT_REQUIRE_DOCKER=1` (CI đặt biến này) thì **ném lỗi** thay vì
+ * - Nếu `ECOMA_REQUIRE_DOCKER=1` (CI đặt biến này) thì **ném lỗi** thay vì
  *   trả `false`: runner REQUIRE Docker thì vắng Docker là sự cố, không phải
  *   lý do để bỏ qua một nửa suite.
  */
@@ -126,15 +126,50 @@ interface DockerProbeCache {
   ecomaAccountDockerProbe?: Promise<boolean>;
 }
 
+/**
+ * Số lần thử lại khi start một container thất bại, và khoảng nghỉ giữa hai lần.
+ *
+ * ⚠️ Thất bại start **thường là tạm thời**, không phải Docker hỏng: dưới rootless
+ * Docker, nhiều container start song song (mỗi spec một container, cộng probe —
+ * ~12 khi `nx run-many -t test` chạy ba project) thi nhau chiếm port host qua
+ * RootlessKit, và người thua nhận
+ * `RootlessKit PortManager.AddPort(): bind: address already in use` — HTTP 500
+ * từ daemon, lỗi biến mất ở lần thử sau. Đã đo được: run song song ba project
+ * đỏ 3/5 lần vì lỗi này, trong khi từng project riêng lẻ thì xanh 100%. Retry
+ * với khoảng nghỉ tăng dần là cách rẻ nhất để hai tầng này không nhầm với nhau.
+ */
+const CONTAINER_START_ATTEMPTS = 3;
+const CONTAINER_START_BACKOFF_MS = 1_000;
+
+async function startPostgresContainer(
+  builder: (
+    c: import('@testcontainers/postgresql').PostgreSqlContainer,
+  ) => import('@testcontainers/postgresql').PostgreSqlContainer,
+): Promise<import('@testcontainers/postgresql').StartedPostgreSqlContainer> {
+  const { PostgreSqlContainer } = await import('@testcontainers/postgresql');
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= CONTAINER_START_ATTEMPTS; attempt++) {
+    try {
+      return await builder(new PostgreSqlContainer(POSTGRES_IMAGE))
+        .withStartupTimeout(120_000)
+        .start();
+    } catch (error) {
+      lastError = error;
+      // Lỗi xảy ra trước khi container kịp chạy (ví dụ port-bind) không để lại
+      // gì để dọn; lỗi sau start thì ryuk dọn container theo label của
+      // testcontainers. Nuốt ở đây để vòng retry không ném giữa chừng.
+    }
+    await new Promise<void>((done) => {
+      setTimeout(done, CONTAINER_START_BACKOFF_MS * attempt);
+    });
+  }
+  throw lastError;
+}
 async function runDockerProbe(): Promise<boolean> {
   let container: { stop(): Promise<unknown> } | undefined;
   let available = false;
   try {
-    const { PostgreSqlContainer } = await import('@testcontainers/postgresql');
-    container = await new PostgreSqlContainer(POSTGRES_IMAGE)
-      .withExposedPorts(POSTGRES_PORT)
-      .withStartupTimeout(120_000)
-      .start();
+    container = await startPostgresContainer((c) => c.withExposedPorts(POSTGRES_PORT));
     available = true;
   } catch {
     available = false;
@@ -154,11 +189,11 @@ async function runDockerProbe(): Promise<boolean> {
   // trong code (xem AGENTS.md — console output giữ tiếng Anh).
   console.warn(
     `Docker is unavailable: the ${suiteCount} integration suite(s) guarded by probeDocker will be SKIPPED and this run still exits 0. ` +
-      'Set ACCOUNT_REQUIRE_DOCKER=1 to turn the skipped suites into a hard failure.',
+      'Set ECOMA_REQUIRE_DOCKER=1 to turn the skipped suites into a hard failure.',
   );
-  if (process.env['ACCOUNT_REQUIRE_DOCKER'] === '1') {
+  if (process.env['ECOMA_REQUIRE_DOCKER'] === '1') {
     throw new Error(
-      'ACCOUNT_REQUIRE_DOCKER=1 but the Docker probe failed; refusing to skip the integration suites.',
+      'ECOMA_REQUIRE_DOCKER=1 but the Docker probe failed; refusing to skip the integration suites.',
     );
   }
   return false;
@@ -253,15 +288,13 @@ async function provision(superuser: Client): Promise<void> {
  * suite thì các spec chỉ lo việc của mình.
  */
 export async function startAccountDatabase(): Promise<AccountDatabase> {
-  const { PostgreSqlContainer } = await import('@testcontainers/postgresql');
-
-  const container = await new PostgreSqlContainer(POSTGRES_IMAGE)
-    .withDatabase(ACCOUNT_DATABASE)
-    .withUsername(SUPERUSER)
-    .withPassword(SUPERUSER_PASSWORD)
-    .withExposedPorts(POSTGRES_PORT)
-    .withStartupTimeout(120_000)
-    .start();
+  const container = await startPostgresContainer((c) =>
+    c
+      .withDatabase(ACCOUNT_DATABASE)
+      .withUsername(SUPERUSER)
+      .withPassword(SUPERUSER_PASSWORD)
+      .withExposedPorts(POSTGRES_PORT),
+  );
 
   try {
     const host = container.getHost();

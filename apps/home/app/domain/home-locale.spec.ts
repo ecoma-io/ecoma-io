@@ -3,16 +3,16 @@ import { describe, expect, it } from 'vitest';
 import { parseHomeLocaleRoot } from './home-locale';
 
 describe('parseHomeLocaleRoot', () => {
-  it('chấp nhận /en và /vi đúng chuẩn', () => {
+  it('accepts /en and /vi', () => {
     expect(parseHomeLocaleRoot('/en')).toBe('en');
     expect(parseHomeLocaleRoot('/vi')).toBe('vi');
   });
 
-  it('từ chối root `/` — `/` là locale-resolution entry point, không phải Home surface', () => {
+  it('rejects root `/` — `/` is the locale-resolution entry point, not the Home surface', () => {
     expect(parseHomeLocaleRoot('/')).toBeUndefined();
   });
 
-  it('từ chối trailing slash, có segment sau, case khác, encoded lạ', () => {
+  it('rejects trailing slash, following segment, wrong case, and encoded variants', () => {
     expect(parseHomeLocaleRoot('/en/')).toBeUndefined();
     expect(parseHomeLocaleRoot('/vi/')).toBeUndefined();
     expect(parseHomeLocaleRoot('/en/foo')).toBeUndefined();
@@ -22,17 +22,17 @@ describe('parseHomeLocaleRoot', () => {
     expect(parseHomeLocaleRoot('/e%6E')).toBeUndefined();
   });
 
-  it('từ chối prefix/suffix gây nhầm: //en, /%2Fen', () => {
+  it('rejects prefix/suffix confusion: //en, /%2Fen', () => {
     expect(parseHomeLocaleRoot('//en')).toBeUndefined();
     expect(parseHomeLocaleRoot('/%2Fen')).toBeUndefined();
   });
 
-  it('từ chối /en/foo/bar, /vi/x', () => {
+  it('rejects /en/foo/bar and /vi/x', () => {
     expect(parseHomeLocaleRoot('/en/foo/bar')).toBeUndefined();
     expect(parseHomeLocaleRoot('/vi/x')).toBeUndefined();
   });
 
-  it('locale không thuộc registry → undefined', () => {
+  it('locale not in the registry → undefined', () => {
     expect(parseHomeLocaleRoot('/fr')).toBeUndefined();
     expect(parseHomeLocaleRoot('/de')).toBeUndefined();
   });

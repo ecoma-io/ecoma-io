@@ -4,13 +4,13 @@ import { HOME_CONTENT } from './home-content';
 import { PUBLIC_LOCALES } from '../i18n/index';
 
 describe('HOME_CONTENT', () => {
-  it('bao phủ toàn bộ PUBLIC_LOCALES (exact keys)', () => {
+  it('covers all of PUBLIC_LOCALES (exact keys)', () => {
     const contentKeys = Object.keys(HOME_CONTENT).toSorted();
     const localeKeys = PUBLIC_LOCALES.map((d) => d.code).toSorted();
     expect(contentKeys).toEqual(localeKeys);
   });
 
-  it('có title/heading/description không rỗng cho từng locale', () => {
+  it('has non-empty title/heading/description for each locale', () => {
     for (const def of PUBLIC_LOCALES) {
       const c = HOME_CONTENT[def.code];
       expect(c.title.trim().length).toBeGreaterThan(0);
@@ -19,7 +19,7 @@ describe('HOME_CONTENT', () => {
     }
   });
 
-  it('intro và platformPoints là readonly array, có ít nhất 1 mục', () => {
+  it('intro and platformPoints are readonly arrays with at least 1 item', () => {
     for (const def of PUBLIC_LOCALES) {
       const c = HOME_CONTENT[def.code];
       expect(Array.isArray(c.intro)).toBe(true);
@@ -29,7 +29,7 @@ describe('HOME_CONTENT', () => {
     }
   });
 
-  it('title chứa "Ecoma.io"', () => {
+  it('title contains "Ecoma.io"', () => {
     for (const def of PUBLIC_LOCALES) {
       const c = HOME_CONTENT[def.code];
       expect(c.title).toContain('Ecoma.io');
