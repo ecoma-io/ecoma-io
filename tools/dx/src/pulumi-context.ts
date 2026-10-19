@@ -300,9 +300,10 @@ export function ensureStack(
  * `ensureStack` chỉ chạy khi `prepareStack === true`: mặc định là KHÔNG đụng
  * state — lệnh `destroy`/`stack output` kiểu "đọc/teardown" KHÔNG được tạo state
  * trên worktree chưa từng deploy (mkdir + stack init biến teardown thành
- * mutation là sai ngữ nghĩa). Lệnh mutation (`up`/`preview`/`config set`) truyền
- * `prepareStack: true`; caller của lệnh đọc/teardown chịu trách nhiệm tự xử lý
- * "chưa có gì để đọc/xoá".
+ * mutation là sai ngữ nghĩa). Lệnh `up`/`config set` truyền `prepareStack:
+ * true`; caller của lệnh đọc/teardown/preview chịu trách nhiệm tự xử lý "chưa
+ * có gì để đọc/xoá" — riêng `preview` của local-deploy là read-only tuyệt đối
+ * và LUÔN truyền `prepareStack: false` (prerequisite do nó tự kiểm).
  */
 export function pulumiRun(
   projectDir: string,

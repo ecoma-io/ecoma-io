@@ -26,7 +26,7 @@ export default defineCommand({
     preview: {
       type: 'boolean',
       description:
-        'Preview only — no Docker apply, no .env write (still writes local Pulumi state: stack init + generated postgres:password secret)',
+        'Preview only — read-only: no stack init, no config/secret writes, no Docker apply, no .env write. Requires an already-deployed worktree (run local-deploy first on a fresh one)',
       default: false,
     },
     'worktree-root': worktreeRootArg,

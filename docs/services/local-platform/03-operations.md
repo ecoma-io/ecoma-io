@@ -26,17 +26,23 @@ Mọi lệnh Pulumi của luồng này chạy với `PULUMI_BACKEND_URL=file://<
 
 ```bash
 pnpm dx local-deploy            # apply thật: platform up → outputs → .env → home up → smoke
-pnpm dx local-deploy --preview  # chỉ preview: platform + home, không apply, không ghi .env
+pnpm dx local-deploy --preview  # read-only: preview platform + home, không mutate gì
 pnpm dx local-status            # namespace, stack, resource names, trạng thái platform
 pnpm dx local-destroy           # teardown: giữ volume PostgreSQL
 pnpm dx local-destroy --remove-data  # teardown + XOÁ volume (in cảnh báo, mất dữ liệu vĩnh viễn)
 ```
 
-Luồng `local-deploy` chạy theo đúng thứ tự contract: platform up → đọc outputs → ghi `.env` → home up → smoke HTTPS. Mỗi bước chỉ chạy khi bước trước thành công. Lần chạy đầu trên stack mới, password PostgreSQL được sinh ngẫu nhiên và lưu dạng secret trong state local, mã hoá bằng passphrase ở Prerequisites.
+Luồng `local-deploy` (không `--preview`) chạy theo đúng thứ tự contract: platform up → đọc outputs → ghi `.env` → home up → smoke HTTPS. Mỗi bước chỉ chạy khi bước trước thành công. Lần chạy đầu trên stack mới, password PostgreSQL được sinh ngẫu nhiên và lưu dạng secret trong state local, mã hoá bằng passphrase ở Prerequisites.
 
 `--worktree-root <dir>` (cả ba lệnh `local-*`) chọn worktree bị tác động về **state/namespace/`.env`** (namespace Docker, Pulumi stack, `.pulumi-local-state`, `.env`); mặc định là checkout hiện hành. Chương trình Pulumi và smoke vẫn chạy từ checkout đang gõ lệnh — flag không phải "deploy code của worktree kia".
 
-**Preview covers cả hai project** (platform rồi home) nhưng có giới hạn đã biết: trước khi platform được apply lần đầu, outputs của stack reference là `undefined` — preview home khi đó fail tường minh kèm hướng dẫn (chạy apply thật trước). Preview không bao giờ tạo container/volume và không ghi `.env` — nhưng nó **có** ghi state local của worktree: `stack init` và sinh/lưu secret `postgres:password` trong stack config (không đụng Docker).
+### Preview là read-only, và cần worktree đã apply
+
+`--preview` **không mutate gì**: không tạo `.pulumi-local-state`, không `stack init`, không `pulumi config set`, không sinh/lưu secret `postgres:password`, không `up`/`destroy`, không ghi `.env`, không đụng Docker. Nó cũng **không truyền `--config`** cho `pulumi preview` — CLI 3.x _lưu_ `--config` vào stack config file kể cả khi preview (`pulumi preview --help`: "Config to use during the preview and save to the stack config file"), nên truyền nó là mutation cấu hình giữa chừng lệnh read-only. Mọi config mà chương trình cần (`namespace:worktreeRoot`, `namespace:platformStackRef`, secret `postgres:password`) do lần apply trước lưu vào stack config; preview chỉ đọc lại.
+
+**Prerequisite**: worktree phải đã apply ít nhất một lần (`pnpm dx local-deploy`). Preview tự kiểm read-only trước khi chạy lệnh nào — state dir tồn tại, platform stack đã up (outputs thật), home stack tồn tại — và khi thiếu thì báo đúng thứ thiếu kèm cách khắc phục, exit 1, **không** tự khởi tạo gì để "giúp" preview xanh. Lý do có prerequisite: preview của Pulumi _có_ đọc state (nó đối chiếu desired state với state thật), nên một stack chưa tồn tại không có gì để preview; và home đọc platform qua `StackReference` mà chỉ có dữ liệu thật sau apply đầu tiên.
+
+Cả hai project đều được preview (platform rồi home). Nếu preview home fail sau khi platform đã preview xanh, thông báo nói rõ home **không** được preview — không báo chung chung "preview xong".
 
 Dry-run an toàn cho CI là Nx target `provision` (`pnpm nx run platform-deploy:provision`) — chỉ in kế hoạch, không chạy `pulumi up`.
 
@@ -71,7 +77,7 @@ Smoke xác nhận đúng hành vi ứng dụng qua Traefik, không chỉ "server
 ## Giới hạn đã biết
 
 - Host port Traefik đổi mỗi lần container được tạo lại (Docker cấp động) — luôn đọc lại từ `.env`/outputs sau khi up.
-- Preview home trước apply platform đầu tiên fail tường minh (outputs stack reference là `undefined` trước apply) — xem mục Luồng deploy.
+- Preview cần worktree đã apply trước (read-only, xem mục Luồng deploy); nó không tự khởi tạo stack/secret/config.
 - Traefik bind-mount Docker socket read-only: `readOnly` chỉ chặn ghi filesystem, KHÔNG giới hạn Docker API — mount này vẫn là đường leo thang đặc quyền tiềm năng nếu container bị chiếm. Socket proxy GET-only là giảm thiểu đúng nghĩa, chưa có ở đây (chấp nhận rủi ro có chủ đích cho môi trường local).
 - Local deployment **không** auto-trust certificate, không backup volume, không monitoring — ngoài phạm vi có chủ đích.
 - Preset Nitro của `apps/home` cho staging/production vẫn là `cloudflare-module` (đường Wrangler); Docker chỉ dùng preset `node-server` qua build-time flag, không sửa `nitro.config.ts`.

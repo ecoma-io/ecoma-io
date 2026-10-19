@@ -36,6 +36,6 @@ Routing của Traefik phải lọc theo network của worktree (`--providers.doc
 1. Chỉ Traefik publish host port, và chỉ trên loopback.
 2. Volume PostgreSQL sống độc lập với vòng đời container **và** vòng đời stack; đường xoá dữ liệu duy nhất là `pnpm dx local-destroy --remove-data` (in cảnh báo trước).
 3. Secret PostgreSQL nằm trong Pulumi secret config, không vào Git/log/output; secret trong stack config và dữ liệu trong volume phải cùng tuổi — destroy **không** `--remove` stack vì đó là cách hai nửa lệch nhau.
-4. Preview và apply tách bạch: `pnpm dx local-deploy --preview` không apply, không ghi `.env`; Nx target `provision` là dry-run an toàn cho CI (không chạy `pulumi up`).
+4. Preview và apply tách bạch: `pnpm dx local-deploy --preview` là read-only — không init state/stack, không `config set`/sinh secret, không ghi `.env`, không `up`/`destroy`, và chỉ chạy trên worktree đã apply ít nhất một lần (prerequisite kiểm read-only); Nx target `provision` là dry-run an toàn cho CI (không chạy `pulumi up`).
 5. Tên resource luôn qua namespace; không tên nào được suy từ thứ tự chạy hay timestamp.
 6. Đổi `LOCAL_ROOT_HOSTNAME` (contract) phải sửa **cùng lúc** `traefik-dynamic.yml`: mount cert suy từ hằng số nhưng TLS store trong file đó hardcode cùng tên — lệch nhau thì Traefik vẫn boot nhưng không có `defaultCertificate` và mọi TLS handshake fail với lỗi không chỉ ra nguyên nhân. Spec `traefik-dynamic.yml consistency` khóa hai phía này với nhau.

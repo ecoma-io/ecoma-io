@@ -211,6 +211,9 @@ describe('local-smoke.mjs input contract', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('smoke FAILED');
     expect(result.stderr).toContain('ECONNREFUSED');
+    // Hết budget là một đường fail — stdout KHÔNG BAO GIỜ được khen "smoke OK"
+    // song song với "smoke FAILED" ở stderr (log mâu thuẫn làm chẩn đoán sai).
+    expect(result.stdout).not.toContain('smoke OK');
   });
 });
 
@@ -222,6 +225,10 @@ describe('local-smoke.mjs HTTPS verification chain', () => {
     expect(result.stdout).toContain('smoke OK');
     expect(result.stdout).toContain('302 → 200');
     expect(result.stdout).toContain('TLS hợp lệ với certificate local');
+    // stdout và stderr là hai hợp đồng riêng: thành công thì stdout khen,
+    // stderr không có dòng FAILED/RETRY nào.
+    expect(result.stderr).not.toContain('smoke FAILED');
+    expect(result.stderr).not.toContain('smoke RETRY');
   });
 
   it('wrong redirect location /fr → exit 1 immediately', async () => {
@@ -391,5 +398,75 @@ describe('local-smoke.mjs HTTPS verification chain', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('smoke FAILED');
     expect(result.stderr).not.toMatch(/at .*\n.*at /u); // không stack trace Node
+  });
+});
+
+/**
+ * Hợp đồng output: `smoke OK` CHỈ in ngay sau khi verifyChain() thành công.
+ * Các case dưới đây kiểm trực tiếp stdout/stderr riêng biệt — exit code một
+ * mình không đủ, vì log vừa báo FAILED vừa báo OK là log nói dối đúng lúc người
+ * đọc cần tin nhất. 500 → fail tức thời, 502→200 → exit 0, 502 liên tục → exit 1.
+ */
+describe('local-smoke.mjs smoke OK contract', () => {
+  it('successful verification prints smoke OK (stdout), exit 0', async () => {
+    const port = await startHttpsFixture(homeHandler);
+    const result = await run(fixtureArgs(port, FAST));
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('smoke OK');
+    expect(result.stdout).toContain('302 → 200');
+    // stderr phải trống hoặc chỉ có dòng thành công — không có FAILED/RETRY.
+    expect(result.stderr).not.toContain('smoke FAILED');
+    expect(result.stderr).not.toContain('smoke RETRY');
+  });
+
+  it('non-retryable failure (500) prints failure message, exits nonzero, no smoke OK', async () => {
+    const port = await startHttpsFixture((pathname, req, res) => {
+      if (pathname === '/en') {
+        res.writeHead(500);
+        res.end();
+        return;
+      }
+      homeHandler(pathname, req, res);
+    });
+    const result = await run(fixtureArgs(port, FAST));
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('smoke FAILED');
+    expect(result.stderr).toContain('mong 2xx, nhận 500');
+    // stdout KHÔNG bao giờ khen khi verify chưa từng thành công.
+    expect(result.stdout).not.toContain('smoke OK');
+    expect(result.stdout).not.toContain('302 → 200');
+    expect(result.ms).toBeLessThan(3000);
+  });
+
+  it('retryable failure exhausting budget prints failure message, exits nonzero, no smoke OK', async () => {
+    const port = await startHttpsFixture((_pathname, _req, res) => {
+      res.writeHead(502);
+      res.end();
+    });
+    const result = await run(fixtureArgs(port, ['--budget-ms', '500']));
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('smoke FAILED');
+    expect(result.stderr).toContain('hết budget 500ms');
+    expect(result.stderr).toContain('status 502');
+    expect(result.stdout).not.toContain('smoke OK');
+  });
+
+  it('retryable failure then successful verification prints smoke OK and exits zero', async () => {
+    let enRequests = 0;
+    const port = await startHttpsFixture((pathname, req, res) => {
+      if (pathname === '/en' && enRequests < 2) {
+        enRequests += 1;
+        res.writeHead(502);
+        res.end();
+        return;
+      }
+      homeHandler(pathname, req, res);
+    });
+    const result = await run(fixtureArgs(port, ['--budget-ms', '10000']), 20000);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('smoke OK');
+    expect(result.stdout).toContain('302 → 200');
+    expect(result.stderr).not.toContain('smoke FAILED');
+    expect(enRequests).toBe(2);
   });
 });

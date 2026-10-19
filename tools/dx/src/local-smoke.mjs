@@ -21,6 +21,11 @@
  * TLS/certificate, 4xx, 500, 3xx bất ngờ, sai location, thiếu title — fail tức
  * thời: retry những lỗi đó chỉ che bug thật.
  *
+ * Hợp đồng output: `smoke OK` CHỈ được in ngay sau khi `verifyChain()` thành
+ * công (ngay trong khối try); mọi đường fail in `smoke FAILED` ra stderr với
+ * exit code != 0 và KHÔNG in `smoke OK`. Log vừa báo FAILED vừa báo OK là log
+ * nói dối đúng lúc người đọc cần tin nhất.
+ *
  * Cách chạy: `node tools/dx/src/local-smoke.mjs fbi.com:<port>` — input là giá
  * trị ROOT_HOST đã sinh từ Pulumi outputs, không phải port đoán trước. Cờ tùy
  * chọn: `--connect <host:port>` dial địa chỉ đó thay vì resolve DNS của
@@ -302,6 +307,12 @@ for (;;) {
   let failure;
   try {
     await verifyChain();
+    // In NGAY SAU khi chain xanh và trước khi thoát loop — không có đường nào
+    // đi qua `smoke FAILED` rồi vẫn kịp in `smoke OK` (exit code != 0 nhưng
+    // stdout vẫn khen là bug từng khiến log mâu thuẫn với nhau).
+    console.log(
+      `smoke OK: 302 → 200 sau ${Date.now() - startedAt}ms — TLS hợp lệ với certificate local`,
+    );
     break;
   } catch (error) {
     if (!(error instanceof RetryableError)) {
@@ -335,7 +346,3 @@ for (;;) {
   });
   backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX_MS);
 }
-
-console.log(
-  `smoke OK: 302 → 200 sau ${Date.now() - startedAt}ms — TLS hợp lệ với certificate local`,
-);
