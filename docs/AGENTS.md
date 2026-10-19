@@ -30,7 +30,9 @@
 
 ### `services/<service>/`
 
-`service` trong đường dẫn là **bounded context**, không nhất thiết là một deploy unit. Khi một context có nhiều deploy unit (vd. `identity` → `account` + `auth`), thư mục tài liệu chung cho chúng — ranh giới service, contract và data ownership vẫn nằm ở `overview/01`.
+`service` in the path is a **bounded context**, not necessarily one deploy unit. When a context has several deploy units (e.g. `identity` → `account` + `auth`), a shared document directory covers them — service boundary, contract and data ownership still live in `overview/01`.
+
+**The one exception — `services/local-platform/`**: shared local Docker infrastructure for every deploy unit (network, Traefik, PostgreSQL), owned by no bounded context. It sits under `services/` because it serves **all** services, not because it is one — see the bounding table in [`README.md`](./README.md).
 
 - `README.md`: navigation and service summary, kept very short.
 - `01-architecture.md`: service design, boundary, runtime, data and dependencies.

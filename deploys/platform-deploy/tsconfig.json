@@ -1,7 +1,34 @@
 {
+  // `index.ts` import hai helper **nguồn** của `tools/dx` (không phải package đã
+  // build): `../../tools/dx/src/<name>` là cách duy nhất hai deploy unit dùng
+  // chung một nguồn sự thật cho namespace và contract outputs, thay vì copy
+  // hàm vào hai nơi rồi để chúng lệch nhau.
+  //
+  // Dạng specifier là **không chữ `.js`** (extensionless), không phải `.js`.
+  // `nodenext` resolve `.js` → `.ts` chỉ đúng khi TypeScript/Node *transpile*
+  // file; Pulumi runtime `nodejs` chạy thẳng `index.ts` qua ts-node vendor
+  // 7.0.1 (không có ESM loader, và `ts-node@7` không có `.js`→`.ts` mapping),
+  // nên specifier `.js` → `Cannot find module` còn specifier không chữ `.js`
+  // → resolve đúng `*.ts` và chạy được. `module: nodenext` vẫn giữ để TypeScript
+  // typecheck theo chuẩn ESM.
+  //
+  // Hệ quả bắt buộc: `rootDir` phải nới lên **workspace root** (`../..`) —
+  // mặc định `rootDir` là thư mục project nên `tools/dx/src/*.ts` nằm ngoài nó
+  // và `tsc` fail với TS6059. `files` cũng phải liệt kê tường minh hai file đó
+  // vì project `composite` bắt buộc mọi file trong graph đều được khai.
+  //
+  // Hệ quả thứ hai cùng nguồn gốc: output của `tsc --build` rơi vào
+  // `bin/deploys/platform-deploy/` và `bin/tools/dx/` thay vì `bin/index.js` —
+  // cùng quy tắc với `deploys/home-deploy/tsconfig.json` (hai file PHẢI nói
+  // cùng một quy tắc). Pulumi không dùng output này — runtime `nodejs` chạy
+  // thẳng `index.ts`.
+  //
+  // Pulumi runtime `nodejs` chạy thẳng `index.ts` dưới CommonJS, nên
+  // `import.meta` KHÔNG dùng được — thay bằng `__dirname` + `node:path`.
   "compilerOptions": {
     "strict": true,
     "outDir": "bin",
+    "rootDir": "../..",
     "target": "es2020",
     "module": "nodenext",
     "moduleResolution": "nodenext",
@@ -11,8 +38,14 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true,
     "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
     "composite": true,
-    "declaration": true
+    "declaration": true,
+    "types": ["node"]
   },
-  "files": ["index.ts"]
+  "files": [
+    "index.ts",
+    "../../tools/dx/src/deploy-namespace.ts",
+    "../../tools/dx/src/platform-outputs-contract.ts"
+  ]
 }

@@ -1,0 +1,220 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
+import { ROOT_DIR } from './utils.js';
+
+/**
+ * Đọc pattern từ root `.dockerignore` thật để mọi case bên dưới đều chạy trên
+ * nội dung file đang hiệu lực — sửa file là spec tự chạy lại trên pattern mới.
+ */
+const PATTERNS = readFileSync(join(ROOT_DIR, '.dockerignore'), 'utf8')
+  .split('\n')
+  .map((line) => line.trim())
+  .filter((line) => line.length > 0 && !line.startsWith('#'));
+
+/**
+ * Matcher thu nhỏ đúng ngữ nghĩa của Docker cho file `.dockerignore`.
+ *
+ * Docker build context đi cây file theo chiều từ root: khi một thư mục bị
+ * loại, cả subtree của nó bị cắt khỏi walk, trừ khi một pattern `!` khớp sâu
+ * hơn đưa nó (hoặc một ancestor sâu hơn của nó) trở lại. Matcher dưới đây lặp
+ * lại đúng hành vi prune đó trên đường dẫn string thay vì đi cây thật:
+ *
+ * 1. Với mỗi ancestor (gần root → gần leaf, bao gồm cả path), tìm rule CUỐI
+ *    CÙNG trong file khớp ancestor — "last matching pattern wins".
+ * 2. Nếu verdict của ancestor là EXCLUDE, path bị loại, TRỪ khi một ancestor
+ *    sâu hơn (hoặc chính path) có verdict INCLUDE — khi đó subtree từ ancestor
+ *    đó được coi là "đã mở lại" và walk tiếp tục từ đó.
+ * 3. Rule không có dấu `!` là EXCLUDE, có `!` là INCLUDE; `#` là comment (đã
+ *    lọc khi đọc file); glob `*` không vượt `/`, `**` khớp 0+ segment (nên
+ *    pattern `**` + `/x` khớp cả `x` nằm ngay root), `?` khớp đúng một ký tự
+ *    khác `/`.
+ */
+type Rule = { readonly pattern: string; readonly include: boolean; readonly regex: RegExp };
+
+/** Escape một đoạn glob (đã tách `*`/`**`) thành literal regex an toàn. */
+function escapeLiteral(literal: string): string {
+  let out = '';
+  for (const char of literal) {
+    out += /[a-zA-Z0-9_/-]/u.test(char) ? char : `\\${char}`;
+  }
+  return out;
+}
+
+/** Quy một segment glob (không chứa `**`) thành regex, không khớp xuyên `/`. */
+function globSegmentToRegex(segment: string): string {
+  let out = '';
+  for (let i = 0; i < segment.length; i += 1) {
+    const char = segment[i];
+    if (char === '*') {
+      out += '[^/]*';
+    } else if (char === '?') {
+      out += '[^/]';
+    } else if (char !== undefined) {
+      out += escapeLiteral(char);
+    }
+  }
+  return out;
+}
+
+function compile(patternLine: string): Rule {
+  // Docker bỏ qua `/` đầu pattern (pattern là path tương đối với context root)
+  // và một pattern kết thúc `/` vẫn khớp file bên trong thư mục, nên không cần
+  // xử lý riêng trường hợp thư mục — regex khớp path file lẫn path thư mục.
+  const include = patternLine.startsWith('!');
+  const pattern = include ? patternLine.slice(1) : patternLine;
+  const stripped = pattern.startsWith('/') ? pattern.slice(1) : pattern;
+  const segments = stripped.split('/');
+  const source = segments
+    .map((segment, index) => {
+      const last = index === segments.length - 1;
+      if (segment === '**') {
+        if (last) return '.*';
+        // `**` đứng đầu khớp cả trường hợp 0 thư mục (path nằm ngay root);
+        // `**` ở giữa khớp 0+ thư mục trung gian.
+        return index === 0 ? '(?:.*/)?' : '(?:[^/]+/)*';
+      }
+      return `${globSegmentToRegex(segment)}${last ? '' : '/'}`;
+    })
+    .join('');
+  return { pattern, include, regex: new RegExp(`^${source}$`, 'u') };
+}
+
+function lastMatch(rules: readonly Rule[], candidatePath: string): Rule | undefined {
+  let found: Rule | undefined;
+  for (const rule of rules) {
+    if (rule.regex.test(candidatePath)) found = rule;
+  }
+  return found;
+}
+
+/** Verdict cuối của một path: EXCLUDE khi rule cuối khớp là exclude (không rule nào khớp thì mặc định là giữ). */
+function finalInclude(rules: readonly Rule[], candidatePath: string): boolean {
+  const rule = lastMatch(rules, candidatePath);
+  return rule === undefined || rule.include;
+}
+
+/**
+ * Chỉ một INCLUDE TƯỜNG MINH (có rule cuối khớp và rule đó là `!`) mới mở lại
+ * subtree — Docker không thể match một file mà walk đã cắt khỏi cây, nên
+ * "không rule nào khớp" ở node sâu hơn không cứu được node cha bị loại.
+ */
+function explicitInclude(rules: readonly Rule[], candidatePath: string): boolean {
+  const rule = lastMatch(rules, candidatePath);
+  return rule !== undefined && rule.include;
+}
+
+function isExcluded(candidatePath: string): boolean {
+  const rules = PATTERNS.map(compile);
+  // Duyệt ancestor gần root → gần leaf: ancestor nào verdict EXCLUDE thì
+  // subtree của nó bị cắt, trừ khi một ancestor sâu hơn (hoặc chính path) được
+  // INCLUDE tường minh — khi đó walk tiếp tục từ ancestor đó như một gốc mới
+  // đã mở. Mirror đúng walk prune của Docker trên cây context.
+  const segments = candidatePath.split('/');
+  for (let i = 0; i < segments.length; i += 1) {
+    if (finalInclude(rules, segments.slice(0, i + 1).join('/'))) continue;
+    let reopened = false;
+    for (let j = i + 1; j < segments.length; j += 1) {
+      if (explicitInclude(rules, segments.slice(0, j + 1).join('/'))) {
+        reopened = true;
+        i = j;
+        break;
+      }
+    }
+    if (!reopened) return true;
+  }
+  return false;
+}
+
+describe('root .dockerignore: matcher semantics', () => {
+  it('last matching pattern wins', () => {
+    const rules = ['a/*', '!a/keep.txt'].map(compile);
+    expect(finalInclude(rules, 'a/keep.txt')).toBe(true);
+    expect(finalInclude(rules, 'a/drop.txt')).toBe(false);
+  });
+
+  it('negation with ! re-includes', () => {
+    const rules = ['*.log', '!keep.log'].map(compile);
+    expect(finalInclude(rules, 'keep.log')).toBe(true);
+  });
+
+  it('* does not cross / and ** crosses', () => {
+    const doubleStar = compile('**/node_modules');
+    expect(doubleStar.regex.test('node_modules')).toBe(true);
+    expect(doubleStar.regex.test('apps/home/node_modules')).toBe(true);
+    expect(doubleStar.regex.test('node_modulesx')).toBe(false);
+    const star = compile('apps/*');
+    expect(star.regex.test('apps/home')).toBe(true);
+    expect(star.regex.test('apps/home/app.vue')).toBe(false);
+  });
+
+  it('excluding a directory excludes its subtree', () => {
+    const rules = ['apps/*'].map(compile);
+    expect(finalInclude(rules, 'apps/account')).toBe(false);
+    expect(isExcluded('apps/account/src/x.ts')).toBe(true);
+  });
+
+  it('re-included directory makes its subtree includable again', () => {
+    // Cùng trình tự `tools/*` → `!tools/dx` → `tools/dx/*` → `!tools/dx/
+    // package.json` như trong file thật, chạy trên matcher thuần: thư mục
+    // `tools/dx` được mở lại tường minh nên subtree của nó trở nên khả dĩ,
+    // còn file cụ thể nào được INCLUDE tường minh thì thắng `tools/dx/*`.
+    const rules = ['tools/*', '!tools/dx', 'tools/dx/*', '!tools/dx/package.json'].map(compile);
+    expect(explicitInclude(rules, 'tools/dx')).toBe(true);
+    expect(finalInclude(rules, 'tools/dx')).toBe(true);
+    expect(finalInclude(rules, 'tools/dx/src')).toBe(false);
+    expect(finalInclude(rules, 'tools/dx/package.json')).toBe(true);
+    expect(finalInclude(rules, 'tools/other')).toBe(false);
+  });
+});
+
+describe('root .dockerignore: sensitive paths are excluded', () => {
+  it('env files and pulumi state never enter the context', () => {
+    expect(isExcluded('.env')).toBe(true);
+    expect(isExcluded('apps/home/.env.local')).toBe(true);
+    expect(isExcluded('.pulumi-local-state/.pulumi/stacks/platform-deploy/local-x.json')).toBe(
+      true,
+    );
+    expect(isExcluded('.pulumi/credentials.json')).toBe(true);
+    expect(isExcluded('Pulumi.local-wabc.yaml')).toBe(true);
+    expect(isExcluded('deploys/Pulumi.local-wabc.yaml')).toBe(true);
+  });
+
+  it('local TLS private key and VCS metadata never enter the context', () => {
+    expect(isExcluded('deploys/platform-deploy/local-certs/fbi.com.key')).toBe(true);
+    expect(isExcluded('.git/config')).toBe(true);
+  });
+
+  it('dependency trees, sibling workspaces and build output never enter the context', () => {
+    expect(isExcluded('node_modules/x/index.js')).toBe(true);
+    expect(isExcluded('apps/home/node_modules/x/index.js')).toBe(true);
+    expect(isExcluded('apps/other-app/src/x.ts')).toBe(true);
+    expect(isExcluded('libs/other-lib/src/x.ts')).toBe(true);
+    expect(isExcluded('tools/dx/src/local-deploy.ts')).toBe(true);
+    expect(isExcluded('docs/README.md')).toBe(true);
+    expect(isExcluded('apps/home/.output/server/index.mjs')).toBe(true);
+    expect(isExcluded('dist/x.js')).toBe(true);
+  });
+});
+
+describe('root .dockerignore: required build inputs are included', () => {
+  it('workspace manifests, lockfile and patches enter the context', () => {
+    expect(isExcluded('pnpm-workspace.yaml')).toBe(false);
+    expect(isExcluded('package.json')).toBe(false);
+    expect(isExcluded('pnpm-lock.yaml')).toBe(false);
+    expect(isExcluded('patches/@nx__js@23.3.0.patch')).toBe(false);
+  });
+
+  it('home app, ui-ecoma-logo and dx manifest enter the context', () => {
+    expect(isExcluded('tools/dx/package.json')).toBe(false);
+    expect(isExcluded('apps/home/package.json')).toBe(false);
+    expect(isExcluded('apps/home/.npmrc')).toBe(false);
+    expect(isExcluded('apps/home/app/app.vue')).toBe(false);
+    expect(isExcluded('apps/home/server/routes/index.get.ts')).toBe(false);
+    expect(isExcluded('libs/ui-ecoma-logo/package.json')).toBe(false);
+    expect(isExcluded('libs/ui-ecoma-logo/src/index.ts')).toBe(false);
+    expect(isExcluded('tsconfig.base.json')).toBe(false);
+  });
+});

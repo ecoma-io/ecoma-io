@@ -24,10 +24,14 @@ Mỗi bounded context có thể có nhiều deploy unit; `docs/services/<name>/`
 - [Transactional Mail](./services/transactional-mail/README.md) — control plane của email giao dịch (Cloudflare D1).
 - [Transactional Mailer Job](./services/transactional-mailer-job/README.md) — delivery worker email (Cloudflare Queue + D1 `mail-job`).
 
+Không phải bounded context nhưng có tài liệu riêng (đặt trong `services/` vì nó phục vụ **mọi** service, không phải vì nó là một service — ngoại lệ này được ghi ở [`AGENTS.md`](./AGENTS.md) §3 và ở bảng dưới):
+
+- [Local Platform](./services/local-platform/README.md) — hạ tầng Docker local dùng chung (network, Traefik, PostgreSQL) mỗi worktree một bộ, và đường deploy local của deploy unit.
+
 ## Ranh giới tài liệu
 
-| Vị trí                          | Chứa                                                  |
-| ------------------------------- | ----------------------------------------------------- |
-| `overview/`                     | Quyết định và policy **của toàn hệ thống**            |
-| `overview/04-platform-facts.md` | **Fact của nền tảng**, kèm nguồn · ngày · mức tin cậy |
-| `services/<service>/`           | Thiết kế, requirement và runbook **của service**      |
+| Vị trí                          | Chứa                                                                                                                                               |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `overview/`                     | Quyết định và policy **của toàn hệ thống**                                                                                                         |
+| `overview/04-platform-facts.md` | **Fact của nền tảng**, kèm nguồn · ngày · mức tin cậy                                                                                              |
+| `services/<service>/`           | Thiết kế, requirement và runbook **của service** · ngoại lệ `services/local-platform/` — hạ tầng local dùng chung, không thuộc bounded context nào |

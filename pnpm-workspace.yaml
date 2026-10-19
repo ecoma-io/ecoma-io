@@ -17,6 +17,11 @@ allowBuilds:
   '@parcel/watcher': true
   '@scarf/scarf': true
   '@pulumi/command': true
+  # Tương tự `@pulumi/command`: script `install` tải pulumi plugin
+  # `resource docker-build` về plugin store của máy. Không cho chạy thì plugin
+  # thiếu lúc `pulumi up` — và thiếu allowlist thì `pnpm install` fail hẳn với
+  # ERR_PNPM_IGNORED_BUILDS (đã gặp trên CI của PR này).
+  '@pulumi/docker-build': true
 
   esbuild: true
   lefthook: true
