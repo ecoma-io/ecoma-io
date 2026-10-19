@@ -12,7 +12,7 @@
     "postgres": "3.4.9"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20261016.1",
+    "@cloudflare/workers-types": "5.20261018.1",
     "@commitlint/cli": "^21.2.3",
     "@commitlint/config-conventional": "^21.2.3",
     "@commitlint/config-nx-scopes": "^21.2.3",
@@ -84,7 +84,7 @@
     "vue": "^3.5.13",
     "vue-router": "^5.4.0",
     "vue-tsc": "^2.2.12",
-    "wrangler": "4.151.0"
+    "wrangler": "4.151.1"
   },
   "packageManager": "pnpm@12.14.0"
 }
