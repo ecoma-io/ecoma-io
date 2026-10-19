@@ -33,6 +33,7 @@ import {
 } from './platform-outputs-contract.js';
 import {
   exec,
+  describeSpawnFailure,
   ensureStack,
   fullStackRef,
   localStateDir,
@@ -502,17 +503,12 @@ export function classifyStackOutput(result: ExecResult): PlatformStatusResult {
   // `status === null` nghĩa là process CHẠY CHƯA ĐƯỢC (binary không tồn tại,
   // không executable...) hoặc bị SIGNAL kill (OOM...) — stderr/stdout rỗng lúc
   // đó, nếu đi tiếp sẽ thành "lỗi Pulumi không xác định" và người dùng không
-  // cài `pulumi` bị báo thành lỗi backend. Báo đúng nguyên nhân: detail là
-  // message của `spawnSync.error` hoặc tên signal.
+  // cài `pulumi` bị báo thành lỗi backend. Báo đúng nguyên nhân qua helper
+  // dùng chung (cùng chuẩn với `execStreaming`/`pulumiRun`).
   if (result.status === null) {
-    const cause =
-      result.error?.message ??
-      (result.signal !== undefined && result.signal !== null
-        ? `process bị signal kill: ${result.signal}`
-        : undefined);
     return {
       state: 'backend-error',
-      detail: cause ?? 'pulumi không chạy được (không rõ nguyên nhân)',
+      detail: `pulumi không chạy được: ${describeSpawnFailure(result)}`,
     };
   }
   if (

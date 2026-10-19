@@ -53,23 +53,28 @@ import {
 const programDir = __dirname;
 
 /**
- * Đường dẫn tuyệt đối tới một file cert local trong repo.
+ * Đường dẫn tuyệt đối tới một file tĩnh trong repo dùng làm bind-mount source.
  *
  * Fail sớm khi thiếu: bind-mount thiếu file ⇒ Docker TẠO THƯ MỤC tại path đó
- * trong container, Traefik chết với lỗi TLS không chỉ ra nguyên nhân thật —
- * đúng loại lỗi mà `dockerSocketPath()` phía dưới cảnh báo. Cert nằm trong
- * repo nên chỉ một thay đổi layout/checkout là mất; kiểm tra ở đây biến lỗi
- * tầng Docker khó truy thành lỗi Pulumi rõ nguyên nhân.
+ * trong container, process trong container chết với lỗi không chỉ ra nguyên
+ * nhân thật — đúng loại lỗi mà `dockerSocketPath()` phía dưới cảnh báo. File
+ * nằm trong repo nên chỉ một thay đổi layout/checkout là mất; kiểm tra ở đây
+ * biến lỗi tầng Docker khó truy thành lỗi Pulumi rõ nguyên nhân.
  */
-function certPath(fileName: string): string {
-  const certFile = join(programDir, 'local-certs', fileName);
-  if (!existsSync(certFile)) {
+function repoMountFile(relativePath: string): string {
+  const absPath = join(programDir, relativePath);
+  if (!existsSync(absPath)) {
     throw new Error(
-      `Thiếu certificate local ${certFile} — bind-mount thiếu file sẽ bị Docker tạo ` +
-        'thành THƯ MỤC trong container và Traefik chết với lỗi TLS không chỉ ra nguyên nhân.',
+      `Thiếu file bind-mount ${absPath} — bind-mount thiếu file sẽ bị Docker tạo ` +
+        'thành THƯ MỤC trong container và container chết với lỗi không chỉ ra nguyên nhân.',
     );
   }
-  return certFile;
+  return absPath;
+}
+
+/** Cert/key của hostname local nằm trong `local-certs/` cạnh chương trình. */
+function certPath(fileName: string): string {
+  return repoMountFile(join('local-certs', fileName));
 }
 
 /**
@@ -82,7 +87,7 @@ function certPath(fileName: string): string {
  * provider điều khiển daemon thứ nhất: không router nào được đăng ký, mọi request
  * 404 vĩnh viễn mà không có lỗi nào chỉ ra nguyên nhân. Thiếu socket của đúng
  * daemon thì fail sớm với hướng dẫn hành động được, cùng triết lý `config.require`
- * phía trên.
+ * phía dưới.
  */
 function dockerSocketPath(): string {
   const explicit = process.env['DOCKER_SOCKET_PATH'];
@@ -93,6 +98,21 @@ function dockerSocketPath(): string {
       throw new Error(
         `DOCKER_SOCKET_PATH=${explicit} không tồn tại trên host — bind-mount thiếu sẽ bị ` +
           'Docker tạo thành THƯ MỤC trong container và Traefik không kết nối được daemon.',
+      );
+    }
+    // Đối chiếu DOCKER_HOST khi nó cũng được đặt: `DOCKER_SOCKET_PATH` chỉ nói
+    // "mount file này", còn provider `@pulumi/docker` điều khiển daemon mà
+    // `DOCKER_HOST` trỏ tới. Hai giá trị trỏ hai socket khác nhau là Traefik
+    // đọc container của daemon thứ hai trong khi provider điều khiển daemon
+    // thứ nhất — đúng lớp lỗi fail-âm-thầm mà hàm này sinh ra để chặn. (`unix://`
+    // prefix của `DOCKER_HOST` được chấp nhận tùy chọn để cùng một giá trị env
+    // dùng được cho cả Docker CLI và biến này.)
+    const host = process.env['DOCKER_HOST'] ?? '';
+    if (host.length > 0 && host !== `unix://${explicit}` && host !== explicit) {
+      throw new Error(
+        `DOCKER_SOCKET_PATH=${explicit} và DOCKER_HOST=${host} trỏ tới hai socket khác ` +
+          'nhau — Traefik sẽ đọc container của daemon thứ hai trong khi provider điều khiển ' +
+          'daemon thứ nhất. Đặt cả hai về cùng một socket, hoặc bỏ DOCKER_HOST.',
       );
     }
     return explicit;
@@ -157,9 +177,13 @@ const POSTGRES_INTERNAL_PORT = 5432;
 /**
  * Service alias của PostgreSQL trong network.
  *
- * Đây là cách consumer (home, service khác) chạm database, KHÔNG phải tên
- * container. Tên container có namespace theo worktree nên đổi mỗi worktree;
- * alias này cố định để contract outputs không phụ thuộc worktree nào đang chạy.
+ * Đây là endpoint mà một service **sở hữu** database dùng để chạm vào database
+ * của chính nó, KHÔNG phải tên container. Consumer chưa tồn tại ở thời điểm
+ * hiện tại: `home-deploy` CỐ Ý không đọc `postgresHost`/`postgresPort` vì
+ * service không sở hữu database thì không được nối thẳng (invariant data
+ * ownership, xem comment tương ứng ở đó). Tên container mang namespace theo
+ * worktree nên đổi mỗi worktree; alias này cố định để contract outputs không
+ * phụ thuộc worktree nào đang chạy.
  */
 const POSTGRES_HOST_ALIAS = 'ecoma-postgres';
 
@@ -216,10 +240,12 @@ const network = new docker.Network('network', {
 const traefik = new docker.Container('traefik', {
   name: dockerResourceName(ns, 'traefik'),
   image: TRAEFIK_IMAGE,
-  // Container bị dừng (reboot máy, restart daemon) không tạo diff nào trong
-  // Pulumi — state vẫn coi resource là up-to-date — nên `local-deploy` không
-  // tự start lại được. `restart` là input nên Pulumi diff được; trừ khi
-  // operator đã `docker stop` tường minh (`unless-stopped` tôn trọng điều đó).
+  // Container bị dừng do reboot máy hay restart daemon được DOCKER tự start
+  // lại nhờ `restart: unless-stopped` — không cần chạy lại `local-deploy`, và
+  // cũng không thể qua `pulumi up`: Pulumi so input khai với input đã lưu trong
+  // state, hai bên đều là `unless-stopped` nên không có diff nào cả; việc start
+  // lại là cơ chế restart policy của Docker, không phải của Pulumi. Chỉ `docker
+  // stop` tường minh là được giữ ở trạng thái dừng (policy tôn trọng nó).
   restart: 'unless-stopped',
   command: [
     `--entrypoints.websecure.address=:${TRAEFIK_INTERNAL_PORT}`,
@@ -227,7 +253,7 @@ const traefik = new docker.Container('traefik', {
     '--providers.docker=true',
     '--providers.docker.exposedbydefault=false',
     // Nói rõ network để Traefik về tới backend trong đúng network của
-    // worktree này, không chọn nhầm network khá của host.
+    // worktree này, không chọn nhầm network khác của host.
     pulumi.interpolate`--providers.docker.network=${network.name}`,
     // Lọc container vào router của ĐÚNG worktree — defense-in-depth thứ hai,
     // cạnh label `traefik.docker.network` mà home tự gắn. Không có filter này,
@@ -294,7 +320,9 @@ const traefik = new docker.Container('traefik', {
     },
     {
       // Dynamic config TLS — file tĩnh trong repo, xem TRAEFIK_DYNAMIC_CONFIG_PATH.
-      source: `${programDir}/traefik-dynamic.yml`,
+      // Cùng kiểm tra tồn tại với cert/key qua `repoMountFile`: thiếu file là
+      // Docker tạo THƯ MỤC tại target và file provider của Traefik chết lúc boot.
+      source: repoMountFile('traefik-dynamic.yml'),
       target: TRAEFIK_DYNAMIC_CONFIG_PATH,
       type: 'bind',
       readOnly: true,
@@ -378,8 +406,9 @@ const postgresVolume = new docker.Volume(
 const postgres = new docker.Container('postgres', {
   name: dockerResourceName(ns, 'postgres'),
   image: POSTGRES_IMAGE,
-  // Cùng lý do với traefik: dừng do reboot không tự phục hồi được qua
-  // `local-deploy` — Pulumi không thấy diff trên trạng thái chạy.
+  // Cùng lý do với traefik: `restart: unless-stopped` để DOCKER tự start lại
+  // container sau reboot/restart daemon — `pulumi up` không làm được điều đó
+  // vì input khai và input trong state đều là `unless-stopped`, không có diff.
   restart: 'unless-stopped',
   // `envs` là mảng `KEY=VALUE` của provider này (không phải map `env`).
   // Truyền thẳng object secret của Pulumi vào đây để value được đánh dấu

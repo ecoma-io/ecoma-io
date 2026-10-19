@@ -123,6 +123,16 @@ phụ thuộc nội bộ của một context.
 `<bc>-contracts` đứng ngoài chuỗi này: nó là artifact mà provider **publish** và consumer **depend on**, không phải một tầng để
 import theo hướng trên.
 
+**Ngoại lệ đã biết — `deploys/*-deploy` → `tools/dx` (nguồn).** `platform-deploy` và `home-deploy` import **nguồn** của
+`tools/dx` qua đường dẫn tương đối (`../../tools/dx/src/...`, bật tường minh `@nx/enforce-module-boundaries` tại đúng dòng
+import) để dùng chung một định nghĩa namespace và contract outputs — lý do và ràng buộc ts-node ghi ở `tsconfig.json` của
+từng deploy project. Nx ghi nhận cạnh này trên project graph dưới dạng `static` (plugin `@nx/js/typescript` suy từ import),
+nên cache `typecheck`/`lint` của deploy project vẫn phụ thuộc đúng file `tools/dx/src` được import. Cạnh đó **không** nằm
+trong `validateDeploymentGraph` theo cùng chuẩn `deploys/<unit>-deploy → platform-deploy`: nó là Tooling (định nghĩa chia sẻ
+thời gian chạy), không phải prerequisite lifecycle giữa hai stack — import tương đối không sinh cycle lifecycle vì `tools/dx`
+không deploy resource nào. Deploy project mới import `tools/dx` theo đường này phải giữ hai oxlint-disable tường minh tại
+đúng dòng import, không nới luật chung.
+
 ## 4. Contracts
 
 `<bc>-contracts` là **boundary project/artifact**, không phải DDD layer:

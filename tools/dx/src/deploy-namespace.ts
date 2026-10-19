@@ -17,17 +17,17 @@
  *    (`/a/b/` vs `/a/b`) giữa các caller.
  *
  * Thuật toán hash là xxHash64 (`@node-rs/xxhash`, binding native prebuilt cho
- * linux/darwin/win) — prompt kiến trúc chốt xxHash; chọn 64-bit thay vì 32-bit
- * để xác suất hai worktree đụng namespace dưới mức mỗi host có hàng chục
- * worktree (birthday bound ~2^32 lần thử).
+ * linux/darwin/win) — prompt kiến trúc chốt xxHash. Phần hash giữ lại là
+ * `NAMESPACE_LENGTH = 12` hex = 48 bit (birthday bound ~2^24 worktree trên một
+ * host), nên xác suất hai worktree đụng namespace là không đáng kể ở quy mô
+ * thực tế; chiều dài này cũng giữ tên resource gọn.
  *
- * `NAMESPACE_LENGTH = 12` hex (48 bit) là đủ phân biệt trong thực tế và giữ tên
- * resource gọn; phần đầu được prefix chữ để tránh tên Docker bắt đầu bằng số
+ * Phần đầu được prefix chữ để tránh tên Docker bắt đầu bằng số
  * và để nhận ra bằng mắt đây là namespace của ecoma.
  */
 
 import { realpathSync } from 'node:fs';
-import { isAbsolute, normalize, resolve } from 'node:path';
+import { isAbsolute, normalize, parse, resolve } from 'node:path';
 
 import { xxh64 } from '@node-rs/xxhash';
 
@@ -49,9 +49,12 @@ export function normalizeWorktreeRoot(root: string): string {
   const real = realpathSync.native(absolute);
   const normalized = normalize(real);
   // `path.normalize('/a/b/')` giữ trailing sep; bỏ để `/a/b/` và `/a/b` cùng
-  // một input hash. Giữ root `/` nguyên — hash của `/` phải là hash của `/`,
-  // không phải hash của chuỗi rỗng.
-  return normalized.length > 1 ? normalized.replace(/[\\/]+$/u, '') : normalized;
+  // một input hash. So sánh với root CỦA CHÍNH hệ (`parse().root`) chứ không
+  // phải chiều dài chuỗi: trên Windows root là `C:\` (dài 3) — cắt theo
+  // `length > 1` sẽ biến `C:\` thành `C:`, đường tuyệt đối thành tương đối
+  // theo ổ đĩa và hash mất tính ổn định của absolute path.
+  const pathRoot = parse(normalized).root;
+  return normalized === pathRoot ? normalized : normalized.replace(/[\\/]+$/u, '');
 }
 
 /**

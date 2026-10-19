@@ -30,6 +30,7 @@
 import { spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { normalizeWorktreeRoot, pulumiStackName, worktreeNamespace } from './deploy-namespace.js';
 import { ROOT_DIR } from './utils.js';
@@ -82,6 +83,20 @@ export function exec(
 }
 
 /**
+ * Diễn giải vì sao một `spawnSync` không sinh ra exit code (`status === null`):
+ * process CHẠY CHƯA ĐƯỢC (binary không tồn tại — ENOENT, không executable —
+ * EACCES) hoặc bị SIGNAL kill (OOM). Lúc đó stdout/stderr rỗng, nguyên nhân
+ * thật chỉ nằm trong `error`/`signal`.
+ */
+export function describeSpawnFailure(result: ExecResult): string {
+  if (result.error !== undefined && result.error !== null) return result.error.message;
+  if (result.signal !== undefined && result.signal !== null) {
+    return `process bị signal kill: ${result.signal}`;
+  }
+  return 'lý do không rõ';
+}
+
+/**
  * Chạy lệnh dài với output STREAM trực tiếp ra terminal của caller.
  *
  * `spawnSync` trong `exec` giữ toàn bộ output trong pipe cho tới khi lệnh kết
@@ -91,12 +106,18 @@ export function exec(
  * bước. stderr vẫn bắt về chuỗi — thông điệp lỗi phải vào error thrown, không
  * trôi qua console giữa chừng. Stdout không còn capture được, nên hàm này
  * KHÔNG trả stdout — chỉ dùng cho lệnh mà caller không cần đọc output.
+ *
+ * `label` là tên lệnh xuất hiện trong thông báo lỗi — caller phải truyền
+ * subcommand thật (`up`, `preview`...), KHÔNG suy từ `args[0]`: qua `pulumiRun`
+ * thì `args[0]` luôn là `--stack`, và lỗi `pulumi --stack thất bại` mất đúng
+ * thông tin cần nhất khi debug.
  */
 export function execStreaming(
   command: string,
   args: string[],
   cwd: string,
   env: NodeJS.ProcessEnv,
+  label = command,
 ): void {
   const result = spawnSync(command, args, {
     cwd,
@@ -107,14 +128,9 @@ export function execStreaming(
   });
   if (result.status !== 0) {
     if (result.status === null) {
-      const cause =
-        result.error?.message ??
-        (result.signal !== undefined && result.signal !== null
-          ? `process bị signal kill: ${result.signal}`
-          : undefined);
-      throw new Error(`${command} ${args[0] ?? ''} không chạy được: ${cause ?? 'lý do không rõ'}`);
+      throw new Error(`${command} ${label} không chạy được: ${describeSpawnFailure(result)}`);
     }
-    throw new Error(`${command} ${args[0] ?? ''} thất bại:\n${result.stderr ?? ''}`);
+    throw new Error(`${command} ${label} thất bại:\n${result.stderr ?? ''}`);
   }
 }
 
@@ -137,7 +153,12 @@ export function resolveContext(worktreeRootInput?: string): LocalDeployContext {
     worktreeRoot,
     namespace,
     stackName: pulumiStackName(namespace),
-    stateUrl: `file://${localStateDir(worktreeRoot)}`,
+    // `pathToFileURL` chứ không phải nối chuỗi: `PULUMI_BACKEND_URL` là URL thật
+    // mà Pulumi CLI parse — path chứa `%`, space hay là drive Windows (`C:\...`)
+    // bị nối chuỗi sẽ parse sai hoặc lỗi ngay, tệ hơn là backend trỏ sang thư
+    // mục khác. Trên POSIX không dấu, `pathToFileURL(...).href` cho cùng
+    // `file://<root>` nên hành vi hiện tại không đổi.
+    stateUrl: pathToFileURL(localStateDir(worktreeRoot)).href,
   };
 }
 
@@ -162,11 +183,16 @@ export function requirePassphrase():
   // hợp lệ với Pulumi — chấp nhận nó là fail-open: state bị mã hoá bằng khoá
   // rỗng mà ai cũng giải được). `export VAR=` ở shell hay CI set biến rỗng đều
   // rơi vào đây — coi như chưa set để rơi tiếp xuống `_FILE`, rồi mới báo lỗi.
+  // CÙNG tiêu chí cho cả hai biến: `_FILE` chỉ kiểm `typeof` thì `export
+  // PULUMI_CONFIG_PASSPHRASE_FILE=` vẫn bị coi là đã cung cấp, pulumiEnv xoá
+  // biến inline và để lại `_FILE=''` — CLI coi rỗng là chưa set và fail với
+  // thông báo chung chung, mất đúng thông điệp hành động của helper này.
   const inline = process.env.PULUMI_CONFIG_PASSPHRASE;
   if (typeof inline === 'string' && inline.length > 0) {
     return { passphrase: inline, fromFile: false };
   }
-  if (typeof process.env.PULUMI_CONFIG_PASSPHRASE_FILE === 'string') {
+  const passphraseFile = process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
+  if (typeof passphraseFile === 'string' && passphraseFile.length > 0) {
     // File được CLI tự đọc; với orchestration chỉ cần biết "đã có đường cung".
     // `passphrase` là undefined — sentinel chuỗi rỗng sẽ bị `pulumiEnv` set vào
     // env ở vị trí ưu tiên cao nhất, chặn CLI đọc file (PU2: biến chính thắng).
@@ -293,8 +319,11 @@ export function pulumiRun(
   if (options.stream === true) {
     // `up`/`preview` chạy hàng phút (build image home) — stream progress ra
     // terminal thay vì giữ trong pipe đến khi xong. stdout không còn bắt được,
-    // caller không được cần nó ở chế độ này.
-    execStreaming('pulumi', fullArgs, projectDir, env);
+    // caller không được cần nó ở chế độ này. `args[0]` là subcommand thật
+    // (`up`, `preview`...) — execStreaming dùng nó làm nhãn lỗi, vì `fullArgs[0]`
+    // luôn là `--stack` và lỗi `pulumi --stack thất bại` không cho biết lệnh nào
+    // hỏng.
+    execStreaming('pulumi', fullArgs, projectDir, env, args[0] ?? 'pulumi');
     return undefined;
   }
   const run = exec('pulumi', fullArgs, projectDir, env);
@@ -302,12 +331,7 @@ export function pulumiRun(
     if (run.status === null) {
       // spawnSync không chạy được process (ENOENT, EACCES) hoặc process bị
       // signal kill (OOM) — stdout/stderr rỗng, phải báo từ `error`/`signal`.
-      const cause =
-        run.error?.message ??
-        (run.signal !== undefined && run.signal !== null
-          ? `process bị signal kill: ${run.signal}`
-          : undefined);
-      throw new Error(`pulumi ${args[0] ?? ''} không chạy được: ${cause ?? 'lý do không rõ'}`);
+      throw new Error(`pulumi ${args[0] ?? ''} không chạy được: ${describeSpawnFailure(run)}`);
     }
     throw new Error(`pulumi ${args[0] ?? ''} thất bại:\n${run.stderr || run.stdout}`);
   }

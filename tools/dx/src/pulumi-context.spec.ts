@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
 
@@ -47,6 +48,18 @@ describe('resolveContext', () => {
     const ctx = resolveContext(root);
     expect(ctx.stackName).toBe(`local-${worktreeNamespace(root)}`);
     expect(ctx.stateUrl.startsWith(`file://${root}`)).toBe(true);
+  });
+
+  it('stateUrl là file URL đã encode đúng — ký tự đặc biệt trong path không vỡ backend URL', () => {
+    // `pathToFileURL` encode `%` v.v. — nối chuỗi `file://${root}` với path chứa
+    // `%` sẽ tạo URL sai mà Pulumi CLI parse lỗi hoặc trỏ sang thư mục khác.
+    const parent = mkdtempSync(join(tmpdir(), 'pulumi-ctx-'));
+    cleanup.push(parent);
+    const root = join(parent, 'wt with %sign');
+    mkdirSync(root, { recursive: true });
+    const ctx = resolveContext(root);
+    expect(ctx.stateUrl).toBe(pathToFileURL(join(root, '.pulumi-local-state')).href);
+    expect(ctx.stateUrl).not.toContain(' %');
   });
 
   it('hai worktree có đường dẫn khác nhau không bao giờ cùng state dir — kể cả sau normalize', () => {
@@ -125,6 +138,17 @@ describe('requirePassphrase', () => {
     process.env.PULUMI_CONFIG_PASSPHRASE_FILE = '/tmp/some-passphrase-file';
     const withFile = requirePassphrase();
     expect(withFile).toEqual({ passphrase: undefined, fromFile: true });
+  });
+
+  it('empty-string _FILE is treated as unset — same standard as the inline variable (PU6)', () => {
+    // `export PULUMI_CONFIG_PASSPHRASE_FILE=` phải rơi tiếp xuống báo lỗi hành
+    // động được: nếu `_FILE=''` được coi là "đã cung cấp", `pulumiEnv` xoá biến
+    // inline và để lại `_FILE=''` — CLI coi rỗng là chưa set và fail với thông
+    // báo chung chung, mất đúng hướng dẫn của helper này.
+    delete process.env.PULUMI_CONFIG_PASSPHRASE;
+    process.env.PULUMI_CONFIG_PASSPHRASE_FILE = '';
+    const result = requirePassphrase();
+    expect('error' in result && result.error.includes('PULUMI_CONFIG_PASSPHRASE')).toBe(true);
   });
 });
 

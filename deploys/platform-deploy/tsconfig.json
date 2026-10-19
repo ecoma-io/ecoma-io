@@ -17,6 +17,12 @@
   // và `tsc` fail với TS6059. `files` cũng phải liệt kê tường minh hai file đó
   // vì project `composite` bắt buộc mọi file trong graph đều được khai.
   //
+  // Hệ quả thứ hai cùng nguồn gốc: output của `tsc --build` rơi vào
+  // `bin/deploys/platform-deploy/` và `bin/tools/dx/` thay vì `bin/index.js` —
+  // cùng quy tắc với `deploys/home-deploy/tsconfig.json` (hai file PHẢI nói
+  // cùng một quy tắc). Pulumi không dùng output này — runtime `nodejs` chạy
+  // thẳng `index.ts`.
+  //
   // Pulumi runtime `nodejs` chạy thẳng `index.ts` dưới CommonJS, nên
   // `import.meta` KHÔNG dùng được — thay bằng `__dirname` + `node:path`.
   "compilerOptions": {

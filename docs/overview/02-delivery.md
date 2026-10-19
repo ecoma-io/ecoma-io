@@ -525,14 +525,16 @@ nào chạy Pulumi** — resource thật chỉ được tạo/sửa qua lệnh l
 > Phạm vi hiện thực của resource thật: **chỉ local** — mỗi worktree một bộ (network, Traefik, PostgreSQL, container home),
 > apply tường minh qua `pnpm dx local-deploy`, không qua đường release nào. `deploys/platform-deploy` **đang** khai tài
 > nguyên dùng chung trong phạm vi đó. Hình thái stack này **lệch có chủ đích** với hợp đồng stack `local` dùng một lần ở
-> dưới — chi tiết và lý do ở `services/local-platform/README.md`. Staging/production vẫn chưa có resource nào.
+> dưới — chi tiết và lý do ở `services/local-platform/README.md`. Vì vậy hai claim "`hiện chưa có stack thật`" và "`local`
+> _không chạm tài nguyên thật_" ở đoạn **Stack grouping** dưới đây chỉ còn đúng cho **staging/production** — chúng
+> không mô tả local platform. Staging/production vẫn chưa có resource nào.
 
 **Chọn stack theo ownership, không theo Nx project.** Tiêu chí grouping: (1) ownership/lifecycle của resource; (2) shared
 dependencies; (3) required environment isolation; (4) blast radius; (5) stateful data risk; (6) need for independent
 approval/reconciliation/recovery. Không một stack cho mỗi Nx project by default; không một giant stack couples unrelated
 apps hay puts DBs at mercy of routine app release.
 
-**Conceptual categories (tiêu chí phân loại; local platform hiện khai hai trong số này — Shared/platform resources và Stateful DB/platform infra — nhưng CHỈ trên môi trường local; staging/production chưa khai category nào):**
+**Conceptual categories (tiêu chí phân loại; local platform hiện khai ba trong số này — Shared/platform resources, Stateful DB/platform infra và Environment-specific infra (image + container home của `home-deploy` chỉ thuộc local) — nhưng CHỈ trên môi trường local; staging/production chưa khai category nào):**
 
 - **Bootstrap prerequisites** — state backend + credential/passphrase. Phải tồn tại _trước_ ordinary stacks; tạo bằng mechanism bên ngoài backend được tạo, hoặc bootstrap backend/stack riêng. Idempotent hoặc detect already-initialized.
 - **Shared/platform resources** — resources có genuinely shared lifecycle (DNS zone, Access, org-level config).
@@ -547,7 +549,7 @@ với `file://`, staging/production chỉ đi với `s3://`). Mỗi stack thật
 credential và một passphrase riêng. **Còn chưa quyết:** số stack và cách ánh xạ stack → project `deploys/`. Layout hiện tại
 chia theo **deploy unit** (mỗi `<unit>-deploy` một project) với `platform-deploy` cho tài nguyên dùng chung, nên stack
 split theo unit hay theo environment lại là một quyết định chưa chốt — state backend thật (bucket R2) và credential
-**chưa tồn tại** vì chúng là bootstrap prerequisite, không phải thứ stack tự tạo (§9.1 nguyên tắc 4). Ngoài hai category
+**chưa tồn tại** vì chúng là bootstrap prerequisite, không phải thứ stack tự tạo (§9.1 nguyên tắc 4). Ngoài ba category
 local platform đã khai (nêu trên), các conceptual category còn lại **chưa** có resource nào được khai báo.
 
 **Bootstrap contract (không circular):**
@@ -738,7 +740,9 @@ này là **chủ sở hữu được giao**, chưa phải một hành động đ
 
 Bảng này trả lời bảy câu hỏi cho **mỗi** loại resource. `03-operations.md` tham chiếu đến bảng này, không lặp lại. Vế
 **chủ sở hữu** (cột "Tạo / cập nhật / xoá") là hợp đồng đã chốt; vế **hiện thực** thì `deploys/` chưa provision resource
-nào thuộc các loại trong bảng (Worker/D1/KV/…) — resource thật duy nhất là local platform, ngoài phạm vi bảng này (§7.4.1).
+nào của **environment thật** (staging/production) thuộc các loại trong bảng (Worker/D1/KV/…) — resource thật duy nhất là
+local platform (§7.4.1), và trong bảng này nó mới chạm tới các dòng PostgreSQL (host/cluster/roles, dưới dạng container +
+volume local); các dòng còn lại nằm ngoài phạm vi hiện thực của local platform.
 
 | Resource                                                             | Tạo / cập nhật / xoá                                                                                                                 | Cung cấp ID & config                                        | Áp dụng schema migration | Prerequisite trước deploy application  | Không được đồng thời sở hữu                                           |
 | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- | ------------------------ | -------------------------------------- | --------------------------------------------------------------------- |

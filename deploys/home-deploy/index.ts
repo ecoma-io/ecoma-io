@@ -185,9 +185,10 @@ const image = new dockerBuild.Image(dockerResourceName(ns, 'home-image'), {
 const home = new docker.Container(dockerResourceName(ns, 'home'), {
   name: dockerResourceName(ns, 'home'),
   image: pulumi.interpolate`${imageTag}@${image.digest}`,
-  // Cùng lý do với traefik/postgres ở `platform-deploy`: container bị dừng do
-  // reboot/restart daemon không tạo diff nào trong Pulumi, nên `local-deploy`
-  // không tự start lại được. `restart` là input nên Pulumi diff được.
+  // Cùng lý do với traefik/postgres ở `platform-deploy`: `restart:
+  // unless-stopped` để DOCKER tự start lại container sau reboot/restart daemon
+  // — `pulumi up` không làm được điều đó vì input khai và input trong state
+  // đều như nhau, không có diff.
   restart: 'unless-stopped',
   networksAdvanced: [{ name: networkName, aliases: ['ecoma-home'] }],
   // `envs` (không phải `environment`): `@pulumi/docker` nhận cặp `KEY=VALUE` dạng

@@ -2,8 +2,12 @@
  * Contract outputs giữa `platform-deploy` và `home-deploy`.
  *
  * Hai stack Pulumi giao tiếp qua Pulumi stack reference/outputs, không qua
- * shared database hay shared resource. Contract này là hình dạng dữ liệu CẢ HAI
- * phía cùng codegen types từ đó — platform là producer, home là consumer.
+ * shared database hay shared resource. Contract này là hình dạng dữ liệu mà
+ * consumer (`home-deploy`) gắn type qua `requirePlatformOutput` — lệch tên/khoá
+ * bị bắt ở compile time phía consumer; phía producer (platform) outputs là
+ * `export const` với type suy ra, nên gỡ một khoá bên producer chỉ lộ ra ở
+ * runtime qua `requirePlatformOutput` (fail-closed) chứ không phải compile time
+ * hai chiều.
  *
  * Nguyên tắc:
  * - Không secret nào nằm trong outputs: username/password PostgreSQL đi qua
@@ -34,13 +38,6 @@ export interface PlatformOutputs {
   rootHostname: string;
 }
 
-/**
- * Environment keys mà orchestration local flow sở hữu trong `.env`.
- *
- * Bước orchestration sau platform deploy chỉ được ghi/đè đúng các key này;
- * mọi key khác trong file `.env` hiện có phải giữ nguyên. `.env` là artifact
- * tiện dụng — nguồn sự thật cho giá trị triển khai là Pulumi outputs.
- */
 /** Environment key chứa `fbi.com:<traefik-host-port>` sau khi platform up. */
 export const ROOT_HOST_ENV_KEY = 'ROOT_HOST';
 
