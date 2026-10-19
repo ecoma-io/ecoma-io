@@ -20,7 +20,7 @@
 
 ## Cách ly worktree (Pulumi CLI/backend)
 
-Mọi lệnh Pulumi của luồng này chạy với `PULUMI_BACKEND_URL=file://<worktree>/.pulumi-local-state` và `--stack organization/<project>/<stack>` tường minh (`tools/dx/src/pulumi-context.ts`) — không `pulumi login`, không selected-backend/selected-stack toàn cục nào bị đọc hay ghi, nên hai worktree deploy song song không đụng CLI state của nhau. `~/.pulumi` vẫn được dùng chung cho plugin cache (read-only với các lệnh này). Chi tiết platform đã đo: `04-platform-facts.md` §2.16 PU12–PU13.
+Mọi lệnh Pulumi của luồng này chạy với `PULUMI_BACKEND_URL=file://<worktree>/.pulumi-local-state` và `--stack organization/<project>/<stack>` tường minh (`tools/dx/src/pulumi-context.ts`) — không `pulumi login`, nên không backend toàn cục nào bị chọn. `stack init`/`stack select` của `ensureStack` vẫn ghi stack hiện tại vào workspace file `~/.pulumi/workspaces/<project>-<sha1(Pulumi.yaml)>-workspace.json`, nhưng file đó key theo đường dẫn project (PU13) nên hai worktree không đụng file của nhau; các lệnh đọc/ghi state khác đều truyền `--stack` tường minh nên không phụ thuộc giá trị được ghi đó. `~/.pulumi` còn dùng chung cho plugin cache. Chi tiết platform đã đo: `04-platform-facts.md` §2.16 PU12–PU13.
 
 ## Luồng deploy
 
@@ -34,18 +34,19 @@ pnpm dx local-destroy --remove-data  # teardown + XOÁ volume (in cảnh báo, m
 
 Luồng `local-deploy` chạy theo đúng thứ tự contract: platform up → đọc outputs → ghi `.env` → home up → smoke HTTPS. Mỗi bước chỉ chạy khi bước trước thành công. Lần chạy đầu trên stack mới, password PostgreSQL được sinh ngẫu nhiên và lưu dạng secret trong state local, mã hoá bằng passphrase ở Prerequisites.
 
-**Preview covers cả hai project** (platform rồi home) nhưng có giới hạn đã biết: trước khi platform được apply lần đầu, outputs của stack reference là `undefined` — preview home khi đó fail tường minh kèm hướng dẫn (chạy apply thật trước). Preview không bao giờ tạo container/volume và không ghi `.env`.
+**Preview covers cả hai project** (platform rồi home) nhưng có giới hạn đã biết: trước khi platform được apply lần đầu, outputs của stack reference là `undefined` — preview home khi đó fail tường minh kèm hướng dẫn (chạy apply thật trước). Preview không bao giờ tạo container/volume và không ghi `.env` — nhưng nó **có** ghi state local của worktree: `stack init` và sinh/lưu secret `postgres:password` trong stack config (không đụng Docker).
 
 Dry-run an toàn cho CI là Nx target `provision` (`pnpm nx run platform-deploy:provision`) — chỉ in kế hoạch, không chạy `pulumi up`.
 
 ## `local-status` — đọc trạng thái
 
-Read-only. Phân biệt bốn trạng thái, mỗi trạng thái một dòng:
+Read-only. Phân biệt năm trạng thái, mỗi trạng thái một dòng:
 
 - `chưa có stack trong backend` — worktree này chưa từng deploy (exit 0).
 - `stack có sẵn nhưng chưa up (outputs rỗng)` — `stack init` đã chạy nhưng chưa `up` thành công lần nào (exit 0).
 - `platform outputs: {...}` — deployed, in outputs (exit 0).
-- `[local-status] lỗi Pulumi/backend: ...` — backend không đọc được, sai passphrase, outputs hỏng — **exit != 0**; "lỗi thật" không bao giờ được nuốt thành "chưa deploy".
+- `[local-status] lỗi Pulumi/backend: ...` — backend không đọc được, sai passphrase — **exit != 0**; "lỗi thật" không bao giờ được nuốt thành "chưa deploy".
+- `[local-status] outputs platform không parse được JSON: ...` — backend trả dữ liệu nhưng stdout không phải JSON — **exit != 0**.
 
 ## URL và smoke
 

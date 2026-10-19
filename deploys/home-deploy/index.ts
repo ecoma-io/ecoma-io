@@ -38,7 +38,7 @@ import { dockerResourceName, worktreeNamespace } from '../../tools/dx/src/deploy
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do dòng trên
 import type { PlatformOutputs } from '../../tools/dx/src/platform-outputs-contract';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do dòng trên
-import { LOCAL_ROOT_HOSTNAME } from '../../tools/dx/src/platform-outputs-contract';
+import { LOCAL_ROOT_HOSTNAME, buildRootHost } from '../../tools/dx/src/platform-outputs-contract';
 
 /** Cổng nội bộ mà Nitro preset `node-server` nghe (khớp `EXPOSE`/`ENV PORT` của image). */
 const HOME_INTERNAL_PORT = 3000;
@@ -88,8 +88,11 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
   return pulumi.output(platform.getOutput(key)).apply((raw) => {
     if (raw === undefined || raw === null) {
       throw new Error(
-        `platformStackRef không export "${key}" — contract PlatformOutputs đã đổi, ` +
-          `không thể deploy home với cấu hình rỗng.`,
+        `platformStackRef không export "${key}". Nguyên nhân thường gặp nhất: ` +
+          `stack platform chưa từng \`up\` thành công (outputs rỗng) hoặc đã bị ` +
+          `destroy — chạy \`pnpm dx local-deploy\` (apply platform) trước. Chỉ khi ` +
+          `contract PlatformOutputs thật sự đổi tên/gỡ output thì mới sửa cả hai ` +
+          `phía producer/consumer. Không deploy home với cấu hình rỗng.`,
       );
     }
     return raw as PlatformOutputs[K];
@@ -172,9 +175,12 @@ const home = new docker.Container(dockerResourceName(ns, 'home'), {
   envs: [
     `PORT=${HOME_INTERNAL_PORT}`,
     'NODE_ENV=production',
-    // `fbi.com:<port>` — port Traefik thực sự được Docker cấp, đọc từ output
-    // platform chứ không hard-code (xem `buildRootHost` trong contract).
-    pulumi.interpolate`ROOT_HOST=${LOCAL_ROOT_HOSTNAME}:${traefikHostPort}`,
+    // ROOT_HOST sinh qua helper `buildRootHost` của contract — MỘT nguồn sinh
+    // `fbi.com:<port>` dùng chung với `local-deploy` khi ghi `.env`; tự ghép
+    // chuỗi ở đây là chỗ lệch khi contract đổi định dạng. `rootHostname` cũng
+    // đọc từ output của producer thay vì hằng số — hostname drift sẽ bị bắt
+    // bởi `requirePlatformOutput` thay vì âm thầm chạy lệch contract.
+    pulumi.output(traefikHostPort).apply((port) => `ROOT_HOST=${buildRootHost(port)}`),
     // Thông tin kết nối PostgreSQL do platform export. PR này chưa có app code
     // đọc chúng; đặt sẵn ở đây để deploy unit sau đó không phải sửa lại
     // contract outputs.

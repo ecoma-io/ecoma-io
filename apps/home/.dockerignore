@@ -14,9 +14,11 @@ node_modules
 **/node_modules
 
 # Env file chứa secret/địa chỉ local — không bao giờ vào context, ở bất kỳ độ
-# sâu nào (`.env`, `.env.local`...).
+# sâu nào (`.env`, `.env.local`...). `.dev.vars*` cùng lớp secret của Wrangler
+# (repo quy ước trong `.gitignore`).
+# `.env*` đã phủ cả root (`**/` khớp 0 segment) nên chỉ giữ một dòng.
 .env*
-**/.env*
+**/.dev.vars*
 
 # Kết quả build Nuxt: image được tạo TỪ `.output`, nên `.output` chỉ là input
 # trung gian và copy nó vào context chỉ làm build chậm.

@@ -6,12 +6,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   localDeploy,
+  localDestroy,
   classifyStackOutput,
+  queryPlatformStatus,
   DEPLOY_STEPS,
   upsertLocalEnv,
   isConfigKeyMissing,
 } from './local-deploy.js';
-import { resolveContext, type LocalDeployContext } from './pulumi-context.js';
+import { pulumiEnv,resolveContext,type LocalDeployContext } from './pulumi-context.js';
 import { worktreeNamespace } from './deploy-namespace.js';
 
 const cleanup: string[] = [];
@@ -181,6 +183,53 @@ describe('classifyStackOutput — local-status state machine', () => {
     expect(result.state).toBe('backend-error');
     const detail = (result as { detail?: string }).detail ?? '';
     expect(detail).toContain('something unprecedented');
+  });
+
+  it('status null (binary không chạy được, spawnSync.error) → backend-error với đúng nguyên nhân', () => {
+    // `pulumi` không có trên PATH: `spawnSync` báo qua `error`, status là null,
+    // stderr/stdout rỗng — chi tiết phải là message của error, không phải
+    // "lỗi Pulumi không xác định".
+    const result = classifyStackOutput({
+      status: null,
+      stdout: '',
+      stderr: '',
+      error: new Error('spawn pulumi ENOENT'),
+    });
+    expect(result.state).toBe('backend-error');
+    const detail = (result as { detail?: string }).detail ?? '';
+    expect(detail).toContain('ENOENT');
+  });
+
+  it('status null + bị signal kill → backend-error kèm tên signal', () => {
+    const result = classifyStackOutput({ status: null, stdout: '', stderr: '', signal: 'SIGKILL' });
+    expect(result.state).toBe('backend-error');
+    const detail = (result as { detail?: string }).detail ?? '';
+    expect(detail).toContain('SIGKILL');
+  });
+});
+
+describe('queryPlatformStatus — no-stack khi state dir chưa tồn tại', () => {
+  it('worktree chưa từng deploy (không có .pulumi-local-state) → no-stack mà KHÔNG gọi CLI', () => {
+    // Worktree nháp không có thư mục state: nếu queryPlatformStatus bấm CLI
+    // thì CLI trả "unable to open state directory" → sai khiếp thành
+    // backend-error. Guard phải bắt ngay từ kiểm sự tồn tại.
+    const wt = tempWorktree();
+    const ctx = resolveContext(wt);
+    const env = pulumiEnv(ctx, 'unit-test-pass');
+    const result = queryPlatformStatus(ctx, env);
+    expect(result).toEqual({ state: 'no-stack' });
+  });
+});
+
+describe('localDestroy — teardown trên worktree chưa từng deploy', () => {
+  it('không có state dir → no-op exit 0, không tạo state, không gọi pulumi', () => {
+    const wt = tempWorktree();
+    const before = existsSync(join(wt, '.pulumi-local-state'));
+    const exit = localDestroy({ worktreeRoot: wt });
+    expect(exit).toBe(0);
+    // No-op nghĩa là KHÔNG mutation: thư mục state không được tạo ra.
+    expect(existsSync(join(wt, '.pulumi-local-state'))).toBe(before);
+    expect(before).toBe(false);
   });
 });
 

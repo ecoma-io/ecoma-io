@@ -66,5 +66,14 @@ tools/dx/*
 **/*.tsbuildinfo
 
 # Env file chứa secret/địa chỉ local — không bao giờ vào context, ở bất kỳ độ
-# sâu nào (`.env`, `.env.local`...).
+# sâu nào (`.env`, `.env.local`...). `.dev.vars*` cùng lớp với `.env*`: repo
+# quy ước đây là secret local của Wrangler (`.gitignore` chặn vì lý do đó), và
+# whitelist mở `apps/home/**` nên file local trên máy developer sẽ lọt context
+# nếu không chặn tường minh.
 **/.env*
+**/.dev.vars*
+
+# Source test và config test của app không phải input của image — subtree
+# `apps/home` được mở trọn nên phải loại tường minh.
+apps/home/tests
+apps/home/vitest.config.mts

@@ -40,14 +40,30 @@ export function localStateDir(worktreeRoot: string): string {
   return join(worktreeRoot, '.pulumi-local-state');
 }
 
-/** Kết quả một bước exec shell — fail-closed: caller phải kiểm `status`. */
+/**
+ * Kết quả một bước exec shell — fail-closed: caller phải kiểm `status`.
+ *
+ * Một bản duy nhất cho cả `pulumi-context` và `local-deploy` (import từ đây):
+ * hai bản tự dựng là chỗ trôi lệch — một bên thêm `error`/`signal` thì bên kia
+ * không. Các trường `error`/`signal` báo "process chưa chạy được/bị kill"
+ * (`status === null`), caller phân loại lỗi dựa vào chúng.
+ */
 export interface ExecResult {
   status: number | null;
   stdout: string;
   stderr: string;
+  /** `spawnSync` tự báo lỗi qua `error` (ENOENT — không có binary, EACCES...) — `status` là `null` lúc đó. */
+  error?: Error;
+  /** Non-null khi process bị signal kill (OOM...) — `status` là `null` lúc đó. */
+  signal?: NodeJS.Signals | null;
 }
 
-function exec(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): ExecResult {
+export function exec(
+  command: string,
+  args: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+): ExecResult {
   const result = spawnSync(command, args, {
     cwd,
     encoding: 'utf8',
@@ -58,6 +74,8 @@ function exec(command: string, args: string[], cwd: string, env: NodeJS.ProcessE
     status: result.status,
     stdout: result.stdout ?? '',
     stderr: result.stderr ?? '',
+    error: result.error,
+    signal: result.signal,
   };
 }
 
@@ -207,6 +225,11 @@ export function ensureStack(
  * Chạy một lệnh Pulumi với context ĐÚNG worktree — `--stack` đầy đủ, env backend
  * tường minh. Lỗi (exit != 0) → throw kèm stderr; KHÔNG in secret (Pulumi tự
  * redact secret trong stderr/stdout của nó).
+ *
+ * `ensureStack` chỉ chạy khi `prepareStack` khác `false`: lệnh `destroy`/`stack
+ * output` kiểu "đọc/teardown" KHÔNG được tạo state trên worktree chưa từng
+ * deploy — teardown biến thành mutation (mkdir + stack init) là sai ngữ nghĩa.
+ * Caller chịu trách nhiệm tự xử lý "chưa có gì để xoá" trong trường hợp đó.
  */
 export function pulumiRun(
   projectDir: string,
@@ -214,14 +237,15 @@ export function pulumiRun(
   args: string[],
   ctx: LocalDeployContext,
   env: NodeJS.ProcessEnv,
+  options: { prepareStack?: boolean } = {},
 ): string {
   const fullArgs = ['--stack', fullStackRef(projectName, ctx), ...args];
-  ensureStack(projectDir, projectName, ctx, env);
+  if (options.prepareStack !== false) {
+    ensureStack(projectDir, projectName, ctx, env);
+  }
   const run = exec('pulumi', fullArgs, projectDir, env);
   if (run.status !== 0) {
     throw new Error(`pulumi ${fullArgs.join(' ')} thất bại:\n${run.stderr || run.stdout}`);
   }
   return run.stdout;
 }
-
-export { exec };

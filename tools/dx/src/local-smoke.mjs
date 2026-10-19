@@ -189,7 +189,14 @@ function requestStep(pathname) {
         ca,
         servername: hostname,
         headers: {
-          ...(connect === undefined ? undefined : { Host: hostname }),
+          // `Host` ĐẶT TƯỜNG MINH ở CẢ HAI nhánh và cùng một dạng
+          // `hostname:port` — khớp đúng `ROOT_HOST` mà `local-deploy` ghi `.env`
+          // và đúng rule `Host(\`fbi.com\`)` của Traefik. Nhánh không `--connect`
+          // để Node tự sinh thì Host cũng là `hostname:port`, nhưng ghi tường
+          // minh giữ đường test (fixture) và đường thật giống hệt nhau — spec
+          // chỉ chạy qua `--connect`, thiếu dòng này là test không chạm dạng
+          // header production gửi.
+          Host: `${hostname}:${port}`,
           // Header bắt buộc: app chỉ 302 `/` khi negotiator nhận HTML.
           Accept: ACCEPT_HTML,
           'Accept-Language': ACCEPT_LANGUAGE,
@@ -198,6 +205,21 @@ function requestStep(pathname) {
       },
       (response) => {
         const chunks = [];
+        // INVARIANT: TLS phải được VERIFY THẬT SỰ, không chỉ "request thành
+        // công". Khẳng định trực tiếp trạng thái verify của socket — nếu sau
+        // này ai thêm `rejectUnauthorized: false` để "cho smoke chạy được" thì
+        // smoke phải ĐỎ ở đây ngay, chứ không im lặng bỏ qua đúng thứ nó sinh
+        // ra để kiểm.
+        if (response.socket?.authorized !== true) {
+          reject(
+            new VerificationFailure(
+              `GET ${pathname}: TLS không được xác minh — ${
+                response.socket?.authorizationError ?? 'socket không có trạng thái verify'
+              }`,
+            ),
+          );
+          return;
+        }
         response.on('data', (chunk) => chunks.push(chunk));
         // Lỗi giữa chừng body (socket bị reset, upstream đóng, hoặc chính
         // AbortSignal hủy sau khi response bắt đầu) phát ra trên response
@@ -276,21 +298,32 @@ for (;;) {
   } catch (error) {
     if (!(error instanceof RetryableError)) {
       console.error(`smoke FAILED sau ${Date.now() - startedAt}ms: ${error.message}`);
-      process.exit(1);
+      // `exitCode` + break thay vì `process.exit()`: stderr nối pipe là BẤT
+      // ĐỒNG BỘ trên một số nền tảng — `process.exit` ngay sau `console.error`
+      // có thể cắt mất chính dòng `smoke FAILED` là lý do duy nhất để chẩn
+      // đoán. Đặt exitCode rồi để event loop tự tắt thì message luôn được ghi.
+      process.exitCode = 1;
+      break;
     }
     failure = error;
   }
-  if (Date.now() - startedAt >= budgetMs) {
+  const remainingMs = budgetMs - (Date.now() - startedAt);
+  if (remainingMs <= 0) {
     console.error(
       `smoke FAILED sau ${Date.now() - startedAt}ms (hết budget ${budgetMs}ms): ${failure.message}`,
     );
-    process.exit(1);
+    process.exitCode = 1;
+    break;
   }
+  // Ngủ KHÔNG vượt phần budget còn lại: một lượt verifyChain (2 request tuần
+  // tự) có thể đã ăn gần hết budget — backoff đầy đủ lúc đó sẽ vượt deadline
+  // đã tuyên bố với caller.
+  const sleepMs = Math.min(backoffMs, remainingMs);
   console.error(
-    `smoke RETRY sau ${Date.now() - startedAt}ms: ${failure.message} — thử lại sau ${backoffMs}ms`,
+    `smoke RETRY sau ${Date.now() - startedAt}ms: ${failure.message} — thử lại sau ${sleepMs}ms`,
   );
   await new Promise((resolve) => {
-    setTimeout(resolve, backoffMs);
+    setTimeout(resolve, sleepMs);
   });
   backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX_MS);
 }

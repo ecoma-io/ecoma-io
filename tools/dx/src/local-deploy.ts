@@ -21,7 +21,6 @@
  * `04-platform-facts.md` §2.16 PU12–PU13).
  */
 
-import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -33,21 +32,17 @@ import {
   ROOT_HOST_ENV_KEY,
 } from './platform-outputs-contract.js';
 import {
+  exec,
   fullStackRef,
+  localStateDir,
   pulumiEnv,
   pulumiRun,
   requirePassphrase,
   resolveContext,
+  type ExecResult,
+  type LocalDeployContext,
 } from './pulumi-context.js';
-import type { LocalDeployContext } from './pulumi-context.js';
 import { ROOT_DIR } from './utils.js';
-
-/** Kết quả một bước exec shell — fail-closed: caller phải kiểm `status`. */
-export interface ExecResult {
-  status: number | null;
-  stdout: string;
-  stderr: string;
-}
 
 /**
  * "Chưa có key" của `pulumi config get` — CHỈ khi CLI báo đúng vậy.
@@ -61,20 +56,6 @@ export interface ExecResult {
 export function isConfigKeyMissing(result: ExecResult): boolean {
   const output = `${result.stdout}\n${result.stderr}`;
   return /no value for the key|configuration key .* not found/iu.test(output);
-}
-
-function exec(command: string, args: string[], cwd: string, env?: NodeJS.ProcessEnv): ExecResult {
-  const result = spawnSync(command, args, {
-    cwd,
-    encoding: 'utf8',
-    env: env ?? process.env,
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  return {
-    status: result.status,
-    stdout: result.stdout ?? '',
-    stderr: result.stderr ?? '',
-  };
 }
 
 /** Tên Nx project của hai deploy unit — dùng cho stack ref đầy đủ và exec cwd. */
@@ -169,9 +150,10 @@ function runProjectStep(
   args: string[],
   ctx: LocalDeployContext,
   env: NodeJS.ProcessEnv,
+  options: { prepareStack?: boolean } = {},
 ): boolean {
   try {
-    pulumiRun(projectDir(project), project, args, ctx, env);
+    pulumiRun(projectDir(project), project, args, ctx, env, options);
     return true;
   } catch (error) {
     console.error(
@@ -329,6 +311,7 @@ export function localDeploy(options: LocalDeployOptions = {}): number {
         'node',
         [join(ROOT_DIR, 'tools/dx/src/local-smoke.mjs'), outputs.rootHost],
         ROOT_DIR,
+        process.env,
       );
       if (smoke.status !== 0) {
         console.error(`[local-deploy] smoke HTTPS thất bại:\n${smoke.stdout}\n${smoke.stderr}`);
@@ -396,6 +379,19 @@ export function localDestroy(options: { worktreeRoot?: string; removeData?: bool
   const ctx = resolveContext(options.worktreeRoot);
   const volumeName = dockerResourceName(ctx.namespace, 'postgres-volume');
 
+  // Teardown trên worktree CHƯA TỪNG deploy phải là no-op idempotent, không
+  // phải mutation — và phải đứng TRƯỚC cả gate passphrase: yêu cầu passphrase
+  // cho một worktree chưa có gì để xoá là chặn teardown hợp lệ chỉ vì env thiếu
+  // biến. `ensureStack` với `mkdir` + `stack init` sẽ TẠO state mới chỉ để
+  // destroy nó (và home destroy còn fail vì config `platformStackRef` chưa
+  // từng được ghi). State dir chưa tồn tại = chắc chắn chưa có gì để xoá.
+  if (!existsSync(localStateDir(ctx.worktreeRoot))) {
+    console.log(
+      `[local-deploy] worktree chưa từng deploy (không có ${'.pulumi-local-state'}) — destroy là no-op.`,
+    );
+    return 0;
+  }
+
   // Passphrase bắt buộc: `destroy` nạp stack config (PU4) nên không có
   // passphrase là CLI exit 1 giữa chừng — home đã destroy nhưng platform chưa.
   const pass = requirePassphrase();
@@ -430,7 +426,7 @@ export function localDestroy(options: { worktreeRoot?: string; removeData?: bool
       `[local-deploy] CẢNH BÁO: xoá volume PostgreSQL ${volumeName} — dữ liệu database ` +
         `local của worktree này bị mất vĩnh viễn.`,
     );
-    const vol = exec('docker', ['volume', 'rm', volumeName], ROOT_DIR);
+    const vol = exec('docker', ['volume', 'rm', volumeName], ROOT_DIR, process.env);
     if (vol.status !== 0) {
       console.error(`[local-deploy] xoá volume thất bại (có thể đã bị xoá):\n${vol.stderr}`);
       return 1;
@@ -484,6 +480,22 @@ export function classifyStackOutput(result: ExecResult): PlatformStatusResult {
   if (/no stack named/iu.test(combined)) {
     return { state: 'no-stack' };
   }
+  // `status === null` nghĩa là process CHẠY CHƯA ĐƯỢC (binary không tồn tại,
+  // không executable...) hoặc bị SIGNAL kill (OOM...) — stderr/stdout rỗng lúc
+  // đó, nếu đi tiếp sẽ thành "lỗi Pulumi không xác định" và người dùng không
+  // cài `pulumi` bị báo thành lỗi backend. Báo đúng nguyên nhân: detail là
+  // message của `spawnSync.error` hoặc tên signal.
+  if (result.status === null) {
+    const cause =
+      result.error?.message ??
+      (result.signal !== undefined && result.signal !== null
+        ? `process bị signal kill: ${result.signal}`
+        : undefined);
+    return {
+      state: 'backend-error',
+      detail: cause ?? 'pulumi không chạy được (không rõ nguyên nhân)',
+    };
+  }
   if (
     /unable to open state directory|unable to find backend|cannot connect|dial tcp|permission denied/iu.test(
       combined,
@@ -505,6 +517,14 @@ export function queryPlatformStatus(
   ctx: LocalDeployContext,
   env: NodeJS.ProcessEnv,
 ): PlatformStatusResult {
+  // Backend `file://` đòi thư mục state tồn tại trước (PU11). Worktree chưa
+  // từng deploy thì thư mục này chưa ai tạo (chỉ `ensureStack` mới mkdir) —
+  // bấm CLI lúc đó chỉ nhận `unable to open state directory`, mà phân loại
+  // thành `backend-error` là sai chẩn: trạng thái đúng là "chưa deploy".
+  // Vẫn read-only: chỉ KIỂM tra sự tồn tại, không tạo gì.
+  if (!existsSync(localStateDir(ctx.worktreeRoot))) {
+    return { state: 'no-stack' };
+  }
   const result = exec(
     'pulumi',
     ['stack', 'output', '--json', '--stack', fullStackRef(PLATFORM_PROJECT, ctx)],
