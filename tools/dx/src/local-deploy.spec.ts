@@ -13,7 +13,7 @@ import {
   upsertLocalEnv,
   isConfigKeyMissing,
 } from './local-deploy.js';
-import { pulumiEnv,resolveContext,type LocalDeployContext } from './pulumi-context.js';
+import { pulumiEnv, resolveContext, type LocalDeployContext } from './pulumi-context.js';
 import { worktreeNamespace } from './deploy-namespace.js';
 
 const cleanup: string[] = [];
