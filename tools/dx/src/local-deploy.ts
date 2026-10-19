@@ -33,6 +33,7 @@ import {
 } from './platform-outputs-contract.js';
 import {
   exec,
+  ensureStack,
   fullStackRef,
   localStateDir,
   pulumiEnv,
@@ -106,7 +107,9 @@ export function readPlatformOutputs(
   traefikHostPort: number;
   rootHost: string;
 } {
-  const stdout = pulumiRun(platformDir, PLATFORM_PROJECT, ['stack', 'output', '--json'], ctx, env);
+  const stdout = pulumiRun(platformDir, PLATFORM_PROJECT, ['stack', 'output', '--json'], ctx, env, {
+    prepareStack: false,
+  });
   let outputs: Record<string, unknown>;
   try {
     outputs = JSON.parse(stdout) as Record<string, unknown>;
@@ -198,6 +201,12 @@ export function localDeploy(options: LocalDeployOptions = {}): number {
   //    fail) dừng toàn luồng — .env chỉ được ghi sau khi outputs thật tồn tại.
   console.log('[local-deploy] platform up/preview…');
   try {
+    // Chuẩn bị stack TRƯỚC khi `config set` ghi vào nó: `mkdir` state dir +
+    // `stack init` (stack đã tồn tại thì init fail, rơi về `stack select` —
+    // idempotent). Trước đây `ensureStack` nằm trong `pulumiRun` mặc định; khi
+    // mặc định đảo thành opt-in, mutation đầu tiên của luồng phải tự chuẩn bị.
+    ensureStack(projectDir(PLATFORM_PROJECT), PLATFORM_PROJECT, ctx, env);
+
     // Secret `postgres:password` sinh ngẫu nhiên MỘT LẦM duy nhất trên stack
     // mới, rồi đọc lại từ backend ở mọi lần chạy sau — regen mỗi lần chạy sẽ
     // khiến container Postgres rebuild không lý do.
@@ -250,7 +259,9 @@ export function localDeploy(options: LocalDeployOptions = {}): number {
       platformAction === 'preview'
         ? ['preview', ...sharedConfigArgs]
         : ['up', '--yes', ...sharedConfigArgs];
-    pulumiRun(projectDir(PLATFORM_PROJECT), PLATFORM_PROJECT, platformArgs, ctx, env);
+    pulumiRun(projectDir(PLATFORM_PROJECT), PLATFORM_PROJECT, platformArgs, ctx, env, {
+      prepareStack: true,
+    });
   } catch (error) {
     console.error(`[local-deploy] ${error instanceof Error ? error.message : String(error)}`);
     return 1;
@@ -302,6 +313,7 @@ export function localDeploy(options: LocalDeployOptions = {}): number {
       ],
       ctx,
       env,
+      { prepareStack: true },
     );
     if (!homeOk) return 1;
 
@@ -347,6 +359,7 @@ export function localDeploy(options: LocalDeployOptions = {}): number {
     ],
     ctx,
     env,
+    { prepareStack: true },
   );
   if (!homePreviewOk) {
     console.error(
@@ -408,6 +421,7 @@ export function localDestroy(options: { worktreeRoot?: string; removeData?: bool
     ['destroy', '--yes', '--config', `namespace:worktreeRoot=${ctx.worktreeRoot}`],
     ctx,
     env,
+    { prepareStack: false },
   );
   if (!homeOk) return 1;
 
@@ -418,6 +432,7 @@ export function localDestroy(options: { worktreeRoot?: string; removeData?: bool
     ['destroy', '--yes', '--config', `namespace:worktreeRoot=${ctx.worktreeRoot}`],
     ctx,
     env,
+    { prepareStack: false },
   );
   if (!platformOk) return 1;
 

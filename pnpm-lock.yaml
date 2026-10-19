@@ -193,9 +193,6 @@ importers:
       '@lucide/vue':
         specifier: ^1.57.0
         version: 1.57.0(vue@3.5.43(typescript@6.0.3))
-      '@node-rs/xxhash':
-        specifier: 1.7.8
-        version: 1.7.8
       '@nuxt/content':
         specifier: ^3.16.1
         version: 3.16.2(@nuxt/schema@4.6.1)(@oxc-project/types@0.153.0)(better-sqlite3@13.0.3)(confbox@0.2.4)(dotenv@17.4.2)(esbuild@0.28.2)(giget@3.3.1)(magic-string@1.4.3)(magicast@0.5.5)(mlly@1.8.2)(oxc-parser@0.141.0)(rolldown@1.2.13)(rollup@4.64.5)(supports-color@10.2.2)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.105.1)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))

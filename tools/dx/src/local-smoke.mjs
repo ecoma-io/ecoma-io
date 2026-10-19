@@ -49,7 +49,15 @@ const TITLE_MARKER = '<title>Ecoma.io';
 
 // 502/503/504 là "chưa sẵn sàng" (Traefik chưa thấy router/upstream); 500 là
 // lỗi SSR thật — fail tức thời.
-const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+//
+// 404 cũng là "chưa sẵn sàng" ở một cửa sổ hẹp: khi home container bị RECREATE
+// (image đổi), có khoảng giữa lúc router cũ bị gỡ và router mới đăng ký với
+// Traefik — request đi vào lúc đó không còn router nào khớp `Host(...)` và
+// Traefik trả 404. Trạng thái này tự hết trong ít giây. 404 "app trả thật"
+// (không retry) là kịch bản middleware chả về 404 khi thiếu `Accept: text/html`
+// — smoke luôn gửi header đó, nên 404 giữa chừng gần như chắc chắn là cửa sổ
+// registration; kẹt 404 vĩnh viễn vẫn fail đúng khi hết budget.
+const RETRYABLE_STATUSES = new Set([404, 502, 503, 504]);
 // Lỗi transport "chưa sẵn sàng". CỐ ĐỊNH không thêm chữ ký khác (ví dụ
 // ENOTFOUND): ngoài danh sách này là fail-closed, không đoán thêm.
 const RETRYABLE_ERROR_CODES = new Set(['ECONNREFUSED', 'ECONNRESET', 'EPIPE', 'ETIMEDOUT']);

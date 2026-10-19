@@ -4,8 +4,8 @@
 
 ## Prerequisites
 
-- Docker daemon đang chạy (rootful lẫn rootless đều được; rootless được tự động nhận qua `DOCKER_HOST` — Traefik cần bind-mount đúng socket, chương trình tự suy theo thứ tự `DOCKER_SOCKET_PATH` > `DOCKER_HOST` > `/var/run/docker.sock`).
-- `pulumi` CLI trên `PATH`.
+- Docker daemon đang chạy (rootful lẫn rootless đều được; rootless được tự động nhận qua `DOCKER_HOST` — Traefik cần bind-mount đúng socket, chương trình tự suy theo thứ tự `DOCKER_SOCKET_PATH` > `DOCKER_HOST` > `/var/run/docker.sock`, và **fail sớm** nếu không tìm thấy socket nào tồn tại thật thay vì mount nhầm path).
+- `pulumi` CLI trên `PATH` — **bản đã xác minh cho luồng này là `3.270.0`** (CLI pin trong repo, `node_modules/.bin/pulumi`; stack reference format `organization/<project>/<stack>` chỉ được kiểm chứng từ bản này — xem `04-platform-facts.md` §2.16 PU12). CLI cũ hơn trên `PATH` có thể fail với lỗi rối khó chẩn đoán.
 - **Passphrase Pulumi** của riêng bạn, đặt qua biến môi trường trước khi chạy bất kỳ lệnh nào của luồng này:
 
   ```bash
@@ -14,9 +14,9 @@
   export PULUMI_CONFIG_PASSPHRASE_FILE=~/.secrets/ecoma-local-pulumi
   ```
 
-  Thiếu passphrase, `local-deploy`/`local-destroy`/`local-status` fail ngay từ đầu với hướng dẫn, không đụng resource nào. Giữ passphrase **ổn định cho từng worktree**: nó là khoá giải secret trong state Pulumi local — mất là mất plaintext của mọi secret trong state đó vĩnh viễn. Không commit vào Git, không ghi vào `.env`. Worktree đã khởi tạo bằng passphrase khác thì cung cấp lại đúng passphrase đó (không có đường reset không mất dữ liệu; đổi passphrase = `pulumi stack change-secrets-provider` ngoài luồng này).
+  Thiếu passphrase, `local-deploy`/`local-status` fail ngay từ đầu với hướng dẫn, không đụng resource nào. `local-destroy` là **ngoại lệ**: worktree chưa từng deploy (chưa có `.pulumi-local-state/`) thì nó là no-op idempotent trả exit 0 **không cần** passphrase. Giữ passphrase **ổn định cho từng worktree**: nó là khoá giải secret trong state Pulumi local — mất là mất plaintext của mọi secret trong state đó vĩnh viễn. Không commit vào Git, không ghi vào `.env`. Worktree đã khởi tạo bằng passphrase khác thì cung cấp lại đúng passphrase đó (không có đường reset không mất dữ liệu; đổi passphrase = `pulumi stack change-secrets-provider` ngoài luồng này).
 
-- Certificate `fbi.com` ở `deploys/platform-deploy/local-certs/` (đã có trong repo) được trust **thủ công** vào trust store của máy nếu muốn browser chấp nhận TLS — không bao giờ tắt TLS verification toàn cục.
+- Certificate `fbi.com` ở `deploys/platform-deploy/local-certs/` (đường dẫn đầy đủ từ root repo; đã có trong repo) được trust **thủ công** vào trust store của máy nếu muốn browser chấp nhận TLS — không bao giờ tắt TLS verification toàn cục. Khoá này **chỉ dùng cho local**, không tái sử dụng ở staging/production.
 
 ## Cách ly worktree (Pulumi CLI/backend)
 
@@ -42,7 +42,7 @@ Dry-run an toàn cho CI là Nx target `provision` (`pnpm nx run platform-deploy:
 
 Read-only. Phân biệt năm trạng thái, mỗi trạng thái một dòng:
 
-- `chưa có stack trong backend` — worktree này chưa từng deploy (exit 0).
+- `chưa có stack trong backend` — worktree này chưa từng deploy (exit 0; cần passphrase hợp lệ đã export — gate passphrase chạy trước khi hỏi backend).
 - `stack có sẵn nhưng chưa up (outputs rỗng)` — `stack init` đã chạy nhưng chưa `up` thành công lần nào (exit 0).
 - `platform outputs: {...}` — deployed, in outputs (exit 0).
 - `[local-status] lỗi Pulumi/backend: ...` — backend không đọc được, sai passphrase — **exit != 0**; "lỗi thật" không bao giờ được nuốt thành "chưa deploy".
@@ -56,13 +56,14 @@ Port thật nằm trong `.env` (`ROOT_HOST=fbi.com:<port>`) và trong output `tr
 node tools/dx/src/local-smoke.mjs fbi.com:<port>
 ```
 
-Smoke xác nhận đúng hành vi ứng dụng qua Traefik, không chỉ "server còn sống": `GET /` (kèm header `Accept: text/html`) phải **302 → `/en`**, sau đó `GET /en` phải **200 HTML** chứa title của home. Retry chỉ áp dụng cho dấu hiệu "chưa sẵn sàng" (connection refused, 502/503/504, timeout) trong budget mặc định 90s; 4xx/500, redirect sai đích hay thiếu title là fail ngay. TLS bắt buộc hợp lệ — script chỉ trust certificate local **cho đúng request này** (tham số `ca` scoped), không đụng trust store hệ điều hành, không tắt verification. Cờ tuỳ chọn cho test: `--connect <host:port>` (dial địa chỉ khác hostname), `--budget-ms`, `--request-timeout-ms`.
+Smoke xác nhận đúng hành vi ứng dụng qua Traefik, không chỉ "server còn sống": `GET /` (kèm header `Accept: text/html`) phải **302 → `/en`**, sau đó `GET /en` phải **200 HTML** chứa title của home. Retry chỉ áp dụng cho dấu hiệu "chưa sẵn sàng" (`ECONNREFUSED`, `ECONNRESET`, `EPIPE`, `ETIMEDOUT`, 404/502/503/504 — 404 là cửa sổ registration router khi container bị recreate) trong budget mặc định 90s; 4xx còn lại/500, lỗi TLS/cert, redirect sai đích hay thiếu title là fail ngay. TLS bắt buộc hợp lệ — script chỉ trust certificate local **cho đúng request này** (tham số `ca` scoped), không đụng trust store hệ điều hành, không tắt verification. Cờ tuỳ chọn cho test: `--connect <host:port>` (dial địa chỉ khác hostname), `--budget-ms`, `--request-timeout-ms`.
 
 ## Vòng đời dữ liệu
 
 - `local-destroy` mặc định **giữ** volume; container/network bị xoá nhưng dữ liệu PostgreSQL còn nguyên, deploy kế tiếp dùng lại.
 - Volume được khai `retainOnDelete` nên kể cả `pulumi destroy` trực tiếp cũng không xoá volume.
 - ⚠️ Đừng chạy `pulumi stack rm` trên stack local: nó xoá stack config cùng secret password trong khi volume còn lại — hai nửa lệch tuổi, Postgres kế tiếp không vào được dữ liệu cũ. Đó cũng là lý do `local-destroy` không dùng `destroy --remove`.
+- ⚠️ Đừng đổi secret `postgres:password` trong stack config sau khi volume đã init: `POSTGRES_PASSWORD` chỉ có tác dụng lúc `initdb` trên volume rỗng. Pulumi sẽ thay container (envs nằm trong diff) nhưng Postgres không chạy lại initdb — superuser trong volume vẫn giữ mật khẩu cũ, kết nối bằng giá trị mới nhận `password authentication failed` trong khi healthcheck `pg_isready` vẫn xanh (nó không xác thực mật khẩu). Nguyên tắc: secret và volume phải cùng tuổi.
 - Healthcheck `pg_isready` không kiểm password; khi nghi ngờ lệch password (vd. đã `stack rm` ngoài luồng), kiểm bằng auth TCP thật hoặc tạo lại volume qua `local-destroy --remove-data` rồi `local-deploy`.
 
 ## Giới hạn đã biết

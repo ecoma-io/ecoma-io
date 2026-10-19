@@ -20,12 +20,18 @@
 #      bề mặt tấn công ở runtime hẹp.
 
 # --- Stage 1: build ---------------------------------------------------------
-FROM node:24-bookworm-slim AS build
+# Ghim theo DIGEST, không theo tag — cùng lý do với Traefik/PostgreSQL trong
+# `deploys/platform-deploy/index.ts`: tag trôi biến thay đổi toolchain thành
+# thay đổi hạ tầng ngoài ý muốn, build không tái lập được. ARG để một nơi duy
+# nhất cho cả hai stage. Digest này là tag `24-bookworm-slim` tại thời điểm ghim.
+ARG NODE_IMAGE=node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5
+FROM ${NODE_IMAGE} AS build
 
 # pnpm là package manager của repo (field `packageManager` trong package.json
-# ghim `pnpm@12.14.0`). `corepack` đi kèm image Node nên không cần cài pnpm
-# bằng npm — cài đúng version mà lockfile sinh ra, tránh lệch resolution.
-RUN corepack enable && corepack prepare pnpm@12.14.0 --activate
+# ghim `pnpm@12.14.0`). `corepack` đi kèm image Node và tự ĐỌC `packageManager`
+# từ package.json đã COPY ở dưới — không hard-code version pnpm ở đây: Renovate
+# bump `packageManager` thì image build theo ngay, hai nguồn sự thật là một.
+RUN corepack enable
 
 WORKDIR /repo
 
@@ -37,18 +43,21 @@ COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY patches/ ./patches/
 COPY tools/dx/package.json ./tools/dx/
 COPY apps/home/package.json ./apps/home/
+COPY apps/home/.npmrc ./apps/home/.npmrc
 COPY libs/ui-ecoma-logo/package.json ./libs/ui-ecoma-logo/
 
-# `--ignore-scripts`: stage build không cần postinstall native nào — các
-# package có native binding đều ship prebuild (better-sqlite3 mang
-# `prebuilds/linux-x64.node`; `@parcel/watcher`, `workerd`, `esbuild`... tương
-# tự). Chạy script ở đây chỉ chậm build mà không đổi kết quả. Bỏ cờ này nếu
-# sau này một package **bắt buộc** phải build native để `nuxt build` chạy được.
+# `apps/home/.npmrc` (`shamefully-hoist`) phải CÓ MẶT **TRƯỚC** `pnpm install`
+# (đã COPY ở khối manifest phía trên): `shamefully-hoist` chỉ có tác dụng đúng
+# lúc install đọc config và dựng layout `node_modules` — copy sau install là
+# file chết, và layout trong image sẽ khác với `pnpm install` chạy trong
+# `apps/home` trên máy developer.
+#
+# `--ignore-scripts` khớp contract allowlist của repo (`allowBuilds` trong
+# `pnpm-workspace.yaml`): pnpm chỉ chạy install script cho package được khai ở
+# đó, và các package native của repo đều ship prebuild. Lỗi "package cần script
+# mà thiếu" nổ NGAY ở install với ERR_PNPM_IGNORED_BUILDS — không nuốt được
+# thành lỗi mờ ở `nuxt build`.
 RUN pnpm install --frozen-lockfile --ignore-scripts
-
-# `apps/home/.npmrc` (`shamefully-hoist`) là config theo **từng package**, không
-# phải config root, nên phải copy vào đúng vị trí trong image.
-COPY apps/home/.npmrc ./apps/home/.npmrc
 
 # Nguồn app đầy đủ + workspace package mà app import (`@ecoma-io/ui-ecoma-logo`,
 # resolve qua alias trong `nuxt.config.ts` chứ không qua `paths` của tsconfig).
@@ -78,7 +87,7 @@ ENV NODE_ENV=production
 RUN cd apps/home && pnpm exec nuxt build --preset=node-server
 
 # --- Stage 2: runtime -------------------------------------------------------
-FROM node:24-bookworm-slim AS runtime
+FROM ${NODE_IMAGE} AS runtime
 
 WORKDIR /app
 

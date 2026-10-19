@@ -30,7 +30,7 @@ export interface PlatformOutputs {
    * Số duy nhất phía client cần để tạo URL `https://fbi.com:<port>`.
    */
   traefikHostPort: number;
-  /** Hostname mà Traefik route — hằng số local, nhưng export để smoke test đọc. */
+  /** Hostname mà Traefik route — consumer (`home-deploy`) đọc để dựng router rule. */
   rootHostname: string;
 }
 
@@ -41,10 +41,17 @@ export interface PlatformOutputs {
  * mọi key khác trong file `.env` hiện có phải giữ nguyên. `.env` là artifact
  * tiện dụng — nguồn sự thật cho giá trị triển khai là Pulumi outputs.
  */
-export const LOCAL_ENV_OWNED_KEYS = ['ROOT_HOST'] as const;
-
 /** Environment key chứa `fbi.com:<traefik-host-port>` sau khi platform up. */
 export const ROOT_HOST_ENV_KEY = 'ROOT_HOST';
+
+/**
+ * Environment keys mà orchestration local flow sở hữu trong `.env`.
+ *
+ * Bước orchestration sau platform deploy chỉ được ghi/đè đúng các key này;
+ * mọi key khác trong file `.env` hiện có phải giữ nguyên. `.env` là artifact
+ * tiện dụng — nguồn sự thật cho giá trị triển khai là Pulumi outputs.
+ */
+export const LOCAL_ENV_OWNED_KEYS = [ROOT_HOST_ENV_KEY] as const;
 
 /** Hostname local mà Traefik route tới home. */
 export const LOCAL_ROOT_HOSTNAME = 'fbi.com';
@@ -76,7 +83,12 @@ export function extractTraefikHostPort(
   ports: ReadonlyArray<{ external?: number; internal: number }> | undefined,
 ): number {
   const https = ports?.find((port) => port.internal === TRAEFIK_INTERNAL_PORT);
-  if (https?.external === undefined || https.external === null || https.external <= 0) {
+  if (
+    https?.external === undefined ||
+    https.external === null ||
+    !Number.isInteger(https.external) ||
+    https.external <= 0
+  ) {
     throw new Error(
       `Traefik host port chưa sẵn sàng trong outputs: ` +
         `cần ContainerPort(internal=${TRAEFIK_INTERNAL_PORT}) có external hợp lệ, ` +

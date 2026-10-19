@@ -1,10 +1,14 @@
 {
   // `index.ts` import hai helper **nguồn** của `tools/dx` (không phải package đã
-  // build): `../../tools/dx/src/*.js` là cách duy nhất hai deploy unit dùng
-  // chung một nguồn sự thật cho namespace và contract outputs, thay vì copy
-  // hàm vào hai nơi rồi để chúng lệch nhau. Đuôi `.js` là chuẩn `nodenext`:
-  // `tools/dx/package.json` khai `"type": "module"` nên TypeScript phải resolve
-  // specifier như ESM.
+  // build): `../../tools/dx/src/<name>` (không đuôi) là cách duy nhất hai deploy
+  // unit dùng chung một nguồn sự thật cho namespace và contract outputs, thay
+  // vì copy hàm vào hai nơi rồi để chúng lệch nhau. Specifier **KHÔNG chữ
+  // `.js`**: Pulumi runtime `nodejs` chạy thẳng `index.ts` qua ts-node vendor
+  // 7.0.1 (không có ESM loader, `ts-node@7` không có mapping `.js`→`.ts`) nên
+  // specifier `.js` → `Cannot find module`, còn không đuôi resolve đúng `*.ts`.
+  // Chi tiết đo được ghi ở `deploys/platform-deploy/tsconfig.json` — hai file
+  // PHẢI nói cùng một quy tắc. `module: nodenext` vẫn giữ để typecheck theo
+  // chuẩn ESM.
   //
   // Hệ quả bắt buộc: `rootDir` phải nới lên **workspace root** (`../..`) —
   // mặc định `rootDir` là thư mục project nên `tools/dx/src/*.ts` nằm ngoài nó
@@ -27,6 +31,11 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true,
     "forceConsistentCasingInFileNames": true,
+    // Project này không `extends` `tsconfig.base.json`, nên không kế thừa
+    // `skipLibCheck` của nó — bật tường minh cho khớp `platform-deploy`:
+    // typecheck không phải rà `.d.ts` của `@pulumi/*` và `@node-rs/xxhash`,
+    // lỗi type bên thứ ba không làm đỏ typecheck của repo.
+    "skipLibCheck": true,
     "composite": true,
     "declaration": true,
     // Pulumi program chạy trên Node và import helper của `tools/dx` đọc

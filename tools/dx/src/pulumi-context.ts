@@ -16,7 +16,9 @@
  * 1. `PULUMI_BACKEND_URL=file://<worktree>/.pulumi-local-state` — trỏ backend
  *    trực tiếp, KHÔNG cần `pulumi login` và KHÔNG đụng credentials.json.
  * 2. `--stack organization/<project>/<stack>` tường minh trên MỌI lệnh — không
- *    đọc/ghi "currently selected stack" ở bất kỳ đâu.
+ *    lệnh nào PHỤ THUỘC selected-stack; lưu ý `stack select` trong `ensureStack`
+ *    vẫn GHI workspace file (PU13) nhưng file đó key theo đường dẫn project nên
+ *    hai worktree không xung đột.
  * 3. KHÔNG đặt `PULUMI_HOME`: nó di chuyển CẢ plugin cache (~508MB), mỗi worktree
  *    phải tải lại toàn bộ provider plugin. Plugin cache và credentials home để
  *    chia sẻ là đúng — chúng là read-only đối với các lệnh này.
@@ -224,12 +226,15 @@ export function ensureStack(
 /**
  * Chạy một lệnh Pulumi với context ĐÚNG worktree — `--stack` đầy đủ, env backend
  * tường minh. Lỗi (exit != 0) → throw kèm stderr; KHÔNG in secret (Pulumi tự
- * redact secret trong stderr/stdout của nó).
+ * redact secret trong stderr/stdout của nó, và message chỉ echo *lệnh*, không
+ * echo giá trị arg sau `--secret`).
  *
- * `ensureStack` chỉ chạy khi `prepareStack` khác `false`: lệnh `destroy`/`stack
- * output` kiểu "đọc/teardown" KHÔNG được tạo state trên worktree chưa từng
- * deploy — teardown biến thành mutation (mkdir + stack init) là sai ngữ nghĩa.
- * Caller chịu trách nhiệm tự xử lý "chưa có gì để xoá" trong trường hợp đó.
+ * `ensureStack` chỉ chạy khi `prepareStack === true`: mặc định là KHÔNG đụng
+ * state — lệnh `destroy`/`stack output` kiểu "đọc/teardown" KHÔNG được tạo state
+ * trên worktree chưa từng deploy (mkdir + stack init biến teardown thành
+ * mutation là sai ngữ nghĩa). Lệnh mutation (`up`/`preview`/`config set`) truyền
+ * `prepareStack: true`; caller của lệnh đọc/teardown chịu trách nhiệm tự xử lý
+ * "chưa có gì để đọc/xoá".
  */
 export function pulumiRun(
   projectDir: string,
@@ -240,12 +245,22 @@ export function pulumiRun(
   options: { prepareStack?: boolean } = {},
 ): string {
   const fullArgs = ['--stack', fullStackRef(projectName, ctx), ...args];
-  if (options.prepareStack !== false) {
+  if (options.prepareStack === true) {
     ensureStack(projectDir, projectName, ctx, env);
   }
   const run = exec('pulumi', fullArgs, projectDir, env);
   if (run.status !== 0) {
-    throw new Error(`pulumi ${fullArgs.join(' ')} thất bại:\n${run.stderr || run.stdout}`);
+    if (run.status === null) {
+      // spawnSync không chạy được process (ENOENT, EACCES) hoặc process bị
+      // signal kill (OOM) — stdout/stderr rỗng, phải báo từ `error`/`signal`.
+      const cause =
+        run.error?.message ??
+        (run.signal !== undefined && run.signal !== null
+          ? `process bị signal kill: ${run.signal}`
+          : undefined);
+      throw new Error(`pulumi ${args[0] ?? ''} không chạy được: ${cause ?? 'lý do không rõ'}`);
+    }
+    throw new Error(`pulumi ${args[0] ?? ''} thất bại:\n${run.stderr || run.stdout}`);
   }
   return run.stdout;
 }

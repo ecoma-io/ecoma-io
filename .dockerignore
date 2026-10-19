@@ -73,6 +73,19 @@ tools/dx/*
 **/.env*
 **/.dev.vars*
 
+# Secret/state của local deployment: chặn TƯỜNG MINH chứ không để cho `/*` ở
+# gốc lo. Whitelist phía trên hiện chưa mở các subtree này, nhưng chỉ cần sau
+# này thêm một dòng `!deploys` (hoặc mở rộng `!tools`, hay artifact sinh ra
+# dưới `apps/home/`) là private key TLS và ciphertext secret lọt thẳng vào
+# build context — blacklist ở đây biến ý định bảo mật thành thuộc tính của file
+# thay vì hệ quả của whitelist.
+**/.pulumi-local-state/
+**/local-certs
+**/*.key
+**/*.pem
+Pulumi.*.yaml
+.git
+
 # Source test và config test của app không phải input của image — subtree
 # `apps/home` được mở trọn nên phải loại tường minh.
 apps/home/tests

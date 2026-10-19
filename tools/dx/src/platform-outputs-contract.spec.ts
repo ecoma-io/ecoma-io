@@ -41,6 +41,12 @@ describe('extractTraefikHostPort', () => {
     ).toThrow(/chưa sẵn sàng/u);
   });
 
+  it('fail-closed với NaN — so sánh <= với NaN luôn false, phải chặn bằng Number.isInteger', () => {
+    expect(() =>
+      extractTraefikHostPort([{ internal: TRAEFIK_INTERNAL_PORT, external: Number.NaN }]),
+    ).toThrow(/chưa sẵn sàng/u);
+  });
+
   it('fail-closed khi không có port nào khớp HTTPS nội bộ', () => {
     expect(() => extractTraefikHostPort([{ internal: 80, external: 39002 }])).toThrow(
       /chưa sẵn sàng/u,

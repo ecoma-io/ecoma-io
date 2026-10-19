@@ -22,10 +22,12 @@ import * as dockerBuild from '@pulumi/docker-build';
 import * as pulumi from '@pulumi/pulumi';
 
 // `tools/dx` là workspace project `type:tooling`, còn deploy unit là
-// `type:deployment`. Import **nguồn** (`.js` → `.ts` resolve với `nodenext`) là
-// chủ ý: hai deploy unit phải dùng CHUNG một định nghĩa namespace và contract
-// outputs, và Pulumi runtime `nodejs` chạy thẳng `index.ts` — không có bước
-// build `tools/dx` nào chạy trước để sinh package. Copy hàm vào deploy unit
+// `type:deployment`. Import **nguồn** (specifier không đuôi — chi tiết vì sao
+// KHÔNG dùng `.js` ghi ở `tsconfig.json` của project này và của
+// `platform-deploy`) là chủ ý: hai deploy unit phải dùng CHUNG một định nghĩa
+// namespace và contract outputs, và Pulumi runtime `nodejs` chạy thẳng
+// `index.ts` — không có bước build `tools/dx` nào chạy trước để sinh package.
+// Copy hàm vào deploy unit
 // sẽ tạo hai nơi định nghĩa cùng một thứ và để chúng lệch nhau.
 //
 // `@nx/enforce-module-boundaries` cấm import xuyên project bằng đường dẫn
@@ -37,8 +39,6 @@ import * as pulumi from '@pulumi/pulumi';
 import { dockerResourceName, worktreeNamespace } from '../../tools/dx/src/deploy-namespace';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do dòng trên
 import type { PlatformOutputs } from '../../tools/dx/src/platform-outputs-contract';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do dòng trên
-import { LOCAL_ROOT_HOSTNAME, buildRootHost } from '../../tools/dx/src/platform-outputs-contract';
 
 /** Cổng nội bộ mà Nitro preset `node-server` nghe (khớp `EXPOSE`/`ENV PORT` của image). */
 const HOME_INTERNAL_PORT = 3000;
@@ -101,9 +101,17 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
 
 const networkName = requirePlatformOutput('networkName');
 const traefikHostPort = requirePlatformOutput('traefikHostPort');
-const postgresHost = requirePlatformOutput('postgresHost');
-const postgresPort = requirePlatformOutput('postgresPort');
 const platformNamespace = requirePlatformOutput('namespace');
+// Hostname router đọc từ output của producer — KHÔNG dùng hằng
+// `LOCAL_ROOT_HOSTNAME`: producer đổi hostname thì router theo output, và lệch
+// contract bị bắt tại `requirePlatformOutput` thay vì âm thầm route tên cũ.
+const rootHostname = requirePlatformOutput('rootHostname');
+// `postgresHost`/`postgresPort` CỐ Ý KHÔNG đọc: `apps/home` không sở hữu
+// database nào — tiêm endpoint PostgreSQL của platform vào env của service
+// không sở hữu nó là đường nối DB trực tiếp xuyên service, trái invariant data
+// ownership. Khi một service sau này sở hữu database của riêng nó, connection
+// string (kèm user/database/secret) sẽ được khai ở deploy unit của service đó,
+// không mượn endpoint của DB platform.
 
 // Fail-closed khi hai stack không thuộc cùng một worktree.
 //
@@ -175,17 +183,11 @@ const home = new docker.Container(dockerResourceName(ns, 'home'), {
   envs: [
     `PORT=${HOME_INTERNAL_PORT}`,
     'NODE_ENV=production',
-    // ROOT_HOST sinh qua helper `buildRootHost` của contract — MỘT nguồn sinh
-    // `fbi.com:<port>` dùng chung với `local-deploy` khi ghi `.env`; tự ghép
-    // chuỗi ở đây là chỗ lệch khi contract đổi định dạng. `rootHostname` cũng
-    // đọc từ output của producer thay vì hằng số — hostname drift sẽ bị bắt
-    // bởi `requirePlatformOutput` thay vì âm thầm chạy lệch contract.
-    pulumi.output(traefikHostPort).apply((port) => `ROOT_HOST=${buildRootHost(port)}`),
-    // Thông tin kết nối PostgreSQL do platform export. PR này chưa có app code
-    // đọc chúng; đặt sẵn ở đây để deploy unit sau đó không phải sửa lại
-    // contract outputs.
-    pulumi.interpolate`POSTGRES_HOST=${postgresHost}`,
-    pulumi.interpolate`POSTGRES_PORT=${postgresPort}`,
+    // ROOT_HOST = `<hostname>:<port>` với hostname đọc từ output `rootHostname`
+    // của producer — cùng định dạng mà `buildRootHost` (contract) sinh cho
+    // `.env` phía orchestration; hai phía không thể lệch format vì cả hai lấy
+    // hostname từ output/contract, port từ output `traefikHostPort`.
+    pulumi.interpolate`ROOT_HOST=${rootHostname}:${traefikHostPort}`,
   ],
   labels: [
     { label: 'traefik.enable', value: 'true' },
@@ -205,7 +207,7 @@ const home = new docker.Container(dockerResourceName(ns, 'home'), {
     },
     {
       label: `traefik.http.routers.${traefikPrefix(ns)}.rule`,
-      value: `Host(\`${LOCAL_ROOT_HOSTNAME}\`)`,
+      value: pulumi.interpolate`Host(\`${rootHostname}\`)`,
     },
     {
       label: `traefik.http.routers.${traefikPrefix(ns)}.entrypoints`,

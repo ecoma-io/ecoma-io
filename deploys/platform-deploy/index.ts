@@ -60,10 +60,12 @@ function certPath(fileName: string): string {
 /**
  * Đường dẫn Docker socket trên HOST để bind-mount vào Traefik.
  *
- * Trả về path tồn tại thật: rootless Docker (máy này) dùng
- * `/run/user/<uid>/docker.sock` và `DOCKER_HOST` của CLI đã trỏ đúng đó, nên
- * suy từ env trước khi rơi về path rootful. Fallback cuối vẫn là path chuẩn vì
- * Pulumi với docker provider đã nói chuyện được với daemon để tới được đây.
+ * Suy theo thứ tự: `DOCKER_SOCKET_PATH` tường minh > path trong `DOCKER_HOST`
+ * (chỉ nhận `unix://`, phải tồn tại thật) > path chuẩn rootful. Không có nhánh
+ * fallback "âm thầm mount path không tồn tại": Docker sẽ TẠO THƯ MỤC tại path
+ * đó trong container và Traefik fail với `Cannot connect to the Docker daemon`
+ * dù daemon vẫn chạy — lỗi ở tầng Docker rất khó truy về nguyên nhân ở đây.
+ * Fail sớm với hướng dẫn hành động được, cùng triết lý `config.require` phía trên.
  */
 function dockerSocketPath(): string {
   const explicit = process.env['DOCKER_SOCKET_PATH'];
@@ -73,7 +75,14 @@ function dockerSocketPath(): string {
     const socketPath = host.slice('unix://'.length);
     if (existsSync(socketPath)) return socketPath;
   }
-  return '/var/run/docker.sock';
+  const standardSocket = '/var/run/docker.sock';
+  if (existsSync(standardSocket)) return standardSocket;
+  throw new Error(
+    'Không tìm thấy unix socket Docker để bind-mount vào Traefik ' +
+      `(DOCKER_HOST=${process.env['DOCKER_HOST'] ?? '(unset)'}). ` +
+      'Đặt DOCKER_SOCKET_PATH trỏ tới socket của daemon ' +
+      '(rootless thường là /run/user/<uid>/docker.sock).',
+  );
 }
 
 /**
@@ -166,6 +175,11 @@ const network = new docker.Network('network', {
 const traefik = new docker.Container('traefik', {
   name: dockerResourceName(ns, 'traefik'),
   image: TRAEFIK_IMAGE,
+  // Container bị dừng (reboot máy, restart daemon) không tạo diff nào trong
+  // Pulumi — state vẫn coi resource là up-to-date — nên `local-deploy` không
+  // tự start lại được. `restart` là input nên Pulumi diff được; trừ khi
+  // operator đã `docker stop` tường minh (`unless-stopped` tôn trọng điều đó).
+  restart: 'unless-stopped',
   command: [
     `--entrypoints.websecure.address=:${TRAEFIK_INTERNAL_PORT}`,
     // Docker provider: chỉ route container nào tự gắn label routing.
@@ -200,14 +214,17 @@ const traefik = new docker.Container('traefik', {
   ],
   mounts: [
     {
-      source: certPath('fbi.com.crt'),
-      target: `${CERTS_DIR}/fbi.com.crt`,
+      // Đường dẫn cert suy từ `LOCAL_ROOT_HOSTNAME` — hostname đổi thì router,
+      // output và mount đi cùng một nguồn; file tĩnh `traefik-dynamic.yml` bên
+      // dưới PHẢI sửa cùng lúc vì nó hardcode cùng tên file.
+      source: certPath(`${LOCAL_ROOT_HOSTNAME}.crt`),
+      target: `${CERTS_DIR}/${LOCAL_ROOT_HOSTNAME}.crt`,
       type: 'bind',
       readOnly: true,
     },
     {
-      source: certPath('fbi.com.key'),
-      target: `${CERTS_DIR}/fbi.com.key`,
+      source: certPath(`${LOCAL_ROOT_HOSTNAME}.key`),
+      target: `${CERTS_DIR}/${LOCAL_ROOT_HOSTNAME}.key`,
       type: 'bind',
       readOnly: true,
     },
@@ -254,7 +271,9 @@ const traefik = new docker.Container('traefik', {
       'traefik',
       'healthcheck',
       '--ping',
-      '--entrypoints.websecure.address=:443',
+      // Cùng hằng số với `command` phía trên — hai chỗ không thể lệch nhau khi
+      // cổng nội bộ đổi.
+      `--entrypoints.websecure.address=:${TRAEFIK_INTERNAL_PORT}`,
       '--ping.entrypoint=websecure',
     ],
     interval: '5s',
@@ -269,6 +288,16 @@ const traefik = new docker.Container('traefik', {
  *
  * `requireSecret` thay vì literal trong source: secret đọc từ config không bị
  * ghi vào Git, không xuất hiện trong preview, và mỗi máy developer tự đặt được.
+ *
+ * ⚠️ Secret này và volume PostgreSQL PHẢI CÙNG TUỔI: `POSTGRES_PASSWORD` chỉ có
+ * tác dụng lúc `initdb` trên volume rỗng. Đổi secret trong stack config sau khi
+ * volume đã init sẽ khiến Pulumi thay container (envs nằm trong diff) nhưng
+ * Postgres KHÔNG chạy lại initdb — superuser trong volume vẫn giữ mật khẩu cũ,
+ * mọi kết nối bằng giá trị mới nhận `password authentication failed` trong khi
+ * healthcheck `pg_isready` vẫn xanh (nó không xác thực mật khẩu). Đường đổi mật
+ * khẩu hợp lệ nằm ngoài luồng này (đổi trực tiếp trong database rồi cập nhật
+ * secret cho khớp) — xem `docs/services/local-platform/03-operations.md`
+ * §Vòng đời dữ liệu.
  */
 const postgresPassword = new pulumi.Config('postgres').requireSecret('password');
 
@@ -308,6 +337,9 @@ const postgresVolume = new docker.Volume(
 const postgres = new docker.Container('postgres', {
   name: dockerResourceName(ns, 'postgres'),
   image: POSTGRES_IMAGE,
+  // Cùng lý do với traefik: dừng do reboot không tự phục hồi được qua
+  // `local-deploy` — Pulumi không thấy diff trên trạng thái chạy.
+  restart: 'unless-stopped',
   // `envs` là mảng `KEY=VALUE` của provider này (không phải map `env`).
   // Truyền thẳng object secret của Pulumi vào đây để value được đánh dấu
   // secret và không bao giờ in ra log hay nằm trong preview dạng plaintext.

@@ -11,6 +11,7 @@ import {
   fullStackRef,
   localStateDir,
   pulumiEnv,
+  pulumiRun,
   requirePassphrase,
   resolveContext,
 } from './pulumi-context.js';
@@ -182,5 +183,64 @@ describe('ensureStack — real Pulumi subprocess isolation', () => {
         env,
       });
     }
+  });
+});
+
+describe('pulumiRun — prepareStack là opt-in', () => {
+  // Mặc định KHÔNG được chuẩn bị stack: lệnh đọc/teardown quên truyền cờ không
+  // bao giờ được biến thành mutation (mkdir + stack init) trên worktree chưa
+  // từng deploy. Chạy CLI thật khi có mặt; thiếu CLI thì skip (giống suite trên).
+  const hasCli = spawnSync('pulumi', ['version'], { encoding: 'utf8' }).status === 0;
+
+  it('lệnh đọc KHÔNG truyền prepareStack → không tạo state dir, không stack init', () => {
+    if (!hasCli) return; // skip im lặng — documented limitation
+    const wt = tempWorktree();
+    const ctx = resolveContext(wt);
+    const env = pulumiEnv(ctx, 'optin-test-pass');
+    const projDir = join(wt, 'proj');
+    mkdirSync(projDir, { recursive: true });
+    writeFileSync(
+      join(projDir, 'Pulumi.yaml'),
+      'name: optinspec\nruntime: nodejs\nmain: .\n',
+      'utf8',
+    );
+
+    // Lệnh đọc vô hại trên stack chưa tồn tại (`stack export` trên stack chưa
+    // init là exit != 0) — điều cần assert KHÔNG phải exit code mà là side
+    // effect: không có state dir nào được tạo, không có stack nào được init.
+    expect(() => pulumiRun(projDir, 'optinspec', ['stack', 'export'], ctx, env)).toThrow(
+      /thất bại|không chạy được/u,
+    );
+    expect(existsSync(localStateDir(wt))).toBe(false);
+  });
+
+  it('lệnh mutation truyền prepareStack: true → state dir + stack được tạo', () => {
+    if (!hasCli) return; // skip im lặng — documented limitation
+    const wt = tempWorktree();
+    const ctx = resolveContext(wt);
+    const env = pulumiEnv(ctx, 'optin-test-pass');
+    const projDir = join(wt, 'proj');
+    mkdirSync(projDir, { recursive: true });
+    writeFileSync(
+      join(projDir, 'Pulumi.yaml'),
+      'name: optinspec\nruntime: nodejs\nmain: .\n',
+      'utf8',
+    );
+
+    // Đối chứng với test trên: CÙNG lệnh đọc, lần này có `prepareStack: true` —
+    // ensureStack init stack thật nên `stack export` exit 0 (deployment JSON
+    // rỗng của stack mới) và state dir tồn tại.
+    const stdout = pulumiRun(projDir, 'optinspec', ['stack', 'export'], ctx, env, {
+      prepareStack: true,
+    });
+    expect(stdout).toContain('"version"');
+    expect(existsSync(localStateDir(wt))).toBe(true);
+
+    // Dọn stack để state không vương lại trong temp (đã có afterAll rm).
+    spawnSync('pulumi', ['stack', 'rm', '--yes', '--stack', fullStackRef('optinspec', ctx)], {
+      cwd: projDir,
+      encoding: 'utf8',
+      env,
+    });
   });
 });

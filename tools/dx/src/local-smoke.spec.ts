@@ -253,17 +253,19 @@ describe('local-smoke.mjs HTTPS verification chain', () => {
     expect(result.stderr).toContain('mong status 302, nhận 200');
   });
 
-  it('root returns 404 → exit 1', async () => {
+  it('root returns 404 → retried, then exit 1 at budget exhaustion', async () => {
+    // 404 là retryable (cửa sổ Traefik registration khi container recreate) —
+    // không fail tức thời nữa: budget nhỏ buộc hết budget rồi chốt FAIL.
     const port = await startHttpsFixture((_pathname, _req, res) => {
       res.writeHead(404);
       res.end();
     });
     const result = await run(fixtureArgs(port, FAST));
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('mong status 302, nhận 404');
+    expect(result.stderr).toContain('hết budget');
   });
 
-  it('/en returns 404 → exit 1', async () => {
+  it('/en returns 404 → retried, then exit 1 at budget exhaustion', async () => {
     const port = await startHttpsFixture((pathname, req, res) => {
       if (pathname === '/en') {
         res.writeHead(404);
@@ -274,7 +276,7 @@ describe('local-smoke.mjs HTTPS verification chain', () => {
     });
     const result = await run(fixtureArgs(port, FAST));
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('mong 2xx, nhận 404');
+    expect(result.stderr).toContain('hết budget');
   });
 
   it('/en returns 500 → exit 1 fast without retry (SSR error is not "not ready")', async () => {
