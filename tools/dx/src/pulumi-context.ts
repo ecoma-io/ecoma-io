@@ -97,13 +97,18 @@ export function resolveContext(worktreeRootInput?: string): LocalDeployContext {
  * của Pulumi, nó chính là khoá giải mọi secret trong state (PU1/PU5). Passphrase
  * là encryption material của developer, phải đến từ môi trường của họ.
  */
-export function requirePassphrase(): { passphrase: string } | { error: string } {
+export function requirePassphrase():
+  | { passphrase: string; fromFile: false }
+  | { passphrase: undefined; fromFile: true }
+  | { error: string } {
   if (typeof process.env.PULUMI_CONFIG_PASSPHRASE === 'string') {
-    return { passphrase: process.env.PULUMI_CONFIG_PASSPHRASE };
+    return { passphrase: process.env.PULUMI_CONFIG_PASSPHRASE, fromFile: false };
   }
   if (typeof process.env.PULUMI_CONFIG_PASSPHRASE_FILE === 'string') {
     // File được CLI tự đọc; với orchestration chỉ cần biết "đã có đường cung".
-    return { passphrase: '' };
+    // `passphrase` là undefined — sentinel chuỗi rỗng sẽ bị `pulumiEnv` set vào
+    // env ở vị trí ưu tiên cao nhất, chặn CLI đọc file (PU2: biến chính thắng).
+    return { passphrase: undefined, fromFile: true };
   }
   return {
     error:
@@ -122,14 +127,28 @@ export function requirePassphrase(): { passphrase: string } | { error: string } 
  *
  * `pulumiEnv(ctx)` không cần `pulumi login`: `PULUMI_BACKEND_URL` chỉ thẳng
  * backend. Passphrase bắt buộc — caller truyền từ `requirePassphrase()`.
+ *
+ * Passphrase đến qua file (`fromFile: true`): XOÁ biến `PULUMI_CONFIG_PASSPHRASE`
+ * khỏi env thay vì set — set chuỗi (kể cả rỗng) đặt biến ở vị trí ưu tiên cao
+ * nhất của thứ tự giải passphrase (PU2) và chặn CLI đọc
+ * `PULUMI_CONFIG_PASSPHRASE_FILE`; passphrase rỗng còn là GIÁ TRỊ HỢP LỆ (PU6),
+ * nên sentinel rỗng vừa chặn đường file vừa là fail-open.
  */
-export function pulumiEnv(ctx: LocalDeployContext, passphrase: string): NodeJS.ProcessEnv {
-  return {
+export function pulumiEnv(
+  ctx: LocalDeployContext,
+  passphrase: string | undefined,
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     PULUMI_BACKEND_URL: ctx.stateUrl,
-    PULUMI_CONFIG_PASSPHRASE: passphrase,
     PULUMI_SKIP_UPDATE_CHECK: '1',
   };
+  if (passphrase === undefined) {
+    delete env.PULUMI_CONFIG_PASSPHRASE;
+  } else {
+    env.PULUMI_CONFIG_PASSPHRASE = passphrase;
+  }
+  return env;
 }
 
 /**

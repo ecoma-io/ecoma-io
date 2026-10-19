@@ -43,10 +43,24 @@ import type { LocalDeployContext } from './pulumi-context.js';
 import { ROOT_DIR } from './utils.js';
 
 /** Kết quả một bước exec shell — fail-closed: caller phải kiểm `status`. */
-interface ExecResult {
+export interface ExecResult {
   status: number | null;
   stdout: string;
   stderr: string;
+}
+
+/**
+ * "Chưa có key" của `pulumi config get` — CHỈ khi CLI báo đúng vậy.
+ *
+ * Exit != 0 không phân biệt được: sai passphrase (không giải được secret),
+ * state lock, backend hỏng... đều exit != 0. Regen secret trên các lỗi đó sẽ
+ * ĐÈ mật khẩu đang tồn tại trong state (`config set` chỉ cần salt để mã hoá
+ * giá trị mới là thành công trên DIY backend) → container Postgres bị khoá
+ * khỏi volume đã init bằng mật khẩu cũ. Export để spec phủ trực tiếp.
+ */
+export function isConfigKeyMissing(result: ExecResult): boolean {
+  const output = `${result.stdout}\n${result.stderr}`;
+  return /no value for the key|configuration key .* not found/iu.test(output);
 }
 
 function exec(command: string, args: string[], cwd: string, env?: NodeJS.ProcessEnv): ExecResult {
@@ -221,7 +235,12 @@ export function localDeploy(options: LocalDeployOptions = {}): number {
       projectDir(PLATFORM_PROJECT),
       env,
     );
-    if (secret.status !== 0 || secret.stdout.trim().length === 0) {
+    // CHỈ coi là "chưa có key" khi CLI báo đúng vậy (isConfigKeyMissing) — sai
+    // passphrase, state lock, backend hỏng... phải dừng ở đây, không được regen.
+    if (!isConfigKeyMissing(secret) && secret.status !== 0) {
+      throw new Error(`pulumi config get postgres:password thất bại:\n${secret.stderr}`);
+    }
+    if (secret.stdout.trim().length === 0) {
       const pw = randomBytes(24).toString('base64url');
       const setSecret = exec(
         'pulumi',

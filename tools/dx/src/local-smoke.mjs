@@ -199,6 +199,20 @@ function requestStep(pathname) {
       (response) => {
         const chunks = [];
         response.on('data', (chunk) => chunks.push(chunk));
+        // Lỗi giữa chừng body (socket bị reset, upstream đóng, hoặc chính
+        // AbortSignal hủy sau khi response bắt đầu) phát ra trên response
+        // stream — IncomingMessage là EventEmitter, không có listener 'error'
+        // thì Node ném uncaught exception và giết tiến trình thay vì đi qua
+        // bộ phân loại ở trên.
+        response.on('error', (error) => reject(classifyRequestError(error, pathname)));
+        response.on('aborted', () => {
+          request.destroy();
+          reject(
+            new RetryableError(
+              `GET ${pathname}: response bị ngắt giữa chừng — server chưa ổn định`,
+            ),
+          );
+        });
         response.on('end', () => {
           const result = {
             status: response.statusCode,

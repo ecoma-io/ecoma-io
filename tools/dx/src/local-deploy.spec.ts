@@ -4,7 +4,13 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { localDeploy, classifyStackOutput, DEPLOY_STEPS, upsertLocalEnv } from './local-deploy.js';
+import {
+  localDeploy,
+  classifyStackOutput,
+  DEPLOY_STEPS,
+  upsertLocalEnv,
+  isConfigKeyMissing,
+} from './local-deploy.js';
 import { resolveContext, type LocalDeployContext } from './pulumi-context.js';
 import { worktreeNamespace } from './deploy-namespace.js';
 
@@ -175,5 +181,57 @@ describe('classifyStackOutput — local-status state machine', () => {
     expect(result.state).toBe('backend-error');
     const detail = (result as { detail?: string }).detail ?? '';
     expect(detail).toContain('something unprecedented');
+  });
+});
+
+describe('isConfigKeyMissing — secret regen guard', () => {
+  it('CLI báo "no value for the key" → true (được phép regen)', () => {
+    expect(
+      isConfigKeyMissing({
+        status: 1,
+        stdout: '',
+        stderr: 'error: no value for the key postgres:password',
+      }),
+    ).toBe(true);
+    // Biến thể message của CLI: "configuration key ... not found"
+    expect(
+      isConfigKeyMissing({
+        status: 1,
+        stdout: '',
+        stderr: 'error: configuration key "postgres:password" not found',
+      }),
+    ).toBe(true);
+  });
+
+  it('sai passphrase (secret không giải được) → false — phải fail, KHÔNG regen', () => {
+    // Lỗi decrypt của sai passphrase có dạng này — exit != 0 nhưng KHÔNG phải
+    // "key missing". Guard cũ gộp nhánh → regen đè secret tốt. Đây chính là
+    // regression mà review bắt.
+    expect(
+      isConfigKeyMissing({
+        status: 1,
+        stdout: '',
+        stderr:
+          'error: could not decrypt configuration value: cipher: message authentication failed',
+      }),
+    ).toBe(false);
+  });
+
+  it('lỗi khác (backend hỏng, lock) → false', () => {
+    expect(
+      isConfigKeyMissing({
+        status: 1,
+        stdout: '',
+        stderr: 'error: could not open state directory',
+      }),
+    ).toBe(false);
+  });
+
+  it('status 0 nhưng stdout rỗng → false về pattern... nhưng caller vẫn regen qua nhánh stdout rỗng', () => {
+    // Guard hai lớp: isConfigKeyMissing chỉ nhận diện chữ ký; nhánh regen của
+    // caller vẫn là `stdout rỗng` SAU KHI đã pass qua guard throw. Case status 0
+    // + rỗng không thể xảy ra trên CLI thật (exit 0 luôn kèm giá trị) nhưng
+    // hợp đồng của helper là nhận diện chữ ký, không quyết định regen.
+    expect(isConfigKeyMissing({ status: 0, stdout: '', stderr: '' })).toBe(false);
   });
 });

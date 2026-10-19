@@ -104,14 +104,14 @@ describe('requirePassphrase', () => {
   it('supplied passphrase → returned as-is, never logged', () => {
     process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-secret-value';
     const result = requirePassphrase();
-    expect(result).toEqual({ passphrase: 'unit-test-secret-value' });
+    expect(result).toEqual({ passphrase: 'unit-test-secret-value', fromFile: false });
   });
 
   it('PULUMI_CONFIG_PASSPHRASE_FILE counts as a supply path', () => {
     delete process.env.PULUMI_CONFIG_PASSPHRASE;
     process.env.PULUMI_CONFIG_PASSPHRASE_FILE = '/tmp/some-passphrase-file';
     const result = requirePassphrase();
-    expect('passphrase' in result).toBe(true);
+    expect(result).toEqual({ passphrase: undefined, fromFile: true });
   });
 });
 
@@ -123,6 +123,16 @@ describe('pulumiEnv', () => {
     expect(env['PULUMI_CONFIG_PASSPHRASE']).toBe('test-pass');
     expect(env['PULUMI_SKIP_UPDATE_CHECK']).toBe('1');
     expect('PULUMI_HOME' in env).toBe(false);
+  });
+
+  it('passphrase undefined (file path) → PULUMI_CONFIG_PASSPHRASE DELETED, not set empty', () => {
+    const ctx = resolveContext(tempWorktree());
+    // Giả lập env kế thừa có sẵn biến rỗng/lậu từ shell — `delete` phải gỡ
+    // được, để CLI tự đọc PULUMI_CONFIG_PASSPHRASE_FILE theo thứ tự chuẩn (PU2).
+    process.env.PULUMI_CONFIG_PASSPHRASE = '';
+    const env = pulumiEnv(ctx, undefined);
+    expect('PULUMI_CONFIG_PASSPHRASE' in env).toBe(false);
+    expect(env['PULUMI_BACKEND_URL']).toBe(ctx.stateUrl);
   });
 });
 

@@ -366,4 +366,28 @@ describe('local-smoke.mjs HTTPS verification chain', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('smoke FAILED');
   });
+
+  it('headers sent then socket destroyed mid-body → retried as not-ready, not a crash', async () => {
+    // Header 200 đã ghi ra socket rồi destroy — response stream của script
+    // phát 'aborted'/'error' giữa chừng body. Lỗi này PHẢI đi qua bộ phân
+    // loại (retry) chứ không phải uncaught exception giết tiến trình (exit
+    // code sẽ không phải 1 và stack trace Node sẽ lọt ra stderr).
+    let connections = 0;
+    const port = await startRawFixture((socket) => {
+      connections += 1;
+      socket.on('data', () => {
+        socket.write('HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nshort');
+        socket.destroy();
+      });
+    });
+    // Không retry được (fixture luôn hỏng giống nhau) → chốt bằng budget
+    // exhaustion: exit 1 với message "smoke FAILED", KHÔNG phải crash Node.
+    const result = await run(
+      fixtureArgs(port, ['--budget-ms', '1500', '--request-timeout-ms', '200']),
+    );
+    expect(connections).toBeGreaterThan(0);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('smoke FAILED');
+    expect(result.stderr).not.toMatch(/at .*\n.*at /u); // không stack trace Node
+  });
 });
