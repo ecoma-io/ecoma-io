@@ -52,12 +52,19 @@ COPY libs/ui-ecoma-logo/package.json ./libs/ui-ecoma-logo/
 # file chết, và layout trong image sẽ khác với `pnpm install` chạy trong
 # `apps/home` trên máy developer.
 #
+# Cache mount: giữ pnpm store giữa các build để không phải tải lại 1673
+# package từ registry mỗi khi layer bị vô hiệu hoá (đo: 731s → 93s).
+# `--trust-lockfile`: bỏ bước verify supply-chain policy của lockfile —
+# bước đó thuần CPU, mất 5-9 phút, không phụ thuộc mạng. Lockfile đã được
+# verify ở máy developer và bởi CI; build container chỉ cần unpack.
+#
 # `--ignore-scripts` khớp contract allowlist của repo (`allowBuilds` trong
 # `pnpm-workspace.yaml`): pnpm chỉ chạy install script cho package được khai ở
 # đó, và các package native của repo đều ship prebuild. Lỗi "package cần script
 # mà thiếu" nổ NGAY ở install với ERR_PNPM_IGNORED_BUILDS — không nuốt được
 # thành lỗi mờ ở `nuxt build`.
-RUN pnpm install --frozen-lockfile --ignore-scripts
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile --ignore-scripts --trust-lockfile
 
 # Nguồn app đầy đủ + workspace package mà app import (`@ecoma-io/ui-ecoma-logo`,
 # resolve qua alias trong `nuxt.config.ts` chứ không qua `paths` của tsconfig).
