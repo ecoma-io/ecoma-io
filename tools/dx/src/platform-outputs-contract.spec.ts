@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -15,6 +18,33 @@ describe('buildRootHost', () => {
 
   it('hostname là hằng số local đã chốt', () => {
     expect(LOCAL_ROOT_HOSTNAME).toBe('fbi.com');
+  });
+});
+
+describe('traefik-dynamic.yml consistency', () => {
+  it('cert filename trong dynamic config khớp LOCAL_ROOT_HOSTNAME — hai nguồn sự thật bị khóa lại', () => {
+    // `deploys/platform-deploy/index.ts` suy tên cert từ `LOCAL_ROOT_HOSTNAME`,
+    // còn `traefik-dynamic.yml` hardcode — lệch một chữ là MỌI worktree sập
+    // (Traefik không có certificate trong store). Test đọc chính file YAML và
+    // khóa hai bên với nhau thay vì dựa kỷ luật "sửa cùng lúc".
+    const dynamic = readFileSync(
+      join(__dirname, '../../../deploys/platform-deploy/traefik-dynamic.yml'),
+      'utf8',
+    );
+    expect(dynamic).toContain(`certFile: /certs/${LOCAL_ROOT_HOSTNAME}.crt`);
+    expect(dynamic).toContain(`keyFile: /certs/${LOCAL_ROOT_HOSTNAME}.key`);
+    // Mọi dòng `certFile:`/`keyFile:` phải trỏ đúng hostname hằng số — thu về
+    // một mảng trước, assert không điều kiện (vitest cấm `expect` trong if).
+    const mounted = dynamic
+      .split('\n')
+      .map((line) => line.match(/(certFile|keyFile): \/certs\/(\S+)/u))
+      .filter((m): m is RegExpMatchArray => m !== null)
+      .map((m) => ({ kind: m[1], file: m[2] }));
+    expect(mounted.length).toBeGreaterThanOrEqual(2);
+    expect(mounted).toEqual([
+      { kind: 'certFile', file: `${LOCAL_ROOT_HOSTNAME}.crt` },
+      { kind: 'keyFile', file: `${LOCAL_ROOT_HOSTNAME}.key` },
+    ]);
   });
 });
 

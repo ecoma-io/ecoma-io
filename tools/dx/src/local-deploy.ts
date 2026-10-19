@@ -110,9 +110,10 @@ export function readPlatformOutputs(
   const stdout = pulumiRun(platformDir, PLATFORM_PROJECT, ['stack', 'output', '--json'], ctx, env, {
     prepareStack: false,
   });
+  // Không truyền `stream` nên trả về chuỗi — chỉ `up`/`preview` mới stream.
   let outputs: Record<string, unknown>;
   try {
-    outputs = JSON.parse(stdout) as Record<string, unknown>;
+    outputs = JSON.parse(stdout ?? '') as Record<string, unknown>;
   } catch {
     throw new Error(`Outputs của platform stack không parse được JSON:\n${stdout}`);
   }
@@ -153,7 +154,7 @@ function runProjectStep(
   args: string[],
   ctx: LocalDeployContext,
   env: NodeJS.ProcessEnv,
-  options: { prepareStack?: boolean } = {},
+  options: { prepareStack?: boolean; stream?: boolean } = {},
 ): boolean {
   try {
     pulumiRun(projectDir(project), project, args, ctx, env, options);
@@ -261,6 +262,9 @@ export function localDeploy(options: LocalDeployOptions = {}): number {
         : ['up', '--yes', ...sharedConfigArgs];
     pulumiRun(projectDir(PLATFORM_PROJECT), PLATFORM_PROJECT, platformArgs, ctx, env, {
       prepareStack: true,
+      // `up`/`preview` là bước dài nhất (build image home) — stream progress
+      // ra terminal thay vì giữ trong pipe đến khi lệnh xong.
+      stream: true,
     });
   } catch (error) {
     console.error(`[local-deploy] ${error instanceof Error ? error.message : String(error)}`);
@@ -313,7 +317,7 @@ export function localDeploy(options: LocalDeployOptions = {}): number {
       ],
       ctx,
       env,
-      { prepareStack: true },
+      { prepareStack: true, stream: true },
     );
     if (!homeOk) return 1;
 

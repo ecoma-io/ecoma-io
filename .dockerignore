@@ -83,7 +83,7 @@ tools/dx/*
 **/local-certs
 **/*.key
 **/*.pem
-Pulumi.*.yaml
+**/Pulumi.*.yaml
 .git
 
 # Source test và config test của app không phải input của image — subtree

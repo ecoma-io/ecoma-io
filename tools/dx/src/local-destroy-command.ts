@@ -1,6 +1,7 @@
 import { defineCommand } from 'citty';
 
 import { localDestroy } from './local-deploy.js';
+import { requireDirectoryRoot, runLocalCommand, worktreeRootArg } from './local-commands.js';
 
 /**
  * Entry `pnpm dx local-destroy`.
@@ -25,17 +26,15 @@ export default defineCommand({
       description: 'Also remove the PostgreSQL persistent volume (DESTRUCTIVE — data loss)',
       default: false,
     },
-    'worktree-root': {
-      type: 'string',
-      description: 'Worktree root (defaults to this repository checkout)',
-      required: false,
-    },
+    'worktree-root': worktreeRootArg,
   },
 
   run({ args }) {
-    process.exitCode = localDestroy({
-      worktreeRoot: args['worktree-root'],
-      removeData: args['remove-data'],
-    });
+    process.exitCode = runLocalCommand('destroy', () =>
+      localDestroy({
+        worktreeRoot: requireDirectoryRoot(args['worktree-root']),
+        removeData: args['remove-data'],
+      }),
+    );
   },
 });

@@ -34,6 +34,8 @@ pnpm dx local-destroy --remove-data  # teardown + XOÁ volume (in cảnh báo, m
 
 Luồng `local-deploy` chạy theo đúng thứ tự contract: platform up → đọc outputs → ghi `.env` → home up → smoke HTTPS. Mỗi bước chỉ chạy khi bước trước thành công. Lần chạy đầu trên stack mới, password PostgreSQL được sinh ngẫu nhiên và lưu dạng secret trong state local, mã hoá bằng passphrase ở Prerequisites.
 
+`--worktree-root <dir>` (cả ba lệnh `local-*`) chọn worktree bị tác động về **state/namespace/`.env`** (namespace Docker, Pulumi stack, `.pulumi-local-state`, `.env`); mặc định là checkout hiện hành. Chương trình Pulumi và smoke vẫn chạy từ checkout đang gõ lệnh — flag không phải "deploy code của worktree kia".
+
 **Preview covers cả hai project** (platform rồi home) nhưng có giới hạn đã biết: trước khi platform được apply lần đầu, outputs của stack reference là `undefined` — preview home khi đó fail tường minh kèm hướng dẫn (chạy apply thật trước). Preview không bao giờ tạo container/volume và không ghi `.env` — nhưng nó **có** ghi state local của worktree: `stack init` và sinh/lưu secret `postgres:password` trong stack config (không đụng Docker).
 
 Dry-run an toàn cho CI là Nx target `provision` (`pnpm nx run platform-deploy:provision`) — chỉ in kế hoạch, không chạy `pulumi up`.

@@ -100,7 +100,10 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
 }
 
 const networkName = requirePlatformOutput('networkName');
-const traefikHostPort = requirePlatformOutput('traefikHostPort');
+// `traefikHostPort` CỐ Ý KHÔNG đọc vào container: `apps/home` không publish cổng
+// nào (mọi request đi qua Traefik), và healthcheck của container dùng cổng nội
+// bộ từ hằng số dùng chung với image — không cần port đã publish ra host. Output
+// vẫn thuộc contract và được `local-deploy` đọc để dựng `ROOT_HOST` cho `.env`.
 const platformNamespace = requirePlatformOutput('namespace');
 // Hostname router đọc từ output của producer — KHÔNG dùng hằng
 // `LOCAL_ROOT_HOSTNAME`: producer đổi hostname thì router theo output, và lệch
@@ -155,10 +158,13 @@ const verifiedNamespace = pulumi.output(platformNamespace).apply((upstreamNs) =>
  * `load: true` + `push: false` nạp image vào Docker daemon cục bộ — local
  * deployment không có registry nào để push.
  */
+/** Tag local của image home — một nguồn duy nhất cho `tags` và input `image` của container. */
+const imageTag = `ecoma-home-${ns}:local`;
+
 const image = new dockerBuild.Image(dockerResourceName(ns, 'home-image'), {
   context: { location: worktreeRoot },
   dockerfile: { location: `${worktreeRoot}/apps/home/Dockerfile` },
-  tags: [`ecoma-home-${ns}:local`],
+  tags: [imageTag],
   builder: { name: 'default' },
   load: true,
   push: false,
@@ -167,28 +173,30 @@ const image = new dockerBuild.Image(dockerResourceName(ns, 'home-image'), {
 /**
  * Container của `apps/home`.
  *
- * `image.ref` (output của docker-build) chứ không phải chuỗi tag: truyền output
- * làm cho Pulumi **thay container** khi digest image đổi, thay vì chỉ so sánh
- * tên tag bất biến.
+ * `image` là `<tag>@sha256:<digest>` — output `ref` của docker-build với
+ * `push: false` CHỈ là tag (`ecoma-home-<ns>:local`, chuỗi bất biến giữa các
+ * lần build): container input không đổi ⇒ Pulumi không thay container sau khi
+ * code đổi, container cứ chạy image CŨ với smoke vẫn xanh. Ghim digest biến
+ * mỗi rebuild thành thay đổi input thấy được — container bị thay đúng lúc.
  *
  * KHÔNG có `ports`: home không publish cổng ra host — mọi request đi qua Traefik
  * của platform. Đây là bất biến của local platform, không phải thiếu sót.
  */
 const home = new docker.Container(dockerResourceName(ns, 'home'), {
   name: dockerResourceName(ns, 'home'),
-  image: image.ref,
+  image: pulumi.interpolate`${imageTag}@${image.digest}`,
+  // Cùng lý do với traefik/postgres ở `platform-deploy`: container bị dừng do
+  // reboot/restart daemon không tạo diff nào trong Pulumi, nên `local-deploy`
+  // không tự start lại được. `restart` là input nên Pulumi diff được.
+  restart: 'unless-stopped',
   networksAdvanced: [{ name: networkName, aliases: ['ecoma-home'] }],
   // `envs` (không phải `environment`): `@pulumi/docker` nhận cặp `KEY=VALUE` dạng
   // mảng chuỗi — shape của `docker run -e`, không phải map như Compose.
-  envs: [
-    `PORT=${HOME_INTERNAL_PORT}`,
-    'NODE_ENV=production',
-    // ROOT_HOST = `<hostname>:<port>` với hostname đọc từ output `rootHostname`
-    // của producer — cùng định dạng mà `buildRootHost` (contract) sinh cho
-    // `.env` phía orchestration; hai phía không thể lệch format vì cả hai lấy
-    // hostname từ output/contract, port từ output `traefikHostPort`.
-    pulumi.interpolate`ROOT_HOST=${rootHostname}:${traefikHostPort}`,
-  ],
+  // Không có `ROOT_HOST`: không có consumer nào trong `apps/` đọc biến này lúc
+  // runtime (grep toàn `apps/` không có hit) — nó là artifact của orchestration
+  // (.env, đúng như `01-architecture.md` mô tả), tiêm vào container chỉ tạo
+  // ấn tượng app dùng nó để dựng absolute URL.
+  envs: [`PORT=${HOME_INTERNAL_PORT}`, 'NODE_ENV=production'],
   labels: [
     { label: 'traefik.enable', value: 'true' },
     {
@@ -241,7 +249,7 @@ const home = new docker.Container(dockerResourceName(ns, 'home'), {
   },
 });
 
-export const imageRef = image.ref;
+export const imageDigest = image.digest;
 export const containerName = home.name;
 export const containerId = home.id;
 /** Namespace đã khớp stack platform — xem check fail-closed ở trên. */

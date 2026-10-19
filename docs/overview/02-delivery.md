@@ -521,14 +521,18 @@ nào chạy Pulumi** — resource thật chỉ được tạo/sửa qua lệnh l
 > hiện thực (stack `local`/`staging`/`production`, contract từ chối tổ hợp stack↔backend sai, `PULUMI_CONFIG_PASSPHRASE` là
 > secrets provider mặc định trên DIY backend) được giữ lại dưới đây làm **hợp đồng đã chốt**, không phải mô tả code đang
 > tồn tại. Stack group đơn `ecoma-infra` **không** còn là hình hài hiện tại: nhóm `deploys/` chia theo deploy unit.
-> `deploys/platform-deploy` là nơi tài nguyên dùng chung sẽ khai, chưa phải nơi đang khai.
+>
+> Phạm vi hiện thực của resource thật: **chỉ local** — mỗi worktree một bộ (network, Traefik, PostgreSQL, container home),
+> apply tường minh qua `pnpm dx local-deploy`, không qua đường release nào. `deploys/platform-deploy` **đang** khai tài
+> nguyên dùng chung trong phạm vi đó. Hình thái stack này **lệch có chủ đích** với hợp đồng stack `local` dùng một lần ở
+> dưới — chi tiết và lý do ở `services/local-platform/README.md`. Staging/production vẫn chưa có resource nào.
 
 **Chọn stack theo ownership, không theo Nx project.** Tiêu chí grouping: (1) ownership/lifecycle của resource; (2) shared
 dependencies; (3) required environment isolation; (4) blast radius; (5) stateful data risk; (6) need for independent
 approval/reconciliation/recovery. Không một stack cho mỗi Nx project by default; không một giant stack couples unrelated
 apps hay puts DBs at mercy of routine app release.
 
-**Conceptual categories (tiêu chí; chưa có resource nào được khai trong bất kỳ category nào):**
+**Conceptual categories (tiêu chí phân loại; local platform hiện khai hai trong số này — Shared/platform resources và Stateful DB/platform infra — nhưng CHỈ trên môi trường local; staging/production chưa khai category nào):**
 
 - **Bootstrap prerequisites** — state backend + credential/passphrase. Phải tồn tại _trước_ ordinary stacks; tạo bằng mechanism bên ngoài backend được tạo, hoặc bootstrap backend/stack riêng. Idempotent hoặc detect already-initialized.
 - **Shared/platform resources** — resources có genuinely shared lifecycle (DNS zone, Access, org-level config).
@@ -543,8 +547,8 @@ với `file://`, staging/production chỉ đi với `s3://`). Mỗi stack thật
 credential và một passphrase riêng. **Còn chưa quyết:** số stack và cách ánh xạ stack → project `deploys/`. Layout hiện tại
 chia theo **deploy unit** (mỗi `<unit>-deploy` một project) với `platform-deploy` cho tài nguyên dùng chung, nên stack
 split theo unit hay theo environment lại là một quyết định chưa chốt — state backend thật (bucket R2) và credential
-**chưa tồn tại** vì chúng là bootstrap prerequisite, không phải thứ stack tự tạo (§9.1 nguyên tắc 4). Các conceptual
-category ở trên đều **chưa** có resource nào được khai báo.
+**chưa tồn tại** vì chúng là bootstrap prerequisite, không phải thứ stack tự tạo (§9.1 nguyên tắc 4). Ngoài hai category
+local platform đã khai (nêu trên), các conceptual category còn lại **chưa** có resource nào được khai báo.
 
 **Bootstrap contract (không circular):**
 
@@ -725,14 +729,16 @@ Về bề mặt UI, cả hai app **không còn là stub**: `apps/account` có pr
 §9.1 Bảng sở hữu chi tiết — xem bảng dưới. Bảng này là **canonical**; `03-operations.md` tham chiếu đến nó, không lặp lại. Không khai báo cùng một resource ở hai công cụ. Workers VPC Service + Cloudflare Tunnel quản lý bằng Wrangler (`04` VP4); bootstrap hạ tầng một lần → `03`. Nx Release là nguồn sinh version/tag/changelog (§7.2); Wrangler là nguồn thực thi deploy/version của Worker; Pulumi provisioning infrastructure — deploy application và provisioning infrastructure là hai workflow tách biệt, release application không chạy `pulumi up` (§7.4). Pulumi state ở R2 backend theo environment, credential + passphrase riêng (§6); resource bootstrap cần để tạo/truy cập state backend không được mô hình hoá như resource chỉ tạo được sau khi backend sẵn có.
 
 ⚠️ **Bảng dưới là hợp đồng ownership, không phải bảng trạng thái.** Cột "Tạo / cập nhật / xoá" trả lời **ai sở hữu**, chưa
-trả lời **resource đó đã được tạo chưa**. Trên cây hiện tại **không có tài nguyên hạ tầng nào** được provision bởi nhóm
-`deploys/` (§7.4.1) — mọi ô "Pulumi" trong cột này là **chủ sở hữu được giao**, chưa phải một hành động đã xảy ra.
+trả lời **resource đó đã được tạo chưa**. Hiện trạng: chỉ local platform (network, Traefik, PostgreSQL, container home) được
+provision — và chỉ trên máy developer qua `pnpm dx local-deploy`, không có workflow CI nào chạy `pulumi up`; các resource
+của environment thật (staging/production) **chưa** được provision bởi nhóm `deploys/` (§7.4.1) — mọi ô "Pulumi" trong cột
+này là **chủ sở hữu được giao**, chưa phải một hành động đã xảy ra.
 
 ### 9.1 Bảng sở hữu từng loại resource (canonical)
 
 Bảng này trả lời bảy câu hỏi cho **mỗi** loại resource. `03-operations.md` tham chiếu đến bảng này, không lặp lại. Vế
-**chủ sở hữu** (cột "Tạo / cập nhật / xoá") là hợp đồng đã chốt; vế **hiện thực** thì `deploys/` chưa provision resource nào
-(§7.4.1).
+**chủ sở hữu** (cột "Tạo / cập nhật / xoá") là hợp đồng đã chốt; vế **hiện thực** thì `deploys/` chưa provision resource
+nào thuộc các loại trong bảng (Worker/D1/KV/…) — resource thật duy nhất là local platform, ngoài phạm vi bảng này (§7.4.1).
 
 | Resource                                                             | Tạo / cập nhật / xoá                                                                                                                 | Cung cấp ID & config                                        | Áp dụng schema migration | Prerequisite trước deploy application  | Không được đồng thời sở hữu                                           |
 | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- | ------------------------ | -------------------------------------- | --------------------------------------------------------------------- |
@@ -854,26 +860,28 @@ release commit với env `production` — không promote xuyên Worker identity)
 hình Nx Release per-project (`nx.json` `release.projects`, `projectsRelationship: independent`); ranh giới ba đường
 thay đổi ở §0.
 
-**Chưa chốt và chưa có bằng chứng hiện thực:** số stack Pulumi và ánh xạ stack → project `deploys/`; workflow chạy Pulumi
+**Chưa chốt và chưa có bằng chứng hiện thực (trên environment thật):** số stack Pulumi và ánh xạ stack → project
+`deploys/` cho staging/production — đường **local** đã chốt và đã hiện thực: một stack `local-<namespace>` mỗi project,
+`platform-deploy` giữ stack riêng (`services/local-platform/README.md`); workflow chạy Pulumi
 (`preview`/`up`) — trigger, Environment, approval, ranh giới credential; reconciliation execution contract (§7.4.1).
 
-| Mục                                                                                                                                                                                                                       | Kích hoạt                               |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| Nơi lưu provenance release (§7.2) — artifact, job result hay store khác                                                                                                                                                   | Trước pipeline production đầu           |
-| Cơ chế trigger Preview manual (theo PR, branch hay revision; workflow hay CLI) (§5.1)                                                                                                                                     | Trước Preview đầu                       |
-| Preview database: 1 config chung + schema-per-PR hay chỉ mock                                                                                                                                                             | Sau spike D2c                           |
-| Preview routing — router động (KV + header routing) cho preview trên cùng domain, phục vụ E2E liên dịch vụ                                                                                                                | Sau D2                                  |
-| Custom-domain scheme cho Preview                                                                                                                                                                                          | Sau spike certificate/Access            |
-| Cơ chế dọn **certificate residual** sau teardown Custom Domain — bước vận hành tay có runbook, hay certificate mô hình hoá thành resource riêng (§9.1)                                                                    | Trước lần teardown Custom Domain đầu    |
-| Canary theo trọng số cho Worker (Version Override + phân tách traffic)                                                                                                                                                    | Khi có đủ lưu lượng để chia             |
-| Dedicated Preview Workflow                                                                                                                                                                                                | Khi dùng Workflow                       |
-| Contract tooling cho D1 (tương đương `drizzle-broker`, §3)                                                                                                                                                                | Trước khi schema D1 production          |
-| Cơ chế bảo vệ khi migration runner chết giữa chừng (mất advisory lock)                                                                                                                                                    | Trước migration production đầu          |
-| **Reconciliation execution contract** (§7.4.1)                                                                                                                                                                            | Trước Phase 2 reconcile                 |
-| **Bucket R2 state cho `staging`/`production`:** sự tồn tại thật, tên bucket, Cloudflare account id và jurisdiction của bucket (quyết định tiền tố endpoint — `04` R22) — **không** suy ra tên từ môi trường hay từ stack  | Trước bootstrap state backend           |
-| **Xác nhận R2 nhận `s3ForcePathStyle=true`** trên backend thật: contract đã bắt buộc path-style theo dạng endpoint duy nhất Cloudflare công bố (`04` PU9, R22), nhưng đường `s3://` **chưa** được chạy lần nào từ máy này | Trước bootstrap state backend           |
-| **Credential state backend:** R2 token Object Read & Write scope đúng một bucket, và `PULUMI_CONFIG_PASSPHRASE` riêng từng stack, đặt trong GitHub Environment tương ứng (§6.13) — chưa cấu hình                          | Trước lệnh Pulumi đầu trên backend thật |
-| **Workflow chạy Pulumi** (`preview`/`up`): trigger, Environment + approval, và ranh giới credential — chưa có workflow nào                                                                                                | Trước lần reconcile đầu tiên            |
-| **Số stack Pulumi và ánh xạ stack → project `deploys/`** (unit-level hay environment-level; `platform-deploy` giữ stack riêng hay chung) (§7.4.1)                                                                         | Trước lần apply đầu tiên                |
-| **Hyperdrive binding của `account`** (§4.1 · §9.1)                                                                                                                                                                        | Trước khi deploy `account`              |
-| Xác minh **tồn tại** của Queue/DLQ đã khai trong `queue-resources.jsonc` (registry chứng minh _chủ sở hữu_, không chứng minh _đã tạo_) — cần inventory hạ tầng                                                            | Trước khi bật lane cho bốn Worker Queue |
+| Mục                                                                                                                                                                                                                                                                                                                            | Kích hoạt                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
+| Nơi lưu provenance release (§7.2) — artifact, job result hay store khác                                                                                                                                                                                                                                                        | Trước pipeline production đầu                  |
+| Cơ chế trigger Preview manual (theo PR, branch hay revision; workflow hay CLI) (§5.1)                                                                                                                                                                                                                                          | Trước Preview đầu                              |
+| Preview database: 1 config chung + schema-per-PR hay chỉ mock                                                                                                                                                                                                                                                                  | Sau spike D2c                                  |
+| Preview routing — router động (KV + header routing) cho preview trên cùng domain, phục vụ E2E liên dịch vụ                                                                                                                                                                                                                     | Sau D2                                         |
+| Custom-domain scheme cho Preview                                                                                                                                                                                                                                                                                               | Sau spike certificate/Access                   |
+| Cơ chế dọn **certificate residual** sau teardown Custom Domain — bước vận hành tay có runbook, hay certificate mô hình hoá thành resource riêng (§9.1)                                                                                                                                                                         | Trước lần teardown Custom Domain đầu           |
+| Canary theo trọng số cho Worker (Version Override + phân tách traffic)                                                                                                                                                                                                                                                         | Khi có đủ lưu lượng để chia                    |
+| Dedicated Preview Workflow                                                                                                                                                                                                                                                                                                     | Khi dùng Workflow                              |
+| Contract tooling cho D1 (tương đương `drizzle-broker`, §3)                                                                                                                                                                                                                                                                     | Trước khi schema D1 production                 |
+| Cơ chế bảo vệ khi migration runner chết giữa chừng (mất advisory lock)                                                                                                                                                                                                                                                         | Trước migration production đầu                 |
+| **Reconciliation execution contract** (§7.4.1)                                                                                                                                                                                                                                                                                 | Trước Phase 2 reconcile                        |
+| **Bucket R2 state cho `staging`/`production`:** sự tồn tại thật, tên bucket, Cloudflare account id và jurisdiction của bucket (quyết định tiền tố endpoint — `04` R22) — **không** suy ra tên từ môi trường hay từ stack                                                                                                       | Trước bootstrap state backend                  |
+| **Xác nhận R2 nhận `s3ForcePathStyle=true`** trên backend thật: contract đã bắt buộc path-style theo dạng endpoint duy nhất Cloudflare công bố (`04` PU9, R22), nhưng đường `s3://` **chưa** được chạy lần nào từ máy này                                                                                                      | Trước bootstrap state backend                  |
+| **Credential state backend:** R2 token Object Read & Write scope đúng một bucket, và `PULUMI_CONFIG_PASSPHRASE` riêng từng stack, đặt trong GitHub Environment tương ứng (§6.13) — chưa cấu hình                                                                                                                               | Trước lệnh Pulumi đầu trên backend thật        |
+| **Workflow chạy Pulumi** (`preview`/`up`): trigger, Environment + approval, và ranh giới credential — chưa có workflow nào                                                                                                                                                                                                     | Trước lần reconcile đầu tiên                   |
+| **Số stack Pulumi và ánh xạ stack → project `deploys/`** cho **environment thật** (unit-level hay environment-level; `platform-deploy` giữ stack riêng hay chung) (§7.4.1). Đường **local** đã chốt và đã hiện thực: một stack `local-<namespace>` mỗi project, `platform-deploy` giữ stack riêng — `services/local-platform/` | Trước lần apply đầu tiên trên environment thật |
+| **Hyperdrive binding của `account`** (§4.1 · §9.1)                                                                                                                                                                                                                                                                             | Trước khi deploy `account`                     |
+| Xác minh **tồn tại** của Queue/DLQ đã khai trong `queue-resources.jsonc` (registry chứng minh _chủ sở hữu_, không chứng minh _đã tạo_) — cần inventory hạ tầng                                                                                                                                                                 | Trước khi bật lane cho bốn Worker Queue        |

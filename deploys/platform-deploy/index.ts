@@ -52,28 +52,69 @@ import {
  */
 const programDir = __dirname;
 
-/** Đường dẫn tuyệt đối tới một file cert local trong repo. */
+/**
+ * Đường dẫn tuyệt đối tới một file cert local trong repo.
+ *
+ * Fail sớm khi thiếu: bind-mount thiếu file ⇒ Docker TẠO THƯ MỤC tại path đó
+ * trong container, Traefik chết với lỗi TLS không chỉ ra nguyên nhân thật —
+ * đúng loại lỗi mà `dockerSocketPath()` phía dưới cảnh báo. Cert nằm trong
+ * repo nên chỉ một thay đổi layout/checkout là mất; kiểm tra ở đây biến lỗi
+ * tầng Docker khó truy thành lỗi Pulumi rõ nguyên nhân.
+ */
 function certPath(fileName: string): string {
-  return join(programDir, 'local-certs', fileName);
+  const certFile = join(programDir, 'local-certs', fileName);
+  if (!existsSync(certFile)) {
+    throw new Error(
+      `Thiếu certificate local ${certFile} — bind-mount thiếu file sẽ bị Docker tạo ` +
+        'thành THƯ MỤC trong container và Traefik chết với lỗi TLS không chỉ ra nguyên nhân.',
+    );
+  }
+  return certFile;
 }
 
 /**
  * Đường dẫn Docker socket trên HOST để bind-mount vào Traefik.
  *
- * Suy theo thứ tự: `DOCKER_SOCKET_PATH` tường minh > path trong `DOCKER_HOST`
- * (chỉ nhận `unix://`, phải tồn tại thật) > path chuẩn rootful. Không có nhánh
- * fallback "âm thầm mount path không tồn tại": Docker sẽ TẠO THƯ MỤC tại path
- * đó trong container và Traefik fail với `Cannot connect to the Docker daemon`
- * dù daemon vẫn chạy — lỗi ở tầng Docker rất khó truy về nguyên nhân ở đây.
- * Fail sớm với hướng dẫn hành động được, cùng triết lý `config.require` phía trên.
+ * Nguyên tắc: socket phải thuộc ĐÚNG daemon mà `@pulumi/docker` đang nói chuyện.
+ * `DOCKER_HOST` đặt thì phải là `unix://` và socket phải tồn tại thật — fallback
+ * "âm thầm" sang `/var/run/docker.sock` khi `DOCKER_HOST` trỏ daemon khác (tcp://,
+ * socket rootless chưa chạy) là Traefik đọc container của daemon THỨ HAI trong khi
+ * provider điều khiển daemon thứ nhất: không router nào được đăng ký, mọi request
+ * 404 vĩnh viễn mà không có lỗi nào chỉ ra nguyên nhân. Thiếu socket của đúng
+ * daemon thì fail sớm với hướng dẫn hành động được, cùng triết lý `config.require`
+ * phía trên.
  */
 function dockerSocketPath(): string {
   const explicit = process.env['DOCKER_SOCKET_PATH'];
-  if (explicit !== undefined && explicit.length > 0) return explicit;
+  if (explicit !== undefined && explicit.length > 0) {
+    // Dễ để lại giá trị cũ trong shell profile — kiểm tra như hai nhánh dưới,
+    // không ngoại lệ "tường minh thì tin tuyệt đối".
+    if (!existsSync(explicit)) {
+      throw new Error(
+        `DOCKER_SOCKET_PATH=${explicit} không tồn tại trên host — bind-mount thiếu sẽ bị ` +
+          'Docker tạo thành THƯ MỤC trong container và Traefik không kết nối được daemon.',
+      );
+    }
+    return explicit;
+  }
   const host = process.env['DOCKER_HOST'] ?? '';
-  if (host.startsWith('unix://')) {
+  if (host.length > 0) {
+    if (!host.startsWith('unix://')) {
+      throw new Error(
+        `DOCKER_HOST=${host} không phải unix:// — chương trình này chỉ bind-mount được unix ` +
+          'socket. Bỏ DOCKER_HOST để dùng đường dẫn chuẩn, hoặc đặt DOCKER_SOCKET_PATH ' +
+          'tường minh.',
+      );
+    }
     const socketPath = host.slice('unix://'.length);
-    if (existsSync(socketPath)) return socketPath;
+    if (!existsSync(socketPath)) {
+      throw new Error(
+        `DOCKER_HOST trỏ tới socket không tồn tại (${socketPath}) — daemon chưa chạy hoặc đã ` +
+          'đổi đường dẫn. KHÔNG fallback sang /var/run/docker.sock: đó là daemon khác, Traefik ' +
+          'sẽ đọc container của daemon đó trong khi provider vẫn nói chuyện daemon này.',
+      );
+    }
+    return socketPath;
   }
   const standardSocket = '/var/run/docker.sock';
   if (existsSync(standardSocket)) return standardSocket;

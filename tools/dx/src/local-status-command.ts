@@ -1,6 +1,7 @@
 import { defineCommand } from 'citty';
 
 import { localStatus } from './local-deploy.js';
+import { requireDirectoryRoot, runLocalCommand, worktreeRootArg } from './local-commands.js';
 
 /**
  * Entry `pnpm dx local-status`.
@@ -15,14 +16,12 @@ export default defineCommand({
   },
 
   args: {
-    'worktree-root': {
-      type: 'string',
-      description: 'Worktree root (defaults to this repository checkout)',
-      required: false,
-    },
+    'worktree-root': worktreeRootArg,
   },
 
   run({ args }) {
-    process.exitCode = localStatus({ worktreeRoot: args['worktree-root'] });
+    process.exitCode = runLocalCommand('status', () =>
+      localStatus({ worktreeRoot: requireDirectoryRoot(args['worktree-root']) }),
+    );
   },
 });

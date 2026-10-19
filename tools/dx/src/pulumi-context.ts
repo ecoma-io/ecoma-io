@@ -82,6 +82,43 @@ export function exec(
 }
 
 /**
+ * Chạy lệnh dài với output STREAM trực tiếp ra terminal của caller.
+ *
+ * `spawnSync` trong `exec` giữ toàn bộ output trong pipe cho tới khi lệnh kết
+ * thúc — với `pulumi up` (build image home có thể mất vài phút) người dùng nhìn
+ * màn hình đứng im rồi mới thấy kết quả. Ở đây `stdio: 'inherit'` cho stdout:
+ * tiến trình Pulumi tự vẽ progress và terminal của developer thấy ngay từng
+ * bước. stderr vẫn bắt về chuỗi — thông điệp lỗi phải vào error thrown, không
+ * trôi qua console giữa chừng. Stdout không còn capture được, nên hàm này
+ * KHÔNG trả stdout — chỉ dùng cho lệnh mà caller không cần đọc output.
+ */
+export function execStreaming(
+  command: string,
+  args: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+): void {
+  const result = spawnSync(command, args, {
+    cwd,
+    encoding: 'utf8',
+    env,
+    stdio: ['ignore', 'inherit', 'pipe'],
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (result.status !== 0) {
+    if (result.status === null) {
+      const cause =
+        result.error?.message ??
+        (result.signal !== undefined && result.signal !== null
+          ? `process bị signal kill: ${result.signal}`
+          : undefined);
+      throw new Error(`${command} ${args[0] ?? ''} không chạy được: ${cause ?? 'lý do không rõ'}`);
+    }
+    throw new Error(`${command} ${args[0] ?? ''} thất bại:\n${result.stderr ?? ''}`);
+  }
+}
+
+/**
  * Context chạy của một worktree: mọi lệnh Pulumi đều suy từ ba giá trị này.
  * Giữ một chỗ để platform và home dùng ĐÚNG cùng một backend và stack — lệch
  * một chữ là hai stack khác nhau và isolation vỡ.
@@ -121,8 +158,13 @@ export function requirePassphrase():
   | { passphrase: string; fromFile: false }
   | { passphrase: undefined; fromFile: true }
   | { error: string } {
-  if (typeof process.env.PULUMI_CONFIG_PASSPHRASE === 'string') {
-    return { passphrase: process.env.PULUMI_CONFIG_PASSPHRASE, fromFile: false };
+  // Chuỗi RỖNG không được coi là "đã cung cấp" (PU6: passphrase rỗng là giá trị
+  // hợp lệ với Pulumi — chấp nhận nó là fail-open: state bị mã hoá bằng khoá
+  // rỗng mà ai cũng giải được). `export VAR=` ở shell hay CI set biến rỗng đều
+  // rơi vào đây — coi như chưa set để rơi tiếp xuống `_FILE`, rồi mới báo lỗi.
+  const inline = process.env.PULUMI_CONFIG_PASSPHRASE;
+  if (typeof inline === 'string' && inline.length > 0) {
+    return { passphrase: inline, fromFile: false };
   }
   if (typeof process.env.PULUMI_CONFIG_PASSPHRASE_FILE === 'string') {
     // File được CLI tự đọc; với orchestration chỉ cần biết "đã có đường cung".
@@ -242,11 +284,18 @@ export function pulumiRun(
   args: string[],
   ctx: LocalDeployContext,
   env: NodeJS.ProcessEnv,
-  options: { prepareStack?: boolean } = {},
-): string {
+  options: { prepareStack?: boolean; stream?: boolean } = {},
+): string | undefined {
   const fullArgs = ['--stack', fullStackRef(projectName, ctx), ...args];
   if (options.prepareStack === true) {
     ensureStack(projectDir, projectName, ctx, env);
+  }
+  if (options.stream === true) {
+    // `up`/`preview` chạy hàng phút (build image home) — stream progress ra
+    // terminal thay vì giữ trong pipe đến khi xong. stdout không còn bắt được,
+    // caller không được cần nó ở chế độ này.
+    execStreaming('pulumi', fullArgs, projectDir, env);
+    return undefined;
   }
   const run = exec('pulumi', fullArgs, projectDir, env);
   if (run.status !== 0) {

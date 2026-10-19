@@ -1,6 +1,7 @@
 import { defineCommand } from 'citty';
 
 import { localDeploy } from './local-deploy.js';
+import { requireDirectoryRoot, runLocalCommand, worktreeRootArg } from './local-commands.js';
 
 /**
  * Entry `pnpm dx local-deploy`.
@@ -24,20 +25,19 @@ export default defineCommand({
   args: {
     preview: {
       type: 'boolean',
-      description: 'Preview only — do not apply, do not write .env',
+      description:
+        'Preview only — no Docker apply, no .env write (still writes local Pulumi state: stack init + generated postgres:password secret)',
       default: false,
     },
-    'worktree-root': {
-      type: 'string',
-      description: 'Worktree root (defaults to this repository checkout)',
-      required: false,
-    },
+    'worktree-root': worktreeRootArg,
   },
 
   run({ args }) {
-    process.exitCode = localDeploy({
-      worktreeRoot: args['worktree-root'],
-      previewOnly: args.preview,
-    });
+    process.exitCode = runLocalCommand('deploy', () =>
+      localDeploy({
+        worktreeRoot: requireDirectoryRoot(args['worktree-root']),
+        previewOnly: args.preview,
+      }),
+    );
   },
 });

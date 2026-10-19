@@ -114,6 +114,18 @@ describe('requirePassphrase', () => {
     const result = requirePassphrase();
     expect(result).toEqual({ passphrase: undefined, fromFile: true });
   });
+
+  it('empty-string passphrase is treated as unset — falls through to _FILE, never accepted (PU6 fail-open)', () => {
+    // `export PULUMI_CONFIG_PASSPHRASE=` / CI set biến rỗng: chuỗi rỗng là giá
+    // trị hợp lệ với Pulumi, chấp nhận nó = state mã hoá bằng khoá rỗng.
+    process.env.PULUMI_CONFIG_PASSPHRASE = '';
+    const noFile = requirePassphrase();
+    expect('error' in noFile && noFile.error.includes('PULUMI_CONFIG_PASSPHRASE')).toBe(true);
+
+    process.env.PULUMI_CONFIG_PASSPHRASE_FILE = '/tmp/some-passphrase-file';
+    const withFile = requirePassphrase();
+    expect(withFile).toEqual({ passphrase: undefined, fromFile: true });
+  });
 });
 
 describe('pulumiEnv', () => {

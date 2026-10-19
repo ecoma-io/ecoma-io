@@ -49,10 +49,9 @@ export function normalizeWorktreeRoot(root: string): string {
   const real = realpathSync.native(absolute);
   const normalized = normalize(real);
   // `path.normalize('/a/b/')` giữ trailing sep; bỏ để `/a/b/` và `/a/b` cùng
-  // một input hash.
-  return normalized.length > 1 && normalized.endsWith(real.slice(-1)) === false
-    ? normalized
-    : normalized.replace(/[\\/]+$/u, '');
+  // một input hash. Giữ root `/` nguyên — hash của `/` phải là hash của `/`,
+  // không phải hash của chuỗi rỗng.
+  return normalized.length > 1 ? normalized.replace(/[\\/]+$/u, '') : normalized;
 }
 
 /**
