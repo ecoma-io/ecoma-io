@@ -127,7 +127,11 @@ import theo hướng trên.
 `tools/dx` qua đường dẫn tương đối (`../../tools/dx/src/...`, bật tường minh `@nx/enforce-module-boundaries` tại đúng dòng
 import) để dùng chung một định nghĩa namespace và contract outputs — lý do và ràng buộc ts-node ghi ở `tsconfig.json` của
 từng deploy project. Nx ghi nhận cạnh này trên project graph dưới dạng `static` (plugin `@nx/js/typescript` suy từ import),
-nên cache `typecheck`/`lint` của deploy project vẫn phụ thuộc đúng file `tools/dx/src` được import. Cạnh đó **không** nằm
+nên cache cả `typecheck` lẫn `lint` của deploy project vẫn phụ thuộc đúng file `tools/dx/src` được import — **đo thực
+nghiệm** (CLI 3.x, `platform-deploy:lint`): thêm một dòng vào `tools/dx/src/pulumi-context.ts` là task lint cache-miss
+chạy lại thật, revert là cache hit, vì fileset `dependencies: True` của target lint kéo file dependency vào tập input.
+KHÔNG thêm `implicitDependencies` cho cạnh này: nó chỉ thêm cạnh trùng lặp vào graph, không đổi tập input cache. Cạnh đó
+**không** nằm
 trong `validateDeploymentGraph` theo cùng chuẩn `deploys/<unit>-deploy → platform-deploy`: nó là Tooling (định nghĩa chia sẻ
 thời gian chạy), không phải prerequisite lifecycle giữa hai stack — import tương đối không sinh cycle lifecycle vì `tools/dx`
 không deploy resource nào. Deploy project mới import `tools/dx` theo đường này phải giữ hai oxlint-disable tường minh tại
@@ -247,19 +251,19 @@ Hai lượt kiểm với cơ chế khác nhau, bổ sung cho nhau:
 
 **Lượt direct + transitive theo tag — Oxlint module boundaries** (`@nx/enforce-module-boundaries` trong `.oxlintrc.json`):
 
-| Source                   | Quy tắc                                                                                                     |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| `type:domain`            | Không phụ thuộc `application`/`infrastructure`/`composition`/`tooling` — **transitive**                     |
-| `type:application`       | Không phụ thuộc `infrastructure`/`composition`/`tooling` — **transitive**                                   |
-| `type:infrastructure`    | Chỉ phụ thuộc `domain`/`application`/`contracts`/`infrastructure`                                           |
-| `type:contracts`         | Không phụ thuộc bất kỳ type implementation nào — **transitive**                                             |
-| `type:composition`       | Chỉ compose `domain`/`application`/`infrastructure`/`contracts` — app không import app                      |
-| `type:deployment`        | Chỉ phụ thuộc `type:deployment` (cụ thể là `platform-deploy`); không compose code ứng dụng                  |
-| `type:tooling`           | Chỉ phụ thuộc `type:tooling`                                                                                |
-| bounded context scope    | Được dùng implementation của tầng nền (`shared`, `platform`); scope nghiệp vụ khác chỉ qua `type:contracts` |
-| `scope:shared`           | Chỉ phụ thuộc `scope:shared` — không contract của scope khác (đáy của trục ownership)                       |
-| `scope:platform`         | Chỉ phụ thuộc `scope:platform`/`scope:shared` + `type:contracts`                                            |
-| composition edge/browser | Chỉ phụ thuộc lib `runtime:edge`/`universal` (tương ứng `browser`) — lượt direct                            |
+| Source                   | Quy tắc                                                                                                                                                                                                                                                     |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type:domain`            | Không phụ thuộc `application`/`infrastructure`/`composition`/`tooling` — **transitive**                                                                                                                                                                     |
+| `type:application`       | Không phụ thuộc `infrastructure`/`composition`/`tooling` — **transitive**                                                                                                                                                                                   |
+| `type:infrastructure`    | Chỉ phụ thuộc `domain`/`application`/`contracts`/`infrastructure`                                                                                                                                                                                           |
+| `type:contracts`         | Không phụ thuộc bất kỳ type implementation nào — **transitive**                                                                                                                                                                                             |
+| `type:composition`       | Chỉ compose `domain`/`application`/`infrastructure`/`contracts` — app không import app                                                                                                                                                                      |
+| `type:deployment`        | Chỉ phụ thuộc `type:deployment` (cụ thể là `platform-deploy`), `type:contracts`, `type:infrastructure`, `type:tooling`; không compose code ứng dụng — allowlist khớp `.oxlintrc.json`, và ngoại lệ `deploys/*-deploy → tools/dx` ở §3 là edge `tooling` này |
+| `type:tooling`           | Chỉ phụ thuộc `type:tooling`                                                                                                                                                                                                                                |
+| bounded context scope    | Được dùng implementation của tầng nền (`shared`, `platform`); scope nghiệp vụ khác chỉ qua `type:contracts`                                                                                                                                                 |
+| `scope:shared`           | Chỉ phụ thuộc `scope:shared` — không contract của scope khác (đáy của trục ownership)                                                                                                                                                                       |
+| `scope:platform`         | Chỉ phụ thuộc `scope:platform`/`scope:shared` + `type:contracts`                                                                                                                                                                                            |
+| composition edge/browser | Chỉ phụ thuộc lib `runtime:edge`/`universal` (tương ứng `browser`) — lượt direct                                                                                                                                                                            |
 
 `notDependOnLibsWithTags` là **transitive**: domain không chạm application kể cả qua chuỗi lib trung gian. `onlyDependOnLibsWithTags`
 khớp **bất kỳ tag nào** trong danh sách nên allowlist scope đọc theo vai trò: tầng nền có mặt trong allowlist của bounded

@@ -138,9 +138,12 @@ function dockerSocketPath(): string {
   }
   const standardSocket = '/var/run/docker.sock';
   if (existsSync(standardSocket)) return standardSocket;
+  // Nhánh tới được đây thì `DOCKER_HOST` chắc chắn rỗng/unset (nhánh có host
+  // phía trên đã return hoặc throw) — in "(unset)" là hằng số chết, nói thẳng
+  // điều kiện thật để thông báo không gợi có thông tin khi nó không có.
   throw new Error(
     'Không tìm thấy unix socket Docker để bind-mount vào Traefik ' +
-      `(DOCKER_HOST=${process.env['DOCKER_HOST'] ?? '(unset)'}). ` +
+      '(DOCKER_HOST và DOCKER_SOCKET_PATH đều chưa đặt). ' +
       'Đặt DOCKER_SOCKET_PATH trỏ tới socket của daemon ' +
       '(rootless thường là /run/user/<uid>/docker.sock).',
   );
@@ -208,6 +211,25 @@ const TRAEFIK_DYNAMIC_CONFIG_PATH = '/tmp/traefik-dynamic.yml';
 /** Thư mục chứa cert/key bind-mount. */
 const CERTS_DIR = '/certs';
 
+/**
+ * Cờ khai entrypoint `websecure` — MỘT nguồn cho cả server và healthcheck.
+ *
+ * `traefik healthcheck` là subcommand riêng: nó đọc lại config từ chính bộ cờ
+ * này để biết ping URL (`http://:<port>/ping`). Gõ lặp chuỗi ở `command` và ở
+ * `healthcheck.tests` là bất biến "hai chỗ phải giống nhau" do kỷ luật sửa tay
+ * giữ, không do compiler: đổi cổng nội bộ ở `command` mà quên healthcheck thì
+ * container `unhealthy` dù Traefik phục vụ bình thường, với lý do rất khó đoán.
+ */
+const TRAEFIK_ENTRYPOINT_ADDRESS = `--entrypoints.websecure.address=:${TRAEFIK_INTERNAL_PORT}`;
+
+/**
+ * Cờ bật ping — cùng lý do: `--ping` không có cổng thì healthcheck mặc định gọi
+ * `http://:8080/ping`, cổng không tồn tại ở đây (chỉ có `websecure` trên
+ * `TRAEFIK_INTERNAL_PORT`), nên phải chỉ đúng entrypoint. Dùng chung một mảng
+ * cho `command` và `healthcheck.tests` để hai phía không thể lệch.
+ */
+const TRAEFIK_PING_FLAGS = ['--ping=true', '--ping.entrypoint=websecure'] as const;
+
 const config = new pulumi.Config('namespace');
 
 /**
@@ -248,7 +270,7 @@ const traefik = new docker.Container('traefik', {
   // stop` tường minh là được giữ ở trạng thái dừng (policy tôn trọng nó).
   restart: 'unless-stopped',
   command: [
-    `--entrypoints.websecure.address=:${TRAEFIK_INTERNAL_PORT}`,
+    TRAEFIK_ENTRYPOINT_ADDRESS,
     // Docker provider: chỉ route container nào tự gắn label routing.
     '--providers.docker=true',
     '--providers.docker.exposedbydefault=false',
@@ -268,8 +290,7 @@ const traefik = new docker.Container('traefik', {
     pulumi.interpolate`--providers.docker.constraints=Label(\`traefik.docker.network\`, \`${network.name}\`)`,
     // File provider chỉ phục vụ dynamic config của TLS store ở trên.
     `--providers.file.filename=${TRAEFIK_DYNAMIC_CONFIG_PATH}`,
-    '--ping=true',
-    `--ping.entrypoint=websecure`,
+    ...TRAEFIK_PING_FLAGS,
   ],
   ports: [
     {
@@ -330,21 +351,13 @@ const traefik = new docker.Container('traefik', {
   ],
   networksAdvanced: [{ name: network.name }],
   healthcheck: {
-    // `traefik healthcheck` là subcommand RIÊNG, đọc lại config từ CÙNG bộ cờ
-    // mà Traefik được khởi động. Nếu chỉ truyền `--ping` thì nó mặc định gọi
-    // `http://:8080/ping` — cổng không tồn tại vì ở đây chỉ có entrypoint
-    // `websecure` trên 443, và container được đánh dấu unhealthy dù Traefik vẫn
-    // phục vụ bình thường. Phải lặp lại hai cờ định hình ping cho khớp.
-    tests: [
-      'CMD',
-      'traefik',
-      'healthcheck',
-      '--ping',
-      // Cùng hằng số với `command` phía trên — hai chỗ không thể lệch nhau khi
-      // cổng nội bộ đổi.
-      `--entrypoints.websecure.address=:${TRAEFIK_INTERNAL_PORT}`,
-      '--ping.entrypoint=websecure',
-    ],
+    // `traefik healthcheck` là subcommand RIÊNG: nó đọc config từ bộ cờ được
+    // truyền trực tiếp cho NÓ, không tự đọc cờ của server — thiếu cờ entrypoint
+    // là nó gọi `http://:8080/ping` mặc định, cổng không tồn tại, container bị
+    // đánh `unhealthy` dù Traefik phục vụ bình thường. `TRAEFIK_ENTRYPOINT_ADDRESS`
+    // + `TRAEFIK_PING_FLAGS` dùng chung với `command` ở trên, hai phía không
+    // thể lệch nhau.
+    tests: ['CMD', 'traefik', 'healthcheck', TRAEFIK_ENTRYPOINT_ADDRESS, ...TRAEFIK_PING_FLAGS],
     interval: '5s',
     timeout: '3s',
     retries: 5,

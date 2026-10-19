@@ -1,6 +1,6 @@
 # Local Platform
 
-Hạ tầng deployment **local** dùng chung cho mọi deploy unit, chạy trên Docker của máy developer: một Docker network, Traefik (HTTPS entrypoint duy nhất), PostgreSQL (TimescaleDB + pgvector) với persistent volume — mỗi Git worktree một bộ riêng, cách ly bằng namespace hash. Deploy unit đầu tiên dùng nó là `home` (`apps/home`, Nitro preset `node-server`).
+Hạ tầng deployment **local** dùng chung cho mọi deploy unit, chạy trên Docker của máy developer: một Docker network, Traefik (HTTPS entrypoint duy nhất), PostgreSQL với persistent volume — mỗi Git worktree một bộ riêng, cách ly bằng namespace hash. Deploy unit đầu tiên dùng nó là `home` (`apps/home`, Nitro preset `node-server`). Image PostgreSQL (`timescale/timescaledb`) **kèm sẵn** extension TimescaleDB + pgvector nhưng **chưa enable** — chỉ `POSTGRES_SHARED_PRELOAD_LIBRARIES=timescaledb` được set; deploy unit muốn dùng phải tự `CREATE EXTENSION` trong database mà nó sở hữu (chi tiết ở bảng Ownership của [`01-architecture.md`](./01-architecture.md)).
 
 Đây là hạ tầng **local**, không phải environment: staging/production của app đi đường Cloudflare Workers qua Wrangler và không đi qua đây ([`02-delivery.md`](../../overview/02-delivery.md) §7.4.1).
 
