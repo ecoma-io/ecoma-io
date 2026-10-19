@@ -336,7 +336,7 @@ describe('back-channel handlers — against a real PostgreSQL', () => {
   }, 180_000);
 
   afterAll(async () => {
-    await db.stop();
+    await db?.stop();
   });
 
   describe.skipIf(!dockerAvailable)('POST /internal/session/verified', () => {

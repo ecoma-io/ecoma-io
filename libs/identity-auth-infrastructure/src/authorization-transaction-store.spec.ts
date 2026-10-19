@@ -138,7 +138,7 @@ describe('authorization-transaction-store — on real PostgreSQL', () => {
   }, 180_000);
 
   afterAll(async () => {
-    await db.stop();
+    await db?.stop();
   });
 
   describe('migration 0011 — asserted against the FILE, runs without PostgreSQL', () => {

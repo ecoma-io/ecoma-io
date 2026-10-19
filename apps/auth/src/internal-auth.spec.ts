@@ -377,7 +377,7 @@ describe.skipIf(!dockerAvailable)('makeNonceGuard against a real PostgreSQL', ()
   }, 180_000);
 
   afterAll(async () => {
-    await db.stop();
+    await db?.stop();
   });
 
   it('first acceptance, then the same envelope is rejected as `replayed_nonce`', async () => {

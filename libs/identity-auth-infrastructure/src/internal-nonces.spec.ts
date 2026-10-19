@@ -262,7 +262,7 @@ describe('recordNonce — auth.internal_nonces on real PostgreSQL', () => {
   }, 180_000);
 
   afterAll(async () => {
-    await db.stop();
+    await db?.stop();
   });
 
   describe.skipIf(!dockerAvailable)('schema and adapter', () => {

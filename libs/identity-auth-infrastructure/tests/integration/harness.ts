@@ -121,15 +121,51 @@ interface DockerProbeCache {
   ecomaIdentityAuthDockerProbe?: Promise<boolean>;
 }
 
+/**
+ * Số lần thử lại khi start một container thất bại, và khoảng nghỉ giữa hai lần.
+ *
+ * ⚠️ Thất bại start **thường là tạm thời**, không phải Docker hỏng: dưới rootless
+ * Docker, nhiều container start song song (mỗi spec một container, cộng probe —
+ * ~12 khi `nx run-many -t test` chạy ba project) thi nhau chiếm port host qua
+ * RootlessKit, và người thua nhận
+ * `RootlessKit PortManager.AddPort(): bind: address already in use` — HTTP 500
+ * từ daemon, lỗi biến mất ở lần thử sau. Đã đo được: run song song ba project
+ * đỏ 3/5 lần vì lỗi này, trong khi từng project riêng lẻ thì xanh 100%. Retry
+ * với khoảng nghỉ tăng dần là cách rẻ nhất để hai tầng này không nhầm với nhau.
+ */
+const CONTAINER_START_ATTEMPTS = 3;
+const CONTAINER_START_BACKOFF_MS = 1_000;
+
+async function startPostgresContainer(
+  builder: (
+    c: import('@testcontainers/postgresql').PostgreSqlContainer,
+  ) => import('@testcontainers/postgresql').PostgreSqlContainer,
+): Promise<import('@testcontainers/postgresql').StartedPostgreSqlContainer> {
+  const { PostgreSqlContainer } = await import('@testcontainers/postgresql');
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= CONTAINER_START_ATTEMPTS; attempt++) {
+    try {
+      return await builder(new PostgreSqlContainer(POSTGRES_IMAGE))
+        .withStartupTimeout(120_000)
+        .start();
+    } catch (error) {
+      lastError = error;
+      // Lỗi xảy ra trước khi container kịp chạy (ví dụ port-bind) không để lại
+      // gì để dọn; lỗi sau start thì ryuk dọn container theo label của
+      // testcontainers. Nuốt ở đây để vòng retry không ném giữa chừng.
+    }
+    await new Promise<void>((done) => {
+      setTimeout(done, CONTAINER_START_BACKOFF_MS * attempt);
+    });
+  }
+  throw lastError;
+}
+
 async function runDockerProbe(): Promise<boolean> {
   let container: { stop(): Promise<unknown> } | undefined;
   let available = false;
   try {
-    const { PostgreSqlContainer } = await import('@testcontainers/postgresql');
-    container = await new PostgreSqlContainer(POSTGRES_IMAGE)
-      .withExposedPorts(POSTGRES_PORT)
-      .withStartupTimeout(120_000)
-      .start();
+    container = await startPostgresContainer((c) => c.withExposedPorts(POSTGRES_PORT));
     available = true;
   } catch {
     available = false;
@@ -236,16 +272,15 @@ async function provision(superuser: Sql): Promise<void> {
  * `CREATE SCHEMA`, nhưng `SET ROLE` thì không.
  */
 export async function startAuthDatabase(): Promise<AuthDatabase> {
-  const { PostgreSqlContainer } = await import('@testcontainers/postgresql');
   const postgres = (await import('postgres')).default;
 
-  const container = await new PostgreSqlContainer(POSTGRES_IMAGE)
-    .withDatabase(AUTH_DATABASE)
-    .withUsername(SUPERUSER)
-    .withPassword(SUPERUSER_PASSWORD)
-    .withExposedPorts(POSTGRES_PORT)
-    .withStartupTimeout(120_000)
-    .start();
+  const container = await startPostgresContainer((c) =>
+    c
+      .withDatabase(AUTH_DATABASE)
+      .withUsername(SUPERUSER)
+      .withPassword(SUPERUSER_PASSWORD)
+      .withExposedPorts(POSTGRES_PORT),
+  );
 
   try {
     const host = container.getHost();

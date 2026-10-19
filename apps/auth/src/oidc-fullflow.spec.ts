@@ -94,6 +94,9 @@ const ACCOUNT_BASE_URL = 'https://account.ecoma.io';
 /** Issuer phải khớp origin của server Node cục bộ — provider dựng URL tuyệt đối từ nó. */
 let ISSUER = 'http://127.0.0.1:0';
 
+// Khai báo không-optional (như adapter.spec): test dùng thẳng không cần `!`.
+// `afterAll` vẫn chạy khi `beforeAll` chết — cleanup nhận `undefined` ở runtime
+// qua `?.` ở dưới, và các câu DELETE trong try/catch tự nuốt TypeError.
 let runtimeSql: postgres.Sql;
 let nodeServer: Server;
 let nodePort = 0;
@@ -296,8 +299,10 @@ afterAll(async () => {
   } catch {
     // Dọn thất bại không được che kết quả test; database test xem như dùng một lần.
   }
-  await runtimeSql.end({ timeout: 1 });
-  await db.stop();
+  // `?.` chứ không phải `.`: `beforeAll` chết (Docker mất, container không lên)
+  // thì Vitest vẫn chạy `afterAll` — một throw ở đây đè lỗi thật của `beforeAll`.
+  await runtimeSql?.end({ timeout: 1 });
+  await db?.stop();
 });
 
 describe.skipIf(!dockerAvailable)(
