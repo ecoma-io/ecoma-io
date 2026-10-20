@@ -647,6 +647,32 @@ describe('lookupPostgresPassword', () => {
     const detail = (r as { detail?: string }).detail ?? '';
     expect(detail).toContain('could not decrypt');
   });
+
+  it('masked [secret] output (unreachable on pinned CLI; kept as defense-in-depth) → error state', () => {
+    const r = lookupPostgresPassword({ status: 0, stdout: '[secret]\n', stderr: '' });
+    expect(r.state).toBe('error');
+    const detail = (r as { detail?: string }).detail ?? '';
+    expect(detail).toContain('[secret]');
+    expect(detail).toContain('PULUMI_CONFIG_PASSPHRASE');
+  });
+
+  it('genuinely missing config key (exit != 0) → missing', () => {
+    const r = lookupPostgresPassword({
+      status: 1,
+      stdout: '',
+      stderr: 'error: no value for the key postgres:password',
+    });
+    expect(r.state).toBe('missing');
+  });
+
+  it('Pulumi error unrelated to missing key → error, never missing', () => {
+    const r = lookupPostgresPassword({
+      status: 1,
+      stdout: '',
+      stderr: 'error: could not open state directory',
+    });
+    expect(r.state).toBe('error');
+  });
 });
 
 describe('probePostgresVolume', () => {
@@ -748,6 +774,21 @@ describe('resolvePostgresPassword', () => {
     expect(setCall?.[4]).toEqual({ input: ok.password });
   });
 
+  it('masked [secret] config (unreachable on pinned CLI) → fail, never generate', () => {
+    const root = tempWorktree();
+    const c = resolveContext(root);
+    execMock.mockReturnValue({
+      status: 0,
+      stdout: '[secret]\n',
+      stderr: '',
+    } satisfies ExecResult);
+    const r = resolvePostgresPassword(c, {});
+    expect(r.ok).toBe(false);
+    const error = (r as { error?: string }).error ?? '';
+    expect(error).toContain('[secret]');
+    expect(execMock.mock.calls.some(([, args]) => args[1] === 'set')).toBe(false);
+  });
+
   it('read error (e.g. bad passphrase) → fail, never generate', () => {
     const root = tempWorktree();
     const c = ctx(root);
@@ -760,6 +801,45 @@ describe('resolvePostgresPassword', () => {
     expect(r.ok).toBe(false);
     const error = (r as { error?: string }).error ?? '';
     expect(error).toContain('Đọc postgres:password');
+  });
+
+  it('masked [secret] config (unreachable on pinned CLI) → fail with guidance, never regenerate', () => {
+    const root = tempWorktree();
+    const c = ctx(root);
+    execMock.mockReturnValue({ status: 0, stdout: '[secret]\n', stderr: '' } satisfies ExecResult);
+    const r = resolvePostgresPassword(c, {});
+    expect(r.ok).toBe(false);
+    const error = (r as { error?: string }).error ?? '';
+    expect(error).toContain('PULUMI_CONFIG_PASSPHRASE');
+    expect(execMock.mock.calls.some(([, args]) => args[1] === 'set')).toBe(false);
+  });
+
+  it('wrong passphrase (incorrect passphrase error) → fail, never generate', () => {
+    const root = tempWorktree();
+    const c = ctx(root);
+    execMock.mockReturnValue({
+      status: 1,
+      stdout: '',
+      stderr: 'error: incorrect passphrase',
+    } satisfies ExecResult);
+    const r = resolvePostgresPassword(c, {});
+    expect(r.ok).toBe(false);
+    const error = (r as { error?: string }).error ?? '';
+    expect(error).toContain('Đọc postgres:password');
+    expect(execMock.mock.calls.some(([, args]) => args[1] === 'set')).toBe(false);
+  });
+
+  it('right passphrase on legacy secure config returns plaintext (verified on CLI 3.270) → reuse', () => {
+    const root = tempWorktree();
+    const c = ctx(root);
+    execMock.mockReturnValue({
+      status: 0,
+      stdout: 'real-legacy-pw\n',
+      stderr: '',
+    } satisfies ExecResult);
+    const r = resolvePostgresPassword(c, {});
+    expect(r).toEqual({ ok: true, password: 'real-legacy-pw', generated: false });
+    expect(execMock.mock.calls.some(([, args]) => args[1] === 'set')).toBe(false);
   });
 });
 

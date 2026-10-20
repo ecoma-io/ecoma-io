@@ -65,31 +65,41 @@
   {
     "rule": "security-sensitive-value-in-http-response",
     "path": "tools/dx/src/local-deploy.ts",
-    "start": 122,
-    "end": 122,
+    "start": 127,
+    "end": 127,
     "reason": "Helper noi bo cua CLI tooling (tools/dx) tra mat khau PostgreSQL cho orchestrator - KHONG phai HTTP response: tools/ khong co HTTP handler, gia tri chi dung noi bo de ghi stack config/.env va truyen vao container qua pulumi.secret (redact). Khong ro ra browser/bundle/URL/public output.",
     "lines": {
-      "122": "^    return \\{ state: 'found', password \\};$"
+      "127": "^    return \\{ state: 'found', password \\};$"
     }
   },
   {
     "rule": "security-sensitive-value-in-http-response",
     "path": "tools/dx/src/local-deploy.ts",
-    "start": 367,
-    "end": 367,
+    "start": 372,
+    "end": 372,
     "reason": "Helper noi bo cua CLI tooling (tools/dx) tra mat khau PostgreSQL cho orchestrator - KHONG phai HTTP response: tools/ khong co HTTP handler, gia tri chi dung noi bo de ghi stack config/.env va truyen vao container qua pulumi.secret (redact). Khong ro ra browser/bundle/URL/public output.",
     "lines": {
-      "367": "^    return \\{ ok: true, password: lookup\\.password, generated: false \\};$"
+      "372": "^    return \\{ ok: true, password: lookup\\.password, generated: false \\};$"
     }
   },
   {
     "rule": "security-sensitive-value-in-http-response",
     "path": "tools/dx/src/local-deploy.ts",
-    "start": 439,
-    "end": 439,
+    "start": 444,
+    "end": 444,
     "reason": "Helper noi bo cua CLI tooling (tools/dx) tra mat khau PostgreSQL cho orchestrator - KHONG phai HTTP response: tools/ khong co HTTP handler, gia tri chi dung noi bo de ghi stack config/.env va truyen vao container qua pulumi.secret (redact). Khong ro ra browser/bundle/URL/public output.",
     "lines": {
-      "439": "^  return \\{ ok: true, password, generated: true \\};$"
+      "444": "^  return \\{ ok: true, password, generated: true \\};$"
+    }
+  },
+  {
+    "rule": "security-sensitive-value-in-http-response",
+    "path": "tools/dx/src/local-lock.ts",
+    "start": 52,
+    "end": 52,
+    "reason": "parseLockContent cua file lock tra ve {pid, token} - token la lock acquisition token (randomBytes hex), bat ky process cung user co the doc file lock truc tiep -> khong la secret-lookup heuristics can bao ve. Day la lock file lock o tmpdir, KHONG stan HTTP response; rule taint match 'token' naming heuristic FP.",
+    "lines": {
+      "52": "^  return \\{ pid, token \\};$"
     }
   }
 ]

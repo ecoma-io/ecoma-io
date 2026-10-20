@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -16,6 +16,7 @@ import {
   pulumiRun,
   resolveContext,
   resolveLocalPassphrase,
+  hasPulumiState,
 } from './pulumi-context.js';
 
 const cleanup: string[] = [];
@@ -197,6 +198,36 @@ describe('resolveLocalPassphrase', () => {
     writeFileSync(localPassphrasePath(root), '   \n', 'utf8');
     const result = resolveLocalPassphrase(root, { create: false });
     expect(result).toEqual({ kind: 'none' });
+  });
+
+  it('existing Pulumi state with no available passphrase → throws (fail closed)', () => {
+    delete process.env.PULUMI_CONFIG_PASSPHRASE;
+    delete process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
+    const root = tempWorktree();
+    const stacksDir = join(localStateDir(root), '.pulumi', 'stacks', 'platform-deploy');
+    mkdirSync(stacksDir, { recursive: true });
+    writeFileSync(join(stacksDir, 'local-test.json'), '{}', 'utf8');
+    expect(hasPulumiState(root)).toBe(true);
+    expect(() => resolveLocalPassphrase(root, { create: true })).toThrow(/đã có Pulumi state/u);
+  });
+
+  it('new stack (no state) with no passphrase → generates and persists', () => {
+    delete process.env.PULUMI_CONFIG_PASSPHRASE;
+    delete process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
+    const root = tempWorktree();
+    const result = resolveLocalPassphrase(root, { create: true });
+    expect(result.kind).toBe('worktree');
+    expect(hasPulumiState(root)).toBe(false);
+  });
+
+  it('EEXIST race: rereads persisted value instead of keeping generated', () => {
+    delete process.env.PULUMI_CONFIG_PASSPHRASE;
+    delete process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
+    const root = tempWorktree();
+    writeFileSync(localPassphrasePath(root), 'race-winner-value\n', 'utf8');
+    const result = resolveLocalPassphrase(root, { create: true });
+    expect(result).toEqual({ kind: 'worktree', value: 'race-winner-value' });
+    expect(readFileSync(localPassphrasePath(root), 'utf8').trim()).toBe('race-winner-value');
   });
 });
 

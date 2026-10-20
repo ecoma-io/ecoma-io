@@ -28,7 +28,7 @@
  * lên trước, vì mỗi kind vẫn được xử lý độc lập.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import { resolve, normalize } from 'node:path';
 
 import {
@@ -54,6 +54,7 @@ export const CLEANUP_KINDS: readonly DeployResourceKind[] = [
   'postgres',
   'home',
   'network',
+  'home-image',
   'postgres-volume',
 ];
 
@@ -68,7 +69,7 @@ export interface CleanupFilter {
    * quyết định mà không cần Docker thật. Default là thật.
    */
   execDocker?: (args: string[], env: NodeJS.ProcessEnv) => ExecResult;
-  worktreeAlive?: (path: string) => boolean;
+  worktreePresence?: (path: string) => WorktreePresence;
 }
 
 export interface CleanupReportEntry {
@@ -108,8 +109,10 @@ function execDocker(args: string[], env: NodeJS.ProcessEnv): ExecResult {
   }
 }
 
+export type DockerCommandType = 'container' | 'network' | 'volume' | 'image';
+
 export function dockerList(
-  kind: 'container' | 'network' | 'volume',
+  kind: DockerCommandType,
   env: NodeJS.ProcessEnv,
   dockerExec: (args: string[], env: NodeJS.ProcessEnv) => ExecResult = execDocker,
 ): ExecResult {
@@ -118,12 +121,17 @@ export function dockerList(
       ? ['container', 'ls', '--all', '--format', '{{.Names}}']
       : kind === 'network'
         ? ['network', 'ls', '--format', '{{.Name}}']
-        : ['volume', 'ls', '--format', '{{.Name}}'];
+        : kind === 'image'
+          ? // `docker image ls` liệt kê cả `<none>` dangling — filter `ecoma-`
+            // dưới đó loại; dangling image không có ownership label sẽ không
+            // bao giờ bị xoá (fail-closed).
+            ['image', 'ls', '--format', '{{.Repository}}:{{.Tag}}']
+          : ['volume', 'ls', '--format', '{{.Name}}'];
   return dockerExec(args, env);
 }
 
 export function dockerInspectLabels(
-  kind: 'container' | 'network' | 'volume',
+  kind: DockerCommandType,
   name: string,
   env: NodeJS.ProcessEnv,
   dockerExec: (args: string[], env: NodeJS.ProcessEnv) => ExecResult = execDocker,
@@ -145,26 +153,53 @@ export function dockerInspectLabels(
   return { labels };
 }
 
-export function worktreeAlive(worktreePath: string): boolean {
+export type WorktreePresence = 'present' | 'absent' | 'unknown';
+
+/**
+ * Kiểm worktree còn tồn tại trên đĩa hay không — phân biệt ba trạng thái:
+ *  - `present`: path tồn tại và là thư mục.
+ *  - `absent`: path chắc chắn không tồn tại (ENOENT).
+ *  - `unknown`: lỗi khác (EACCES, EIO...) — không có bằng chứng về sự tồn tại.
+ *
+ * Fail-closed: chỉ `absent` mới cho phép cleanup đi tiếp; `unknown` phải giữ
+ * resource và báo diagnostic.
+ */
+export function worktreeAlive(worktreePath: string): WorktreePresence {
   try {
-    return existsSync(worktreePath) && statSync(worktreePath).isDirectory();
-  } catch {
-    return false;
+    return statSync(worktreePath).isDirectory() ? 'present' : 'absent';
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return 'absent';
+    return 'unknown';
   }
 }
 
 function execDockerRemove(
-  kind: 'container' | 'network' | 'volume',
+  kind: DockerCommandType,
   name: string,
   env: NodeJS.ProcessEnv,
   dockerExec: (args: string[], env: NodeJS.ProcessEnv) => ExecResult = execDocker,
 ): { ok: boolean; stderr?: string } {
+  // Container orphan thường vẫn ĐANG CHẠY (restart policy `unless-stopped` của
+  // traefik/postgres/home tự start lại container sau reboot/daemon restart).
+  // `docker container rm` không có `--force` sẽ fail trên container running
+  // ("cannot remove a running container"), nên cleanup thành công suốt. Ta dùng
+  // `--force` (SIGKILL rồi remove) CHỈ SAU KHI ownership đã được validate
+  // (`classifyOwnership` → `owned`) và worktree chắc chắn vắng mặt
+  // (`worktreePresence` → `absent`) — metadata mâu thuẫn/malformed/unknown
+  // không bao giờ tới được lệnh này. Force ở đây tương đương stop-then-rm nhưng
+  // atomic, và là chiến lược an toàn duy nhất còn lại cho orphan running.
   const cmdArgs =
     kind === 'container'
-      ? ['container', 'rm', name]
+      ? ['container', 'rm', '--force', name]
       : kind === 'network'
         ? ['network', 'rm', name]
-        : ['volume', 'rm', name];
+        : kind === 'image'
+          ? // Image orphan KHÔNG start/stop được — chỉ có cả `rm`. Lỗi "image is
+            // being used" được báo nguyên chữ để developer tự xử lý (đó là
+            // resource không thể xoá an toàn vào thời điểm này).
+            ['image', 'rm', name]
+          : ['volume', 'rm', name];
   const result = dockerExec(cmdArgs, env);
   if (result.status === 0) return { ok: true };
   return {
@@ -178,10 +213,15 @@ export type CleanupDecisionEntry =
   | { action: 'skipped'; reason: string }
   | { action: 'remove' };
 
+export interface DecideResourceOptions {
+  /** Tri-state presence kiểm tra — xem {@link worktreeAlive}. */
+  worktreePresence: (path: string) => WorktreePresence;
+}
+
 export function decideResourceAction(
   kind: DeployResourceKind,
   ownership: OwnershipCheck,
-  opts: { worktreeAlive: (path: string) => boolean },
+  opts: DecideResourceOptions,
 ): CleanupDecisionEntry {
   switch (ownership.state) {
     case 'missing':
@@ -194,9 +234,17 @@ export function decideResourceAction(
     case 'unknown':
       return { action: 'skipped', reason: `metadata không đọc được: ${ownership.detail}` };
     case 'owned': {
-      const alive = opts.worktreeAlive(ownership.worktreePath);
-      if (alive) {
+      const presence = opts.worktreePresence(ownership.worktreePath);
+      if (presence === 'present') {
         return { action: 'kept', reason: `worktree còn tồn tại (${ownership.worktreePath})` };
+      }
+      if (presence === 'unknown') {
+        return {
+          action: 'kept',
+          reason:
+            `không xác định được worktree có tồn tại hay không (${ownership.worktreePath}) — ` +
+            'fail-closed, giữ resource',
+        };
       }
       if (kind === POSTGRES_VOLUME_KIND) {
         return { action: 'kept', reason: 'volume PostgreSQL persistent — cleanup không xoá' };
@@ -222,7 +270,7 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
   const entries: CleanupReportEntry[] = [];
   const errors: string[] = [];
   const dockerExec = filter.execDocker ?? execDocker;
-  const aliveFn = filter.worktreeAlive ?? worktreeAlive;
+  const presenceFn = filter.worktreePresence ?? worktreeAlive;
 
   // Docker daemon responsiveness check.
   const info = dockerExec(['info', '--format', '{{.ServerVersion}}'], filter.env);
@@ -236,12 +284,12 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
     };
   }
 
-  const aliveCache = new Map<string, boolean>();
-  const aliveOnce = (path: string): boolean => {
-    let v = aliveCache.get(path);
+  const presenceCache = new Map<string, WorktreePresence>();
+  const presenceOnce = (path: string): WorktreePresence => {
+    let v = presenceCache.get(path);
     if (v === undefined) {
-      v = aliveFn(path);
-      aliveCache.set(path, v);
+      v = presenceFn(path);
+      presenceCache.set(path, v);
     }
     return v;
   };
@@ -269,8 +317,14 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
   }
 
   for (const kind of CLEANUP_KINDS) {
-    const dockerType: 'container' | 'network' | 'volume' =
-      kind === 'network' ? 'network' : kind === POSTGRES_VOLUME_KIND ? 'volume' : 'container';
+    const dockerType: DockerCommandType =
+      kind === 'network'
+        ? 'network'
+        : kind === POSTGRES_VOLUME_KIND
+          ? 'volume'
+          : kind === 'home-image'
+            ? 'image'
+            : 'container';
 
     const list = dockerList(dockerType, filter.env, dockerExec);
     if (list.status !== 0) {
@@ -287,7 +341,15 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
     const names = list.stdout
       .split('\n')
       .map((line) => line.trim())
-      .filter((line) => line.startsWith('ecoma-') && line.endsWith(`-${kind}`));
+      .filter((line) => {
+        if (line.length === 0) return false;
+        if (dockerType === 'image') {
+          // Image name format `ecoma-home-<ns>:local` — không có suffix `-home-image`
+          // trong tag, nên lọc theo prefix + namespace pattern ở tên repo.
+          return line.startsWith('ecoma-home-') && line.endsWith(':local');
+        }
+        return line.startsWith('ecoma-') && line.endsWith(`-${kind}`);
+      });
 
     for (const name of names) {
       const { labels, failure } = dockerInspectLabels(dockerType, name, filter.env, dockerExec);
@@ -301,7 +363,7 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
         continue;
       }
       const ownership = classifyOwnership(labels);
-      const decision = decideResourceAction(kind, ownership, { worktreeAlive: aliveOnce });
+      const decision = decideResourceAction(kind, ownership, { worktreePresence: presenceOnce });
 
       if (
         filterPath !== undefined &&

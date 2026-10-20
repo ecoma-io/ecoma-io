@@ -106,17 +106,22 @@ export function lookupPostgresPassword(result: ExecResult): PostgresPasswordLook
   if (result.status === 0) {
     const password = result.stdout.trim();
     if (password.length === 0) return { state: 'missing' };
-    // Phòng thủ: Pulumi masking `[secret]` không phải mật khẩu thật — nếu ever
-    // xuất hiện ở đây thì stack đang ở trạng thái không thể dùng an toàn. Fail
-    // loud kèm hướng dẫn migration thay vì dùng literal `[secret]` làm password.
+    // Defense-in-depth: CLI `pulumi config get` trên 3.270 với đúng passphrase
+    // trả về plaintext (không trả `[secret]`); masking `[secret]` chỉ xuất hiện
+    // ở `pulumi config` (list) và ở Automation API (`stack output --json` không
+    // `--show-secrets`, xem `@pulumi/pulumi@3.270.0` `automation/localWorkspace.js`).
+    // Nhánh này vì vậy không đạt được qua đường gọi này, nhưng giữ lại để fail
+    // loud nếu ever xuất hiện (vd. CLI đổi hành vi) thay vì dùng literal
+    // `[secret]` làm password. Xem docs migration section để biết trigger thật.
     if (password === '[secret]') {
       return {
         state: 'error',
         detail:
           'Pulumi trả về chuỗi masking `[secret]` thay vì mật khẩu thật — stack config ' +
-          'đang ở trạng thái secure/legacy không giải mã được. Chạy: ' +
-          '`pulumi config set postgres:password --plaintext --raw` với giá trị đúng ' +
-          '(xem docs/services/local-platform/03-operations.md).',
+          'đang ở trạng thái không đọc được giá trị thật. Cung cấp passphrase đúng qua ' +
+          'PULUMI_CONFIG_PASSPHRASE rồi chạy lại; nếu vẫn masked, xem ' +
+          'docs/services/local-platform/03-operations.md (mục Migration legacy ' +
+          'postgres:password).',
       };
     }
     return { state: 'found', password };

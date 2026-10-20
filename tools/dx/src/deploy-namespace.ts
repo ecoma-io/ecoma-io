@@ -64,7 +64,18 @@ export function normalizeWorktreeRoot(root: string): string {
  * chế tên bắt đầu bằng số, và hash hex có thể xuất 0-9 ở vị trí đầu.
  */
 export function worktreeNamespace(root: string): string {
-  const digest = xxh64(Buffer.from(normalizeWorktreeRoot(root), 'utf8'));
+  return namespaceFromCanonicalPath(normalizeWorktreeRoot(root));
+}
+
+/**
+ * Tạo namespace từ một path đã được coi là canonical/normalized (không gọi
+ * `realpathSync`). Dùng cho lớp validation của `deploy-labels` khi path trong
+ * label có thể trỏ tới worktree đã bị xoá — không thể `realpath` nhưng vẫn cần
+ * kiểm tính nhất quán của metadata. Hash logic dùng chung với `worktreeNamespace`
+ * để không nhân đôi.
+ */
+export function namespaceFromCanonicalPath(canonicalPath: string): string {
+  const digest = xxh64(Buffer.from(canonicalPath, 'utf8'));
   return `w${digest.toString(16).padStart(16, '0').slice(0, NAMESPACE_LENGTH)}`;
 }
 
