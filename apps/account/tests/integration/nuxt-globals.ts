@@ -20,6 +20,10 @@
 export interface AccountTestRuntimeConfig {
   internalHmacSecret?: unknown;
   internalAuthSkewSeconds?: unknown;
+  /** Secret HMAC của OTP — dùng bởi `server/api/auth/*`. */
+  otpHmacSecret?: unknown;
+  /** Origin của transactional-mail — dùng bởi `server/api/auth/challenge`. */
+  mailServiceUrl?: unknown;
   cloudflare?: unknown;
 }
 

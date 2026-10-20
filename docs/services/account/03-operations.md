@@ -95,6 +95,10 @@ Cố ý **không** dùng `ecoma_account_runtime` cho job định kỳ, dù runti
 
 Cơ chế, tần suất, hợp đồng log, hành vi khi hỏng, đường chạy tay và các điều kiện chưa được provision — cùng trạng thái **đã cấu hình, chưa xác minh runtime** — nằm ở [`docs/services/auth/03-operations.md`](../auth/03-operations.md) §3.3; đó là chỗ duy nhất mô tả cơ chế dùng chung cho cả hai job, nên không chép lại ở đây.
 
+⚠️ **Prune `otp_challenges` chưa hiện thực: grant `DELETE` đã có, nhưng chưa có job nào dùng nó.** Migration `0006_otp_challenges.sql` ghi rõ `DELETE` là "prune theo TTL, thao tác của bảng", song cho tới nay mọi hàng đã consume hoặc đã hết hạn của `otp_challenges` nằm lại database vô hạn — không job, không workflow nào dọn nó (dọn `internal_nonces` cạnh đó đã có job theo §3.3). Không khẩn cấp vì throttle resend 60 giây và rate limit 3/15 phút + 10/giờ chặn được phần lớn volume, nhưng là debt dọn dẹp cần hiện thực hoá trong cùng hình dạng với job `prune-account` hiện có. Việc này **không cần cấp thêm quyền** — `ecoma_account_runtime` đã có `DELETE`; và cũng không chạy bằng role khác, vì hai lý do trong đoạn trên.
+
+Điều kiện an toàn cho prune này đã có sẵn trong thiết kế: rate limit đếm các hàng `otp_challenges` trong cửa sổ 15 phút và 1 giờ, nên bất kỳ job dọn nào chỉ xoá hàng **quá TTL** (600 giây) thì không và không thể làm sai một phép đếm rate limit đang hiệu lực. Ràng buộc duy nhất cần giữ khi hiện thực: predicate prune phải dựa trên `consumed_at`/`expires_at` (vòng đời của bảng). Còn một mâu thuẫn cần lưu ý ở phần tài liệu tham chiếu: dọn `internal_nonces` được mô tả là chạy qua workflow `.github/workflows/identity-nonce-prune.yaml`, nhưng file workflow đó hiện **không tồn tại trên `main`** (chỉ tồn tại ở vài nhánh phát triển; trên `main` còn lại duy nhất `ci.yaml`, `code-analysis.yml`, `code-review.yml`). Trước khi hiện thực hoá prune cho `otp_challenges`, cần xác minh lại cơ chế schedule dùng chung này đã có thật trên nhánh đích hay chưa — không copy một mô tả đã drift.
+
 ## 4. Environment isolation
 
 | Môi trường | Database                      | Credential                         |
