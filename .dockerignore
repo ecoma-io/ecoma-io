@@ -80,6 +80,7 @@ tools/dx/*
 # build context — blacklist ở đây biến ý định bảo mật thành thuộc tính của file
 # thay vì hệ quả của whitelist.
 **/.pulumi-local-state/
+**/.pulumi-local-passphrase
 **/local-certs
 **/*.key
 **/*.pem

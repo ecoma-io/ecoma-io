@@ -36,7 +36,13 @@ import * as pulumi from '@pulumi/pulumi';
 // project, còn disable ở đúng chỗ thì giữ được ranh giới cho phần còn lại của
 // repo.
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
-import { dockerResourceName, worktreeNamespace } from '../../tools/dx/src/deploy-namespace';
+import {
+  dockerResourceName,
+  normalizeWorktreeRoot,
+  worktreeNamespace,
+} from '../../tools/dx/src/deploy-namespace';
+// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do dòng trên
+import { ownershipLabels } from '../../tools/dx/src/deploy-labels';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do dòng trên
 import type { PlatformOutputs } from '../../tools/dx/src/platform-outputs-contract';
 
@@ -64,6 +70,14 @@ const conf = new pulumi.Config('namespace');
 // điều `platform-deploy` nhận, nên hai stack luôn cùng namespace.
 const worktreeRoot = conf.require('worktreeRoot');
 const ns = worktreeNamespace(worktreeRoot);
+
+/**
+ * Labels ownership của resource này — cùng bộ labels với `platform-deploy`
+ * (một bản duy nhất ở `deploy-labels.ts`). `pnpm dx local-cleanup` đọc bộ
+ * labels này thay vì đoán từ tên: tên trông giống ecoma không phải bằng chứng
+ * ownership.
+ */
+const labels = ownershipLabels(normalizeWorktreeRoot(worktreeRoot), ns);
 
 // Stack reference **đầy đủ** tới stack platform của chính worktree này, do
 // orchestration (`tools/dx/src/local-deploy.ts`) ghép và truyền qua
@@ -168,6 +182,7 @@ const image = new dockerBuild.Image(dockerResourceName(ns, 'home-image'), {
   builder: { name: 'default' },
   load: true,
   push: false,
+  labels,
 });
 
 /**
@@ -199,6 +214,7 @@ const home = new docker.Container(dockerResourceName(ns, 'home'), {
   // ấn tượng app dùng nó để dựng absolute URL.
   envs: [`PORT=${HOME_INTERNAL_PORT}`, 'NODE_ENV=production'],
   labels: [
+    ...Object.entries(labels).map(([label, value]) => ({ label, value })),
     { label: 'traefik.enable', value: 'true' },
     {
       // Khai network của ROUTER này cho Traefik, KHÔNG phải sở thích: không có

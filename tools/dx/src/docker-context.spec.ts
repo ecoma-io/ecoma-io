@@ -180,6 +180,8 @@ describe('root .dockerignore: sensitive paths are excluded', () => {
     expect(isExcluded('.pulumi/credentials.json')).toBe(true);
     expect(isExcluded('Pulumi.local-wabc.yaml')).toBe(true);
     expect(isExcluded('deploys/Pulumi.local-wabc.yaml')).toBe(true);
+    expect(isExcluded('.pulumi-local-passphrase')).toBe(true);
+    expect(isExcluded('deploys/platform-deploy/.pulumi-local-passphrase')).toBe(true);
   });
 
   it('local TLS private key and VCS metadata never enter the context', () => {

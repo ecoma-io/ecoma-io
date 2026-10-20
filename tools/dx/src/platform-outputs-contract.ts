@@ -11,7 +11,8 @@
  *
  * Nguyên tắc:
  * - Không secret nào nằm trong outputs: username/password PostgreSQL đi qua
- *   Pulumi secret config của consumer, không qua đường stdout/outputs. Platform
+ *   Pulumi config của consumer (plaintext cho local stack; secret cho staging/
+ *   production), không qua đường stdout/outputs. Platform
  *   xuất đúng những thông tin non-secret consumer cần để kết nối và route.
  * - Mọi giá trị là kết quả ĐO ĐƯỢC sau khi resource thật sẵn sàng (đặc biệt
  *   `traefikHostPort` — Docker cấp port động tại create time).
@@ -41,6 +42,9 @@ export interface PlatformOutputs {
 /** Environment key chứa `fbi.com:<traefik-host-port>` sau khi platform up. */
 export const ROOT_HOST_ENV_KEY = 'ROOT_HOST';
 
+/** Environment key chứa mật khẩu PostgreSQL local được sinh cho E2E/dev tools. */
+export const POSTGRES_PASSWORD_ENV_KEY = 'POSTGRES_PASSWORD';
+
 /**
  * Environment keys mà orchestration local flow sở hữu trong `.env`.
  *
@@ -48,7 +52,7 @@ export const ROOT_HOST_ENV_KEY = 'ROOT_HOST';
  * mọi key khác trong file `.env` hiện có phải giữ nguyên. `.env` là artifact
  * tiện dụng — nguồn sự thật cho giá trị triển khai là Pulumi outputs.
  */
-export const LOCAL_ENV_OWNED_KEYS = [ROOT_HOST_ENV_KEY] as const;
+export const LOCAL_ENV_OWNED_KEYS = [ROOT_HOST_ENV_KEY, POSTGRES_PASSWORD_ENV_KEY] as const;
 
 /** Hostname local mà Traefik route tới home. */
 export const LOCAL_ROOT_HOSTNAME = 'fbi.com';

@@ -13,7 +13,7 @@
  * Preview và apply là hai thao tác phân biệt: command này mặc định là đường
  * apply thật (thay đổi Docker resource thật của máy developer), được gọi tường
  * minh; `--preview` là đường read-only — không init state, không `config set`,
- * không sinh secret, không ghi `.env`, chỉ chạy được trên worktree đã apply ít
+ * không sinh mật khẩu, không ghi `.env`, chỉ chạy được trên worktree đã apply ít
  * nhất một lần (prerequisite kiểm read-only, thiếu thì báo cách khắc phục).
  * Đường an toàn/dry-run của Nx/CI vẫn là target `provision` (provision-gate).
  *
@@ -29,9 +29,11 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { dockerResourceName } from './deploy-namespace.js';
+import { acquireLocalDeployLock } from './local-lock.js';
 import {
   buildRootHost,
   LOCAL_ENV_OWNED_KEYS,
+  POSTGRES_PASSWORD_ENV_KEY,
   ROOT_HOST_ENV_KEY,
 } from './platform-outputs-contract.js';
 import {
@@ -39,11 +41,12 @@ import {
   describeSpawnFailure,
   ensureStack,
   fullStackRef,
+  chmodFilePrivate,
   localStateDir,
   pulumiEnv,
   pulumiRun,
-  requirePassphrase,
   resolveContext,
+  resolveLocalPassphrase,
   type ExecResult,
   type LocalDeployContext,
 } from './pulumi-context.js';
@@ -63,6 +66,105 @@ export function isConfigKeyMissing(result: ExecResult): boolean {
   return /no value for the key|configuration key .* not found/iu.test(output);
 }
 
+/** Key trong Pulumi stack config lưu mật khẩu PostgreSQL local. */
+export const POSTGRES_PASSWORD_CONFIG_KEY = 'postgres:password';
+
+/**
+ * Sinh mật khẩu PostgreSQL cho stack local mới.
+ *
+ * `randomBytes` của `node:crypto` — nguồn ngẫu nhiên mật mã an toàn. KHÔNG
+ * dùng `Math.random`, timestamp, hard-code hay giá trị đoán được: mật khẩu này
+ * là superuser credential của database local, và tài liệu yêu cầu sinh ngẫu
+ * nhiên bằng API mật mã an toàn.
+ *
+ * `base64url` → chỉ ký tự `A-Za-z0-9-_`, nên an toàn khi đặt trong file `.env`
+ * (không cần quote) và khi truyền làm argument cho `pulumi config set`.
+ */
+export function generatePostgresPassword(): string {
+  return randomBytes(24).toString('base64url');
+}
+
+/** Kết quả đọc mật khẩu PostgreSQL từ stack config (nguồn sự thật canonical). */
+export type PostgresPasswordLookup =
+  | { state: 'found'; password: string }
+  | { state: 'missing' }
+  | { state: 'error'; detail: string };
+
+/**
+ * Đọc mật khẩu PostgreSQL từ stack config local.
+ *
+ * Config lưu **plaintext** (không `secure:`) — nên `pulumi config get` đọc
+ * được mà không cần giải mã, và trả về giá trị rõ ràng. Đây là nguồn sự thật
+ * canonical: `.env` chỉ là bản sao sinh ra từ đây.
+ *
+ * Phân biệt ba trạng thái thay vì hai: "chưa có key" (stack mới → được phép
+ * sinh mật khẩu) khác "lỗi thật" (sai passphrase, backend hỏng → phải dừng,
+ * không được sinh mật khẩu mới). Nhận diện sai ở đây là đúng loại lỗi khiến
+ * Postgres bị khoá khỏi volume đã init.
+ */
+export function lookupPostgresPassword(result: ExecResult): PostgresPasswordLookup {
+  if (result.status === 0) {
+    const password = result.stdout.trim();
+    if (password.length === 0) return { state: 'missing' };
+    // Phòng thủ: Pulumi masking `[secret]` không phải mật khẩu thật — nếu ever
+    // xuất hiện ở đây thì stack đang ở trạng thái không thể dùng an toàn. Fail
+    // loud kèm hướng dẫn migration thay vì dùng literal `[secret]` làm password.
+    if (password === '[secret]') {
+      return {
+        state: 'error',
+        detail:
+          'Pulumi trả về chuỗi masking `[secret]` thay vì mật khẩu thật — stack config ' +
+          'đang ở trạng thái secure/legacy không giải mã được. Chạy: ' +
+          '`pulumi config set postgres:password --plaintext --raw` với giá trị đúng ' +
+          '(xem docs/services/local-platform/03-operations.md).',
+      };
+    }
+    return { state: 'found', password };
+  }
+  if (isConfigKeyMissing(result)) return { state: 'missing' };
+  return {
+    state: 'error',
+    detail: `${result.stderr.trim() || result.stdout.trim() || 'lỗi Pulumi không xác định'}`,
+  };
+}
+
+/** Tình trạng volume PostgreSQL của namespace — quyết định được sinh mật khẩu mới không. */
+export type PostgresVolumeProbe =
+  | { state: 'absent' }
+  | { state: 'present' }
+  | { state: 'unknown'; detail: string };
+
+/**
+ * Kiểm volume PostgreSQL của namespace có tồn tại không.
+ *
+ * Sự tồn tại của volume là thứ DUY NHẤT biết "database đã được init bằng mật
+ * khẩu nào" — stack config có thể mất (ví dụ `pulumi stack rm` xoá cả config
+ * trong khi volume `retainOnDelete` còn lại), nhưng volume thì vẫn giữ mật
+ * khẩu superuser cũ. Vì vậy khi config mất mà volume còn, KHÔNG được sinh mật
+ * khẩu mới: mật khẩu mới không bao giờ khớp volume đó.
+ *
+ * Phân biệt "không có" với "không xác định được": lỗi Docker (daemon không
+ * chạy, socket sai) không phải bằng chứng volume vắng mặt — coi nó là
+ * "vắng mặt" sẽ sinh mật khẩu mới rồi khoá người dùng ra khỏi dữ liệu cũ.
+ */
+export function probePostgresVolume(
+  volumeName: string,
+  env: NodeJS.ProcessEnv,
+): PostgresVolumeProbe {
+  const result = exec('docker', ['volume', 'inspect', volumeName], ROOT_DIR, env);
+  if (result.status === 0) return { state: 'present' };
+  if (result.status === null) {
+    return { state: 'unknown', detail: describeSpawnFailure(result) };
+  }
+  const combined = `${result.stderr}\n${result.stdout}`;
+  if (/not found|no such volume/iu.test(combined)) return { state: 'absent' };
+  const firstLine = combined
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  return { state: 'unknown', detail: firstLine ?? 'lỗi Docker không xác định' };
+}
+
 /** Tên Nx project của hai deploy unit — dùng cho stack ref đầy đủ và exec cwd. */
 const PLATFORM_PROJECT = 'platform-deploy';
 const HOME_PROJECT = 'home-deploy';
@@ -72,31 +174,76 @@ function projectDir(project: string): string {
 }
 
 /**
- * Ghi `ROOT_HOST` vào `.env` của worktree mà KHÔNG đụng key khác.
+ * Ghi các key mà luồng này sở hữu vào `.env` của worktree mà KHÔNG đụng key khác.
  *
- * `.env` là artifact: nếu file không có thì tạo mới với đúng một key; nếu có
- * rồi thì chỉ thay dòng `ROOT_HOST=...`, mọi dòng khác giữ nguyên byte-for-byte.
- * Trả về giá trị đã ghi để bước smoke test và phần báo cáo dùng lại.
+ * `.env` là artifact: nếu file không có thì tạo mới với đúng các key được ghi;
+ * nếu có rồi thì chỉ thay dòng `KEY=...` của các key thuộc `LOCAL_ENV_OWNED_KEYS`,
+ * mọi dòng khác giữ nguyên byte-for-byte.
+ *
+ * Chỉ key sở hữu được ghi — đây là ranh giới contract, không phải chi tiết
+ * cài đặt: `values` do caller dựng và có thể vô tình mang key lạ, mà ghi đè một
+ * key người dùng tự quản lý là mất dữ liệu không khôi phục được.
  */
-export function upsertLocalEnv(worktreeRoot: string, rootHost: string): { envPath: string } {
+export function upsertLocalEnv(
+  worktreeRoot: string,
+  values: Readonly<Record<string, string>>,
+): { envPath: string } {
   const envPath = join(worktreeRoot, '.env');
-  const line = `${ROOT_HOST_ENV_KEY}=${rootHost}`;
+  const owned = new Set<string>(LOCAL_ENV_OWNED_KEYS);
+  const entries = Object.entries(values).filter(([key]) => owned.has(key));
+  // Guard injection: giá trị chứa newline sẽ phá cấu trúc dòng của file khi ghi
+  // (một giá trị nhiều dòng sinh ra các dòng env rác). `values` đến từ outputs
+  // Pulumi được kiểm soát nên đây là fail-loud với input dị hình, không phải
+  // đường xử lý bình thường.
+  for (const [, value] of entries) {
+    if (value.includes('\n') || value.includes('\r')) {
+      throw new Error(
+        'upsertLocalEnv: giá trị của một key sở hữu chứa ký tự newline (\\n/\\r) — ' +
+          'từ chối ghi để không làm hỏng cấu trúc file .env.',
+      );
+    }
+  }
   if (!existsSync(envPath)) {
-    writeFileSync(envPath, `${line}\n`, 'utf8');
+    if (entries.length > 0) {
+      writeFileSync(envPath, `${entries.map(([key, value]) => `${key}=${value}`).join('\n')}\n`, {
+        encoding: 'utf8',
+        mode: 0o600,
+      });
+    } else {
+      writeFileSync(envPath, '', { encoding: 'utf8', mode: 0o600 });
+    }
+    chmodFilePrivate(envPath, 0o600);
     return { envPath };
   }
   const content = readFileSync(envPath, 'utf8');
-  const lines = content.split('\n');
-  let replaced = false;
+  // Bỏ phần tử rỗng CUỐI do file kết thúc bằng `\n`: giữ nó thì key được thêm
+  // cuối sinh ra một dòng trống misplaced (`OTHER=keep\n\nROOT_HOST=…`) — các
+  // phần tử rỗng Ở GIỮA dòng khác vẫn giữ nguyên vị trí như cũ.
+  const linesFile = content.split('\n');
+  const trailingEmpty = linesFile.length > 1 && linesFile[linesFile.length - 1] === '';
+  const lines = trailingEmpty ? linesFile.slice(0, -1) : linesFile;
+  // Merge theo vị trí: MỌI dòng `KEY=...` của một key sở hữu đều được cập nhật
+  // (không chỉ dòng đầu) — nếu file lỡ có dòng trùng và dotenv parse last-wins
+  // thì chỉ thay dòng đầu sẽ để lại giá trị cũ ở dòng sau. Không append thêm
+  // dòng mới khi key đã xuất hiện (số lần nào cũng vậy). Dòng không thuộc key
+  // sở hữu giữ nguyên byte-for-byte.
+  const valueByKey = new Map(entries);
+  const seen = new Set<string>();
   const next = lines.map((entry) => {
-    if (entry.startsWith(`${ROOT_HOST_ENV_KEY}=`)) {
-      replaced = true;
-      return line;
-    }
-    return entry;
+    const ownedKey = LOCAL_ENV_OWNED_KEYS.find((key) => entry.startsWith(`${key}=`));
+    if (ownedKey === undefined) return entry;
+    seen.add(ownedKey);
+    const value = valueByKey.get(ownedKey);
+    return value === undefined ? entry : `${ownedKey}=${value}`;
   });
-  if (!replaced) next.push(line);
-  writeFileSync(envPath, next.join('\n'), 'utf8');
+  // Key sở hữu có trong `values` nhưng chưa xuất hiện trong file → thêm cuối một lần.
+  for (const [key, value] of valueByKey) {
+    if (!seen.has(key)) {
+      next.push(`${key}=${value}`);
+    }
+  }
+  writeFileSync(envPath, `${next.join('\n')}\n`, { encoding: 'utf8', mode: 0o600 });
+  chmodFilePrivate(envPath, 0o600);
   return { envPath };
 }
 
@@ -147,7 +294,7 @@ export interface LocalDeployOptions {
   worktreeRoot?: string;
   /**
    * Chỉ preview — read-only tuyệt đối: không init state, không `config set`,
-   * không sinh secret, không truyền `--config` (CLI lưu `--config` vào stack
+   * không sinh mật khẩu, không truyền `--config` (CLI lưu `--config` vào stack
    * config file kể cả ở `preview`), không ghi `.env`, không `up`/`destroy`.
    * Yêu cầu worktree đã apply ít nhất một lần. Mặc định false (apply thật).
    */
@@ -177,6 +324,122 @@ function runProjectStep(
 }
 
 /**
+ * Chuẩn bị mật khẩu PostgreSQL cho stack local.
+ *
+ * Nguồn sự thật CANONICAL là Pulumi stack config (`postgres:password`, lưu
+ * plaintext). `.env` là bản sao sinh ra — xem `localDeploy`.
+ *
+ * Ba nhánh, theo thứ tự:
+ *
+ * 1. **Đã có trong config** → dùng lại nguyên giá trị. Không bao giờ sinh mới:
+ *    sinh mới ở đây là đè mật khẩu đang dùng bởi volume đã init → Postgres
+ *    không vào được dữ liệu cũ.
+ * 2. **Chưa có trong config** → kiểm volume có tồn tại không:
+ *    - Volume **có** → fail với lỗi có hướng dẫn hành động. Volume đã init
+ *      bằng mật khẩu mà config không còn lưu (vd `pulumi stack rm` xoá config
+ *      nhưng volume `retainOnDelete` còn lại) — sinh mật khẩu mới ở đây tạo ra
+ *      một mật khẩu **không bao giờ khớp** volume đó, và người dùng bị khoá
+ *      khỏi dữ liệu của chính mình.
+ *    - Volume **không** → sinh mật khẩu ngẫu nhiên và ghi vào config.
+ * 3. **Lỗi thật khi đọc config** (sai passphrase, backend hỏng) → fail, KHÔNG
+ *    sinh mật khẩu mới: lỗi đó không phải bằng chứng "chưa có mật khẩu".
+ */
+export function resolvePostgresPassword(
+  ctx: LocalDeployContext,
+  env: NodeJS.ProcessEnv,
+): { ok: true; password: string; generated: boolean } | { ok: false; error: string } {
+  const lookup = lookupPostgresPassword(
+    exec(
+      'pulumi',
+      [
+        'config',
+        'get',
+        POSTGRES_PASSWORD_CONFIG_KEY,
+        '--stack',
+        fullStackRef(PLATFORM_PROJECT, ctx),
+      ],
+      projectDir(PLATFORM_PROJECT),
+      env,
+    ),
+  );
+
+  if (lookup.state === 'found') {
+    return { ok: true, password: lookup.password, generated: false };
+  }
+  if (lookup.state === 'error') {
+    return {
+      ok: false,
+      error:
+        `Đọc ${POSTGRES_PASSWORD_CONFIG_KEY} từ stack config thất bại: ${lookup.detail}\n` +
+        'Không sinh mật khẩu mới khi không đọc được mật khẩu đang có — làm vậy sẽ khoá ' +
+        'Postgres khỏi volume đã init.',
+    };
+  }
+
+  // Config không có mật khẩu — volume quyết định có được sinh mới không.
+  const volumeName = dockerResourceName(ctx.namespace, 'postgres-volume');
+  const volume = probePostgresVolume(volumeName, env);
+  if (volume.state === 'present') {
+    return {
+      ok: false,
+      error:
+        `Volume PostgreSQL ${volumeName} đã tồn tại nhưng stack config không có ` +
+        `${POSTGRES_PASSWORD_CONFIG_KEY}. Volume được init bằng một mật khẩu đã không ` +
+        'còn trong config (thường do `pulumi stack rm` xoá config nhưng volume `retainOnDelete` ' +
+        'còn lại). Sinh mật khẩu mới sẽ KHÔNG khớp volume này và mọi kết nối sẽ nhận ' +
+        '`password authentication failed`.\n' +
+        'Cách khắc phục: khôi phục mật khẩu cũ vào stack config, hoặc xoá volume để bắt đầu ' +
+        'lại từ dữ liệu rỗng:\n' +
+        `  pnpm dx local-destroy --remove-data   # XOÁ dữ liệu vĩnh viễn — cân nhắc kỹ\n` +
+        `  pnpm dx local-deploy`,
+    };
+  }
+  if (volume.state === 'unknown') {
+    return {
+      ok: false,
+      error:
+        `Không kiểm được volume PostgreSQL ${volumeName}: ${volume.detail}\n` +
+        'Không sinh mật khẩu mới khi chưa xác nhận được volume có tồn tại hay không — ' +
+        'sinh mật khẩu mới có thể tạo ra mật khẩu không khớp volume đã init.',
+    };
+  }
+
+  const password = generatePostgresPassword();
+  // Giá trị đi qua STDIN, không qua argv: argv của process khác đọc được qua
+  // `/proc/<pid>/cmdline` (cùng user) và qua `ps` — mật khẩu local không cần
+  // rò ra tới đó. `pulumi config set` đọc giá trị từ stdin khi không có
+  // argument value (đo thật trên CLI 3.270), và `--raw` giữ nguyên giá trị
+  // (không trim newline).
+  //
+  // `--plaintext` BẮT BUỘC: CLI 3.270 tự chặn giá trị "trông như secret"
+  // (key `postgres:password` + giá trị ngẫu nhiên) với lỗi "looks like a
+  // secret; rerun with --secret ... or --plaintext" và exit 1 — đo thật. Không
+  // có cờ nào, `config set` fail và mật khẩu KHÔNG được lưu.
+  const set = exec(
+    'pulumi',
+    [
+      'config',
+      'set',
+      POSTGRES_PASSWORD_CONFIG_KEY,
+      '--plaintext',
+      '--raw',
+      '--stack',
+      fullStackRef(PLATFORM_PROJECT, ctx),
+    ],
+    projectDir(PLATFORM_PROJECT),
+    env,
+    { input: password },
+  );
+  if (set.status !== 0) {
+    return {
+      ok: false,
+      error: `pulumi config set ${POSTGRES_PASSWORD_CONFIG_KEY} thất bại:\n${set.stderr}`,
+    };
+  }
+  return { ok: true, password, generated: true };
+}
+
+/**
  * Luồng đầy đủ: platform → outputs → .env → home → smoke.
  *
  * Cả hai project được truyền `namespace:worktreeRoot` qua `--config` tại lúc
@@ -188,15 +451,15 @@ export function localDeploy(options: LocalDeployOptions = {}): number {
 
   console.log(`[local-deploy] worktree=${ctx.worktreeRoot} namespace=${ctx.namespace}`);
 
-  // Passphrase bắt buộc — fail TRƯỚC khi chạm Pulumi hay Docker nào. Thiếu
-  // passphrase mà để CLI tự fail giữa chừng là mutation dở dang vô ích. Áp dụng
-  // cho CẢ preview: `preview` nạp stack config (PU4) nên cũng cần passphrase.
-  const pass = requirePassphrase();
-  if ('error' in pass) {
-    console.error(`[local-deploy] ${pass.error}`);
-    return 1;
-  }
-  const env = pulumiEnv(ctx, pass.passphrase);
+  // Passphrase local: sinh bởi công cụ và lưu ngoài Git, hoặc lấy từ môi
+  // trường của developer nếu có. Developer KHÔNG cần tự đặt gì — nhưng nếu
+  // môi trường đã có passphrase thì dùng của họ (stack cũ tạo bằng passphrase
+  // đó vẫn giải được). Chi tiết vì sao Pulumi bắt buộc passphrase: xem
+  // `resolveLocalPassphrase` trong `pulumi-context.ts`.
+  const passphrase = resolveLocalPassphrase(ctx.worktreeRoot, {
+    create: options.previewOnly !== true,
+  });
+  const env = pulumiEnv(ctx, passphrase);
 
   // Preview là nhánh READ-ONLY riêng — tách khỏi đường apply ngay từ đây để
   // không đường nào trong apply (ensureStack, config set, up) chạy nhầm khi
@@ -205,6 +468,27 @@ export function localDeploy(options: LocalDeployOptions = {}): number {
     return runPreview(ctx, env);
   }
 
+  // Lock phối hợp host-wide với `local-cleanup`: deploy đang apply (Docker thay
+  // đổi trong lúc up) và cleanup chạy cạnh nhau là race vào cùng daemon — cleanup
+  // thấy container đang thiếu/chưa đủ labels rồi quyết định sai. Preview là
+  // read-only, không cần lock.
+  const lock = acquireLocalDeployLock();
+  try {
+    return runApply(ctx, env, options);
+  } finally {
+    lock();
+  }
+}
+
+/**
+ * Phần APPLY của `localDeploy` — tách khỏi nhánh preview để lock bao đúng phần
+ * mutate Docker, không bao phần read-only.
+ */
+function runApply(
+  ctx: LocalDeployContext,
+  env: NodeJS.ProcessEnv,
+  options: LocalDeployOptions = {},
+): number {
   const sharedConfigArgs = [
     '--config',
     `namespace:worktreeRoot=${ctx.worktreeRoot}`,
@@ -215,60 +499,37 @@ export function localDeploy(options: LocalDeployOptions = {}): number {
     `home-deploy:platformStackRef=`,
   ];
 
-  // 1. Platform up. Lỗi Pulumi (không login được backend) dừng toàn luồng —
-  //    .env chỉ được ghi sau khi outputs thật tồn tại.
+  // 1. Chuẩn bị stack + mật khẩu PostgreSQL.
+  //
+  //    Thứ tự là bất biến: `ensureStack` (mkdir + `stack init`) phải chạy
+  //    TRƯỚC khi `config get`/`config set` chạm vào stack — đọc config của
+  //    stack chưa tồn tại là lỗi. Trước đây `ensureStack` nằm trong
+  //    `pulumiRun` mặc định; khi mặc định đảo thành opt-in, mutation đầu tiên
+  //    của luồng phải tự chuẩn bị.
   console.log('[local-deploy] platform up…');
+  let postgresPassword: string;
   try {
-    // Chuẩn bị stack TRƯỚC khi `config set` ghi vào nó: `mkdir` state dir +
-    // `stack init` (stack đã tồn tại thì init fail, rơi về `stack select` —
-    // idempotent). Trước đây `ensureStack` nằm trong `pulumiRun` mặc định; khi
-    // mặc định đảo thành opt-in, mutation đầu tiên của luồng phải tự chuẩn bị.
     ensureStack(projectDir(PLATFORM_PROJECT), PLATFORM_PROJECT, ctx, env);
 
-    // Secret `postgres:password` sinh ngẫu nhiên MỘT LẦN duy nhất trên stack
-    // mới, rồi đọc lại từ backend ở mọi lần chạy sau — regen mỗi lần chạy sẽ
-    // khiến container Postgres rebuild không lý do. CHỈ thuộc về đường apply:
-    // preview không bao giờ sinh/ghi secret (prerequisite của preview là secret
-    // đã tồn tại — xem `runPreview`).
-    const secret = exec(
-      'pulumi',
-      // KHÔNG có cờ `--secret` ở `config get`: CLI 3.267 từ chối `unknown flag`
-      // (đo thật), secret get trả plaintext của giá trị đã mã hoá mà không cần
-      // cờ; cờ `--secret` chỉ thuộc về `config set`. Lỗi cờ từng khiến mỗi lần
-      // chạy sinh mật khẩu MỚI đè lên mật khẩu cũ — container Postgres hiện hữu
-      // không còn khớp secret state sau lần apply kế tiếp.
-      ['config', 'get', 'postgres:password', '--stack', fullStackRef(PLATFORM_PROJECT, ctx)],
-      projectDir(PLATFORM_PROJECT),
-      env,
-    );
-    // CHỈ coi là "chưa có key" khi CLI báo đúng vậy (isConfigKeyMissing) — sai
-    // passphrase, state lock, backend hỏng... phải dừng ở đây, không được regen.
-    if (!isConfigKeyMissing(secret) && secret.status !== 0) {
-      throw new Error(`pulumi config get postgres:password thất bại:\n${secret.stderr}`);
+    // Mật khẩu PostgreSQL: đọc lại từ stack config (canonical), chỉ sinh mới
+    // khi stack mới VÀ chưa có volume. Xem `resolvePostgresPassword`.
+    const resolution = resolvePostgresPassword(ctx, env);
+    if (!resolution.ok) {
+      console.error(`[local-deploy] ${resolution.error}`);
+      return 1;
     }
-    if (secret.stdout.trim().length === 0) {
-      const pw = randomBytes(24).toString('base64url');
-      const setSecret = exec(
-        'pulumi',
-        [
-          'config',
-          'set',
-          'postgres:password',
-          pw,
-          '--stack',
-          fullStackRef(PLATFORM_PROJECT, ctx),
-          '--secret',
-        ],
-        projectDir(PLATFORM_PROJECT),
-        env,
-      );
-      if (setSecret.status !== 0) {
-        throw new Error(`pulumi config set postgres:password thất bại:\n${setSecret.stderr}`);
-      }
+    postgresPassword = resolution.password;
+    if (resolution.generated) {
       console.log(
-        '[local-deploy] postgres:password đã sinh ngẫu nhiên và lưu dạng secret trong state local.',
+        '[local-deploy] postgres:password đã sinh ngẫu nhiên và lưu trong stack config local.',
       );
     }
+  } catch (error) {
+    console.error(`[local-deploy] ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  }
+
+  try {
     pulumiRun(
       projectDir(PLATFORM_PROJECT),
       PLATFORM_PROJECT,
@@ -298,8 +559,20 @@ export function localDeploy(options: LocalDeployOptions = {}): number {
   }
 
   // 3. Cập nhật .env (chỉ key thuộc workflow).
-  const { envPath } = upsertLocalEnv(ctx.worktreeRoot, outputs.rootHost);
-  console.log(`[local-deploy] ${ROOT_HOST_ENV_KEY}=${outputs.rootHost} đã ghi vào ${envPath}`);
+  //
+  //    `.env` nhận CÙNG giá trị mật khẩu đã lưu trong stack config — mật khẩu
+  //    không được sinh lần thứ hai ở đây: hai nguồn lệch nhau là consumer đọc
+  //    `.env` sẽ dùng mật khẩu khác với mật khẩu Postgres thật. Stack config là
+  //    nguồn sự thật canonical; `.env` là bản sao sinh ra, khôi phục được từ
+  //    config khi bị xoá.
+  const { envPath } = upsertLocalEnv(ctx.worktreeRoot, {
+    [ROOT_HOST_ENV_KEY]: outputs.rootHost,
+    [POSTGRES_PASSWORD_ENV_KEY]: postgresPassword,
+  });
+  console.log(
+    `[local-deploy] ${ROOT_HOST_ENV_KEY}=${outputs.rootHost} và ` +
+      `${POSTGRES_PASSWORD_ENV_KEY} đã ghi vào ${envPath}`,
+  );
 
   // 4. Home up — image build + container + routing labels.
   console.log('[local-deploy] home up…');
@@ -364,21 +637,23 @@ export function localDeploy(options: LocalDeployOptions = {}): number {
  * được trên worktree mới"):
  *
  * 1. KHÔNG khởi tạo: không `ensureStack` (mkdir + `stack init`), không sinh
- *    secret, không `config set`, không ghi `.env`, không `up`/`destroy`.
+ *    mật khẩu, không `config set`, không ghi `.env`, không `up`/`destroy`.
  * 2. KHÔNG truyền `--config` cho `pulumi preview`: CLI 3.x **lưu** `--config`
  *    vào stack config file kể cả khi preview (đo từ `pulumi preview --help`:
  *    "Config to use during the preview and save to the stack config file") —
  *    truyền nó là mutation cấu hình giữa chừng một lệnh read-only. Mọi key mà
  *    chương trình cần (`namespace:worktreeRoot`, `namespace:platformStackRef`,
- *    secret `postgres:password`) đã do apply lưu vào stack config ở lần chạy
+ *    `postgres:password`) đã do apply lưu vào stack config ở lần chạy
  *    trước — preview chỉ đọc lại.
  * 3. Prerequisite kiểm READ-ONLY trước khi chạy lệnh nào: state dir tồn tại,
  *    platform stack đã up (outputs thật — home đọc qua StackReference), home
  *    stack tồn tại. Thiếu → báo đúng thiếu gì kèm cách khắc phục (`pnpm dx
  *    local-deploy`) và trả 1 — không tự khởi tạo gì để "giúp" preview xanh.
  *
- * Passphrase vẫn bắt buộc (gate ở `localDeploy`): `preview` nạp stack config
- * (PU4). Mọi lệnh chạy với `prepareStack: false`.
+ * Passphrase: `localDeploy` đã giải quyết trước khi gọi hàm này
+ * (`resolveLocalPassphrase` — do công cụ quản lý, developer không tự đặt).
+ * `preview` nạp stack config (PU4) nên vẫn chạy với passphrase đó. Mọi lệnh
+ * chạy với `prepareStack: false`.
  */
 function runPreview(ctx: LocalDeployContext, env: NodeJS.ProcessEnv): number {
   console.log('[local-deploy] preview (read-only) — kiểm prerequisites…');
@@ -483,21 +758,22 @@ function runPreview(ctx: LocalDeployContext, env: NodeJS.ProcessEnv): number {
  * — và kể cả lúc đó lệnh in cảnh báo trước rồi mới chạy. Không đường nào xóa
  * volume âm thầm.
  *
- * Destroy KHÔNG dùng `--remove`: xoá stack sẽ xoá cả CONFIG — trong đó có secret
+ * Destroy KHÔNG dùng `--remove`: xoá stack sẽ xoá cả CONFIG — trong đó có
  * `postgres:password` — trong khi volume (với superuser được khởi tạo bằng mật
- * khẩu CŨ) vẫn được giữ lại. Deploy kế tiếp trên stack mới sẽ sinh mật khẩu mới
- * không bao giờ khớp volume cũ, và Postgres fail init lặp vô hạn. Giữ stack
- * (chỉ rỗng resource) là cách hai nửa — secret trong config, dữ liệu trong
- * volume — luôn cùng tuổi.
+ * khẩu CŨ) vẫn được giữ lại. Deploy kế tiếp trên stack mới sẽ không có mật
+ * khẩu để sinh (volume còn, config mất) và phải fail với lỗi có hướng dẫn,
+ * thay vì sinh mật khẩu mới không bao giờ khớp volume cũ. Giữ stack (chỉ rỗng
+ * resource) là cách hai nửa — mật khẩu trong config, dữ liệu trong volume —
+ * luôn cùng tuổi.
  */
 export function localDestroy(options: { worktreeRoot?: string; removeData?: boolean }): number {
   const ctx = resolveContext(options.worktreeRoot);
   const volumeName = dockerResourceName(ctx.namespace, 'postgres-volume');
 
   // Teardown trên worktree CHƯA TỪNG deploy phải là no-op idempotent, không
-  // phải mutation — và phải đứng TRƯỚC cả gate passphrase: yêu cầu passphrase
-  // cho một worktree chưa có gì để xoá là chặn teardown hợp lệ chỉ vì env thiếu
-  // biến. `ensureStack` với `mkdir` + `stack init` sẽ TẠO state mới chỉ để
+  // phải mutation — và phải đứng TRƯỚC cả việc tạo passphrase: tạo file
+  // passphrase cho một worktree chưa có gì để xoá là mutation vô nghĩa.
+  // `ensureStack` với `mkdir` + `stack init` sẽ TẠO state mới chỉ để
   // destroy nó (và home destroy còn fail vì config `platformStackRef` chưa
   // từng được ghi). State dir chưa tồn tại = chắc chắn chưa có gì để xoá.
   if (!existsSync(localStateDir(ctx.worktreeRoot))) {
@@ -507,15 +783,40 @@ export function localDestroy(options: { worktreeRoot?: string; removeData?: bool
     return 0;
   }
 
-  // Passphrase bắt buộc: `destroy` nạp stack config (PU4) nên không có
-  // passphrase là CLI exit 1 giữa chừng — home đã destroy nhưng platform chưa.
-  const pass = requirePassphrase();
-  if ('error' in pass) {
-    console.error(`[local-destroy] ${pass.error}`);
+  // Passphrase: worktree đã deploy thì đã có file passphrase (do `local-deploy`
+  // tạo) hoặc passphrase của developer trong môi trường. Không có cả hai thì
+  // báo lỗi rõ ràng — `destroy` nạp stack config nên không có passphrase là CLI
+  // exit 1 giữa chừng (home đã destroy nhưng platform chưa).
+  const passphrase = resolveLocalPassphrase(ctx.worktreeRoot, { create: false });
+  if (passphrase.kind === 'none') {
+    console.error(
+      '[local-destroy] Không tìm thấy passphrase cho local stack của worktree này. ' +
+        'Worktree đã deploy bằng passphrase của developer — cung cấp lại qua ' +
+        '`PULUMI_CONFIG_PASSPHRASE` (hoặc `PULUMI_CONFIG_PASSPHRASE_FILE`) để destroy được.',
+    );
     return 1;
   }
-  const env = pulumiEnv(ctx, pass.passphrase);
+  const env = pulumiEnv(ctx, passphrase);
 
+  // Lock host-wide chia sẻ với `local-deploy`/`local-cleanup`: destroy biến đổi
+  // Docker (xoá container/network/volume) nên không được chạy đồng thời với apply
+  // hay cleanup vào cùng daemon. No-op (worktree chưa deploy) và kiểm tra
+  // passphrase đã trả về ở TRÊN — lock chỉ bao phần mutate thật.
+  const lock = acquireLocalDeployLock();
+  try {
+    return runDestroySteps(ctx, volumeName, env, options);
+  } finally {
+    lock();
+  }
+}
+
+/** Phần MUTATE của `localDestroy` — tách để lock bao đúng phần teardown thật. */
+function runDestroySteps(
+  ctx: LocalDeployContext,
+  volumeName: string,
+  env: NodeJS.ProcessEnv,
+  options: { worktreeRoot?: string; removeData?: boolean },
+): number {
   console.log('[local-deploy] home destroy…');
   const homeOk = runProjectStep(
     'home destroy',
@@ -525,7 +826,6 @@ export function localDestroy(options: { worktreeRoot?: string; removeData?: bool
     env,
     { prepareStack: false },
   );
-  if (!homeOk) return 1;
 
   console.log('[local-deploy] platform destroy…');
   const platformOk = runProjectStep(
@@ -536,7 +836,25 @@ export function localDestroy(options: { worktreeRoot?: string; removeData?: bool
     env,
     { prepareStack: false },
   );
-  if (!platformOk) return 1;
+
+  // Destroy của stack KHÔNG chặn bước xoá volume khi người dùng yêu cầu
+  // `--remove-data`: lời hứa của lệnh là XOÁ dữ liệu — nếu stack Pulumi đã
+  // biến mất (`pulumi stack rm` ngoài luồng, state hỏng, "no stack named"…)
+  // thì destroy stack coi như đã xong phần đó, và bước xoá volume vẫn phải chạy.
+  // Với lỗi Pulumi khác (daemon down, sai passphrase…), cũng tiếp tục tới volume
+  // theo yêu cầu `--remove-data` nhưng báo rõ để người dùng biết destroy stack
+  // chưa trọn. Không `--remove-data`: lỗi thật → exit 1, không đụng volume.
+  const destroyFailed = !(homeOk && platformOk);
+  if (destroyFailed && options.removeData !== true) {
+    return 1;
+  }
+  if (destroyFailed && options.removeData === true) {
+    console.error(
+      '[local-deploy] destroy Pulumi không hoàn tất (stderr phía trên) — vẫn tiếp tục ' +
+        'xoá volume theo yêu cầu --remove-data. Resources còn sót trong state (nếu còn) ' +
+        'không được dọn; kiểm lại như cầu.',
+    );
+  }
 
   if (options.removeData === true) {
     console.warn(
@@ -669,17 +987,21 @@ export function localStatus(options: { worktreeRoot?: string }): number {
       .split('\n')
       .find((entry) => entry.startsWith(`${ROOT_HOST_ENV_KEY}=`));
     if (line !== undefined) console.log(`.env ${ROOT_HOST_ENV_KEY}:  ${line.split('=')[1]}`);
+    // KHÔNG in `POSTGRES_PASSWORD` — `local-status` là lệnh hay được chạy và
+    // paste output vào ticket/chat. Chỉ báo **có** mặt hay không.
+    const hasPassword = readFileSync(envPath, 'utf8')
+      .split('\n')
+      .some((entry) => entry.startsWith(`${POSTGRES_PASSWORD_ENV_KEY}=`));
+    console.log(`.env ${POSTGRES_PASSWORD_ENV_KEY}: ${hasPassword ? 'đã có' : 'chưa có'}`);
   }
 
-  // Passphrase bắt buộc ngay cả khi chỉ ĐỌC outputs: `stack output` nạp stack
-  // config (PU4), thiếu passphrase là exit 1 — phải báo đúng lý do, không nuốt
-  // thành "chưa deploy".
-  const pass = requirePassphrase();
-  if ('error' in pass) {
-    console.error(`[local-status] ${pass.error}`);
-    return 1;
-  }
-  const env = pulumiEnv(ctx, pass.passphrase);
+  // Passphrase: dùng file của worktree nếu có, không thì biến môi trường.
+  // `create: false` — `local-status` là read-only, không được tạo file
+  // passphrase. Không có passphrase thì vẫn chạy được: `pulumi stack output`
+  // đọc outputs mà KHÔNG cần giải mã (đo thật trên CLI 3.270 — khác với
+  // `up`/`preview`/`destroy` vốn phải nạp stack config đầy đủ).
+  const passphrase = resolveLocalPassphrase(ctx.worktreeRoot, { create: false });
+  const env = pulumiEnv(ctx, passphrase);
 
   const status = queryPlatformStatus(ctx, env);
   switch (status.state) {

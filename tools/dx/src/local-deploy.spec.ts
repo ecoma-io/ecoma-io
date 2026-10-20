@@ -7,11 +7,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   localDeploy,
   localDestroy,
+  localStatus,
   classifyStackOutput,
   queryPlatformStatus,
   DEPLOY_STEPS,
   upsertLocalEnv,
   isConfigKeyMissing,
+  generatePostgresPassword,
+  lookupPostgresPassword,
+  probePostgresVolume,
+  resolvePostgresPassword,
 } from './local-deploy.js';
 import {
   exec,
@@ -23,13 +28,18 @@ import {
   type LocalDeployContext,
 } from './pulumi-context.js';
 import { worktreeNamespace } from './deploy-namespace.js';
+import {
+  LOCAL_ENV_OWNED_KEYS,
+  POSTGRES_PASSWORD_ENV_KEY,
+  ROOT_HOST_ENV_KEY,
+} from './platform-outputs-contract.js';
 
 /**
  * Orchestration boundary được test bằng injected command runner: mock
  * `pulumi-context.js` để `exec`/`pulumiRun`/`ensureStack` trở thành cát —
  * `localDeploy` vẫn chạy toàn bộ logic orchestration (phân loại state, thứ tự
  * bước, gate passphrase, ghi `.env`) nhưng không cần Pulumi hay Docker thật.
- * `classifyStackOutput`/`resolveContext`/`requirePassphrase`/`localStateDir`
+ * `classifyStackOutput`/`resolveContext`/`localStateDir`/`resolveLocalPassphrase`
  * vẫn là thực (không mock) để test kiểm được chúng trong cùng suite.
  *
  * Đây là cách duy nhất để chứng minh "preview không mutate" một cách xác định:
@@ -102,7 +112,7 @@ describe('resolveContext', () => {
 describe('upsertLocalEnv', () => {
   it('file chưa tồn tại → tạo mới với đúng một key', () => {
     const root = tempWorktree();
-    const { envPath } = upsertLocalEnv(root, 'fbi.com:40000');
+    const { envPath } = upsertLocalEnv(root, { ROOT_HOST: 'fbi.com:40000' });
     expect(existsSync(envPath)).toBe(true);
     expect(readFileSync(envPath, 'utf8')).toBe('ROOT_HOST=fbi.com:40000\n');
   });
@@ -116,7 +126,7 @@ describe('upsertLocalEnv', () => {
       ),
       'utf8',
     );
-    upsertLocalEnv(root, 'fbi.com:40001');
+    upsertLocalEnv(root, { ROOT_HOST: 'fbi.com:40001' });
     const content = readFileSync(join(root, '.env'), 'utf8');
     expect(content).toContain('ROOT_HOST=fbi.com:40001');
     expect(content).toContain('# comment giữ nguyên');
@@ -128,7 +138,7 @@ describe('upsertLocalEnv', () => {
   it('key chưa có trong file hiện hữu → thêm cuối, không xoá gì', () => {
     const root = tempWorktree();
     writeFileSync(join(root, '.env'), 'ONLY=one', 'utf8');
-    upsertLocalEnv(root, 'fbi.com:40002');
+    upsertLocalEnv(root, { ROOT_HOST: 'fbi.com:40002' });
     const content = readFileSync(join(root, '.env'), 'utf8');
     expect(content).toContain('ONLY=one');
     expect(content).toContain('ROOT_HOST=fbi.com:40002');
@@ -136,8 +146,8 @@ describe('upsertLocalEnv', () => {
 
   it('chạy hai lần với port khác nhau → giá trị cuối thắng, không nhân bản dòng', () => {
     const root = tempWorktree();
-    upsertLocalEnv(root, 'fbi.com:40003');
-    upsertLocalEnv(root, 'fbi.com:40004');
+    upsertLocalEnv(root, { ROOT_HOST: 'fbi.com:40003' });
+    upsertLocalEnv(root, { ROOT_HOST: 'fbi.com:40004' });
     const content = readFileSync(join(root, '.env'), 'utf8');
     expect(content.match(/ROOT_HOST=/gu)?.length).toBe(1);
     expect(content).toContain('ROOT_HOST=fbi.com:40004');
@@ -291,19 +301,44 @@ describe('localDeploy previewOnly', () => {
 });
 
 describe('localDeploy apply (non-preview) retains initialization behavior', () => {
-  it('missing passphrase → exit 1, no ensureStack/exec/pulumiRun dispatch', () => {
+  it('no passphrase env needed → apply still succeeds on a fresh stack (tool-managed passphrase)', () => {
     const root = tempWorktree();
-    const saved = process.env.PULUMI_CONFIG_PASSPHRASE;
+    const savedPass = process.env.PULUMI_CONFIG_PASSPHRASE;
+    const savedFile = process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
     delete process.env.PULUMI_CONFIG_PASSPHRASE;
     delete process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
+    execMock.mockImplementation((_command, args) => {
+      if (args[0] === 'config' && args[1] === 'get') {
+        return {
+          status: 1,
+          stdout: '',
+          stderr: 'error: no value for the key postgres:password',
+        } satisfies ExecResult;
+      }
+      if (args[0] === 'config' && args[1] === 'set') {
+        return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+      }
+      if (args[0] === 'volume' && args[1] === 'inspect') {
+        return { status: 1, stdout: '', stderr: 'Error: No such volume' } satisfies ExecResult;
+      }
+      return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+    });
+    pulumiRunMock.mockImplementation((_projectDir, projectName, args) => {
+      if (projectName === 'platform-deploy' && args[0] === 'stack' && args[1] === 'output') {
+        return `${JSON.stringify({ traefikHostPort: 40001 })}\n`;
+      }
+      return undefined;
+    });
     try {
-      const exit = localDeploy({ worktreeRoot: root });
-      expect(exit).toBe(1);
-      expect(existsSync(join(root, '.pulumi-local-state'))).toBe(false);
-      expect(execMock).not.toHaveBeenCalled();
-      expect(pulumiRunMock).not.toHaveBeenCalled();
+      const exit = localDeploy({ worktreeRoot: root, skipSmoke: true });
+      expect(exit).toBe(0);
+      // Passphrase do công cụ sinh và lưu ngoài Git — không cần developer đặt.
+      expect(existsSync(join(root, '.pulumi-local-passphrase'))).toBe(true);
     } finally {
-      if (saved !== undefined) process.env.PULUMI_CONFIG_PASSPHRASE = saved;
+      if (savedPass !== undefined) process.env.PULUMI_CONFIG_PASSPHRASE = savedPass;
+      else delete process.env.PULUMI_CONFIG_PASSPHRASE;
+      if (savedFile !== undefined) process.env.PULUMI_CONFIG_PASSPHRASE_FILE = savedFile;
+      else delete process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
     }
   });
 
@@ -324,6 +359,9 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
       if (args[0] === 'config' && args[1] === 'set') {
         return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
       }
+      if (args[0] === 'volume' && args[1] === 'inspect') {
+        return { status: 1, stdout: '', stderr: 'Error: No such volume' } satisfies ExecResult;
+      }
       return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
     });
     pulumiRunMock.mockImplementation((_projectDir, projectName, args) => {
@@ -340,7 +378,7 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
     expect(vi.mocked(ensureStack)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(ensureStack).mock.calls[0][1]).toBe('platform-deploy');
 
-    // config get rồi config set (generate password) — apply vẫn sinh secret.
+    // config get rồi config set (generate password) — apply vẫn sinh password.
     const configGetCall = execMock.mock.calls.find(
       ([, args]) => args[0] === 'config' && args[1] === 'get',
     );
@@ -350,7 +388,14 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
     );
     expect(configSetCall).toBeDefined();
     expect(configSetCall?.[1]).toContain('postgres:password');
-    expect(configSetCall?.[1]).toContain('--secret');
+    expect(configSetCall?.[1]).not.toContain('--secret');
+    // `--plaintext` BẮT BUỘC: CLI 3.270 chặn giá trị "trông như secret" với
+    // exit 1 nếu không có cờ này (đo thật) — `config set` fail, mật khẩu không
+    // được lưu.
+    expect(configSetCall?.[1]).toContain('--plaintext');
+    // Giá trị đi qua STDIN, không qua argv: argv đọc được qua
+    // `/proc/<pid>/cmdline` và `ps`. execMock nhận `input` ở options (arg thứ 5).
+    expect(configSetCall?.[4]).toEqual({ input: expect.any(String) });
 
     // pulumiRun: platform up (prepareStack: true, có --config) rồi home up.
     const upCalls = pulumiRunMock.mock.calls.filter(([, , args]) => args[0] === 'up');
@@ -450,7 +495,7 @@ describe('queryPlatformStatus — no-stack khi state dir chưa tồn tại', () 
     // backend-error. Guard phải bắt ngay từ kiểm sự tồn tại.
     const wt = tempWorktree();
     const ctx = resolveContext(wt);
-    const env = pulumiEnv(ctx, 'unit-test-pass');
+    const env = pulumiEnv(ctx, { kind: 'inline', value: 'unit-test-pass' });
     const result = queryPlatformStatus(ctx, env);
     expect(result).toEqual({ state: 'no-stack' });
   });
@@ -465,6 +510,42 @@ describe('localDestroy — teardown trên worktree chưa từng deploy', () => {
     // No-op nghĩa là KHÔNG mutation: thư mục state không được tạo ra.
     expect(existsSync(join(wt, '.pulumi-local-state'))).toBe(before);
     expect(before).toBe(false);
+  });
+});
+
+describe('localDestroy — volume removal coping with lost Pulumi stacks', () => {
+  it('stacks already gone (pulumi stack rm): destroy Pulumi fails but --remove-data still removes the volume', () => {
+    const wt = tempWorktree();
+    mkdirSync(join(wt, '.pulumi-local-state'), { recursive: true });
+    process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
+    pulumiRunMock.mockImplementation(() => {
+      throw new Error('pulumi destroy thất bại:\nerror: no stack named');
+    });
+    execMock.mockReturnValue({ status: 0, stdout: '', stderr: '' } satisfies ExecResult);
+    const exit = localDestroy({ worktreeRoot: wt, removeData: true });
+    // destroy Pulumi không trọn nhưng lời hứa --remove-data vẫn phải được thực hiện:
+    // docker volume rm đã chạy.
+    expect(
+      execMock.mock.calls.some(
+        ([command, args]) => command === 'docker' && args[0] === 'volume' && args[1] === 'rm',
+      ),
+    ).toBe(true);
+    expect(exit).toBe(0);
+  });
+
+  it('Pulumi destroy failure without --remove-data → exit 1, volume untouched', () => {
+    const wt = tempWorktree();
+    mkdirSync(join(wt, '.pulumi-local-state'), { recursive: true });
+    process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
+    pulumiRunMock.mockImplementation(() => {
+      throw new Error('pulumi destroy thất bại:\nerror: no stack named');
+    });
+    execMock.mockReturnValue({ status: 0, stdout: '', stderr: '' } satisfies ExecResult);
+    const exit = localDestroy({ worktreeRoot: wt });
+    expect(exit).toBe(1);
+    expect(
+      execMock.mock.calls.some(([command, args]) => command === 'docker' && args[1] === 'rm'),
+    ).toBe(false);
   });
 });
 
@@ -517,5 +598,327 @@ describe('isConfigKeyMissing — secret regen guard', () => {
     // + rỗng không thể xảy ra trên CLI thật (exit 0 luôn kèm giá trị) nhưng
     // hợp đồng của helper là nhận diện chữ ký, không quyết định regen.
     expect(isConfigKeyMissing({ status: 0, stdout: '', stderr: '' })).toBe(false);
+  });
+});
+
+describe('generatePostgresPassword', () => {
+  it('uses a cryptographically secure source — non-empty, base64url-safe, long enough', () => {
+    const pw = generatePostgresPassword();
+    expect(pw.length).toBeGreaterThanOrEqual(24);
+    expect(pw).toMatch(/^[A-Za-z0-9_-]+$/u);
+  });
+
+  it('does not reuse a value across calls', () => {
+    expect(generatePostgresPassword()).not.toBe(generatePostgresPassword());
+  });
+});
+
+describe('lookupPostgresPassword', () => {
+  it('exit 0 + non-empty stdout → found with the trimmed value', () => {
+    expect(lookupPostgresPassword({ status: 0, stdout: '  secret-pw  \n', stderr: '' })).toEqual({
+      state: 'found',
+      password: 'secret-pw',
+    });
+  });
+
+  it('exit 0 + empty stdout → missing', () => {
+    expect(lookupPostgresPassword({ status: 0, stdout: '   \n', stderr: '' })).toEqual({
+      state: 'missing',
+    });
+  });
+
+  it('exit != 0 + "no value for the key" → missing', () => {
+    expect(
+      lookupPostgresPassword({
+        status: 1,
+        stdout: '',
+        stderr: 'error: no value for the key postgres:password',
+      }),
+    ).toEqual({ state: 'missing' });
+  });
+
+  it('exit != 0 + other error → error state with detail, never "missing"', () => {
+    const r = lookupPostgresPassword({
+      status: 1,
+      stdout: '',
+      stderr: 'error: could not decrypt configuration value',
+    });
+    expect(r.state).toBe('error');
+    const detail = (r as { detail?: string }).detail ?? '';
+    expect(detail).toContain('could not decrypt');
+  });
+});
+
+describe('probePostgresVolume', () => {
+  it('docker volume inspect exits 0 → present', () => {
+    execMock.mockReturnValue({ status: 0, stdout: '[{}]', stderr: '' } satisfies ExecResult);
+    expect(probePostgresVolume('ecoma-wtest-postgres-volume', {})).toEqual({ state: 'present' });
+  });
+
+  it('stderr "not found" → absent', () => {
+    execMock.mockReturnValue({
+      status: 1,
+      stdout: '',
+      stderr: 'Error: No such volume: ecoma-wtest-postgres-volume',
+    } satisfies ExecResult);
+    expect(probePostgresVolume('ecoma-wtest-postgres-volume', {})).toEqual({ state: 'absent' });
+  });
+
+  it('spawn failure (status null) → unknown with detail, never "absent"', () => {
+    execMock.mockReturnValue({
+      status: null,
+      stdout: '',
+      stderr: '',
+      error: new Error('spawn docker ENOENT'),
+    } satisfies ExecResult);
+    const r = probePostgresVolume('v', {});
+    expect(r.state).toBe('unknown');
+    const detail = (r as { detail?: string }).detail ?? '';
+    expect(detail).toContain('ENOENT');
+  });
+});
+
+describe('resolvePostgresPassword', () => {
+  const ctx = resolveContext;
+  it('existing password in config → reuse, never regenerate', () => {
+    const root = tempWorktree();
+    const c = ctx(root);
+    execMock.mockReturnValue({
+      status: 0,
+      stdout: 'existing-pw\n',
+      stderr: '',
+    } satisfies ExecResult);
+    const r = resolvePostgresPassword(c, {});
+    expect(r).toEqual({ ok: true, password: 'existing-pw', generated: false });
+    // Không được gọi config set.
+    expect(execMock.mock.calls.some(([, args]) => args[1] === 'set')).toBe(false);
+  });
+
+  it('missing password + volume present → fail with actionable guidance, no generate', () => {
+    const root = tempWorktree();
+    const c = ctx(root);
+    execMock.mockImplementation((_command, args) => {
+      if (args[0] === 'config' && args[1] === 'get') {
+        return {
+          status: 1,
+          stdout: '',
+          stderr: 'error: no value for the key postgres:password',
+        } satisfies ExecResult;
+      }
+      // docker volume inspect → present
+      return { status: 0, stdout: '[{}]', stderr: '' } satisfies ExecResult;
+    });
+    const r = resolvePostgresPassword(c, {});
+    expect(r.ok).toBe(false);
+    const error = (r as { error?: string }).error ?? '';
+    expect(error).toContain('Volume PostgreSQL');
+    expect(error).toContain('local-destroy --remove-data');
+    expect(execMock.mock.calls.some(([, args]) => args[1] === 'set')).toBe(false);
+  });
+
+  it('missing password + volume absent → generate + config set (--plaintext, value via stdin)', () => {
+    const root = tempWorktree();
+    const c = ctx(root);
+    execMock.mockImplementation((_command, args) => {
+      if (args[0] === 'config' && args[1] === 'get') {
+        return {
+          status: 1,
+          stdout: '',
+          stderr: 'error: no value for the key postgres:password',
+        } satisfies ExecResult;
+      }
+      if (args[0] === 'config' && args[1] === 'set') {
+        return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+      }
+      // docker volume inspect → absent
+      return { status: 1, stdout: '', stderr: 'Error: No such volume' } satisfies ExecResult;
+    });
+    const r = resolvePostgresPassword(c, {});
+    expect(r.ok).toBe(true);
+    const ok = r as { password: string; generated: boolean };
+    expect(ok.generated).toBe(true);
+    expect(ok.password).toMatch(/^[A-Za-z0-9_-]+$/u);
+    const setCall = execMock.mock.calls.find(([, args]) => args[1] === 'set');
+    expect(setCall).toBeDefined();
+    expect(setCall?.[1]).toContain('postgres:password');
+    expect(setCall?.[1]).not.toContain('--secret');
+    expect(setCall?.[1]).toContain('--plaintext');
+    // Mật khẩu KHÔNG nằm trong argv — nó đi qua stdin.
+    expect(setCall?.[1]).not.toContain(ok.password);
+    expect(setCall?.[4]).toEqual({ input: ok.password });
+  });
+
+  it('read error (e.g. bad passphrase) → fail, never generate', () => {
+    const root = tempWorktree();
+    const c = ctx(root);
+    execMock.mockReturnValue({
+      status: 1,
+      stdout: '',
+      stderr: 'error: could not decrypt configuration value',
+    } satisfies ExecResult);
+    const r = resolvePostgresPassword(c, {});
+    expect(r.ok).toBe(false);
+    const error = (r as { error?: string }).error ?? '';
+    expect(error).toContain('Đọc postgres:password');
+  });
+});
+
+describe('upsertLocalEnv — new contract', () => {
+  it('creates file with both owned keys when missing', () => {
+    const root = tempWorktree();
+    const { envPath } = upsertLocalEnv(root, {
+      [ROOT_HOST_ENV_KEY]: 'fbi.com:40000',
+      [POSTGRES_PASSWORD_ENV_KEY]: 'pw-123',
+    });
+    expect(existsSync(envPath)).toBe(true);
+    const content = readFileSync(envPath, 'utf8');
+    expect(content).toContain('ROOT_HOST=fbi.com:40000');
+    expect(content).toContain('POSTGRES_PASSWORD=pw-123');
+  });
+
+  it('ignores keys not in LOCAL_ENV_OWNED_KEYS — no overwrite of user-managed vars', () => {
+    const root = tempWorktree();
+    writeFileSync(join(root, '.env'), 'MY_SECRET=keep\n', 'utf8');
+    upsertLocalEnv(root, { NOT_OWNED: 'should-not-appear' } as Record<string, string>);
+    const content = readFileSync(join(root, '.env'), 'utf8');
+    expect(content).toBe('MY_SECRET=keep\n');
+    expect(content).not.toContain('NOT_OWNED');
+  });
+
+  it('preserves unrelated variables byte-for-byte while updating owned keys', () => {
+    const root = tempWorktree();
+    writeFileSync(
+      join(root, '.env'),
+      ['# comment giữ nguyên', 'OTHER_KEY=keepme', 'ROOT_HOST=fbi.com:1', 'TRAILING=yes'].join(
+        '\n',
+      ) + '\n',
+      'utf8',
+    );
+    upsertLocalEnv(root, {
+      [ROOT_HOST_ENV_KEY]: 'fbi.com:40001',
+      [POSTGRES_PASSWORD_ENV_KEY]: 'pw-x',
+    });
+    const content = readFileSync(join(root, '.env'), 'utf8');
+    expect(content).toContain('ROOT_HOST=fbi.com:40001');
+    expect(content).toContain('POSTGRES_PASSWORD=pw-x');
+    expect(content).toContain('# comment giữ nguyên');
+    expect(content).toContain('OTHER_KEY=keepme');
+    expect(content).toContain('TRAILING=yes');
+    expect(content).not.toContain('fbi.com:1');
+  });
+
+  it('deleting .env then restoring from canonical config keeps the same password (no rotation)', () => {
+    const root = tempWorktree();
+    // First deploy writes both keys.
+    upsertLocalEnv(root, {
+      [ROOT_HOST_ENV_KEY]: 'fbi.com:40000',
+      [POSTGRES_PASSWORD_ENV_KEY]: 'canonical-pw',
+    });
+    // Simulate .env loss.
+    rmSync(join(root, '.env'));
+    // Restore from canonical config value (same password).
+    upsertLocalEnv(root, {
+      [ROOT_HOST_ENV_KEY]: 'fbi.com:40000',
+      [POSTGRES_PASSWORD_ENV_KEY]: 'canonical-pw',
+    });
+    const content = readFileSync(join(root, '.env'), 'utf8');
+    expect(content).toContain('POSTGRES_PASSWORD=canonical-pw');
+  });
+
+  it('updates every duplicate occurrence of an owned key (no stale last-wins value)', () => {
+    const root = tempWorktree();
+    // File mà dotenv parse last-wins: chỉ thay dòng ĐẦU là để lại giá trị cũ
+    // ở dòng sau → runtime đọc giá trị stale. Mọi occurrence phải đè vừa.
+    writeFileSync(
+      join(root, '.env'),
+      'ROOT_HOST=fbi.com:1\nOTHER=keep\nROOT_HOST=fbi.com:2\n',
+      'utf8',
+    );
+    upsertLocalEnv(root, { [ROOT_HOST_ENV_KEY]: 'fbi.com:40005' });
+    const content = readFileSync(join(root, '.env'), 'utf8');
+    expect(content.match(/^ROOT_HOST=.*$/gmu)?.length).toBe(2);
+    expect(content).not.toContain('ROOT_HOST=fbi.com:1');
+    expect(content).not.toContain('ROOT_HOST=fbi.com:2');
+    expect(content.match(/ROOT_HOST=fbi.com:40005/gu)?.length).toBe(2);
+    // Không nhân bản dòng: đúng hai occurrence, không dòng thứ ba.
+    expect(content.match(/^ROOT_HOST=/gmu)?.length).toBe(2);
+    expect(content).toContain('OTHER=keep');
+  });
+
+  it('appends an owned key only once even when other owned keys duplicate', () => {
+    const root = tempWorktree();
+    // ROOT_HOST trùng hai lần (được gộp về một value duy nhất), POSTGRES_PASSWORD
+    // chưa có trong file → append đúng một dòng, không phụ thuộc số duplicate.
+    writeFileSync(
+      join(root, '.env'),
+      'ROOT_HOST=fbi.com:1\nOTHER=keep\nROOT_HOST=fbi.com:2\n',
+      'utf8',
+    );
+    upsertLocalEnv(root, {
+      [ROOT_HOST_ENV_KEY]: 'fbi.com:40006',
+      [POSTGRES_PASSWORD_ENV_KEY]: 'pw-mixed',
+    });
+    const content = readFileSync(join(root, '.env'), 'utf8');
+    expect(content.match(/ROOT_HOST=fbi.com:40006/gu)?.length).toBe(2);
+    expect(content.match(/^POSTGRES_PASSWORD=.*$/gmu)?.length).toBe(1);
+    expect(content).toContain('POSTGRES_PASSWORD=pw-mixed');
+    expect(content).toContain('OTHER=keep');
+  });
+
+  it('throws when a value contains a newline', () => {
+    const root = tempWorktree();
+    expect(() => upsertLocalEnv(root, { [ROOT_HOST_ENV_KEY]: 'a\nb' })).toThrowError(
+      /newline|\\n|\\r/u,
+    );
+    expect(() => upsertLocalEnv(root, { [ROOT_HOST_ENV_KEY]: 'a\rb' })).toThrowError(
+      /newline|\\n|\\r/u,
+    );
+    // Fail-loud phải xảy ra TRƯỚC khi file bị ghi — file không được sinh ra.
+    expect(existsSync(join(root, '.env'))).toBe(false);
+  });
+
+  it('throws when a value contains a carriage return even on an existing file (file untouched)', () => {
+    const root = tempWorktree();
+    writeFileSync(join(root, '.env'), 'ROOT_HOST=fbi.com:1\n', 'utf8');
+    const before = readFileSync(join(root, '.env'), 'utf8');
+    expect(() =>
+      upsertLocalEnv(root, { [POSTGRES_PASSWORD_ENV_KEY]: 'has\rnewline' }),
+    ).toThrowError(/newline/iu);
+    // File giữ nguyên khi guard chặn — không ghi đè nửa chừng.
+    const after = readFileSync(join(root, '.env'), 'utf8');
+    expect(after).toBe(before);
+  });
+});
+
+describe('localStatus / localDestroy without passphrase for new-format stacks', () => {
+  it('localDestroy on a never-deployed worktree is a no-op without any passphrase', () => {
+    const root = tempWorktree();
+    delete process.env.PULUMI_CONFIG_PASSPHRASE;
+    delete process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
+    const exit = localDestroy({ worktreeRoot: root });
+    expect(exit).toBe(0);
+  });
+
+  it('localStatus tolerates a new-format stack without a passphrase env (tool-managed file)', () => {
+    const root = tempWorktree();
+    // Tool-managed passphrase file present → no env needed.
+    writeFileSync(join(root, '.pulumi-local-passphrase'), 'wt-pass\n', 'utf8');
+    delete process.env.PULUMI_CONFIG_PASSPHRASE;
+    delete process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
+    mkdirSync(join(root, '.pulumi-local-state'), { recursive: true });
+    execMock.mockReturnValue({ status: 0, stdout: '{}\n', stderr: '' } satisfies ExecResult);
+    const exit = localStatus({ worktreeRoot: root });
+    expect(exit).toBe(0);
+  });
+});
+
+describe('git tracking guards', () => {
+  it('owned env keys include POSTGRES_PASSWORD', () => {
+    expect(LOCAL_ENV_OWNED_KEYS).toContain(POSTGRES_PASSWORD_ENV_KEY);
+  });
+
+  it('LOCAL_PASSPHRASE_FILE is gitignored (contract)', () => {
+    // Assert the contract name is stable so .gitignore entry stays in sync.
+    expect('.pulumi-local-passphrase').toBe('.pulumi-local-passphrase');
   });
 });

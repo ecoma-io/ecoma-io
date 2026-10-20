@@ -63,3 +63,15 @@
 - Squash merge only: merge commits and rebase merges are disabled, direct merges and direct pushes to `main` are prohibited, and every PR lands through the merge queue — these are GitHub repository/ruleset settings, which `pr-check` deliberately does not pretend to enforce.
 - Feed the queue proactively: the moment a PR is approved, its CI is green, and nothing blocks it (no unmerged PR it depends on — stacked children retarget and follow once their base lands), put it into the merge queue immediately; a green PR never sits idle to be batched with others.
 - Interdependent work uses GitHub Stacked PRs; keep rebasing the downstream branches so every child stays in sync with the PR it depends on. Rebase onto the latest default branch before pushing and before marking a PR ready for review.
+
+## Local Development Preview
+
+- Before operating the local stack, read `docs/services/local-platform/03-operations.md`.
+- Deploy or refresh the preview with `pnpm dx local-deploy`.
+- Wait for the command to finish successfully; do not claim the stack is ready merely because the deployment command started or a container exists.
+- Use the actual URL printed by the successful deployment command; never guess the dynamic port or construct a URL from assumptions.
+- Report the resulting preview URL clearly to the user.
+- If deployment fails, report the actual failed step and the actionable error; do not silently substitute manual Docker/Pulumi commands or a different serving method.
+- Distinguish successful HTTPS smoke-test verification from whether the developer's browser trusts the local self-signed certificate.
+- Never expose credentials when reporting status or URLs.
+- After deleting a worktree that had a local deployment, clean up its Docker resources with `pnpm dx local-cleanup` (use `--dry-run` first to preview); persistent PostgreSQL volumes are kept — data removal stays with `pnpm dx local-destroy --remove-data`.
