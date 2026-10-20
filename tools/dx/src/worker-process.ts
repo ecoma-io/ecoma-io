@@ -523,6 +523,123 @@ export function startWorkerProcess(options: StartOptions): WorkerProcessHandle {
 
 export type { StopOptions };
 
+// ---------- Kill bằng bằng chứng từ file metadata (API PR4, additive) ----------
+
+/** Kiểu kết quả Kill-from-metadata — caller render row theo nhánh còn lại. */
+export type KillWorkerByMetadataResult =
+  | { result: 'done' }
+  | { result: 'not-provable'; reason: string }
+  | { result: 'error'; reason: string };
+
+/**
+ * Kill process group của entry được đọc từ FILE metadata — dùng cho PR4
+ * `down`, nơi caller không còn handle trong tay mà chỉ có stateDir + argv
+ * của entry chuẩn (đối chiếu identity từ argv record trong file metadata).
+ *
+ * Bốn guard fail-closed trước khi tới được lệnh kill, cùng chuẩn với
+ * `terminateStaleWorker` nhưng NÂNG CẤP cho PID SỐNG (process đang chạy):
+ *
+ * 1. metadata phải đọc được (shape + version + identityHash khớp argv);
+ * 2. argv record phải khớp argv caller truyền (`sameIdentity`);
+ * 3. `pidCmdlineMatches` phải khớp — cmdline lệch/trống (Linux) là PID bị
+ *    OS tái sử dụng cho process không liên quan → KHÔNG kill (trên
+ *    non-Linux kiểm tra này skipped documented, và hàng rào chính vẫn là
+ *    argv identity + metadata);
+ * 4. PID phải còn sống — PID chết không có gì để kill (caller xử lý stale
+ *    file bằng `deleteStaleWorkerMetadata`, KHÔNG phải hàm này).
+ *
+ * Sau SIGTERM process group, đợi `timeoutMs` rồi SIGKILL group tương tự cách
+ * `handle.stop` làm (fall back về single pid trên ESRCH/EPERM). Trả về kết
+ * quả từng entry thay vì throw giữa chừng — một entry lỗi không cản được
+ * caller teardown các entry còn lại.
+ */
+export async function killWorkerProcessByMetadata(options: {
+  metadataPath: string;
+  expectedArgv: string[];
+  timeoutMs?: number;
+}): Promise<KillWorkerByMetadataResult> {
+  const metadata = readMetadata(options.metadataPath);
+  if (metadata === null) {
+    // Không đủ bằng chứng identity → không touch process nào; caller phải
+    // nhìn thấy quy tắc này trong output của mình.
+    return { result: 'not-provable', reason: 'metadata invalid' };
+  }
+  if (!sameIdentity(metadata.argv, options.expectedArgv)) {
+    return { result: 'not-provable', reason: 'argv identity mismatch' };
+  }
+  if (!pidCmdlineMatches(metadata.pid, metadata.argv)) {
+    return { result: 'not-provable', reason: 'cmdline mismatch — possible PID reuse' };
+  }
+  if (!isPidAlive(metadata.pid)) {
+    return { result: 'not-provable', reason: 'pid not alive' };
+  }
+
+  const timeoutMs = options.timeoutMs ?? 10_000;
+  const send = (signal: NodeJS.Signals): 'sent' | 'dead' | 'forbidden' => {
+    try {
+      process.kill(-metadata.pid, signal);
+      return 'sent';
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ESRCH') return 'dead';
+      // EPERM: khớp chuẩn `handle.stop` — fall back gửi single pid; nếu cũng
+      // không được thì coi như bị chặn (không kill gì được).
+      if (code === 'EPERM') {
+        try {
+          process.kill(metadata.pid, signal);
+          return 'sent';
+        } catch (inner) {
+          const innerCode = (inner as NodeJS.ErrnoException).code;
+          if (innerCode === 'ESRCH') return 'dead';
+          return 'forbidden';
+        }
+      }
+      throw error;
+    }
+  };
+
+  let term;
+  try {
+    term = send('SIGTERM');
+  } catch (error) {
+    return { result: 'error', reason: (error as Error).message };
+  }
+  if (term === 'dead') return { result: 'done' };
+  if (term === 'forbidden') {
+    return { result: 'not-provable', reason: 'cannot kill (EPERM)' };
+  }
+
+  // Đợi SIGTERM có hiệu lực: PID chết, hoặc hết deadline rồi lùi sang
+  // SIGKILL. Cùng chiến lược polling của handle.stop.
+  const deadline = Date.now() + timeoutMs;
+  while (isPidAlive(metadata.pid) && Date.now() < deadline) {
+    await new Promise((resolve) => {
+      setTimeout(resolve, 25);
+    });
+  }
+  if (!isPidAlive(metadata.pid)) return { result: 'done' };
+  let kill;
+  try {
+    kill = send('SIGKILL');
+  } catch (error) {
+    return { result: 'error', reason: (error as Error).message };
+  }
+  if (kill === 'dead') return { result: 'done' };
+  if (kill === 'forbidden') {
+    return { result: 'not-provable', reason: 'cannot SIGKILL (EPERM)' };
+  }
+  const reapDeadline = Date.now() + 1000;
+  while (isPidAlive(metadata.pid) && Date.now() < reapDeadline) {
+    await new Promise((resolve) => {
+      setTimeout(resolve, 10);
+    });
+  }
+  if (isPidAlive(metadata.pid)) {
+    return { result: 'error', reason: `pid ${metadata.pid} did not terminate` };
+  }
+  return { result: 'done' };
+}
+
 /** Phân loại của một metadata entry sau khi quét stateDir. */
 export type WorkerProcessState =
   | 'alive' // PID còn sống — process thật đang chạy, không đụng

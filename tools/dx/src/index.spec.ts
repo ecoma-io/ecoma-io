@@ -40,7 +40,7 @@ describe('app', () => {
     expect(meta.description).toBe('Devtools for ecoma-io repository');
   });
 
-  it('declares repo-prepare, sync-agent-config, pr-check, arch-check, commit-signing, gitleaks-scope, semgrep-scan, provision-gate and the local deployment commands', () => {
+  it('declares repo-prepare, sync-agent-config, pr-check, arch-check, commit-signing, gitleaks-scope, semgrep-scan, provision-gate, the local deployment commands and the local worker runtime commands', () => {
     // Set thay cho mảng sort: cùng đẳng thức tập hợp, không mutation và không
     // cần `toSorted` (lib của repository hiện là es2022).
     expect(new Set(Object.keys(app.subCommands ?? {}))).toEqual(
@@ -57,9 +57,23 @@ describe('app', () => {
         'local-status',
         'local-destroy',
         'local-cleanup',
+        'local-worker-up',
+        'local-worker-status',
+        'local-worker-down',
       ]),
     );
   });
+
+  it.each(['local-worker-up', 'local-worker-status', 'local-worker-down'])(
+    'describes %s',
+    async (subcommand) => {
+      // Mỗi lệnh worker runtime phải có mô tả riêng — thêm subcommand mới mà
+      // quên description là lỗi UX CLI im lặng.
+      const output = await dx(subcommand, '--help');
+      expect(output).toContain(subcommand);
+      expect(output).not.toMatch(/undefined/u);
+    },
+  );
 
   it('resolves each subcommand to a command definition, not a module namespace', async () => {
     // citty cần định nghĩa; `import()` trả về `{ default }`. Một namespace chưa bóc
