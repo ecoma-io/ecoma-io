@@ -32,7 +32,29 @@ Kiểm sau deploy:
 
 ```text
 GET /health → 200 { service: 'auth', status: 'ok' }
+GET /ready  → 200 { service: 'auth', status: 'ready' }        # khi mọi dependency sống
+GET /ready  → 503 { error: 'service_unavailable' } + Retry-After   # khi có dependency chết
 ```
+
+⚠️ **`/ready` là readiness có kiểm phụ thuộc; `/health` là liveness không chạm DB.**
+Cùng một hợp đồng với `account` ([../account/03-operations.md](../account/03-operations.md) §2,
+nơi cài đặt bên kia là `apps/account/server/routes/ready.get.ts`, bên này là
+`apps/auth/src/main.ts`). Riêng `auth` có hai dependency bắt buộc và route kiểm
+**cả hai**:
+
+- `HYPERDRIVE` tới `db-auth` — probe là một `SELECT` trên `auth.oauth_clients` qua
+  `createPostgresClient` (`apps/auth/src/main.ts`), tức record gốc đầu tiên của
+  schema (`0001`) với credential `ecoma_auth_runtime`: database nửa schema hay
+  grant sai đều làm probe thất bại, không chỉ database chết.
+- `ACCOUNT_SERVICE` — binding tới `account`, thiếu nó thì không hỏi được trạng
+  thái account (control point fail-closed lúc phát hành).
+
+Hành vi fail-closed: thiếu binding ⇒ `503` + `Retry-After` (mã ổn định
+`binding_missing` trong log); DB không kết nối được ⇒ `503` + `Retry-After`
+(`db_unreachable`). Response **không** nêu tên binding thiếu, **không** message
+của driver (có thể rò connection string) — nguyên nhân nằm ở log cùng mã ổn định.
+`/ready` trả `503` khi một dependency chết không phải là báo động giả: đây là
+tín hiệu cho orchestrator ngừng traffic mới, đúng chỗ nó thuộc về.
 
 Rollback theo Worker version đã publish, **không** rollback database ([`02` §8](../../overview/02-delivery.md)).
 

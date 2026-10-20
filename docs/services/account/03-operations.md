@@ -29,6 +29,7 @@ Kiểm sau deploy:
 
 ```text
 GET /health → 200
+GET /ready  → 200 { status: 'ready' }   # khi db-account sống, fail closed ⇒ 503 khi không
 ```
 
 Rollback theo Worker version đã publish, **không** rollback database ([`02` §8](../../overview/02-delivery.md)).

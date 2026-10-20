@@ -14,7 +14,7 @@ Ranh giới context tại system level → [`docs/overview/01-architecture.md`](
 
 ## Hiện trạng
 
-Authorization server OAuth 2.0/OIDC đã có trong code (`apps/auth`): provider `oidc-provider` 9.12.2 chạy qua bridge `cloudflare:node` (`apps/auth/src/oidc/`), glue login/consent với `account` qua ba contract internal HMAC (`/internal/session/verified`, `/internal/consent/context`, `/internal/consent/decide`), và 13 migration của `db-auth` (`apps/auth/migrations/`). Route chia hai lane (`apps/auth/src/main.ts`): Hono giữ `/health`, `/.well-known/*`, `/authorize`, `/authorize/confirm`, `/internal/*`; provider giữ `/auth`, `/token`, `/jwks.json`, `/revocation`, `/session/end`.
+Authorization server OAuth 2.0/OIDC đã có trong code (`apps/auth`): provider `oidc-provider` 9.12.2 chạy qua bridge `cloudflare:node` (`apps/auth/src/oidc/`), glue login/consent với `account` qua ba contract internal HMAC (`/internal/session/verified`, `/internal/consent/context`, `/internal/consent/decide`), và 13 migration của `db-auth` (`apps/auth/migrations/`). Route chia hai lane (`apps/auth/src/main.ts`): Hono giữ `/health`, `/ready`, `/.well-known/*`, `/authorize`, `/authorize/confirm`, `/internal/*`; provider giữ `/auth`, `/token`, `/jwks.json`, `/revocation`, `/session/end`. `GET /ready` kiểm cả hai dependency bắt buộc (`HYPERDRIVE`/`db-auth`, `ACCOUNT_SERVICE`) — fail closed: thiếu binding hay DB chết ⇒ `503` + `Retry-After` ([03-operations.md §2](./03-operations.md)).
 
 **Chưa có**: `db-auth` chưa provision; Worker `ecoma-auth` chưa khai environment staging/production (`apps/auth/wrangler.jsonc`).
 
