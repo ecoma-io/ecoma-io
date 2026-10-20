@@ -36,6 +36,8 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readdirSync,
+  statSync,
   writeSync,
 } from 'node:fs';
 import { join } from 'node:path';
@@ -50,6 +52,37 @@ import { ROOT_DIR } from './utils.js';
  */
 export function localStateDir(worktreeRoot: string): string {
   return join(worktreeRoot, '.pulumi-local-state');
+}
+
+/**
+ * Kiểm tra worktree đã có Pulumi state thật sự (đã init stack) hay chưa.
+ *
+ * Chỉ thư mục rỗng (chưa init) hoặc artifact không liên quan không được coi là
+ * state: một `mkdir` của `ensureStack` tạo thư mục rỗng, và stack init mới sinh
+ * file `.json` trong `.pulumi/stacks/<project>/`. Vì vậy phải có ít nhất một file
+ * stack `.json` (không tính `.bak`) mới coi là state đã init.
+ */
+export function hasPulumiState(worktreeRoot: string): boolean {
+  const stateDir = localStateDir(worktreeRoot);
+  const stacksDir = join(stateDir, '.pulumi', 'stacks');
+  if (!existsSync(stacksDir)) return false;
+  try {
+    for (const project of readdirSync(stacksDir)) {
+      const projectDir = join(stacksDir, project);
+      let stat;
+      try {
+        stat = statSync(projectDir);
+      } catch {
+        continue;
+      }
+      if (!stat.isDirectory()) continue;
+      const files = readdirSync(projectDir);
+      if (files.some((f) => f.endsWith('.json') && !f.endsWith('.bak'))) return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
 }
 
 /**
@@ -235,7 +268,15 @@ function generatePassphrase(): string {
 function readWorktreePassphrase(worktreeRoot: string): string | undefined {
   const path = localPassphrasePath(worktreeRoot);
   if (!existsSync(path)) return undefined;
-  const value = readFileSync(path, 'utf8').trim();
+  let raw: string;
+  try {
+    raw = readFileSync(path, 'utf8');
+  } catch {
+    // File tồn tại nhưng không đọc được — coi như "chưa có" ở đây; caller fail
+    // closed nếu state đã init (xem resolveLocalPassphrase).
+    return undefined;
+  }
+  const value = raw.trim();
   return value.length > 0 ? value : undefined;
 }
 
@@ -251,29 +292,57 @@ function readWorktreePassphrase(worktreeRoot: string): string | undefined {
  * ghi xuống thắng, process thua cuộc đọc lại file được giá trị đúng ở lần
  * `resolve` kế tiếp.
  */
-function writeWorktreePassphrase(worktreeRoot: string, value: string): void {
+export function writeWorktreePassphrase(worktreeRoot: string, value: string): string {
   const path = localPassphrasePath(worktreeRoot);
   let fd: number | undefined;
+  let created = false;
   try {
     fd = openSync(path, 'wx', 0o600);
     writeSync(fd, `${value}\n`, 0, 'utf8');
+    created = true;
   } catch (error) {
     if (
       error instanceof Error &&
       'code' in error &&
       (error as NodeJS.ErrnoException).code === 'EEXIST'
     ) {
-      return; // File đã có (race với process khác, hoặc lần chạy trước) — giữ nguyên.
+      // Race: file đã được process khác tạo. Đọc lại và dùng giá trị persisted
+      // nếu hợp lệ; file rỗng/malformed/unreadable là lỗi tường minh — không
+      // được tiếp tục với giá trị generated chưa được persist.
+      let persisted: string;
+      try {
+        persisted = readFileSync(path, 'utf8').trim();
+      } catch (readError) {
+        throw new Error(
+          `Passphrase file ${path} tồn tại nhưng không đọc được — không thể resolve passphrase an toàn.`,
+          { cause: readError },
+        );
+      }
+      if (persisted.length === 0) {
+        throw new Error(
+          `Passphrase file ${path} tồn tại nhưng rỗng/malformed — không thể resolve passphrase an toàn.`,
+          { cause: error },
+        );
+      }
+      try {
+        chmodSync(path, 0o600);
+      } catch {
+        // ignore
+      }
+      return persisted;
     }
     throw error;
   } finally {
     if (fd !== undefined) closeSync(fd);
   }
-  try {
-    chmodSync(path, 0o600);
-  } catch {
-    // FS không hỗ trợ chmod (một số mount) — bỏ qua, xem JSDoc.
+  if (created) {
+    try {
+      chmodSync(path, 0o600);
+    } catch {
+      // FS không hỗ trợ chmod (một số mount) — bỏ qua.
+    }
   }
+  return value;
 }
 
 /**
@@ -330,7 +399,13 @@ export function resolveLocalPassphrase(
   if (typeof inline === 'string' && inline.length > 0) {
     // Passphrase của developer (stack tạo trước khi có file) — ghi vào file để
     // stack tự chứa từ lần chạy sau, kể cả khi biến môi trường đổi.
-    if (options.create) writeWorktreePassphrase(worktreeRoot, inline);
+    if (options.create) {
+      const persisted = writeWorktreePassphrase(worktreeRoot, inline);
+      if (persisted !== inline) {
+        // EEXIST race: dùng giá trị canonical đã persist, không dùng inline.
+        return { kind: 'worktree', value: persisted };
+      }
+    }
     return { kind: 'inline', value: inline };
   }
 
@@ -340,9 +415,22 @@ export function resolveLocalPassphrase(
   }
 
   if (options.create) {
+    // Fail closed: nếu state Pulumi đã init nhưng không resolve được passphrase,
+    // KHÔNG được sinh passphrase mới (sẽ không unlock state cũ). Yêu cầu
+    // developer cung cấp passphrase qua biến môi trường.
+    if (hasPulumiState(worktreeRoot)) {
+      throw new Error(
+        'Worktree này đã có Pulumi state local nhưng không tìm thấy passphrase ' +
+          '(không có file .pulumi-local-passphrase và không có ' +
+          'PULUMI_CONFIG_PASSPHRASE/PULUMI_CONFIG_PASSPHRASE_FILE). Sinh passphrase ' +
+          'mới sẽ không unlock được state cũ. Cung cấp lại passphrase đúng qua ' +
+          'PULUMI_CONFIG_PASSPHRASE (hoặc PULUMI_CONFIG_PASSPHRASE_FILE), hoặc xoá ' +
+          'state + volume để bắt đầu lại.',
+      );
+    }
     const generated = generatePassphrase();
-    writeWorktreePassphrase(worktreeRoot, generated);
-    return { kind: 'worktree', value: generated };
+    const persisted = writeWorktreePassphrase(worktreeRoot, generated);
+    return { kind: 'worktree', value: persisted };
   }
 
   return { kind: 'none' };

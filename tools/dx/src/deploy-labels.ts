@@ -18,6 +18,8 @@
  * Namespace prefix của label — dùng `io.ecoma` (reverse-DNS) để không đụng
  * label namespace chính thức của Docker (`io.docker.*`, compose, OCI...).
  */
+import { namespaceFromCanonicalPath } from './deploy-namespace.js';
+
 export const LABEL_PREFIX = 'io.ecoma';
 
 /** Label đánh dấu resource bị DX local tooling quản lý. Giá trị: `dx`. */
@@ -97,11 +99,23 @@ export type OwnershipCheck =
  */
 export function classifyOwnership(labels: Record<string, string>): OwnershipCheck {
   const managed = labels[LABEL_MANAGED_BY];
-  if (managed !== LABEL_MANAGED_BY_VALUE) {
-    // `managed-by` không đúng `dx` — resource không thuộc quản lý tool này
-    // (có thể chưa từng có label, hoặc của Docker/compose/người dùng) — skip.
+  if (managed === undefined || managed.length === 0) {
+    // Không có label managed-by (hoặc rỗng) — resource không thuộc quản lý DX,
+    // có thể thuộc Docker/compose/người dùng. Phân biệt với malformed: missing
+    // nghĩa là "không phải của chúng tôi", malformed nghĩa là "của chúng tôi
+    // nhưng metadata hỏng".
     return { state: 'missing' };
   }
+  if (managed !== LABEL_MANAGED_BY_VALUE) {
+    // `managed-by` có giá trị nhưng không phải `dx` — metadata mâu thuẫn hoặc
+    // phiên bản tool khác. Coi là malformed (không phải missing) vì resource
+    // tự nhận là được tool quản lý nhưng sai giá trị.
+    return {
+      state: 'malformed',
+      detail: `managed-by "${managed}" không phải "${LABEL_MANAGED_BY_VALUE}"`,
+    };
+  }
+
   const missingLabel = OWNERSHIP_LABELS.find((label) => {
     const value = labels[label];
     return value === undefined || value.length === 0;
@@ -112,17 +126,44 @@ export function classifyOwnership(labels: Record<string, string>): OwnershipChec
       detail: `label ${missingLabel} thiếu hoặc rỗng`,
     };
   }
+
+  const deployment = labels[LABEL_DEPLOYMENT] ?? '';
+  if (deployment !== LABEL_DEPLOYMENT_VALUE) {
+    return {
+      state: 'malformed',
+      detail: `deployment "${deployment}" không phải "${LABEL_DEPLOYMENT_VALUE}"`,
+    };
+  }
+
   const namespace = labels[LABEL_WORKTREE_ID] ?? '';
-  if (!/^w[0-9a-f]+$/u.test(namespace)) {
+  if (!/^w[0-9a-f]{12}$/u.test(namespace)) {
     return {
       state: 'malformed',
       detail: `worktreeId "${namespace}" không khớp pattern namespace`,
     };
   }
+
   const path = labels[LABEL_WORKTREE_PATH] ?? '';
-  if (!path.startsWith('/')) {
+  if (!path.startsWith('/') || path === '/') {
     return { state: 'malformed', detail: `worktreePath "${path}" không phải absolute path` };
   }
+
+  // Kiểm tính nhất quán: worktree id phải được sinh từ canonical path bằng cùng
+  // hàm hashing với producer. Path trong label là đã-normalize (realpath) của
+  // producer, nên recompute namespace và so với label; lệch = metadata mâu thuẫn.
+  let expectedId: string;
+  try {
+    expectedId = namespaceFromCanonicalPath(path);
+  } catch {
+    return { state: 'malformed', detail: `worktreePath "${path}" không hash được` };
+  }
+  if (expectedId !== namespace) {
+    return {
+      state: 'malformed',
+      detail: `worktreeId "${namespace}" không khớp worktreePath "${path}" (expected ${expectedId})`,
+    };
+  }
+
   return { state: 'owned', worktreePath: path, worktreeId: namespace };
 }
 

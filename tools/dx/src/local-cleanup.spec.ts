@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -16,6 +16,11 @@ import {
 } from './local-cleanup.js';
 
 const cleanup: string[] = [];
+function tempWorktreeDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'classify-'));
+  cleanup.push(dir);
+  return normalizeWorktreeRoot(dir);
+}
 afterEach(() => {
   for (const d of cleanup.splice(0)) rmSync(d, { recursive: true, force: true });
 });
@@ -28,11 +33,11 @@ function tempWorktree(): string {
 
 /** Fake Docker world theo kind → { names, labels[name], rmFailures[name] }. */
 interface FakeDocker {
-  names: Map<'container' | 'network' | 'volume', string[]>;
+  names: Map<'container' | 'network' | 'volume' | 'image', string[]>;
   labels: Map<string, Record<string, string>>; // key: `${dockerType}/${name}`
   removed: string[]; // names passed to rm
   failRm?: Set<string>;
-  failList?: Set<'container' | 'network' | 'volume'>;
+  failList?: Set<'container' | 'network' | 'volume' | 'image'>;
 }
 
 function fakeDockerExec(docker: FakeDocker) {
@@ -41,7 +46,7 @@ function fakeDockerExec(docker: FakeDocker) {
     if (args[0] === 'info') return { status: 0, stdout: '27.0', stderr: '' };
     // ls commands
     if (args[1] === 'ls') {
-      const dockerType = args[0] as 'container' | 'network' | 'volume';
+      const dockerType = args[0] as 'container' | 'network' | 'volume' | 'image';
       if (docker.failList?.has(dockerType)) {
         return { status: 1, stdout: '', stderr: `ls ${dockerType} fail (fake)` };
       }
@@ -50,7 +55,7 @@ function fakeDockerExec(docker: FakeDocker) {
     }
     // inspect: args = [dockerType, 'inspect', '--format', '{{json .}}', name]
     if (args[1] === 'inspect') {
-      const dockerType = args[0] as 'container' | 'network' | 'volume';
+      const dockerType = args[0] as 'container' | 'network' | 'volume' | 'image';
       const name = args[4] ?? '';
       const entry = docker.labels.get(`${dockerType}/${name}`);
       if (entry === undefined) {
@@ -58,10 +63,10 @@ function fakeDockerExec(docker: FakeDocker) {
       }
       return { status: 0, stdout: JSON.stringify({ Labels: entry }), stderr: '' };
     }
-    // rm: args = [dockerType, 'rm', name]
+    // rm: args = [dockerType, 'rm', ... , name]  (container uses --force)
     if (args[1] === 'rm') {
-      const dockerType = args[0] as 'container' | 'network' | 'volume';
-      const name = args[2] ?? '';
+      const dockerType = args[0] as 'container' | 'network' | 'volume' | 'image';
+      const name = args[args.length - 1] ?? '';
       const key = `${dockerType}/${name}`;
       const labels = docker.labels.get(key);
       if (labels === undefined) {
@@ -93,7 +98,7 @@ describe('decideResourceAction', () => {
     const decision = decideResourceAction(
       'home',
       { state: 'missing' },
-      { worktreeAlive: () => false },
+      { worktreePresence: () => 'absent' },
     );
     expect(decision.action).toBe('skipped');
   });
@@ -102,7 +107,7 @@ describe('decideResourceAction', () => {
     const decision = decideResourceAction(
       'home',
       { state: 'malformed', detail: 'label io.ecoma.worktree-id thiếu hoặc rỗng' },
-      { worktreeAlive: () => false },
+      { worktreePresence: () => 'absent' },
     );
     expect(decision.action).toBe('skipped');
   });
@@ -111,7 +116,16 @@ describe('decideResourceAction', () => {
     const decision = decideResourceAction(
       'home',
       { state: 'owned', worktreePath: '/some/live/wt', worktreeId: 'wabc' },
-      { worktreeAlive: () => true },
+      { worktreePresence: () => 'present' },
+    );
+    expect(decision.action).toBe('kept');
+  });
+
+  it('keeps resources when worktree presence is unknown (fail-closed)', () => {
+    const decision = decideResourceAction(
+      'home',
+      { state: 'owned', worktreePath: '/some/unknown/wt', worktreeId: 'wabc' },
+      { worktreePresence: () => 'unknown' },
     );
     expect(decision.action).toBe('kept');
   });
@@ -120,7 +134,7 @@ describe('decideResourceAction', () => {
     const decision = decideResourceAction(
       'home',
       { state: 'owned', worktreePath: '/some/dead/wt', worktreeId: 'wabc' },
-      { worktreeAlive: () => false },
+      { worktreePresence: () => 'absent' },
     );
     expect(decision.action).toBe('remove');
   });
@@ -129,15 +143,40 @@ describe('decideResourceAction', () => {
     const decision = decideResourceAction(
       'postgres-volume',
       { state: 'owned', worktreePath: '/some/dead/wt', worktreeId: 'wabc' },
-      { worktreeAlive: () => false },
+      { worktreePresence: () => 'absent' },
     );
     expect(decision.action).toBe('kept');
   });
 });
 
 describe('classifyOwnership', () => {
+  it('rejects wrong managed-by value as malformed (contradictory metadata)', () => {
+    const path = tempWorktreeDir();
+    const labels = ownershipLabels(path, worktreeNamespace(path));
+    labels['io.ecoma.managed-by'] = 'other-tool';
+    const check = classifyOwnership(labels);
+    expect(check.state).toBe('malformed');
+  });
+
+  it('rejects unsupported deployment identifier', () => {
+    const path = tempWorktreeDir();
+    const labels = ownershipLabels(path, worktreeNamespace(path));
+    labels['io.ecoma.deployment'] = 'staging';
+    const check = classifyOwnership(labels);
+    expect(check.state).toBe('malformed');
+  });
+
+  it('rejects mismatched worktree-id vs worktree-path (contradictory metadata)', () => {
+    const path = tempWorktreeDir();
+    const labels = ownershipLabels(path, worktreeNamespace(path));
+    labels['io.ecoma.worktree-id'] = 'wdeadbeef1234';
+    const check = classifyOwnership(labels);
+    expect(check.state).toBe('malformed');
+  });
+
   it('accepts full ownership labels', () => {
-    const labels = ownershipLabels('/tmp/wt-x', 'w0123456789ab');
+    const path = tempWorktreeDir();
+    const labels = ownershipLabels(path, worktreeNamespace(path));
     const check = classifyOwnership(labels);
     expect(check.state).toBe('owned');
   });
@@ -148,7 +187,8 @@ describe('classifyOwnership', () => {
   });
 
   it('malformed when managed-by ok but other labels missing', () => {
-    const labels = ownershipLabels('/tmp/wt-x', 'w0123456789ab');
+    const path = tempWorktreeDir();
+    const labels = ownershipLabels(path, worktreeNamespace(path));
     delete labels['io.ecoma.worktree-path'];
     expect(classifyOwnership(labels).state).toBe('malformed');
   });
@@ -158,10 +198,23 @@ describe('worktreeAlive', () => {
   it('true for an existing directory', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cleanup-alive-'));
     cleanup.push(dir);
-    expect(worktreeAlive(dir)).toBe(true);
+    expect(worktreeAlive(dir)).toBe('present');
   });
-  it('false for missing path', () => {
-    expect(worktreeAlive(join(tmpdir(), 'cleanup-missing-xyz'))).toBe(false);
+  it('absent for missing path', () => {
+    expect(worktreeAlive(join(tmpdir(), 'cleanup-missing-xyz'))).toBe('absent');
+  });
+
+  it('unknown for permission/stat error (fail-closed)', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'cleanup-perm-'));
+    cleanup.push(parent);
+    const target = join(parent, 'child');
+    mkdirSync(target);
+    chmodSync(parent, 0o000);
+    try {
+      expect(worktreeAlive(target)).toBe('unknown');
+    } finally {
+      chmodSync(parent, 0o755);
+    }
   });
 });
 
@@ -184,7 +237,7 @@ describe('runLocalCleanup', () => {
       dryRun: false,
       env: {},
       execDocker: fakeDockerExec(docker),
-      worktreeAlive: (p) => p === wt,
+      worktreePresence: (p) => (p === wt ? 'present' : 'absent'),
     });
     expect(docker.removed).toHaveLength(0);
     const actions = report.entries.map((e) => e.action);
@@ -214,7 +267,7 @@ describe('runLocalCleanup', () => {
       dryRun: false,
       env: {},
       execDocker: fakeDockerExec(docker),
-      worktreeAlive: () => false,
+      worktreePresence: () => 'absent',
     });
     // network, traefik, postgres, home removed; postgres volume kept
     expect(docker.removed).toEqual(
@@ -253,7 +306,7 @@ describe('runLocalCleanup', () => {
       dryRun: false,
       env: {},
       execDocker: fakeDockerExec(docker),
-      worktreeAlive: (p) => p === liveWt,
+      worktreePresence: (p) => (p === liveWt ? 'present' : 'absent'),
     });
     expect(docker.removed).toEqual(
       expect.arrayContaining([`container/ecoma-${deadNs}-home`, `network/ecoma-${deadNs}-network`]),
@@ -279,7 +332,7 @@ describe('runLocalCleanup', () => {
       dryRun: false,
       env: {},
       execDocker: fakeDockerExec(docker),
-      worktreeAlive: () => false,
+      worktreePresence: () => 'absent',
     });
     expect(docker.removed).toHaveLength(0);
     for (const entry of report.entries) {
@@ -302,7 +355,7 @@ describe('runLocalCleanup', () => {
       dryRun: false,
       env: {},
       execDocker: fakeDockerExec(docker),
-      worktreeAlive: () => false,
+      worktreePresence: () => 'absent',
     });
     expect(docker.removed).toHaveLength(0);
     expect(report.entries[0]?.action).toBe('skipped');
@@ -328,7 +381,7 @@ describe('runLocalCleanup', () => {
       dryRun: true,
       env: {},
       execDocker: fakeDockerExec(docker),
-      worktreeAlive: () => false,
+      worktreePresence: () => 'absent',
     });
     expect(docker.removed).toHaveLength(0);
     const wouldRemove = report.entries.filter((e) => e.action === 'would-remove');
@@ -355,7 +408,7 @@ describe('runLocalCleanup', () => {
       dryRun: false,
       env: {},
       execDocker: fakeDockerExec(docker),
-      worktreeAlive: () => false,
+      worktreePresence: () => 'absent',
     });
     expect(report.entries[0]?.action).toBe('kept');
     expect(docker.removed).toHaveLength(0);
@@ -376,7 +429,7 @@ describe('runLocalCleanup', () => {
       dryRun: false,
       env: {},
       execDocker: fakeDockerExec(docker),
-      worktreeAlive: () => false,
+      worktreePresence: () => 'absent',
     });
     expect(report.errors.some((e) => e.includes('container ls') || e.includes('ls thất bại'))).toBe(
       true,
@@ -393,7 +446,7 @@ describe('runLocalCleanup', () => {
         stdout: '',
         stderr: 'Cannot connect to the Docker daemon',
       }),
-      worktreeAlive: () => false,
+      worktreePresence: () => 'absent',
     });
     expect(report.entries).toHaveLength(0);
     expect(report.errors).toHaveLength(1);
@@ -471,7 +524,7 @@ describe('local-cleanup entry', () => {
         }
         return fakeDockerExec(docker)(args, env);
       },
-      worktreeAlive: () => false,
+      worktreePresence: () => 'absent',
     });
     expect(report.errors).toEqual([]);
     expect(docker.removed).toEqual(
@@ -495,11 +548,178 @@ describe('local-cleanup entry', () => {
       env: {},
       execDocker: fakeDockerExec(docker),
       worktreeRoot: deletedPath,
-      worktreeAlive: (p) => p === liveWt,
+      worktreePresence: (p) => (p === liveWt ? 'present' : 'absent'),
     });
     // Path filter (deleted-path !== live worktree) → mọi resource skip.
     const actions = report.entries.map((e) => e.action);
     expect(actions.every((a) => a === 'skipped')).toBe(true);
     expect(docker.removed).toHaveLength(0);
+  });
+});
+
+describe('runLocalCleanup — additional safety', () => {
+  it('unknown worktree presence never reaches a destructive rm call', () => {
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const docker: FakeDocker = {
+      names: new Map([
+        ['container', [`ecoma-${ns}-home`]],
+        ['network', []],
+        ['volume', []],
+      ]),
+      labels: new Map([[`container/ecoma-${ns}-home`, ownedLabels(wt)]]),
+      removed: [],
+    };
+    const report = runLocalCleanup({
+      dryRun: false,
+      env: {},
+      execDocker: fakeDockerExec(docker),
+      worktreePresence: () => 'unknown',
+    });
+    expect(docker.removed).toHaveLength(0);
+    const entry = report.entries.find((e) => e.name === `ecoma-${ns}-home`);
+    expect(entry?.action).toBe('kept');
+  });
+
+  it('container removal uses --force (running orphan strategy)', () => {
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const docker: FakeDocker = {
+      names: new Map([['container', [`ecoma-${ns}-home`]]]),
+      labels: new Map([[`container/ecoma-${ns}-home`, ownedLabels(wt)]]),
+      removed: [],
+    };
+    const captured: string[][] = [];
+    const exec = (args: string[], env: NodeJS.ProcessEnv) => {
+      captured.push([...args]);
+      return fakeDockerExec(docker)(args, env);
+    };
+    runLocalCleanup({
+      dryRun: false,
+      env: {},
+      execDocker: exec,
+      worktreePresence: () => 'absent',
+    });
+    const rmCall = captured.find((a) => a[1] === 'rm');
+    expect(rmCall).toBeDefined();
+    expect(rmCall).toContain('--force');
+  });
+
+  it('orphan image is removed when ownership + orphan status established', () => {
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const imageName = `ecoma-home-${ns}:local`;
+    const docker: FakeDocker = {
+      names: new Map([['image', [imageName]]]),
+      labels: new Map([[`image/${imageName}`, ownedLabels(wt)]]),
+      removed: [],
+    };
+    const report = runLocalCleanup({
+      dryRun: false,
+      env: {},
+      execDocker: fakeDockerExec(docker),
+      worktreePresence: () => 'absent',
+    });
+    expect(docker.removed).toContain(`image/${imageName}`);
+    const entry = report.entries.find((e) => e.name === imageName);
+    expect(entry?.action).toBe('removed');
+  });
+
+  it('image belonging to a live worktree is kept', () => {
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const imageName = `ecoma-home-${ns}:local`;
+    const docker: FakeDocker = {
+      names: new Map([['image', [imageName]]]),
+      labels: new Map([[`image/${imageName}`, ownedLabels(wt)]]),
+      removed: [],
+    };
+    runLocalCleanup({
+      dryRun: false,
+      env: {},
+      execDocker: fakeDockerExec(docker),
+      worktreePresence: () => 'present',
+    });
+    expect(docker.removed).toHaveLength(0);
+  });
+
+  it('unlabeled image is skipped', () => {
+    const imageName = 'ecoma-home-abc:local';
+    const docker: FakeDocker = {
+      names: new Map([['image', [imageName]]]),
+      labels: new Map([[`image/${imageName}`, {}]]),
+      removed: [],
+    };
+    const report = runLocalCleanup({
+      dryRun: false,
+      env: {},
+      execDocker: fakeDockerExec(docker),
+      worktreePresence: () => 'absent',
+    });
+    expect(docker.removed).toHaveLength(0);
+    expect(report.entries[0]?.action).toBe('skipped');
+  });
+
+  it('malformed image labels are skipped', () => {
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const imageName = `ecoma-home-${ns}:local`;
+    const bad = ownedLabels(wt);
+    delete bad['io.ecoma.worktree-id'];
+    const docker: FakeDocker = {
+      names: new Map([['image', [imageName]]]),
+      labels: new Map([[`image/${imageName}`, bad]]),
+      removed: [],
+    };
+    const report = runLocalCleanup({
+      dryRun: false,
+      env: {},
+      execDocker: fakeDockerExec(docker),
+      worktreePresence: () => 'absent',
+    });
+    expect(docker.removed).toHaveLength(0);
+    expect(report.entries[0]?.action).toBe('skipped');
+  });
+
+  it('image in use is reported and not removed', () => {
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const imageName = `ecoma-home-${ns}:local`;
+    const docker: FakeDocker = {
+      names: new Map([['image', [imageName]]]),
+      labels: new Map([[`image/${imageName}`, ownedLabels(wt)]]),
+      removed: [],
+      failRm: new Set([`image/${imageName}`]),
+    };
+    const report = runLocalCleanup({
+      dryRun: false,
+      env: {},
+      execDocker: fakeDockerExec(docker),
+      worktreePresence: () => 'absent',
+    });
+    expect(docker.removed).toHaveLength(0);
+    const entry = report.entries.find((e) => e.name === imageName);
+    expect(entry?.action).toBe('kept');
+    expect(report.errors.some((e) => e.includes(imageName))).toBe(true);
+  });
+
+  it('dry-run image reports would-remove without rm', () => {
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const imageName = `ecoma-home-${ns}:local`;
+    const docker: FakeDocker = {
+      names: new Map([['image', [imageName]]]),
+      labels: new Map([[`image/${imageName}`, ownedLabels(wt)]]),
+      removed: [],
+    };
+    const report = runLocalCleanup({
+      dryRun: true,
+      env: {},
+      execDocker: fakeDockerExec(docker),
+      worktreePresence: () => 'absent',
+    });
+    expect(docker.removed).toHaveLength(0);
+    const entry = report.entries.find((e) => e.name === imageName);
+    expect(entry?.action).toBe('would-remove');
   });
 });
