@@ -359,6 +359,19 @@ function requireCredentialSecret(value: unknown, variableName: string): string {
       `Worker Secret ${variableName} chua duoc dat; transactional-mail KHONG cap credential`,
     );
   }
+  assertCredentialSecretShape(value, variableName);
+  return value;
+}
+
+/**
+ * Hai gate shape dùng chung cho **mọi** credential entry — `current` lẫn `previous`.
+ *
+ * ⚠️ Đây là lớp chống lại chính lỗi đã tái hiện ở registry: nhánh `previous` từng tự viết
+ * lại luồng kiểm thay vì gọi chung validator, và khi đó một gate mới (lone surrogate) chỉ
+ * được thêm vào `current` — hai nhánh lại lệch nhau. Mọi gate shape về sau thêm vào **đây**
+ * để cả hai nhánh tự mắc phải, không thêm vào một nhánh riêng nào.
+ */
+function assertCredentialSecretShape(value: string, variableName: string): void {
   if (value.trim() === '') {
     throw new TransactionalMailConfigError(
       `Worker Secret ${variableName} chi co khoang trang; transactional-mail tu choi`,
@@ -369,7 +382,6 @@ function requireCredentialSecret(value: unknown, variableName: string): string {
       `Worker Secret ${variableName} chua lone surrogate; transactional-mail tu choi`,
     );
   }
-  return value;
 }
 
 /**
@@ -435,11 +447,11 @@ function loadCredentialRegistry(env: TransactionalMailEnv): {
     entries.push({ principal: slot.principal, secret: current, kind: 'current' });
 
     if (typeof previous === 'string' && previous.length > 0) {
-      if (previous.trim() === '') {
-        throw new TransactionalMailConfigError(
-          `Worker Secret ${previousName} chi co khoang trang; transactional-mail tu choi`,
-        );
-      }
+      // Cùng bộ gate shape với `current` (`assertCredentialSecretShape`): một `previous`
+      // chứa lone surrogate không bị chặn ở đây thì duplicate check bên dưới (so `===`)
+      // cho qua trong khi `TextEncoder` encode cùng byte — hai credential "khác nhau" theo
+      // registry nhưng cùng key material HMAC. Fail-closed lúc boot, message chỉ tên biến.
+      assertCredentialSecretShape(previous, previousName);
       registerSecret(previous, previousName);
       // `current` đứng trước `previous` của CÙNG principal — thứ tự cố định của receiver.
       entries.push({ principal: slot.principal, secret: previous, kind: 'previous' });

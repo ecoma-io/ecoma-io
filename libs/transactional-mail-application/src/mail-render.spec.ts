@@ -245,6 +245,46 @@ describe('renderMail — a value is data, never template syntax', () => {
     // nằm ngoài attribute và vẫn nhận text escape.
     expect(result.ok && result.body).toBe('<p title="&quot;">x</p>');
   });
+
+  it.each([
+    ['newline', '\n'],
+    ['tab', '\t'],
+    ['carriage return', '\r'],
+    ['form feed', '\u000C'],
+  ])(
+    'treats a placeholder around %s inside a quoted attribute as attribute context',
+    (_label, separator) => {
+      // HTML cho phép whitespace giữa dấu nháy và value của một attribute — detector chỉ skip
+      // `0x20` nên template `href="\n{{ v }}"` bị coi là text context, và một giá trị chứa `"`
+      // không bị escape: giá trị thoát attribute được. Các ca đối xứng với placeholder trước
+      // dấu nháy đóng (`{{ v }}\n`) cũng phải vào context attribute.
+      const normalized = new Map<string, unknown>([['v', '" onmouseover="alert(1)']]);
+      const vSchema = schemaOf(
+        JSON.stringify({
+          schema_version: 1,
+          variables: { v: { type: 'string', required: false, max_length: 200 } },
+        }),
+      );
+      const before = render({
+        bodyTemplate: `<a href="${separator}{{ v }}">go</a>`,
+        normalized,
+        schema: vSchema,
+      });
+      const after = render({
+        bodyTemplate: `<a href="{{ v }}${separator}">go</a>`,
+        normalized,
+        schema: vSchema,
+      });
+
+      for (const result of [before, after]) {
+        expect(result.ok).toBe(true);
+        // Mọi dấu nháy của GIÁ TRỊ phải thành `&quot;` — attribute không thể đóng sớm.
+        expect(result.ok && result.body).not.toContain('" onmouseover');
+        expect(result.ok && result.body.startsWith('<a href="')).toBe(true);
+        expect(result.ok && result.body.endsWith('">go</a>')).toBe(true);
+      }
+    },
+  );
 });
 
 describe('renderMail — subject is a header, so control characters are rejected', () => {
