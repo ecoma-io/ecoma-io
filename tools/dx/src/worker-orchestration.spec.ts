@@ -9,7 +9,7 @@
  */
 
 import type { ChildProcess, spawn as childSpawn } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
@@ -17,6 +17,7 @@ import { createServer } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  devVarsArgv,
   MAIL_WORKER_ENTRIES,
   portCandidates,
   resolveWranglerInvocationArgv,
@@ -211,6 +212,27 @@ describe('resolveWranglerInvocationArgv', () => {
   });
 });
 
+describe('devVarsArgv', () => {
+  it('returns --env-file pair when .dev.vars exists in app dir', () => {
+    const appDir = mkdtempSync(join(tmpdir(), 'dev-vars-'));
+    try {
+      writeFileSync(join(appDir, '.dev.vars'), 'MAIL_PROVIDER_KIND=fake\n', 'utf8');
+      expect(devVarsArgv(appDir)).toEqual(['--env-file', join(appDir, '.dev.vars')]);
+    } finally {
+      rmSync(appDir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns empty argv when .dev.vars is absent', () => {
+    const appDir = mkdtempSync(join(tmpdir(), 'dev-vars-'));
+    try {
+      expect(devVarsArgv(appDir)).toEqual([]);
+    } finally {
+      rmSync(appDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('portCandidates', () => {
   it('is deterministic ascending from the desired port with 10 candidates', () => {
     expect(portCandidates(20000)).toEqual([
@@ -291,12 +313,17 @@ describe('startWorkerRuntime', () => {
       expect(result.workers[0].configPath).toContain(join('.worker-local-state', 'generated'));
       expect(result.namespace).toMatch(/^w[0-9a-f]{12}$/u);
 
-      // Spawn argv: `dev --config <generated> --persist-to <dir>` — KHÔNG
-      // có `--port` (generated config đã embed dev.port).
+      // Spawn argv: `dev --config <generated> --persist-to <dir> --env-file
+      // <app>/.dev.vars?` — KHÔNG có `--port` (generated config đã embed
+      // dev.port). Đoạn đuôi env-file phải khớp đúng output của
+      // devVarsArgv(appDir) — với existence-driven unit test riêng ở trên.
       for (const argv of capture.argvs) {
         expect(argv[0]).toBe(migrationsBin);
         expect(argv[1]).toBe('dev');
         expect(argv).not.toContain('--port');
+        const appDir = capture.cwds[capture.argvs.indexOf(argv)];
+        const expectedTail = devVarsArgv(appDir ?? '');
+        expect(argv.slice(argv.length - expectedTail.length)).toEqual(expectedTail);
         const configIndex = argv.indexOf('--config');
         expect(configIndex).toBeGreaterThan(0);
         expect(argv[configIndex + 1]).toContain(join('.worker-local-state', 'generated'));
