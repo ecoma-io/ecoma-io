@@ -10,4 +10,28 @@ paths = [
   '''^*/.output/''',
   '''.*/.nuxt/.*''',
   'deploys/platform-deploy/local-certs',
+  # Log wrangler dev của local worker stack: output wrangler nhét cả request
+  # headers vào log, trong đó có shared secret cục bộ của worktree (mục đích
+  # mỗi worktree tự xoay, không dùng chung). Thư mục nằm trong .gitignore
+  # (`.worker-local-state/`) và không bao giờ vào Git/PR — quét ra đây chỉ
+  # sinh false positive chặn mọi push từ worktree đã chạy local stack.
+  # State dir ngoài log còn chứa generated config và D1/Queue local, chỉ
+  # allowlist đúng tài sản gây leak đã đo
+  # (`<stateDir>/.wrangler-home/.wrangler/logs/`)
+  # để phần còn lại vẫn giữ độ phủ scan.
+  # Phù hợp cả khi scan chạy từ worktree lồng nhau (vd `.claude/worktrees/<name>/...`).
+  # Chỉ thư mục log của wrangler — tệp khác dưới `.wrangler/` (vd cache credential
+  # khi login) vẫn giữ độ phủ scan.
+  '''^(\.claude/worktrees/[^/]+/)?\.worker-local-state/\.wrangler-home/\.wrangler/logs/''',
+  # `.dev.vars` của mọi service app — per-worktree local secret, luôn gitignored
+  # (`.dev.vars*`). `generic-api-key` khớp đúng dạng giá trị của nó
+  # (MAIL_QUARANTINE_HMAC_KEY hex, MAIL_FINGERPRINT_KEYRING); không allowlist thì
+  # một thay đổi giá trị sau này chặn push từ mọi worktree đã dựng local stack.
+  # Mẫu tổng quát theo `devVarsArgv` (tools/dx) — generic mọi worker entry, không
+  # neo cứng prefix để khớp cả worktree lồng nhau; neo `$` đúng filename duy nhất
+  # mà orchestration đọc (biến thể `.dev.vars.*` khác vẫn giữ độ phủ scan).
+  # Lưu ý: allowlist theo path áp dụng cho MỌI chế độ quét gồm cả `gitleaks detect`
+  # lịch sử Git; nếu `.dev.vars` bị commit nhầm qua `git add -f`, scan sẽ im lặng —
+  # biện pháp bù chưa triển khai tại thời điểm PR này (theo dõi issue #48).
+  '''^(\.claude/worktrees/[^/]+/)?apps/[^/]+/\.dev\.vars$''',
 ]

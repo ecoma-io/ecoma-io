@@ -222,6 +222,23 @@ function buildWranglerEnv(persistTo: string): NodeJS.ProcessEnv {
   return sanitizedWranglerEnv(persistTo);
 }
 
+/**
+ * Argv env-file của một entry: `--env-file <appDir>/.dev.vars` khi file tồn
+ * tại, trả `[]` khi không.
+ *
+ * Lý do dùng `--env-file` thay vì copy `.dev.vars` sang generated config dir:
+ * `wrangler dev` resolve `.dev.vars` mặc định theo **dirname của config file**
+ * — generated config nằm ở `<stateDir>/generated/` CHUNG cho mọi entry, copy
+ * sẽ khiến dev.vars của entry sau đè của entry trước (hai entry cần env khác
+ * nhau). `--env-file` trỏ tường minh đúng file của app nên mỗi entry đọc env
+ * của chính nó, còn generated config dùng chung một thư mục vẫn ổn.
+ */
+export function devVarsArgv(appDir: string): string[] {
+  const devVarsPath = join(appDir, '.dev.vars');
+  if (!existsSync(devVarsPath)) return [];
+  return ['--env-file', devVarsPath];
+}
+
 // -------------------------------------------------------------------
 // Bounded output buffer (readiness + tail error path)
 // -------------------------------------------------------------------
@@ -526,8 +543,11 @@ export async function startWorkerRuntime(
       });
     }
 
-    // 4. Spawn — argv cố định: `dev --config <generated> --persist-to <dir>`.
-    //    KHÔNG có `--port` — generated config đã embed `dev.port`.
+    const devVars = devVarsArgv(entry.appDir);
+
+    // 4. Spawn — argv cố định: `dev --config <generated> --persist-to <dir>`
+    //    (+ `--env-file` khi app có `.dev.vars`). KHÔNG có `--port` —
+    //    generated config đã embed `dev.port`.
     const argv = [
       ...resolveWranglerInvocationArgv(options.wranglerBin),
       'dev',
@@ -535,6 +555,7 @@ export async function startWorkerRuntime(
       generated.configPath,
       '--persist-to',
       generated.persistTo,
+      ...devVars,
     ];
     const stdout = new BoundedBuffer();
     const stderr = new BoundedBuffer();
