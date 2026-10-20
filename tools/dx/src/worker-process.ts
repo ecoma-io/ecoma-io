@@ -28,15 +28,30 @@
  *    nên không nằm ở đây.
  *
  * Cấp phục hồi (recovery): `scanWorkerProcesses` đọc toàn bộ metadata trong
- * stateDir của worktree, phân loại stale/duplicate bằng PID liveness + identity,
- * và `terminateStaleWorkers` kill CHỈ metadata khớp identity + PID đã chết
- * tái sử dụng được chứng minh — cùng chuẩn fail-closed với `local-lock.ts`.
+ * stateDir của worktree, phân loại `alive`/`stale`/`unspawned`/`invalid` bằng
+ * PID liveness + identity, và `terminateStaleWorker` (số ít) kill CHỈ khi metadata
+ * hợp lệ + argv identity khớp + PID đã chết được chứng minh — cùng chuẩn
+ * fail-closed với `local-lock.ts`. Không có khái niệm duplicate trong code;
+ * entry cùng `name` bị từ chối spawn đè (xem `startWorkerProcess`).
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+  writeSync,
+} from 'node:fs';
+import { basename, dirname, join } from 'node:path';
+import type { Readable } from 'node:stream';
+import { safeUnlinkIfSame } from './local-lock.js';
 
 /** Phiên bản shape của file metadata — đổi shape phải đổi số này, loader cũ từ chối đọc. */
 const METADATA_VERSION = 1;
@@ -69,13 +84,18 @@ export interface WorkerProcessHandle {
   exitSignal: NodeJS.Signals | null;
   /** Lỗi spawn từ event `error` (ENOENT, EACCES...) — không qua exit code. */
   spawnError?: string;
+  /** Lỗi ghi metadata (ENOSPC, EACCES...) trong event handler — không crash tool. */
+  metadataError?: string;
   metadataPath: string;
+  /** Stream stdout/stderr của process — caller drain hoặc pipe vào log file. */
+  stdout: Readable | null;
+  stderr: Readable | null;
   /** True khi PID còn sống — poll `kill(pid, 0)`, cùng chuẩn `local-lock.ts`. */
   alive(): boolean;
   /** Promise resolve đúng một lần khi process exit (không resolve khi spawn fail). */
   onExit: Promise<void>;
   /** SIGTERM → đợi timeoutMs → SIGKILL fallback. Lỗi gửi signal không nuốt. */
-  stop(timeoutMs?: number): Promise<void>;
+  stop(timeoutMs?: number, options?: StopOptions): Promise<void>;
   /** Xoá file metadata — dùng trong register giúp caller quản lý dọn dẹp. */
   removeMetadata(): void;
 }
@@ -85,8 +105,22 @@ interface StopOptions {
   escalationWaitMs?: number;
 }
 
+/**
+ * Validate tên entry — chống path traversal (`name` được nối thẳng vào đường
+ * dẫn file metadata). Chỉ chấp nhận `[A-Za-z0-9._-]`, từ chối `..` và toString
+ * rỗng, nên `name` không thể vượt ra ngoài `stateDir`.
+ */
+export function isValidEntryName(name: string): boolean {
+  return /^[A-Za-z0-9._-]+$/u.test(name) && name !== '.' && name !== '..';
+}
+
 /** Đường dẫn file metadata của một entry. */
 export function metadataPathOf(stateDir: string, name: string): string {
+  if (!isValidEntryName(name)) {
+    throw new Error(
+      `invalid worker entry name '${name}' — chỉ chấp nhận [A-Za-z0-9._-], không vượt ra ngoài stateDir`,
+    );
+  }
   return join(stateDir, `${name}.json`);
 }
 
@@ -126,6 +160,8 @@ export function readMetadata(path: string): WorkerProcessMetadata | null {
     if (!Array.isArray(parsed.argv) || parsed.argv.length === 0) return null;
     if (parsed.argv.some((arg) => typeof arg !== 'string')) return null;
     if (typeof parsed.identityHash !== 'string' || parsed.identityHash.length === 0) return null;
+    // identityHash phải khớp argv — bắt file corrupt một phần.
+    if (parsed.identityHash !== identityHashOf(parsed.argv)) return null;
     if (typeof parsed.startedAt !== 'number' || parsed.startedAt <= 0) return null;
     return parsed as WorkerProcessMetadata;
   } catch {
@@ -152,6 +188,79 @@ function writeMetadata(path: string, metadata: WorkerProcessMetadata): void {
   writeFileSync(path, JSON.stringify(metadata, null, 2), 'utf8');
 }
 
+/**
+ * Khóa entry-level (per metadata file) để bọc check→write→spawn thành atomic:
+ * hai caller spawn cùng `name` không thể cùng vượt qua guard và cùng ghi metadata.
+ * Dùng `openSync('wx')` + stale-recovery qua PID (process.pid của acquirer) — cùng
+ * chuẩn fail-closed với `local-lock.ts`. Lock mồ côi (process chết) được xoá tự
+ * động qua PID liveness; lock còn sống KHÔNG bị steal.
+ */
+const ENTRY_LOCK_MAX_ATTEMPTS = 50;
+const ENTRY_LOCK_RETRY_MS = 10;
+
+function acquireWorkerEntryLock(metadataPath: string, name: string): () => void {
+  const lockPath = `${metadataPath}.lock`;
+  for (let attempt = 0; attempt < ENTRY_LOCK_MAX_ATTEMPTS; attempt += 1) {
+    const token = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    let fd: number | undefined;
+    try {
+      fd = openSync(lockPath, 'wx');
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'EEXIST') throw error;
+      // Lock đã tồn tại — kiểm stale qua PID owner.
+      let content: string;
+      try {
+        content = readFileSync(lockPath, 'utf8');
+      } catch (readError) {
+        const rc = (readError as NodeJS.ErrnoException).code;
+        if (rc === 'ENOENT') continue; // file biến mất giữa chừng — retry
+        // Lỗi IO khác: không chứng minh được stale → không steal, retry.
+        const waitUntil = Date.now() + ENTRY_LOCK_RETRY_MS;
+        while (Date.now() < waitUntil) {
+          /* busy-wait nhỏ, bounded */
+        }
+        continue;
+      }
+      const lines = content.split('\n');
+      const ownerPid = Number.parseInt(lines[0] ?? '', 10);
+      if (Number.isInteger(ownerPid) && ownerPid > 0 && isPidAlive(ownerPid)) {
+        // Còn sống → chờ rồi retry; không steal.
+        const waitUntil = Date.now() + ENTRY_LOCK_RETRY_MS;
+        while (Date.now() < waitUntil) {
+          /* busy-wait nhỏ, bounded */
+        }
+        continue;
+      }
+      // Owner chết hoặc content malformed → stale recovery, chỉ xoá nếu nội dung
+      // không đổi (race protection) — tái sử dụng safeUnlinkIfSame từ local-lock.
+      safeUnlinkIfSame(lockPath, content);
+      continue;
+    }
+    try {
+      writeSync(fd, `${process.pid}\n${token}\n${Date.now()}\n`, 0, 'utf8');
+    } finally {
+      closeSync(fd);
+    }
+    // Acquired.
+    const release = (): void => {
+      try {
+        const current = readFileSync(lockPath, 'utf8');
+        const parsed = current.split('\n');
+        if (parsed[1] === token) {
+          unlinkSync(lockPath);
+        }
+      } catch {
+        // ENOENT: đã bị xoá — không sao.
+      }
+    };
+    return release;
+  }
+  throw new Error(
+    `worker process '${name}' đang được spawn bởi caller khác (entry lock bị giữ) — thử lại sau`,
+  );
+}
+
 interface StartOptions {
   /** Tên entry ở stateDir — là `metadataPath` của handle. */
   name: string;
@@ -171,11 +280,61 @@ interface StartOptions {
  * argv/identityHash — để crash giữa spawn và event `spawn` vẫn để lại bằng chứng
  * identity), lần hai SAU event `spawn` khi PID thật đã có. File pid-`0` bị
  * loader từ chối (`pid <= 0`), đúng mục đích: không PID thì không kill gì được.
+ * Entry pid-`0` còn sót được scan phân loại `unspawned` và dọn qua
+ * `deleteStaleWorkerMetadata` — không còn là file không rõ nguồn.
+ *
+ * Không ghi đè metadata của process đang sống: entry cùng `name` với PID còn
+ * sống bị từ chối spawn (identity lệch hay khớp đều không đè — identity khớp
+ * nghĩa là process đó vẫn chạy). PID đã chết (metadata stale) được ghi đè an
+ * toàn — đây là path recovery.
+ *
+ * **CẢNH BÁO SECRET**: argv được lưu plaintext vào file metadata (stateDir,
+ * ngoài Git) — KHÔNG bao giờ truyền secret/token/password qua argv. Secrets
+ * thuộc về env object (Worker Secrets, native runtime) và không bao giờ đi qua
+ * file này.
  *
  * KHÔNG có readiness/startup timeout ở đây — đó là trách nhiệm của caller.
  */
 export function startWorkerProcess(options: StartOptions): WorkerProcessHandle {
+  if (!Array.isArray(options.argv) || options.argv.length === 0) {
+    throw new Error(
+      'startWorkerProcess: argv must be a non-empty array (argv[0] is the executable)',
+    );
+  }
+  if (typeof options.argv[0] !== 'string' || options.argv[0].length === 0) {
+    throw new Error('startWorkerProcess: argv[0] must be a non-empty executable path string');
+  }
   const metadataPath = metadataPathOf(options.stateDir, options.name);
+
+  // Bọc check→write→spawn trong entry lock để hai caller không cùng vượt guard
+  // (OCR finding high: TOCTOU giữa readMetadata → isPidAlive → writeMetadata).
+  const releaseEntryLock = acquireWorkerEntryLock(metadataPath, options.name);
+  try {
+    // Không ghi đè metadata của process còn sống — tránh orphan mất bằng chứng PID.
+    // Ngoại lệ: PID sống nhưng takeover (cmdline lệch/trống trên Linux) — PID bị
+    // OS tái sử dụng cho process không liên quan. isPidAlive một mình sẽ khoá
+    // entry vĩnh cửu (scan phân loại 'alive' và giữ nó mãi mãi), nên đây được
+    // coi là stale recovery — path ghi đè như JSDoc của hàm này mô tả.
+    const existing = readMetadata(metadataPath);
+    if (
+      existing !== null &&
+      isPidAlive(existing.pid) &&
+      !pidTakenOver(existing.pid, existing.argv)
+    ) {
+      if (sameIdentity(existing.argv, options.argv)) {
+        throw new Error(
+          `worker process '${options.name}' đã chạy (pid ${existing.pid}) — không spawn đè`,
+        );
+      }
+      throw new Error(
+        `stateDir đã có entry '${options.name}' với identity khác (pid ${existing.pid}) — không ghi đè`,
+      );
+    }
+  } catch (error) {
+    releaseEntryLock();
+    throw error;
+  }
+
   const identityHash = identityHashOf(options.argv);
   const initialMetadata: WorkerProcessMetadata = {
     version: METADATA_VERSION,
@@ -185,16 +344,38 @@ export function startWorkerProcess(options: StartOptions): WorkerProcessHandle {
     identityHash,
     startedAt: Date.now(),
   };
-  writeMetadata(metadataPath, initialMetadata);
+  try {
+    writeMetadata(metadataPath, initialMetadata);
+  } catch (error) {
+    releaseEntryLock();
+    throw error;
+  }
 
   const spawnImpl = options.spawnImpl ?? spawn;
-  const child: ChildProcess = spawnImpl(options.argv[0], options.argv.slice(1), {
-    cwd: options.cwd,
-    env: options.env,
-    // stdin đóng ngay (process không cần input tương tác); stdout/stderr để
-    // caller tự lấy stream và ghi log file theo metadata.
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  let child: ChildProcess;
+  try {
+    child = spawnImpl(options.argv[0], options.argv.slice(1), {
+      cwd: options.cwd,
+      env: options.env,
+      // process group riêng: kill cả workerd con qua -pid (PR1 topology: wrangler + workerd).
+      detached: true,
+      // stdin đóng ngay; stdout/stderr drain bên dưới để tránh deadlock pipe OS.
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch (error) {
+    // spawn throw đồng bộ thì không có event `spawn`/`error` nào bắn — không
+    // giải phóng entry lock thì lock còn sót với owner pid đang sống,
+    // stale-recovery không bao giờ kích hoạt và mọi lần spawn sau cùng `name`
+    // đều chờ hết attempts rồi throw. Dọn luôn metadata pid-0 vừa ghi để
+    // stateDir không tích rác `unspawned`.
+    releaseEntryLock();
+    try {
+      rmSync(metadataPath, { force: true });
+    } catch {
+      // ignore — metadata có thể chưa kịp ghi
+    }
+    throw error;
+  }
 
   const handle: WorkerProcessHandle = {
     pid: -1,
@@ -202,6 +383,10 @@ export function startWorkerProcess(options: StartOptions): WorkerProcessHandle {
     exitCode: null,
     exitSignal: null,
     metadataPath,
+    spawnError: undefined,
+    metadataError: undefined,
+    stdout: (child.stdout as Readable | null) ?? null,
+    stderr: (child.stderr as Readable | null) ?? null,
     alive: () => !handle.exited && isPidAlive(handle.pid),
     onExit: undefined as unknown as Promise<void>,
     removeMetadata(): void {
@@ -213,9 +398,27 @@ export function startWorkerProcess(options: StartOptions): WorkerProcessHandle {
       }
     },
     async stop(timeoutMs = 10_000, optionsOverride: StopOptions = {}): Promise<void> {
-      if (handle.pid <= 0 || !isPidAlive(handle.pid)) return;
+      if (handle.pid <= 0 || handle.exited || !isPidAlive(handle.pid)) return;
+      // Kill process group trước; fallback single pid khi group kill không áp dụng.
+      const send = (signal: NodeJS.Signals): void => {
+        try {
+          process.kill(-handle.pid, signal);
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code === 'ESRCH' || code === 'EPERM') {
+            try {
+              process.kill(handle.pid, signal);
+            } catch (inner) {
+              const innerCode = (inner as NodeJS.ErrnoException).code;
+              if (innerCode !== 'ESRCH') throw inner;
+            }
+          } else {
+            throw error;
+          }
+        }
+      };
       try {
-        process.kill(handle.pid, 'SIGTERM');
+        send('SIGTERM');
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
         if (code !== 'ESRCH') throw error;
@@ -231,7 +434,7 @@ export function startWorkerProcess(options: StartOptions): WorkerProcessHandle {
       }
       if (!handle.exited && isPidAlive(handle.pid)) {
         try {
-          process.kill(handle.pid, 'SIGKILL');
+          send('SIGKILL');
         } catch (error) {
           const code = (error as NodeJS.ErrnoException).code;
           if (code !== 'ESRCH') throw error;
@@ -245,14 +448,45 @@ export function startWorkerProcess(options: StartOptions): WorkerProcessHandle {
           });
         }
       }
+      if (!handle.exited) {
+        throw new Error(`worker process '${options.name}' (pid ${handle.pid}) did not terminate`);
+      }
     },
   };
+
+  // Drain pipe để process không block khi ghi stdout/stderr liên tục (wrangler dev).
+  try {
+    child.stdout?.resume();
+    child.stderr?.resume();
+  } catch {
+    // ignore
+  }
 
   let resolveExit: (() => void) | null = null;
   child.on('spawn', () => {
     handle.pid = child.pid ?? -1;
     if (handle.pid > 0) {
-      writeMetadata(metadataPath, { ...initialMetadata, pid: handle.pid });
+      try {
+        writeMetadata(metadataPath, { ...initialMetadata, pid: handle.pid });
+      } catch (error) {
+        handle.metadataError = (error as NodeJS.ErrnoException).message ?? String(error);
+        // Fail-closed: metadata thất bại nghĩa là process sống không còn bằng
+        // chứng PID — spawn đè sẽ bị từ chối nhưng `deleteStaleWorkerMetadata`
+        // phân loại pid-0 là `unspawned` và có thể dọn. Kill ngay để không rò
+        // process/port khuyết bằng chứng; metadata pid-0 còn sót được dọn an
+        // toàn qua path scan chuẩn.
+        try {
+          process.kill(handle.pid, 'SIGKILL');
+        } catch {
+          // ignore — process có thể đã exit
+        }
+        handle.spawnError = `metadata write failed: ${handle.metadataError}`;
+      }
+    }
+    try {
+      releaseEntryLock();
+    } catch {
+      // ignore
     }
   });
 
@@ -261,6 +495,11 @@ export function startWorkerProcess(options: StartOptions): WorkerProcessHandle {
     // process chưa hề có vòng đời nào; caller vẫn dọn metadata qua
     // `removeMetadata()`.
     handle.spawnError = `${error.name}: ${error.message}`;
+    try {
+      releaseEntryLock();
+    } catch {
+      // ignore
+    }
   });
 
   child.on('exit', (code, signal) => {
@@ -288,13 +527,16 @@ export type { StopOptions };
 export type WorkerProcessState =
   | 'alive' // PID còn sống — process thật đang chạy, không đụng
   | 'stale' // PID đã chết — metadata mồ côi, an toàn dọn
-  | 'invalid'; // file sai shape/version/pid≤0 — không đủ bằng chứng identity
+  | 'unspawned' // metadata pid≤0 hợp lệ (spawn thất bại) — dọn an toàn
+  | 'invalid'; // file sai shape/version — không đủ bằng chứng identity
 
 export interface WorkerProcessScanEntry {
   name: string;
   metadataPath: string;
   metadata: WorkerProcessMetadata | null;
   state: WorkerProcessState;
+  /** Raw nội dung lúc scan — dùng cho safe-unlink so sánh. */
+  rawContent?: string;
 }
 
 /**
@@ -317,17 +559,69 @@ export function scanWorkerProcesses(stateDir: string): WorkerProcessScanEntry[] 
   for (const file of entries) {
     if (!file.endsWith('.json')) continue;
     const metadataPath = join(stateDir, file);
+    // Snapshot raw ngay từ đầu — dùng vừa để phân loại unspawned, vừa làm
+    // snapshot so sánh trước khi unlink trong `deleteStaleWorkerMetadata`.
+    let raw: string | undefined;
+    try {
+      raw = readFileSync(metadataPath, 'utf8');
+    } catch {
+      // File biến mất giữa chừng — metadata cũng đọc được null về sau.
+    }
     const metadata = readMetadata(metadataPath);
     const name = file.replace(/\.json$/u, '');
     if (metadata === null) {
-      results.push({ name, metadataPath, metadata: null, state: 'invalid' });
+      // Phân biệt pid≤0 hợp lệ (spawn chưa hề thành công) vs corrupt: pid≤0 bị
+      // readMetadata từ chối, nhưng nếu các trường còn lại đầy đủ + identityHash
+      // khớp argv thì đây là bằng chứng "spawn failed" — dọn được an toàn.
+      let isUnspawned = false;
+      if (raw !== undefined) {
+        try {
+          const p = JSON.parse(raw) as {
+            pid?: unknown;
+            argv?: unknown;
+            identityHash?: unknown;
+            version?: unknown;
+          };
+          if (
+            p.version === METADATA_VERSION &&
+            typeof p.pid === 'number' &&
+            p.pid <= 0 &&
+            Array.isArray(p.argv) &&
+            p.argv.length > 0 &&
+            p.argv.every((a) => typeof a === 'string') &&
+            typeof p.identityHash === 'string' &&
+            p.identityHash.length > 0 &&
+            p.identityHash === identityHashOf(p.argv)
+          ) {
+            isUnspawned = true;
+          }
+        } catch {
+          isUnspawned = false;
+        }
+      }
+      results.push({
+        name,
+        metadataPath,
+        metadata: null,
+        state: isUnspawned ? 'unspawned' : 'invalid',
+        rawContent: raw,
+      });
       continue;
     }
     results.push({
       name,
       metadataPath,
       metadata,
-      state: isPidAlive(metadata.pid) ? 'alive' : 'stale',
+      // 'stale' bao gồm cả takeover: PID sống nhưng cmdline lệch/trống (Linux)
+      // — PID bị OS tái sử dụng, metadata mồ côi. pidTakenOver fail-closed cho
+      // PID sống nhưng không chứng minh được identity; PID chết là stale bình
+      // thường. Trên non-Linux guard này không hoạt động (documented).
+      state: pidTakenOver(metadata.pid, metadata.argv)
+        ? 'stale'
+        : isPidAlive(metadata.pid)
+          ? 'alive'
+          : 'stale',
+      rawContent: raw,
     });
   }
   return results;
@@ -335,9 +629,9 @@ export function scanWorkerProcesses(stateDir: string): WorkerProcessScanEntry[] 
 
 /** Kết quả xoá metadata mồ côi — báo cáo từng entry thay vì throw giữa chừng. */
 export interface StaleRemovalReport {
-  /** File đã xoá (stale + invalid) — metadata mồ côi, không bằng chứng sống. */
+  /** File đã xoá (stale + unspawned) — metadata mồ côi/không còn process, không bằng chứng sống. */
   removed: string[];
-  /** File giữ lại (alive) — process thật đang chạy. */
+  /** File giữ lại (alive + invalid) — process thật đang chạy, hoặc bằng chứng điều tra. */
   kept: string[];
   /** Lỗi IO xoá từng file — caller quyết định fail hay tiếp tục. */
   errors: { name: string; message: string }[];
@@ -350,22 +644,37 @@ export interface StaleRemovalReport {
  * dùng `sameIdentity` của caller; PR2 chỉ đơn "metadata không còn tương ứng
  * process sống thì xoá file, để lần deploy sau start sạch". Entry `alive` và
  * `invalid` KHÔNG bị đụng: `invalid` giữ lại làm bằng chứng điều tra (caller
- * muốn xoá hẳn dùng `rmSync` trực tiếp).
+ * muốn xoá hẳn dùng `rmSync` trực tiếp). Entry `stale` và `unspawned` bị xoá
+ * theo safe-unlink pattern (snapshot lúc scan + `safeUnlinkIfSame` re-read trước
+ * khi xoá) — file bị ghi đè giữa scan và xoá không bị dọn nhầm.
  */
 export function deleteStaleWorkerMetadata(stateDir: string): StaleRemovalReport {
   const report: StaleRemovalReport = { removed: [], kept: [], errors: [] };
   for (const entry of scanWorkerProcesses(stateDir)) {
-    if (entry.state === 'alive') {
+    if (entry.state === 'alive' || entry.state === 'invalid') {
       report.kept.push(entry.name);
       continue;
     }
-    if (entry.state === 'invalid') {
+    // state 'stale' hoặc 'unspawned' → xoá file nếu nội dung không đổi giữa
+    // scan và unlink (safe-unlink pattern từ local-lock.ts): re-read trước khi
+    // xoá, chỉ unlink khi snapshot khớp — một metadata bị ghi đè giữa chừng
+    // (spawn mới cùng name) không bị xoá nhầm.
+    const snapshot = entry.rawContent;
+    if (snapshot === undefined) {
       report.kept.push(entry.name);
       continue;
     }
     try {
-      rmSync(entry.metadataPath, { force: true });
-      report.removed.push(entry.name);
+      // safeUnlinkIfSame tự re-read và so trước khi unlink; ENOENT ở lần
+      // re-read coi như đã dọn xong (một process khác đã xoá) — báo removed.
+      if (safeUnlinkIfSame(entry.metadataPath, snapshot)) {
+        report.removed.push(entry.name);
+      } else if (!existsSync(entry.metadataPath)) {
+        report.removed.push(entry.name);
+      } else {
+        // Bị ghi đè giữa chừng — không xoá nhầm.
+        report.kept.push(entry.name);
+      }
     } catch (error) {
       report.errors.push({
         name: entry.name,
@@ -377,15 +686,65 @@ export function deleteStaleWorkerMetadata(stateDir: string): StaleRemovalReport 
 }
 
 /**
+ * Kiểm tra PID (best-effort, Linux `/proc/<pid>/cmdline`) có phải process mà
+ * argv metadata ghi lại không — giảm race PID-reuse trước khi kill. Trên OS
+ * không có /proc (hoặc không đọc được) thì KHÔNG chặn (fail-open ở bước này,
+ * vì guard chính vẫn là identity + isPidAlive; PID-reuse race không thể khử
+ * hoàn toàn không có /proc — documented).
+ */
+export function pidCmdlineMatches(pid: number, expectedArgv: string[]): boolean {
+  if (process.platform !== 'linux') return true; // non-Linux → allow (documented)
+  let raw: Buffer;
+  try {
+    raw = readFileSync(`/proc/${pid}/cmdline`);
+  } catch {
+    return true; // không đọc được → allow (documented)
+  }
+  if (!raw || raw.length === 0) return true;
+  const parts = raw
+    .toString('utf8')
+    .split('\u0000')
+    .filter((part) => part.length > 0);
+  if (parts.length === 0) return true;
+  // So basename của argv[0] (executable) — chỉ cần executive khớp: phân biệt
+  // node/wrangler/workerd, đủ phát hiện PID bị takeover bởi binary khác.
+  const expectedBase = basename(expectedArgv[0] ?? '');
+  if (expectedBase === '') return true;
+  return parts.some((part) => basename(part) === expectedBase);
+}
+
+/**
+ * Phát hiện PID tiếp tục sống NHƯNG không còn là process mà metadata ghi —
+ * PID bị OS tái sử dụng cho binary khác (takeover). Khác `pidCmdlineMatches`
+ * (fail-open khi cmdline không đọc được), hàm này fail-CLOSED trên Linux khi
+ * cmdline trống (kernel thread) hoặc không đọc được nhưng PID được isPidAlive
+ * xác nhận sống: không có bằng chứng identity cho một PID sống là takeover
+ * theo nghĩa metadata (metadata ghi argv binary user-space, một kernel thread
+ * hay process che cmdline chắc chắn không khớp). Trên non-Linux → không phát
+ * hiện được (documented — guard chính vẫn là identity + liveness).
+ */
+export function pidTakenOver(pid: number, expectedArgv: string[]): boolean {
+  if (!isPidAlive(pid)) return false; // PID chết — stale bình thường, không phải takeover
+  if (process.platform !== 'linux') return false; // không có /proc — không chứng minh được
+  return !pidCmdlineMatches(pid, expectedArgv);
+}
+
+/**
  * Recovery một entry mồ côi CỤ THỂ — kill khi PID đã tái sử dụng được chứng
- * minh. Đây là duy nhất nơi thực hiện kill với entry đọc từ file: guard kép
- * (identity khớp argv caller + metadata hợp lệ + PID chết) phải ĐỦ cả ba mới
- * tới được lệnh kill.
+ * minh. Đây là duy nhất nơi thực hiện kill với entry đọc từ file: bốn guard
+ * (metadata hợp lệ + metadata argv khớp argv caller + /proc cmdline khớp +
+ * PID chết) phải ĐỦ cả tư mới tới được lệnh kill. Thứ tự: cmdline TRƯỚC
+ * isPidAlive — khi PID còn sống, /proc/cmdline phát hiện takeover (binary
+ * khác chiếm PID); khi PID đã chết, /proc không còn → guard fail-open
+ * documented và killing CHỈ nhắm single PID (leader đã chết, không có bằng
+ * chứng identity cho các thành viên group — group kill vào pgid có thể bị
+ * chiếm dụng bởi nhóm process khác, vi phạm nguyên tắc "không kill không
+ * bằng chứng").
  *
  * Trả về `null` khi không đủ điều kiện kill (metadata null, identity lệch,
- * PID chưa chết); `true` khi SIGTERM đã gửi; `false` khi SIGTERM thất bại.
- * Caller quyết định cách xử lý từng kết quả — hàm này không throw cho các
- * trường hợp "không đủ", chỉ throw khi IO file thật sự lỗi.
+ * PID chưa chết, cmdline lệch); `true` khi SIGTERM đã gửi; `false` khi
+ * SIGTERM thất bại. Caller quyết định cách xử lý từng kết quả — hàm này không
+ * throw cho các trường hợp "không đủ", chỉ throw khi IO file thật sự lỗi.
  */
 export function terminateStaleWorker(
   stateDir: string,
@@ -395,8 +754,14 @@ export function terminateStaleWorker(
   const metadata = readMetadata(metadataPathOf(stateDir, name));
   if (metadata === null) return null; // không đủ bằng chứng identity
   if (!sameIdentity(metadata.argv, expectedArgv)) return null; // lệch argv — từ chối
+  // Guard cmdline chạy TRƯỚC isPidAlive: khi PID còn sống, /proc/cmdline là
+  // cách duy nhất phát hiện PID bị takeover (binary khác chiếm PID). Khi PID
+  // đã chết, /proc/<pid>/cmdline ENOENT → fail-open documented.
+  if (!pidCmdlineMatches(metadata.pid, metadata.argv)) return null;
   if (isPidAlive(metadata.pid)) return null; // PID sống — không phải stale
   try {
+    // Chỉ kill single PID: leader đã chết, group members không có identity
+    // evidence — group kill vào pgid tái sử dụng là kill không bằng chứng.
     process.kill(metadata.pid, 'SIGTERM');
     return true;
   } catch (error) {

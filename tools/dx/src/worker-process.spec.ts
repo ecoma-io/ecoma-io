@@ -6,6 +6,7 @@
  */
 
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -16,6 +17,7 @@ import {
   identityHashOf,
   isPidAlive,
   metadataPathOf,
+  pidCmdlineMatches,
   readMetadata,
   sameIdentity,
   scanWorkerProcesses,
@@ -26,6 +28,28 @@ import {
 } from './worker-process.js';
 
 const cleanup: string[] = [];
+
+/**
+ * Probe TCP `127.0.0.1:<targetPort>` — port-bound readiness for tests (PID
+ * liveness proves nothing about a listener), and release check after stop.
+ */
+const probePort = (targetPort: number): Promise<boolean> =>
+  new Promise((resolve) => {
+    const socket = connect(targetPort, '127.0.0.1');
+    let settled = false;
+    const finish = (result: boolean): void => {
+      if (settled) return;
+      settled = true;
+      try {
+        socket.destroy();
+      } catch {
+        // best-effort
+      }
+      resolve(result);
+    };
+    socket.once('connect', () => finish(true));
+    socket.once('error', () => finish(false));
+  });
 
 function cleanStateDir(): string {
   const dir = mkdtempSync(join(tmpdir(), 'worker-process-spec-'));
@@ -295,12 +319,19 @@ describe('startWorkerProcess', () => {
       env: {},
       stateDir: dir,
     });
-    const readyDeadline = Date.now() + 5000;
-    while (!holder.alive() && Date.now() < readyDeadline) {
-      await new Promise((resolve) => {
-        setTimeout(resolve, 25);
-      });
+    // Deterministically wait until the port is actually bound (TCP connect succeeds),
+    // not just until the holder PID is alive.
+    const bindDeadline = Date.now() + 5000;
+    let bound = false;
+    while (!bound && Date.now() < bindDeadline) {
+      bound = await probePort(port);
+      if (!bound) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 25);
+        });
+      }
     }
+    expect(bound).toBe(true);
     expect(holder.alive()).toBe(true);
 
     const second = startWorkerProcess({
@@ -321,6 +352,17 @@ describe('startWorkerProcess', () => {
     await holder.stop(1000);
     holder.removeMetadata();
     second.removeMetadata();
+    // Best-effort: confirm port released, but do not fail the test on it.
+    const releaseDeadline = Date.now() + 2000;
+    let released = false;
+    while (!released && Date.now() < releaseDeadline) {
+      released = !(await probePort(port));
+      if (!released) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 25);
+        });
+      }
+    }
   });
 
   it('timeout: handle.onExit does not resolve before process exits (no premature resolve)', async () => {
@@ -484,5 +526,350 @@ describe('scanWorkerProcesses / deleteStaleWorkerMetadata / terminateStaleWorker
     expect(r.removed).toEqual([]);
     expect(r.kept).toEqual([]);
     expect(r.errors).toEqual([]);
+  });
+
+  it('unspawned metadata (valid shape, pid 0) is classified and removed; invalid preserved', () => {
+    const dir = cleanStateDir();
+    const args = [process.execPath, 'unspawned.js'];
+    // pid=0 valid shape — spawn failed before 'spawn' event.
+    writeFileSync(
+      metadataPathOf(dir, 'unspawned'),
+      JSON.stringify({
+        version: 1,
+        name: 'unspawned',
+        pid: 0,
+        argv: args,
+        identityHash: identityHashOf(args),
+        startedAt: 1,
+      }),
+      'utf8',
+    );
+    // pid=-7 same shape — also unspawned family (pid<=0 valid record).
+    writeFileSync(
+      metadataPathOf(dir, 'negative'),
+      JSON.stringify({
+        version: 1,
+        name: 'negative',
+        pid: -3,
+        argv: args,
+        identityHash: identityHashOf(args),
+        startedAt: 1,
+      }),
+      'utf8',
+    );
+    // pid=0 but identityHash mismatch — corrupt, must stay 'invalid'.
+    writeFileSync(
+      metadataPathOf(dir, 'corrupt-hash'),
+      JSON.stringify({
+        version: 1,
+        name: 'corrupt-hash',
+        pid: 0,
+        argv: args,
+        identityHash: 'deadbeef',
+        startedAt: 1,
+      }),
+      'utf8',
+    );
+
+    const scan = scanWorkerProcesses(dir);
+    const byName = new Map(scan.map((e) => [e.name, e.state]));
+    expect(byName.get('unspawned')).toBe('unspawned');
+    expect(byName.get('negative')).toBe('unspawned');
+    expect(byName.get('corrupt-hash')).toBe('invalid');
+
+    // Both unspawned entries get removed; corrupt-hash (invalid) is kept.
+    const report = deleteStaleWorkerMetadata(dir);
+    expect(report.removed).toContain('unspawned');
+    expect(report.removed).toContain('negative');
+    expect(report.kept).toContain('corrupt-hash');
+    expect(existsSync(metadataPathOf(dir, 'unspawned'))).toBe(false);
+    expect(existsSync(metadataPathOf(dir, 'negative'))).toBe(false);
+    expect(existsSync(metadataPathOf(dir, 'corrupt-hash'))).toBe(true);
+  });
+
+  it('safe unlink: metadata overwritten between scan and delete is NOT removed', async () => {
+    const dir = cleanStateDir();
+    const stalePid = 2147483647;
+    const freshArgs = [process.execPath, 'fresh.js'];
+    writeFileSync(
+      metadataPathOf(dir, 'race'),
+      JSON.stringify({
+        version: 1,
+        name: 'race',
+        pid: stalePid,
+        argv: [process.execPath, 'victim.js'],
+        identityHash: identityHashOf([process.execPath, 'victim.js']),
+        startedAt: 1,
+      }),
+      'utf8',
+    );
+
+    // Spawn a real live worker after scan starts... simpler: mutate file between
+    // scan and delete by intercepting — vi phạm black-box nếu can thiệp nội bộ.
+    // Cách kiểm chứng: scan → overwrite file (mô phỏng spawn mới ghi metadata
+    // giống thật) → deleteStaleWorkerMetadata phải giữ lại file mới.
+    void scanWorkerProcesses(dir);
+
+    // Overwrite thành metadata của process sống (pid thật) — mô phỏng một spawn
+    // mớiပ đã ghi đè file giữa scan và delete.
+    const newLiveMeta = {
+      version: 1,
+      name: 'race',
+      pid: process.pid, // alive
+      argv: freshArgs,
+      identityHash: identityHashOf(freshArgs),
+      startedAt: 2,
+    };
+    writeFileSync(metadataPathOf(dir, 'race'), JSON.stringify(newLiveMeta), 'utf8');
+
+    const report = deleteStaleWorkerMetadata(dir);
+    // Snapshot stale không khớp nội dung mới → không xoá — file sống được giữ.
+    expect(report.removed).toEqual([]);
+    expect(report.kept).toContain('race');
+    expect(existsSync(metadataPathOf(dir, 'race'))).toBe(true);
+  });
+
+  it('startWorkerProcess rejects overwriting live metadata (same or different identity)', async () => {
+    const dir = cleanStateDir();
+    const args = [process.execPath, '-e', 'setInterval(() => {}, 1 << 28)'];
+    const handle = startWorkerProcess({
+      name: 'dup',
+      argv: args,
+      cwd: dir,
+      env: {},
+      stateDir: dir,
+    });
+    const deadline = Date.now() + 5000;
+    while (handle.pid < 0 && Date.now() < deadline) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 10);
+      });
+    }
+    expect(handle.pid).toBeGreaterThan(0);
+
+    // Same identity, live pid → rejected.
+    expect(() =>
+      startWorkerProcess({ name: 'dup', argv: args, cwd: dir, env: {}, stateDir: dir }),
+    ).toThrow(/đã chạy/u);
+
+    // Different identity, live pid → rejected with identity mismatch.
+    expect(() =>
+      startWorkerProcess({
+        name: 'dup',
+        argv: [process.execPath, 'other.js'],
+        cwd: dir,
+        env: {},
+        stateDir: dir,
+      }),
+    ).toThrow(/identity/u);
+
+    // Dead pid metadata → overwrite allowed.
+    writeFileSync(
+      metadataPathOf(dir, 'dead-entry'),
+      JSON.stringify({
+        version: 1,
+        name: 'dead-entry',
+        pid: 2147483647,
+        argv: [process.execPath, 'old.js'],
+        identityHash: identityHashOf([process.execPath, 'old.js']),
+        startedAt: 1,
+      }),
+      'utf8',
+    );
+    const resumed = startWorkerProcess({
+      name: 'dead-entry',
+      argv: [process.execPath, '-e', 'setInterval(() => {}, 1 << 28)'],
+      cwd: dir,
+      env: {},
+      stateDir: dir,
+    });
+    const resumedDeadline = Date.now() + 5000;
+    while (resumed.pid < 0 && Date.now() < resumedDeadline) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 10);
+      });
+    }
+    expect(resumed.pid).toBeGreaterThan(0);
+    await resumed.stop(1000);
+    resumed.removeMetadata();
+    await handle.stop(1000);
+    handle.removeMetadata();
+  });
+
+  it('startWorkerProcess overwrites metadata whose pid was recycled by an unrelated process', async () => {
+    const dir = cleanStateDir();
+    // Metadata cho pid đang sống thật (current process) nhưng argv là binary
+    // khác (wrangler-like) — /proc/cmdline (node) không chứa basename đó →
+    // phân loại takeover, cho phép ghi đè recovery.
+    writeFileSync(
+      metadataPathOf(dir, 'recycled'),
+      JSON.stringify({
+        version: 1,
+        name: 'recycled',
+        pid: process.pid,
+        argv: ['/opt/cloudflare/wrangler', 'dev'],
+        identityHash: identityHashOf(['/opt/cloudflare/wrangler', 'dev']),
+        startedAt: 1,
+      }),
+      'utf8',
+    );
+    const handle = startWorkerProcess({
+      name: 'recycled',
+      argv: [process.execPath, '-e', 'setInterval(() => {}, 1 << 28)'],
+      cwd: dir,
+      env: {},
+      stateDir: dir,
+    });
+    const deadline = Date.now() + 5000;
+    while (handle.pid < 0 && Date.now() < deadline) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 10);
+      });
+    }
+    expect(handle.pid).toBeGreaterThan(0);
+    await handle.stop(1000);
+    handle.removeMetadata();
+  });
+
+  it('scan classifies a live pid with mismatching cmdline as stale, not alive', () => {
+    const dir = cleanStateDir();
+    // pid hiện tại đang sống thật nhưng argv trong metadata là binary khác
+    // (wrangler-like) — /proc/cmdline (node) không khớp basename đó → takeover.
+    writeFileSync(
+      metadataPathOf(dir, 'takeover'),
+      JSON.stringify({
+        version: 1,
+        name: 'takeover',
+        pid: process.pid,
+        argv: ['/opt/cloudflare/wrangler', 'dev'],
+        identityHash: identityHashOf(['/opt/cloudflare/wrangler', 'dev']),
+        startedAt: 1,
+      }),
+      'utf8',
+    );
+    const entry = scanWorkerProcesses(dir).find((e) => e.name === 'takeover');
+    expect(entry?.state).toBe('stale');
+  });
+
+  it('startWorkerProcess releases entry lock and cleans pid-0 metadata when spawn throws synchronously', async () => {
+    const dir = cleanStateDir();
+    let spawned = 0;
+    const capture = async (): Promise<Error | null> => {
+      try {
+        startWorkerProcess({
+          name: 'sync-throw',
+          argv: [process.execPath, '-e', '1'],
+          cwd: dir,
+          env: {},
+          stateDir: dir,
+          spawnImpl: () => {
+            spawned += 1;
+            throw new Error('sync spawn failure');
+          },
+        });
+      } catch (error) {
+        return error as Error;
+      }
+      return null;
+    };
+    const err = await capture();
+    expect(err?.message).toBe('sync spawn failure');
+    expect(spawned).toBe(1);
+    // Entry lock phải được giải phóng — spawn lại cùng name không bị chặn bởi lock.
+    expect(existsSync(`${metadataPathOf(dir, 'sync-throw')}.lock`)).toBe(false);
+    // Metadata pid-0 vừa ghi phải được dọn sạch.
+    expect(existsSync(metadataPathOf(dir, 'sync-throw'))).toBe(false);
+    // Và spawn tiếp theo cùng name phải chạy bình thường.
+    const second = startWorkerProcess({
+      name: 'sync-throw',
+      argv: [process.execPath, '-e', 'process.exit(0)'],
+      cwd: dir,
+      env: {},
+      stateDir: dir,
+    });
+    await second.onExit;
+    second.removeMetadata();
+  });
+
+  it('startWorkerProcess rejects empty argv', () => {
+    const dir = cleanStateDir();
+    expect(() =>
+      startWorkerProcess({ name: 'empty-argv', argv: [], cwd: dir, env: {}, stateDir: dir }),
+    ).toThrow('non-empty');
+    expect(() =>
+      startWorkerProcess({ name: 'empty-exe', argv: [''], cwd: dir, env: {}, stateDir: dir }),
+    ).toThrow('non-empty');
+  });
+
+  it('readMetadata rejects identityHash mismatch', () => {
+    const dir = cleanStateDir();
+    const args = [process.execPath, 'main.js'];
+    writeFileSync(
+      metadataPathOf(dir, 'badhash'),
+      JSON.stringify({
+        version: 1,
+        name: 'badhash',
+        pid: 123,
+        argv: args,
+        identityHash: 'aaaaaaaaaaaaaaaa',
+        startedAt: 42,
+      }),
+      'utf8',
+    );
+    expect(readMetadata(metadataPathOf(dir, 'badhash'))).toBeNull();
+  });
+
+  it('pidCmdlineMatches allows unreadable/absent pid (cross-platform)', () => {
+    expect(pidCmdlineMatches(-1, [process.execPath])).toBe(true);
+    expect(pidCmdlineMatches(999999999, [process.execPath])).toBe(true);
+  });
+
+  it.skipIf(process.platform !== 'linux')(
+    'pidCmdlineMatches on linux matches basename and rejects takeover',
+    async () => {
+      const dir = cleanStateDir();
+      const handle = startWorkerProcess({
+        name: 'proc-check-linux',
+        argv: [process.execPath, '-e', 'setInterval(() => {}, 1 << 28)'],
+        cwd: dir,
+        env: {},
+        stateDir: dir,
+      });
+      const deadline = Date.now() + 5000;
+      while (handle.pid < 0 && Date.now() < deadline) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 10);
+        });
+      }
+      expect(handle.pid).toBeGreaterThan(0);
+      expect(pidCmdlineMatches(handle.pid, [process.execPath, 'anything.js'])).toBe(true);
+      expect(pidCmdlineMatches(handle.pid, ['/nonexistent-totally-different-binary-xyz'])).toBe(
+        false,
+      );
+      await handle.stop(1000);
+      handle.removeMetadata();
+    },
+  );
+
+  it('handle exposes stdout/stderr Readable streams after spawn', async () => {
+    const dir = cleanStateDir();
+    const handle = startWorkerProcess({
+      name: 'stream-check',
+      argv: [process.execPath, '-e', 'process.stdout.write("hello"); process.exit(0)'],
+      cwd: dir,
+      env: {},
+      stateDir: dir,
+    });
+    const deadline = Date.now() + 5000;
+    while (handle.pid < 0 && Date.now() < deadline) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 10);
+      });
+    }
+    expect(handle.stdout).toBeDefined();
+    expect(handle.stderr).toBeDefined();
+    await handle.onExit;
+    expect(handle.exited).toBe(true);
+    handle.removeMetadata();
   });
 });
