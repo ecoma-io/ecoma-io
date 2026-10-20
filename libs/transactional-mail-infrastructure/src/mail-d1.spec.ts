@@ -17,6 +17,8 @@ import type { D1Database } from '@cloudflare/workers-types';
 
 import { createD1MailPersistence } from './create-d1-mail-persistence';
 import type { D1SubsetDatabase } from './d1-surface';
+import { publishOutboxBatch, runOutboxReconciler } from '@ecoma-io/transactional-mail-application';
+import type { MailSendCommandPayload } from '@ecoma-io/transactional-mail-application';
 
 /**
  * Kiểm chứng schema D1 `mail` của C1 trên **D1 thật** (miniflare/workerd qua Wrangler).
@@ -141,6 +143,97 @@ async function rawOne<T = Record<string, unknown>>(
 ): Promise<T | undefined> {
   const rows = await rawRows<T>(sql, ...binds);
   return rows[0];
+}
+
+/** Quay event loop đúng một macrotask — controlled barrier, không sleep, không timing. */
+function nextMacrotask(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    setImmediate(() => {
+      resolve();
+    });
+  });
+}
+
+/** Capture thường — send resolve ngay, dùng cho phase recovery (không barrier). */
+interface PlainCapture {
+  readonly sent: string[];
+  send(command: MailSendCommandPayload): Promise<void>;
+}
+
+/** Hàm thuần không capture scope nào — đứng ở module scope per consistent-function-scoping. */
+function makePlainCapture(): PlainCapture {
+  const plainSent: string[] = [];
+  return {
+    sent: plainSent,
+    send(command: MailSendCommandPayload): Promise<void> {
+      plainSent.push(JSON.stringify(command));
+      return Promise.resolve();
+    },
+  };
+}
+
+/** Queue fake capture + barrier theo `delivery_id`: gate đặt trước, send đông lại tới khi thả. */
+function makeBarrierQueue(): {
+  readonly sent: string[];
+  readonly binding: {
+    send(message: string): Promise<void>;
+  };
+  readonly holdNext: (deliveryId: string) => void;
+  readonly release: (deliveryId: string) => void;
+} {
+  const sent: string[] = [];
+  const held = new Map<string, () => void>();
+  return {
+    sent,
+    binding: {
+      send(message: string): Promise<void> {
+        sent.push(message);
+        const deliveryId = (JSON.parse(message) as { delivery_id?: string }).delivery_id ?? '';
+        const gate = held.get(deliveryId);
+        if (gate === undefined) {
+          return Promise.resolve();
+        }
+        const promise = new Promise<void>((resolve) => {
+          held.set(deliveryId, resolve);
+        });
+        return promise;
+      },
+    },
+    holdNext(deliveryId: string): void {
+      held.set(deliveryId, () => undefined);
+    },
+    release(deliveryId: string): void {
+      held.get(deliveryId)?.();
+      held.delete(deliveryId);
+    },
+  };
+}
+
+/** Dựng message + outbox row ở trạng thái đầu vào chuẩn — helper chung của suite reconciler. */
+async function seedMessageWithOutbox(
+  persistence: ReturnType<typeof createD1MailPersistence>,
+  principalId: string,
+): Promise<string> {
+  const deliveryId = nextId('dlv');
+  await persistence.messages.createWithOutbox({
+    messageId: nextId('m'),
+    outboxId: nextId('obx'),
+    deliveryId,
+    app: 'test-app',
+    principalId,
+    templateId: SEED_TEMPLATE_ID,
+    templateName: 'welcome',
+    templateVersion: 1,
+    locale: 'en',
+    recipient: 'recipient@example.test',
+    subjectRendered: 's',
+    bodyRendered: 'b',
+    idempotencyKey: nextId('key'),
+    requestFingerprint: FINGERPRINT,
+    correlationId: null,
+    nowMs: NOW,
+  });
+  return deliveryId;
 }
 
 /**
@@ -2650,6 +2743,621 @@ describe('invariant: FR-007 content redaction empties content and never touches 
       expect((await readMessageColumns(deliveryId))['updated_at']).toBe(NOW);
       expect((await readMessageColumns(deliveryId))['recipient']).toBe('recipient@example.test');
       expect(messageId).not.toBe('');
+    },
+    TEST_TIMEOUT,
+  );
+});
+
+/**
+ * Fault-injection và crash-window của publish loop, trên **D1 thật**.
+ *
+ * `sanity-spec` của application lib (`outbox-publisher.spec.ts`) kiểm thứ tự các lệnh gọi
+ * bằng fake port; suite này kiểm **phục hồi sau crash**: fault được inject tại đúng cửa sổ
+ * "Queue đã nhận command nhưng D1 chưa ghi trạng thái publish", rồi lần `publishOutboxBatch`
+ * *sau* phải phục hồi cùng delivery intent — không mất command, không sinh logical delivery
+ * mới, không sinh outbox row thứ hai.
+ *
+ * Barrier là **controlled**, không dùng timing ngẫu nhiên: queue fake có thể block/unblock
+ * theo `delivery_id`, cho phép freeze publisher tại đúng điểm giữa `QUEUE.send()` và
+ * `markPublished` rồi kill nó, mô phỏng isolate chết giữa chừng mà không dựa vào `setTimeout`
+ * hay thứ tự resolve phụ thuộc scheduler.
+ */
+describe('crash window: queue send succeeded, publish state not yet persisted', () => {
+  it(
+    'recovers the same delivery intent after a crash between QUEUE.send and markPublished',
+    async () => {
+      const persistence = makePersistence();
+      const queue = makeBarrierQueue();
+      const deliveryId = nextId('dlv');
+      await persistence.messages.createWithOutbox({
+        messageId: nextId('m'),
+        outboxId: nextId('obx'),
+        deliveryId,
+        app: 'test-app',
+        principalId: 'principal-crash',
+        templateId: SEED_TEMPLATE_ID,
+        templateName: 'welcome',
+        templateVersion: 1,
+        locale: 'en',
+        recipient: 'recipient@example.test',
+        subjectRendered: 's',
+        bodyRendered: 'b',
+        idempotencyKey: nextId('key'),
+        requestFingerprint: FINGERPRINT,
+        correlationId: null,
+        nowMs: NOW,
+      });
+
+      // Lần 1 — publisher bị "crash" NGAY tại `QUEUE.send`: hold barrier làm send promise
+      // của delivery này không bao giờ resolve trong lần chạy 1; state D1 trước recovery
+      // phải còn nguyên như isolate vừa chết (row `publishing`, message chưa terminal).
+      queue.holdNext(deliveryId);
+      const crashedBatchPromise = publishOutboxBatch(
+        {
+          outbox: persistence.outbox,
+          messages: persistence.messages,
+          queueSend: (command) => queue.binding.send(JSON.stringify(command)),
+          generateLeaseOwner: () => 'owner-crashed',
+          logAlert: () => undefined,
+        },
+        {
+          leaseMs: 60_000,
+          batchLimit: 10,
+          maxPublishAttempts: 3,
+          backoffBaseMs: 1_000,
+          nowMs: NOW,
+        },
+      );
+      // Controlled barrier: chờ tới khi send đã được GỌI (command đã vào Queue fake) mà
+      // không sleep — quay event loop để publisher chạy tới điểm send thực sự. Helper
+      // module-level giúp đạt consistent-function-scoping.
+      while (queue.sent.length === 0) {
+        await nextMacrotask();
+      }
+      // "Kill" publisher: giữ batch promise của lần 1 pending vĩnh viễn — không release,
+      // không await, mô phỏng isolate chết ngay sau `QUEUE.send()` trước `markPublished`.
+      // Promise treo hoàn toàn không leak lỗi (không rejection nào xảy ra).
+      void crashedBatchPromise;
+
+      // Sau "kill": đúng MỘT outbox row, message chưa terminal — kiểu publish state cụ thể
+      // của lần 1 không cần biết trước (markPublished chưa chạy, row còn `publishing`).
+      const crashedState = await rawOne<{ o_status: string; m_status: string }>(
+        `SELECT o.status AS o_status, m.status AS m_status ` +
+          `FROM mail_outbox o JOIN mail_messages m ON m.delivery_id = o.delivery_id ` +
+          `WHERE o.delivery_id = ?;`,
+        deliveryId,
+      );
+      expect(crashedState?.o_status).toBe('publishing');
+      expect(['accepted', 'queued']).toContain(crashedState?.m_status);
+
+      // Lần 2 — publisher mới, clock đã vượt lease của lần 1 → reclaim được, publishes lại
+      // CÙNG delivery_id (duplicate command là expected, consumer idempotent theo §5.2).
+      // Recovery dùng capture thường (không barrier): publisher sống phải publish ngay.
+      const recoveryQueue = makePlainCapture();
+      const recoveryResult = await publishOutboxBatch(
+        {
+          outbox: persistence.outbox,
+          messages: persistence.messages,
+          queueSend: (command) => recoveryQueue.send(command),
+          generateLeaseOwner: () => 'owner-recovered',
+          logAlert: () => undefined,
+        },
+        {
+          leaseMs: 60_000,
+          batchLimit: 10,
+          maxPublishAttempts: 3,
+          backoffBaseMs: 1_000,
+          nowMs: NOW + 120_000,
+        },
+      );
+
+      // Command Queue mang CÙNG delivery_id — không sinh logical delivery mới (§5.2).
+      // Lần 1 send.command là cách publisher gốc enqueue; lần 2 send.command là reclaim.
+      const commands = [...queue.sent, ...recoveryQueue.sent]
+        .map((raw) => {
+          try {
+            return JSON.parse(raw) as { delivery_id?: string };
+          } catch {
+            return undefined;
+          }
+        })
+        .filter(
+          (command): command is { delivery_id: string } => command?.delivery_id === deliveryId,
+        );
+      expect(commands.length).toBeGreaterThanOrEqual(1);
+      for (const command of commands) {
+        expect(Object.keys(command).toSorted()).toEqual(['delivery_id', 'version']);
+      }
+
+      // Đúng một row mỗi bảng — delivery intent không bị nhân bản.
+      const finalCounts = await rawOne<{ messages: number; outbox: number }>(
+        `SELECT ` +
+          `(SELECT count(*) FROM mail_messages WHERE delivery_id = ?) AS messages, ` +
+          `(SELECT count(*) FROM mail_outbox WHERE delivery_id = ?) AS outbox;`,
+        deliveryId,
+        deliveryId,
+      );
+      expect(finalCounts).toEqual({ messages: 1, outbox: 1 });
+
+      // Trạng thái cuối trên đúng bảng: outbox `published`, message `queued`.
+      const finalRows = await rawOne<{ o_status: string; m_status: string }>(
+        `SELECT o.status AS o_status, m.status AS m_status ` +
+          `FROM mail_outbox o JOIN mail_messages m ON m.delivery_id = o.delivery_id ` +
+          `WHERE o.delivery_id = ?;`,
+        deliveryId,
+      );
+      expect(recoveryResult.claimed).toBeGreaterThanOrEqual(1);
+      expect(finalRows?.o_status).toBe('published');
+      expect(finalRows?.m_status).toBe('queued');
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    'reclaim of an expired publishing lease increments attempts and fences the dead owner',
+    async () => {
+      const persistence = makePersistence();
+      const deliveryId = nextId('dlv');
+      await persistence.messages.createWithOutbox({
+        messageId: nextId('m'),
+        outboxId: nextId('obx'),
+        deliveryId,
+        app: 'test-app',
+        principalId: 'principal-reclaim',
+        templateId: SEED_TEMPLATE_ID,
+        templateName: 'welcome',
+        templateVersion: 1,
+        locale: 'en',
+        recipient: 'recipient@example.test',
+        subjectRendered: 's',
+        bodyRendered: 'b',
+        idempotencyKey: nextId('key'),
+        requestFingerprint: FINGERPRINT,
+        correlationId: null,
+        nowMs: NOW,
+      });
+
+      const claimed = await persistence.outbox.claim({
+        nowMs: NOW,
+        leaseDurationMs: 60_000,
+        leaseOwner: 'owner-dies',
+        limit: 10,
+      });
+      const target = claimed.find((row) => row.deliveryId === deliveryId);
+      if (!target) {
+        throw new Error('test invariant broken: row was not claimed by owner-dies');
+      }
+
+      // Lease hết hạn mà owner không xong việc → reclaim của owner sau tốn một attempt và
+      // `publish_attempts` tăng — cơ chế chống crash-loop mà JSDoc `claim` mô tả.
+      const reclaimed = await persistence.outbox.claim({
+        nowMs: NOW + 61_000,
+        leaseDurationMs: 60_000,
+        leaseOwner: 'owner-reclaims',
+        limit: 10,
+      });
+      const reclaimedRow = reclaimed.find((row) => row.deliveryId === deliveryId);
+      expect(reclaimedRow?.status).toBe('publishing');
+      expect(reclaimedRow?.claimedBy).toBe('owner-reclaims');
+      expect(reclaimedRow?.publishAttempts).toBe(1);
+
+      // Stale owner ('owner-dies') không còn ghi được gì sau reclaim: cả ba đường ghi đều
+      // fencing bởi `claimed_by` — bao gồm cả `markPublished`, nghĩa là lease holder cũ
+      // KHÔNG được ghi đè kết quả của lease mới.
+      expect(
+        await persistence.outbox.renewLease({
+          outboxId: target.id,
+          leaseOwner: 'owner-dies',
+          dispatchGeneration: 1,
+          nowMs: NOW + 62_000,
+        }),
+      ).toBeNull();
+      const staleMark = await persistence.outbox.markPublished({
+        outboxId: target.id,
+        deliveryId,
+        leaseOwner: 'owner-dies',
+        dispatchGeneration: 1,
+        nowMs: NOW + 62_000,
+      });
+      expect(staleMark.outboxPublished).toBe(false);
+      expect(staleMark.messageQueued).toBe(false);
+
+      // Row vẫn thuộc về owner-reclaims — state không bị stale owner ghi đè lên.
+      const current = await rawOne<{ claimed_by: string | null; status: string }>(
+        `SELECT claimed_by, status FROM mail_outbox WHERE delivery_id = ?;`,
+        deliveryId,
+      );
+      expect(current).toEqual({ claimed_by: 'owner-reclaims', status: 'publishing' });
+    },
+    TEST_TIMEOUT,
+  );
+});
+
+/**
+ * Publisher ↔ reconciler chạy cạnh nhau trên **cùng outbox row** — D1 thật.
+ *
+ * Hai đường enqueue phải dùng chung lease + backoff + ngân sách A (`03-operations.md`
+ * §5.3): reconciler KHÔNG bump generation, KHÔNG reset outbox `failed`, KHÔNG insert outbox
+ * row thứ hai, và không giành quyền với một publisher đang giữ lease còn hạn. Fault/race
+ * được dựng bằng **state trực tiếp trên D1** (lease cũ, generation mới), không dùng timing.
+ */
+describe('publisher and reconciler on the same outbox row', () => {
+  it(
+    'reconciler never steals an outbox row still leased by a live publisher',
+    async () => {
+      const persistence = makePersistence();
+      const deliveryId = await seedMessageWithOutbox(persistence, 'principal-race-1');
+
+      // Publisher còn sống: giữ row `publishing` với lease còn hạn.
+      await persistence.outbox.claim({
+        nowMs: NOW,
+        leaseDurationMs: 60_000,
+        leaseOwner: 'owner-live',
+        limit: 10,
+      });
+
+      // Re-dispatch adapter hai statement, đúng hợp đồng cổng của `main.ts` `redispatchOutbox`.
+      const redispatch = async (
+        deliveryIdArgument: string,
+        nowMsArgument: number,
+      ): Promise<
+        | { readonly kind: 'redispatched'; readonly recoveryCycleCount: number }
+        | { readonly kind: 'budget-exhausted' }
+        | { readonly kind: 'not-eligible' }
+      > => {
+        const leaseCutoffMs = nowMsArgument - 60_000;
+        const resetOutbox = mailDatabase
+          .prepare(
+            "UPDATE mail_outbox SET status = 'pending', publish_attempts = 0, available_at = ?, " +
+              'claimed_at = NULL, claimed_by = NULL, published_at = NULL, last_error = NULL, ' +
+              'dispatch_generation = (SELECT dispatch_generation FROM mail_messages WHERE delivery_id = ?), ' +
+              'updated_at = ? WHERE delivery_id = ? ' +
+              "AND status IN ('pending','publishing','published') " +
+              'AND (claimed_at IS NULL OR claimed_at <= ?) ' +
+              'AND EXISTS (SELECT 1 FROM mail_messages WHERE mail_messages.delivery_id = mail_outbox.delivery_id ' +
+              "AND mail_messages.status IN ('accepted','queued') AND mail_messages.recovery_cycle_count < 5)",
+          )
+          .bind(
+            nowMsArgument,
+            deliveryIdArgument,
+            nowMsArgument,
+            deliveryIdArgument,
+            leaseCutoffMs,
+          );
+        const bumpBudget = mailDatabase
+          .prepare(
+            'UPDATE mail_messages SET recovery_cycle_count = recovery_cycle_count + 1, ' +
+              "status = 'queued', updated_at = ? WHERE delivery_id = ? " +
+              "AND status IN ('accepted','queued') AND recovery_cycle_count < 5 " +
+              'AND EXISTS (SELECT 1 FROM mail_outbox WHERE mail_outbox.delivery_id = mail_messages.delivery_id ' +
+              "AND mail_outbox.status = 'pending' AND mail_outbox.claimed_at IS NULL) " +
+              'RETURNING recovery_cycle_count',
+          )
+          .bind(nowMsArgument, deliveryIdArgument);
+        const [, bumped] = await mailDatabase.batch([resetOutbox, bumpBudget]);
+        const incremented = bumped.results[0] as
+          | { readonly recovery_cycle_count: number }
+          | undefined;
+        if (incremented === undefined) {
+          return { kind: 'budget-exhausted' };
+        }
+        return { kind: 'redispatched', recoveryCycleCount: incremented.recovery_cycle_count };
+      };
+
+      // Reconciler chạy: candidate list quét đúng câu của port (status IN + tuổi).
+      const candidates = await mailDatabase
+        .prepare(
+          "SELECT id, delivery_id FROM mail_messages WHERE status IN ('accepted','queued') AND updated_at < ? ORDER BY updated_at, id LIMIT ?",
+        )
+        .bind(NOW - 600_000, 10)
+        .all<{ id: string; delivery_id: string }>();
+      // Message vừa seed có updated_at = NOW — KHÔNG lọt vào lô quá tuổi; không candidate.
+      expect(candidates.results.filter((row) => row.delivery_id === deliveryId)).toHaveLength(0);
+
+      const result = await runOutboxReconciler(
+        {
+          outbox: persistence.outbox,
+          messages: persistence.messages,
+          redispatch,
+          listDispatchIncomplete: async ({ updatedBeforeMs, limit }) => {
+            const { results } = await mailDatabase
+              .prepare(
+                "SELECT id, delivery_id FROM mail_messages WHERE status IN ('accepted','queued') AND updated_at < ? ORDER BY updated_at, id LIMIT ?",
+              )
+              .bind(updatedBeforeMs, limit)
+              .all<{ id: string; delivery_id: string }>();
+            return results.map((row) => ({ messageId: row.id, deliveryId: row.delivery_id }));
+          },
+          logAlert: () => undefined,
+        },
+        {
+          maxAgeMs: 600_000,
+          batchLimit: 10,
+          nowMs: NOW,
+          leaseMs: 60_000,
+          maxPublishAttempts: 3,
+          backoffBaseMs: 1_000,
+        },
+      );
+
+      // Không redispatch: publisher đang giữ lease, reconciler không giành quyền.
+      expect(result).toEqual({ scanned: 0, redispatched: 0, skipped: 0 });
+      const row = await rawOne<{ status: string; claimed_by: string | null }>(
+        `SELECT status, claimed_by FROM mail_outbox WHERE delivery_id = ?;`,
+        deliveryId,
+      );
+      expect(row).toEqual({ status: 'publishing', claimed_by: 'owner-live' });
+      const message = await rawOne<{ recovery_cycle_count: number }>(
+        `SELECT recovery_cycle_count FROM mail_messages WHERE delivery_id = ?;`,
+        deliveryId,
+      );
+      // Ngân sách A không bị đốt vô hiệu cho row vẫn giữ lease.
+      expect(message?.recovery_cycle_count).toBe(0);
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    'redispatch never emits a second outbox row and never bumps generation',
+    async () => {
+      const persistence = makePersistence();
+      const deliveryId = await seedMessageWithOutbox(persistence, 'principal-race-2');
+
+      // Đưa delivery vào đúng nhánh dispatch-incomplete: outbox published, message queued
+      // quá tuổi. claim → markPublished hai statement là đường chuẩn; applyDeliveryOutcome
+      // `sent` KHÔNG được gọi — message phải còn `queued` cho candidate scan.
+      await persistence.outbox.claim({
+        nowMs: NOW,
+        leaseDurationMs: 60_000,
+        leaseOwner: 'owner-first',
+        limit: 10,
+      });
+      const publishedRow = await persistence.outbox.findByDeliveryId(deliveryId);
+      if (!publishedRow || publishedRow.status !== 'publishing') {
+        throw new Error('test invariant broken: row was not claimed into publishing');
+      }
+      const marked = await persistence.outbox.markPublished({
+        outboxId: publishedRow.id,
+        deliveryId,
+        leaseOwner: 'owner-first',
+        dispatchGeneration: 1,
+        nowMs: NOW,
+      });
+      expect(marked).toEqual({ outboxPublished: true, messageQueued: true });
+      const rowAfterPublish = await rawOne<{ o_status: string; m_status: string }>(
+        `SELECT o.status AS o_status, m.status AS m_status FROM mail_outbox o ` +
+          `JOIN mail_messages m ON m.delivery_id = o.delivery_id WHERE o.delivery_id = ?;`,
+        deliveryId,
+      );
+      expect(rowAfterPublish).toEqual({ o_status: 'published', m_status: 'queued' });
+
+      // Quá tuổi để lọt candidate.
+      await mailDatabase
+        .prepare(`UPDATE mail_messages SET updated_at = ? WHERE delivery_id = ?;`)
+        .bind(NOW - 1_000_000, deliveryId)
+        .all();
+
+      const redispatchedCounts: number[] = [];
+      const result = await runOutboxReconciler(
+        {
+          outbox: persistence.outbox,
+          messages: persistence.messages,
+          redispatch: async (deliveryIdArgument, nowMsArgument) => {
+            const leaseCutoffMs = nowMsArgument - 60_000;
+            const resetOutbox = mailDatabase
+              .prepare(
+                "UPDATE mail_outbox SET status = 'pending', publish_attempts = 0, available_at = ?, " +
+                  'claimed_at = NULL, claimed_by = NULL, published_at = NULL, last_error = NULL, ' +
+                  'dispatch_generation = (SELECT dispatch_generation FROM mail_messages WHERE delivery_id = ?), ' +
+                  'updated_at = ? WHERE delivery_id = ? ' +
+                  "AND status IN ('pending','publishing','published') " +
+                  'AND (claimed_at IS NULL OR claimed_at <= ?) ' +
+                  'AND EXISTS (SELECT 1 FROM mail_messages WHERE mail_messages.delivery_id = mail_outbox.delivery_id ' +
+                  "AND mail_messages.status IN ('accepted','queued') AND mail_messages.recovery_cycle_count < 5)",
+              )
+              .bind(
+                nowMsArgument,
+                deliveryIdArgument,
+                nowMsArgument,
+                deliveryIdArgument,
+                leaseCutoffMs,
+              );
+            const bumpBudget = mailDatabase
+              .prepare(
+                'UPDATE mail_messages SET recovery_cycle_count = recovery_cycle_count + 1, ' +
+                  "status = 'queued', updated_at = ? WHERE delivery_id = ? " +
+                  "AND status IN ('accepted','queued') AND recovery_cycle_count < 5 " +
+                  'AND EXISTS (SELECT 1 FROM mail_outbox WHERE mail_outbox.delivery_id = mail_messages.delivery_id ' +
+                  "AND mail_outbox.status = 'pending' AND mail_outbox.claimed_at IS NULL) " +
+                  'RETURNING recovery_cycle_count',
+              )
+              .bind(nowMsArgument, deliveryIdArgument);
+            const [, bumped] = await mailDatabase.batch([resetOutbox, bumpBudget]);
+            const incremented = bumped.results[0] as
+              | { readonly recovery_cycle_count: number }
+              | undefined;
+            if (incremented === undefined) {
+              return { kind: 'budget-exhausted' };
+            }
+            redispatchedCounts.push(incremented.recovery_cycle_count);
+            return { kind: 'redispatched', recoveryCycleCount: incremented.recovery_cycle_count };
+          },
+          listDispatchIncomplete: async ({ updatedBeforeMs, limit }) => {
+            const { results } = await mailDatabase
+              .prepare(
+                "SELECT id, delivery_id FROM mail_messages WHERE status IN ('accepted','queued') AND updated_at < ? ORDER BY updated_at, id LIMIT ?",
+              )
+              .bind(updatedBeforeMs, limit)
+              .all<{ id: string; delivery_id: string }>();
+            return results.map((row) => ({ messageId: row.id, deliveryId: row.delivery_id }));
+          },
+          logAlert: () => undefined,
+        },
+        {
+          maxAgeMs: 600_000,
+          batchLimit: 10,
+          nowMs: NOW,
+          leaseMs: 60_000,
+          maxPublishAttempts: 3,
+          backoffBaseMs: 1_000,
+        },
+      );
+
+      // Đúng một redispatch, ngân sách A tiêu đúng một slot.
+      expect(result.redispatched).toBe(1);
+      expect(redispatchedCounts).toEqual([1]);
+
+      // Đúng MỘT outbox row cho delivery (UNIQUE được respect, không insert row thứ hai).
+      const outboxCount = await rawOne<{ n: number }>(
+        `SELECT count(*) AS n FROM mail_outbox WHERE delivery_id = ?;`,
+        deliveryId,
+      );
+      expect(outboxCount?.n).toBe(1);
+
+      // Generation không đổi và outbox về `pending` sẵn sàng chu kỳ publish mới.
+      const finalRow = await rawOne<{
+        o_status: string;
+        o_generation: number;
+        m_generation: number;
+        a: number;
+      }>(
+        `SELECT o.status AS o_status, o.dispatch_generation AS o_generation, ` +
+          `m.dispatch_generation AS m_generation, m.recovery_cycle_count AS a ` +
+          `FROM mail_outbox o JOIN mail_messages m ON m.delivery_id = o.delivery_id WHERE o.delivery_id = ?;`,
+        deliveryId,
+      );
+      expect(finalRow?.o_status).toBe('pending');
+      expect(finalRow?.o_generation).toBe(1);
+      expect(finalRow?.m_generation).toBe(1);
+      expect(finalRow?.a).toBe(1);
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    'a stale generation publisher cannot close an outbox row the reconciler reset to a new cycle',
+    async () => {
+      const persistence = makePersistence();
+      const deliveryId = await seedMessageWithOutbox(persistence, 'principal-race-3');
+
+      // Publisher gen 1 claim.
+      const claimed = await persistence.outbox.claim({
+        nowMs: NOW,
+        leaseDurationMs: 60_000,
+        leaseOwner: 'owner-gen1',
+        limit: 10,
+      });
+      const target = claimed.find((row) => row.deliveryId === deliveryId);
+      if (!target) {
+        throw new Error('test invariant broken: row was not claimed');
+      }
+
+      // "Redrive" (mô phỏng có authorize): generation của cả hai bảng lên 2, outbox reset.
+      await mailDatabase
+        .prepare(
+          `UPDATE mail_messages SET dispatch_generation = 2, updated_at = ${lit(NOW)} WHERE delivery_id = ${lit(deliveryId)};`,
+        )
+        .all();
+      await mailDatabase
+        .prepare(
+          `UPDATE mail_outbox SET dispatch_generation = 2, status = 'pending', publish_attempts = 0, ` +
+            `claimed_at = NULL, claimed_by = NULL, published_at = NULL, last_error = NULL, ` +
+            `available_at = ${lit(NOW)}, updated_at = ${lit(NOW)} WHERE delivery_id = ${lit(deliveryId)};`,
+        )
+        .all();
+
+      // Publisher gen-1 (đã stale) cố markPublished với generation cũ: KHÔNG ghi gì.
+      const stale = await persistence.outbox.markPublished({
+        outboxId: target.id,
+        deliveryId,
+        leaseOwner: 'owner-gen1',
+        dispatchGeneration: 1,
+        nowMs: NOW + 5,
+      });
+      expect(stale.outboxPublished).toBe(false);
+      expect(stale.messageQueued).toBe(false);
+
+      // Outbox còn nguyên state redrive đã đặt (pending, gen 2) — stale holder không ghi đè.
+      const row = await rawOne<{ status: string; dispatch_generation: number }>(
+        `SELECT status, dispatch_generation FROM mail_outbox WHERE delivery_id = ?;`,
+        deliveryId,
+      );
+      expect(row).toEqual({ status: 'pending', dispatch_generation: 2 });
+      const message = await rawOne<{ status: string; dispatch_generation: number }>(
+        `SELECT status, dispatch_generation FROM mail_messages WHERE delivery_id = ?;`,
+        deliveryId,
+      );
+      expect(message).toEqual({ status: 'accepted', dispatch_generation: 2 });
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    'reconciler never resets an outbox row marked failed and only alerts repair-required',
+    async () => {
+      const persistence = makePersistence();
+      const deliveryId = await seedMessageWithOutbox(persistence, 'principal-race-4');
+
+      // Outbox failed (đã kiệt maxPublishAttempts trong chu kỳ), message queued quá tuổi.
+      await mailDatabase
+        .prepare(
+          `UPDATE mail_outbox SET status = 'failed', publish_attempts = 5, last_error = 'Error', ` +
+            `updated_at = ${lit(NOW)} WHERE delivery_id = ${lit(deliveryId)};`,
+        )
+        .all();
+      await mailDatabase
+        .prepare(`UPDATE mail_messages SET updated_at = ? WHERE delivery_id = ?;`)
+        .bind(NOW - 1_000_000, deliveryId)
+        .all();
+
+      const alerts: { readonly event: string; readonly deliveryId: string }[] = [];
+      let redispatchCalled = false;
+      const result = await runOutboxReconciler(
+        {
+          outbox: persistence.outbox,
+          messages: persistence.messages,
+          redispatch: async () => {
+            redispatchCalled = true;
+            return { kind: 'redispatched', recoveryCycleCount: 1 };
+          },
+          listDispatchIncomplete: async ({ updatedBeforeMs, limit }) => {
+            const { results } = await mailDatabase
+              .prepare(
+                "SELECT id, delivery_id FROM mail_messages WHERE status IN ('accepted','queued') AND updated_at < ? ORDER BY updated_at, id LIMIT ?",
+              )
+              .bind(updatedBeforeMs, limit)
+              .all<{ id: string; delivery_id: string }>();
+            return results.map((row) => ({ messageId: row.id, deliveryId: row.delivery_id }));
+          },
+          logAlert: (event) => {
+            alerts.push(event);
+          },
+        },
+        {
+          maxAgeMs: 600_000,
+          batchLimit: 10,
+          nowMs: NOW,
+          leaseMs: 60_000,
+          maxPublishAttempts: 3,
+          backoffBaseMs: 1_000,
+        },
+      );
+
+      // Chỉ alert repair-required, KHÔNG redispatch, KHÔNG reset failed → pending.
+      expect(result).toEqual({ scanned: 1, redispatched: 0, skipped: 1 });
+      expect(redispatchCalled).toBe(false);
+      expect(alerts).toEqual([{ event: 'reconciler-outbox-failed-repair-required', deliveryId }]);
+      const row = await rawOne<{ status: string; publish_attempts: number }>(
+        `SELECT status, publish_attempts FROM mail_outbox WHERE delivery_id = ?;`,
+        deliveryId,
+      );
+      expect(row).toEqual({ status: 'failed', publish_attempts: 5 });
+      const message = await rawOne<{ recovery_cycle_count: number }>(
+        `SELECT recovery_cycle_count FROM mail_messages WHERE delivery_id = ?;`,
+        deliveryId,
+      );
+      // Ngân sách A KHÔNG bị đốt cho outbox failed — nhánh này không tự sửa.
+      expect(message?.recovery_cycle_count).toBe(0);
     },
     TEST_TIMEOUT,
   );
