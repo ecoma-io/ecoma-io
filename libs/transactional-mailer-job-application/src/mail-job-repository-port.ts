@@ -22,6 +22,7 @@ import type {
   BudgetExhaustedDenial,
   GenerationAdvanceDenial,
   LeaseOwnershipDenial,
+  ProviderCallBoundaryDenial,
   ReportCompletionDenial,
   ReportLeaseDenial,
   SameGenerationClaimDenial,
@@ -157,6 +158,52 @@ export type ReleaseExecutionLeaseParams = {
 export type ReleaseExecutionLeaseResult =
   | { readonly kind: 'applied'; readonly record: MailJobRecord }
   | { readonly kind: 'denied'; readonly reason: LeaseOwnershipDenial };
+
+/**
+ * Tham số của statement (e) — ghi marker ranh giới gọi provider (migration `0003`).
+ *
+ * Bắt buộc gọi **ngay trước** khi request tới provider trong một attempt, một lần cho
+ * attempt-chain: statement là first-write-only (`provider_call_at IS NULL` trong WHERE),
+ * nên lần gọi thứ hai trong cùng attempt-chain là no-op idempotent, không ghi đè mốc cũ.
+ * Guard lease/`execution_generation` như statement persist — một execution mất claim
+ * không ghi được marker của generation khác.
+ */
+export type MarkProviderCallBoundaryParams = {
+  readonly deliveryId: string;
+  readonly owner: string;
+  readonly executionGeneration: number;
+  readonly dispatchGeneration: number;
+  readonly nowMs: number;
+};
+
+export type MarkProviderCallBoundaryResult =
+  | { readonly kind: 'applied'; readonly record: MailJobRecord }
+  /**
+   * `already-marked` là kết quả **bình thường** khi một marker trước đó của cùng
+   * attempt-chain đã ghi — caller vẫn tiếp tục gọi provider. Hai nhánh còn lại
+   * (`missing-job`/`lease-lost`) là "mất claim": KHÔNG gọi provider.
+   */
+  | { readonly kind: 'denied'; readonly reason: ProviderCallBoundaryDenial };
+
+/**
+ * Tham số của statement (g) — chốt trạng thái operator-needed cho ambiguity ngoài cửa
+ * sổ (issue #37).
+ *
+ * Là statement image của đường (c) nhưng ghi `provider-ambiguous-outcome` thay vì
+ * `execution-budget-exhausted`: cùng guard (`attempts >= max`, không lease hiệu lực,
+ * `status NOT IN (terminal, blocked)`, cùng `dispatch_generation`), cùng shape kết quả
+ * nên phân loại denial cũng dùng `BudgetExhaustedDenial`.
+ */
+export type MarkProviderAmbiguityBlockedParams = {
+  readonly deliveryId: string;
+  readonly dispatchGeneration: number;
+  readonly nowMs: number;
+  readonly maxExecutionAttempts: number;
+};
+
+export type MarkProviderAmbiguityBlockedResult =
+  | { readonly kind: 'applied'; readonly record: MailJobRecord }
+  | { readonly kind: 'denied'; readonly reason: BudgetExhaustedDenial };
 
 /**
  * Tham số của đường ghi `last_error_class` cho lỗi **trước claim** (§9.2.2 hàng 19 — lookup
@@ -301,6 +348,34 @@ export interface MailJobRepository {
     params: MarkBlockedBudgetExhaustedParams,
   ): Promise<MarkBlockedBudgetExhaustedResult>;
   renewExecutionLease(params: RenewExecutionLeaseParams): Promise<RenewExecutionLeaseResult>;
+  /**
+   * Ghi marker ranh giới gọi provider — statement (e) của migration `0003` — **ngay
+   * trước** request provider đầu tiên của attempt-chain.
+   *
+   * First-write-only: chỉ áp khi `provider_call_at IS NULL`; `already-marked` nghĩa là
+   * marker đã tồn tại (không ghi đè) và caller vẫn được gọi provider — mốc của marker giữ
+   * nguyên giá trị từ lần đầu. Guard `lease_owner` + `execution_generation` +
+   * `dispatch_generation` giữ caller là execution đang claim.
+   *
+   * Marker này là biến thời gian của cửa sổ mơ hồ (\`provider-safety-window\`): provider
+   * CÓ THỂ đã nhận mail từ `provider_call_at`, nên recovery sau crash dùng nó để quyết
+   * gọi lại (trong cửa sổ) hay block operator-needed (ngoài cửa sổ).
+   */
+  markProviderCallBoundary(
+    params: MarkProviderCallBoundaryParams,
+  ): Promise<MarkProviderCallBoundaryResult>;
+  /**
+   * Chốt operator-needed cho ambiguity ngoài cửa sổ an toàn — statement (g) (issue #37).
+   *
+   * Cùng guard với đường (c) (`attempts >= maxExecutionAttempts`, không execution lease
+   * hiệu lực, `status NOT IN ('sent','failed','blocked')`, cùng `dispatch_generation`)
+   * nhưng ghi `last_error_class = 'provider-ambiguous-outcome'`: job `blocked` bền vững,
+   * report `pending` để alert sweep block-backlog đón; chỉ redrive có authorize mở khoá.
+   * KHÔNG tự gọi lại provider trong worker (ngoài cửa sổ, gọi lại không dedupe được).
+   */
+  markProviderAmbiguityBlocked(
+    params: MarkProviderAmbiguityBlockedParams,
+  ): Promise<MarkProviderAmbiguityBlockedResult>;
   persistExecutionResult(
     params: PersistExecutionResultParams,
   ): Promise<PersistExecutionResultResult>;
@@ -338,6 +413,7 @@ export type {
   BudgetExhaustedDenial,
   GenerationAdvanceDenial,
   LeaseOwnershipDenial,
+  ProviderCallBoundaryDenial,
   ReportCompletionDenial,
   ReportLeaseDenial,
   SameGenerationClaimDenial,

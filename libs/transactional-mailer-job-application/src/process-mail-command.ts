@@ -49,6 +49,7 @@ import type { MailJobRecord, QuarantineReason } from './mail-job-model';
 import {
   canPersistExecutionResultFor,
   dispositionForControlPlaneOutcome,
+  isWithinProviderSafeWindow,
   type ControlPlaneOutcomeSignal,
   type GenerationAdvanceDenial,
   type OutcomeReportDisposition,
@@ -92,6 +93,11 @@ export type ProcessMailCommandDeps = {
  * @typeParam owner Token fencing của execution này (UUID sinh local). Mỗi lần claim có
  * `execution_generation` riêng nên owner có thể được tái dùng chỉ khác token claim.
  * @typeParam quarantineKeyHex Worker Secret `MAIL_QUARANTINE_HMAC_KEY` dạng hex.
+ * @typeParam providerCallSafeWindowMs Độ dài cửa sổ an toàn idempotency (§9.3, migration
+ * `0003`): khoảng thời gian tính từ `provider_call_at` mà một lần gọi lại với cùng
+ * `Idempotency-Key` còn được coi là không duplicate. Phải nhỏ hơn hoặc bằng giới hạn
+ * tài liệu của provider — với Resend là ~24 giờ. Ngoài cửa sổ, worker chốt job
+ * `blocked` + `provider-ambiguous-outcome` thay vì tự gọi lại.
  * @typeParam nowMs Mốc thời gian của lần xử lý này — truyền vào, không đọc đồng hồ, để mọi mốc
  * ghi xuống row là **cùng một** mốc.
  */
@@ -100,6 +106,7 @@ export type ProcessMailCommandConfig = {
   readonly maxExecutionAttempts: number;
   readonly providerTimeoutMs: number;
   readonly reportLeaseMs: number;
+  readonly providerCallSafeWindowMs: number;
   readonly owner: string;
   readonly quarantineKeyHex: string;
   readonly nowMs: number;
@@ -713,6 +720,32 @@ async function executeClaimedDelivery(
     deadlineMs,
   };
 
+  // Statement (e): ghi marker ranh giới gọi provider TRƯỚC request đầu tiên rời khỏi
+  // worker (issue #37). Từ mốc này provider CÓ THỂ đã nhận mail dù worker chết trước khi
+  // persist kết quả — `provider_call_at` là thời điểm bắt đầu cửa sổ mơ hồ §9.3.
+  //
+  // `already-marked` nghĩa là marker đã tồn tại (đoạn sau marker từng crash, hay caller
+  // gọi hai lần): tiếp tục gọi provider, vì mốc giữ nguyên giá trị từ lần đầu — đúng
+  // semantics first-write-only của marker.
+  //
+  // `missing-job`/`lease-lost` nghĩa là đã mất claim giữa lúc re-validate và bây giờ:
+  // KHÔNG gọi provider. `inconsistent` likewise — row đổi dưới chân, phải thử lại.
+  const marked = await deps.jobs.markProviderCallBoundary({
+    deliveryId,
+    owner: expectation.owner,
+    executionGeneration: expectation.executionGeneration,
+    dispatchGeneration: expectation.dispatchGeneration,
+    nowMs: config.nowMs,
+  });
+  if (
+    marked.kind === 'denied' &&
+    (marked.reason === 'missing-job' ||
+      marked.reason === 'lease-lost' ||
+      marked.reason === 'inconsistent')
+  ) {
+    return RETRY;
+  }
+
   const result = await sendOnce(deps.provider, request);
   if (result.kind === 'rejected' && result.errorClass === 'retryable') {
     // §9.2.2 hàng 6: `attempts` **không** tăng ở đây (đã tăng lúc claim), `status` vẫn
@@ -744,7 +777,7 @@ async function executeClaimedDelivery(
   });
 
   if (persisted.kind === 'denied') {
-    return await outcomeAfterLostClaim(deps, deliveryId, expectation);
+    return await resolveAmbiguityAfterLostClaim(deps, config, deliveryId, expectation);
   }
 
   await reportOutcomeBestEffort(deps, config, deliveryId, record.dispatchGeneration, outcome, {
@@ -813,27 +846,35 @@ async function releaseAfterRejection(
 }
 
 /**
- * Hành động khi `persistExecutionResult` bị từ chối — nghĩa là execution **đã mất claim**.
+ * Hành động khi `persistExecutionResult` bị từ chối — nghĩa là execution **đã mất claim**
+ * và provider **đã được gọi**.
  *
- * Provider **đã** được gọi, nên không thể "gửi lại" một lần nữa trong cùng message này: đó là
- * cách sinh duplicate mail. Điều còn làm được là quyết định ack hay retry dựa trên **row hiện
- * tại**:
+ * Không thể "gửi lại" trong cùng message này (một message một lần gọi, §11.2). Quyết định
+ * đi qua hai lớp:
  *
- * - Row đã ở `pending` ⇒ một execution khác đã persist kết quả và đang chờ báo outcome. Việc
- *   của message này đã xong: ack, còn report sweep lo phần còn lại.
- * - Row ở generation khác ⇒ authority đã tiến, và việc của generation mới không thuộc message
- *   này: ack.
- * - Còn lại (row vẫn `processing`, hoặc không đọc được) ⇒ `retry`, để một lần Queue
- *   redelivery gặp lại đúng state đó và xử lý tiếp.
+ * **Lớp 1 — determinism**: nếu row hiện tại đã có kết quả bền vững (report `pending`,
+ * hoặc generation đã tiến) thì mọi thứ đã xong không phụ thuộc ambiguity: ack.
  *
- * ⚠️ **Residual duplicate hazard** (§9.2 "giới hạn — KHÔNG có exactly-once"): nếu lần gọi
- * provider đã rời khỏi Worker và một execution mới claim lại sau `lease_expires_at`, mail có thể
- * được gửi hai lần. Không guard nào ở tầng database chặn được cửa sổ này; nó được chấp nhận
- * tường minh và chỉ được **giảm** (không phải loại bỏ) bằng provider-side idempotency key
- * (§9.3 — trạng thái capability hiện tại của provider chưa xác minh).
+ * **Lớp 2 — ambiguity (migration `0003`)**: row vẫn `processing`/`none` ⇒ chưa ai persist
+ * kết quả. Marker `provider_call_at` nói có thể đã có request rời worker từ bao giờ:
+ *
+ * - Marker **trong cửa sổ an toàn** (`providerCallSafeWindowMs`): một execution kế tiếp
+ *   (Queue redelivery) claim lại và gọi provider với **cùng** `Idempotency-Key`
+ *   `mailjob_${deliveryId}` — provider dedupe, hoặc chưa từng thấy request đầu. Trả
+ *   `retry`: đường auto-resend chính là Queue retry, không có vòng nội bộ.
+ * - Marker **ngoài cửa sổ**: gọi lại không còn chống duplicate ⇒ KHÔNG gọi lại và KHÔNG
+ *   pool message vô hạn. Chốt trạng thái **operator-needed bền vững** qua
+ *   `markProviderAmbiguityBlocked`: `blocked` + `provider-ambiguous-outcome` + report
+ *   `pending` — blocked-backlog sweep alert, redrive có authorize mở khoá (§9.4).
+ *
+ * ⚠️ **Residual duplicate hazard** (§9.2, KHÔNG exactly-once): trong cửa sổ, dedupe phụ
+ * thuộc capability provider-side chưa verify theo contract (§9.3 — 24h là số tài liệu,
+ * không phải chứng cứ API); nếu provider không dedupe giữa hai lần dùng lại key, mail có
+ * thể đi hai lần — hazard được **giảm** bằng marker + window, không loại bỏ.
  */
-async function outcomeAfterLostClaim(
+async function resolveAmbiguityAfterLostClaim(
   deps: ProcessMailCommandDeps,
+  config: ProcessMailCommandConfig,
   deliveryId: string,
   expectation: ExecutionExpectation,
 ): Promise<MailCommandOutcome> {
@@ -847,6 +888,36 @@ async function outcomeAfterLostClaim(
     return ACK_PROCESSED;
   }
 
+  const inWindow = isWithinProviderSafeWindow(current, {
+    nowMs: config.nowMs,
+    providerCallSafeWindowMs: config.providerCallSafeWindowMs,
+  });
+  if (inWindow !== false) {
+    // `null` (không marker — hiếm, vì nếu tới đoạn này thì request đã đi) hay `true`
+    // đều để Queue redelivery tự xử bằng đường claim lại + key cố định.
+    return RETRY;
+  }
+
+  const blocked = await deps.jobs.markProviderAmbiguityBlocked({
+    deliveryId,
+    dispatchGeneration: current.dispatchGeneration,
+    nowMs: config.nowMs,
+    maxExecutionAttempts: config.maxExecutionAttempts,
+  });
+  if (blocked.kind === 'applied') {
+    return { kind: 'internal-blocked' };
+  }
+
+  // Không áp được blocked (row đổi giữa hai lệnh gọi, đã terminal, lease sống…) — chọn
+  // theo state hiện tại: row đã xong ⇒ ack, còn lại ⇒ retry cho một lượt Queue quyết.
+  const reread = await deps.jobs.loadJobByDeliveryId(deliveryId);
+  if (
+    reread !== null &&
+    (reread.outcomeReportState === 'pending' ||
+      reread.dispatchGeneration !== current.dispatchGeneration)
+  ) {
+    return ACK_PROCESSED;
+  }
   return RETRY;
 }
 

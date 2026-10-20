@@ -217,6 +217,7 @@ export function decodeMailJobRow(row: Record<string, unknown>): MailJobRecord {
     ),
     reportAttempts: readRequiredCounter(row['report_attempts'], 'report_attempts', deliveryId),
     blockedAt: readNullableTimestamp(row['blocked_at'], 'blocked_at', deliveryId),
+    providerCallAt: readNullableTimestamp(row['provider_call_at'], 'provider_call_at', deliveryId),
     createdAt: readRequiredCounter(row['created_at'], 'created_at', deliveryId),
     updatedAt: readRequiredCounter(row['updated_at'], 'updated_at', deliveryId),
   };
@@ -294,6 +295,7 @@ export const MAIL_JOB_COLUMNS = [
   'report_lease_expires_at',
   'report_attempts',
   'blocked_at',
+  'provider_call_at',
   'created_at',
   'updated_at',
 ] as const;

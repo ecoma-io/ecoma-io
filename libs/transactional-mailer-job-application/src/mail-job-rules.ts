@@ -75,6 +75,16 @@ export type LeaseOwnershipDenial =
   /** Owner hoặc `execution_generation` không còn khớp — execution này đã mất claim. */
   | 'lease-lost';
 
+/**
+ * Lý do statement (e) — ghi marker `provider_call_at` — không áp dụng được.
+ *
+ * Gồm đầy đủ denial của ownership (cùng guard lease/`execution_generation` với statement
+ * persist) cộng thêm `already-marked`: marker là **first-write-only** (`provider_call_at
+ * IS NULL` nằm trong WHERE) nên affected rows = 0 có thể nghĩa là một execution trước đó
+ * trong cùng attempt-chain đã ghi mốc rồi — điều này **không** phải mất claim.
+ */
+export type ProviderCallBoundaryDenial = LeaseOwnershipDenial | 'already-marked' | 'inconsistent';
+
 /** Lý do acquire report-lease không lấy được quyền. */
 export type ReportLeaseDenial =
   | 'missing-job'
@@ -299,6 +309,46 @@ export function classifyLeaseOwnershipDenial(record: MailJobRecord | null): Leas
 }
 
 /**
+ * Phân loại lý do statement (e) — ghi marker ranh giới gọi provider — trả affected
+ * rows = 0.
+ *
+ * Thứ tự kiểm tra có chủ đích và **không** được đảo: ownership **trước**, `already-marked`
+ * **sau**. Guard của (e) là guard ownership chuẩn cộng `provider_call_at IS NULL`
+ * (first-write-only), nên affected rows = 0 có thể do một trong hai — và hai lý do đó có
+ * hậu quả ngược nhau: `lease-lost` ⇒ mất claim, KHÔNG được gọi provider; `already-marked`
+ * ⇒ marker của attempt-chain này đã ghi trước đó (đoạn sau marker đã crash, hay đơn giản
+ * caller gọi hai lần) — **vẫn được** gọi provider với cùng idempotency key, miễn caller
+ * vẫn đang giữ claim. Kiểm `already-marked` trước ownership sẽ biến một execution stale
+ * (mất lease, chỉ còn marker cũ của attempt trước) thành "được phép gọi lại" — phá bỏ
+ * chính fencing mà marker tồn tại để bảo vệ.
+ */
+export function classifyProviderCallBoundaryDenial(
+  record: MailJobRecord | null,
+  expectation: {
+    readonly owner: string;
+    readonly executionGeneration: number;
+    readonly dispatchGeneration: number;
+  },
+): ProviderCallBoundaryDenial {
+  if (record === null) {
+    return 'missing-job';
+  }
+  const lostLease =
+    record.leaseOwner !== expectation.owner ||
+    record.executionGeneration !== expectation.executionGeneration ||
+    record.dispatchGeneration !== expectation.dispatchGeneration;
+  if (lostLease) {
+    return 'lease-lost';
+  }
+  if (record.providerCallAt !== null) {
+    return 'already-marked';
+  }
+  // Owner/token/generation khớp hoàn toàn, marker rỗng, mà UPDATE vẫn trả 0: row đổi
+  // giữa hai lần đọc (lease vừa hết hạn…). Không suy ra gì — thử lại từ đầu.
+  return 'inconsistent';
+}
+
+/**
  * Phân loại lý do statement (d) trả affected rows = 0.
  *
  * Guard của (d) là `outcome_report_state = 'pending'` + report-lease hết hiệu lực, cả
@@ -504,6 +554,40 @@ export function canPersistExecutionResultFor(
     record.executionGeneration === expectation.executionGeneration &&
     record.dispatchGeneration === expectation.dispatchGeneration
   );
+}
+
+/**
+ * `providerCallAt` có còn nằm trong cửa sổ an toàn idempotency (§9.3) không.
+ *
+ * Cửa sổ = khoảng thời gian mà provider được cho là **còn giữ** kết quả nằm dưới key
+ * idempotency `mailjob_${delivery_id}` (Resend documentation nói ~24 giờ; cấu hình worker
+ * phải nhỏ hơn hoặc bằng con số có thể xác minh đó — không exactly-once). Trả về:
+ * - `true`  → gọi lại với cùng key là an toàn (provider dedupe, hoặc chưa từng thấy request
+ *             đầu) ⇒ đường auto-resend.
+ * - `false` → ngoài cửa sổ ⇒ KHÔNG tự gọi lại provider; job phải đi vào trạng thái
+ *             operator-needed bền vững (`blocked` + `provider-ambiguous-outcome`) và
+ *             alertmetric.
+ * - `null`  → chưa có marker (`providerCallAt = null`) — không có ambiguity để đánh giá;
+ *             caller đang ở đoạn trước marker hoặc đường không marker, không phải quyết
+ *             định bằng hàm này.
+ *
+ * Biên: `now - provider_call_at <= windowMs` (inclusive) — cùng hình dạng "tuổi ≤ bound"
+ * với các guard sweep; một boundary test ghim `now - providerCallAt = windowMs` là `true`.
+ *
+ * ⚠️ Giới hạn đã tuyên bố tường minh: đây KHÔNG phải exactly-once. 24 giờ là con số
+ * **tài liệu provider-side** chưa verify được theo contract (docs không xác nhận hành vi
+ * dedupe chắc chắn giữa hai lần dùng lại key) — window config chỉ là policy "khi nào tự
+ * tin đủ để gọi lại", không phải chứng cứ provider trả kết quả cũ.
+ */
+/** Ngưỡng "còn trong cửa sổ an toàn" cho một lần gọi lại với cùng idempotency key. */
+export function isWithinProviderSafeWindow(
+  record: Pick<MailJobRecord, 'providerCallAt'>,
+  criteria: { readonly nowMs: number; readonly providerCallSafeWindowMs: number },
+): boolean | null {
+  if (record.providerCallAt === null) {
+    return null;
+  }
+  return criteria.nowMs - record.providerCallAt <= criteria.providerCallSafeWindowMs;
 }
 
 /** Giá trị đóng của `mail_jobs.status` — dùng cho validate khi decode row. */

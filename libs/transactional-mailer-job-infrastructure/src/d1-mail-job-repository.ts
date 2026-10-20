@@ -1,6 +1,7 @@
 import {
   MAIL_JOB_BUDGET_EXHAUSTED_ERROR_CLASS,
   MAIL_JOB_PERSISTABLE_STATUS_VALUES,
+  MAIL_JOB_PROVIDER_AMBIGUOUS_ERROR_CLASS,
   MAIL_JOB_REPORTABLE_STATE_VALUES,
   assertBoundedOptionalString,
   assertBoundedString,
@@ -14,6 +15,7 @@ import {
   classifyReportCompletionDenial,
   classifyReportLeaseDenial,
   classifySameGenerationClaimDenial,
+  classifyProviderCallBoundaryDenial,
   sanitizeErrorToken,
   type AcquireReportLeaseParams,
   type AcquireReportLeaseResult,
@@ -37,6 +39,10 @@ import {
   type MarkBlockedBudgetExhaustedResult,
   type PersistExecutionResultParams,
   type PersistExecutionResultResult,
+  type MarkProviderCallBoundaryParams,
+  type MarkProviderCallBoundaryResult,
+  type MarkProviderAmbiguityBlockedParams,
+  type MarkProviderAmbiguityBlockedResult,
   type RecordLookupErrorParams,
   type RecordLookupErrorResult,
   type ReleaseExecutionLeaseParams,
@@ -328,6 +334,124 @@ export class D1MailJobRepository implements MailJobRepository {
 
     const record = await this.#read(params.deliveryId);
     return { kind: 'denied', reason: classifyLeaseOwnershipDenial(record) };
+  }
+
+  /**
+   * Statement (e) — ghi `provider_call_at` lần đầu cho attempt-chain này.
+   *
+   * Conditional UPDATE duy nhất, first-write-only: WHERE là guard ownership chuẩn cộng
+   * `provider_call_at IS NULL`. Marker chạy **trước** lần đầu request rời khỏi Worker cho
+   * delivery này (§9.2.1 re-validate đã xong; call ở ngay sau):
+   *
+   * - Guard `already-marked` (`providerCallAt !== null` sau UPDATE): statement bỏ qua một
+   *   cách có chủ ý (`IS NULL` trong WHERE) ⇒ `already-marked` ⇒ thời điểm đầu tiên giữ
+   *   nguyên, vì cửa sổ mơ hồ được đếm từ request ĐẦU TIÊN có thể đã rời worker — không
+   *   phải request muộn nhất.
+   * - NOT clear khi bị deny với `already-marked`: đó là hành vi mong muốn của marker
+   *   durable, không phải một lỗi.
+   */
+  async markProviderCallBoundary(
+    params: MarkProviderCallBoundaryParams,
+  ): Promise<MarkProviderCallBoundaryResult> {
+    assertLeaseGuard(params);
+
+    const result = await this.#db
+      .prepare(
+        `UPDATE mail_jobs
+            SET provider_call_at = ?,
+                updated_at = ?
+          WHERE delivery_id = ?
+            AND lease_owner = ?
+            AND execution_generation = ?
+            AND dispatch_generation = ?
+            AND status = 'processing'
+            AND outcome_report_state = 'none'
+            AND provider_call_at IS NULL`,
+      )
+      .bind(
+        params.nowMs,
+        params.nowMs,
+        params.deliveryId,
+        params.owner,
+        params.executionGeneration,
+        params.dispatchGeneration,
+      )
+      .run();
+
+    if ((readChanges(result) ?? 0) > 0) {
+      const record = await this.#read(params.deliveryId);
+      if (record === null) {
+        throw new Error('provider-call boundary updated a row that could not be read back');
+      }
+      return { kind: 'applied', record };
+    }
+
+    const record = await this.#read(params.deliveryId);
+    return {
+      kind: 'denied',
+      reason: classifyProviderCallBoundaryDenial(record, {
+        owner: params.owner,
+        executionGeneration: params.executionGeneration,
+        dispatchGeneration: params.dispatchGeneration,
+      }),
+    };
+  }
+
+  /**
+   * Statement (g) — chốt operator-needed cho ambiguity ngoài cửa sổ an toàn.
+   *
+   * Clone của đường (c) với `last_error_class` khác: cùng guard
+   * (`attempts >= :max`, không lease hiệu lực, `status NOT IN (terminal, blocked)`, cùng
+   * `dispatch_generation`) nên phân loại denial dùng lại `classifyBudgetExhaustedDenial`
+   * — hai statement khác nhau chỉ ở **nguyên nhân** của lần chốt, không ở **điều kiện**
+   * chốt. Khác đường (c): ở đây không có lỗi provider nào ghi vào `last_error`
+   * (ambiguity là trạng thái worker, không phải lỗi provider).
+   */
+  async markProviderAmbiguityBlocked(
+    params: MarkProviderAmbiguityBlockedParams,
+  ): Promise<MarkProviderAmbiguityBlockedResult> {
+    assertBoundedString(params.deliveryId, 'deliveryId');
+    assertPositiveInteger(params.dispatchGeneration, 'dispatchGeneration');
+    assertPositiveInteger(params.maxExecutionAttempts, 'maxExecutionAttempts');
+    assertSafeInteger(params.nowMs, 'nowMs');
+
+    const result = await this.#db
+      .prepare(
+        `UPDATE mail_jobs
+            SET status = 'blocked',
+                blocked_at = ?,
+                last_error_class = ?,
+                outcome_report_state = 'pending',
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                updated_at = ?
+          WHERE delivery_id = ?
+            AND dispatch_generation = ?
+            AND attempts >= ?
+            AND (lease_expires_at IS NULL OR lease_expires_at <= ?)
+            AND status NOT IN ('sent', 'failed', 'blocked')`,
+      )
+      .bind(
+        params.nowMs,
+        MAIL_JOB_PROVIDER_AMBIGUOUS_ERROR_CLASS,
+        params.nowMs,
+        params.deliveryId,
+        params.dispatchGeneration,
+        params.maxExecutionAttempts,
+        params.nowMs,
+      )
+      .run();
+
+    if ((readChanges(result) ?? 0) > 0) {
+      const record = await this.#read(params.deliveryId);
+      if (record === null) {
+        throw new Error('ambiguity blocked transition updated a row that could not be read back');
+      }
+      return { kind: 'applied', record };
+    }
+
+    const record = await this.#read(params.deliveryId);
+    return { kind: 'denied', reason: classifyBudgetExhaustedDenial(record, params) };
   }
 
   async persistExecutionResult(

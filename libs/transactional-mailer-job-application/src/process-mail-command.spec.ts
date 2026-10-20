@@ -21,10 +21,12 @@ import type {
   OutcomeReportResult,
 } from './mail-delivery-gateway';
 import type { MailJobRecord, QuarantineRecord } from './mail-job-model';
+import { MAIL_JOB_PROVIDER_AMBIGUOUS_ERROR_CLASS } from './mail-job-model';
 import {
   classifyBudgetExhaustedDenial,
   classifyGenerationAdvanceDenial,
   classifyLeaseOwnershipDenial,
+  classifyProviderCallBoundaryDenial,
   classifyReportCompletionDenial,
   classifyReportLeaseDenial,
   classifySameGenerationClaimDenial,
@@ -50,6 +52,10 @@ import type {
   MailJobRepository,
   MarkBlockedBudgetExhaustedParams,
   MarkBlockedBudgetExhaustedResult,
+  MarkProviderCallBoundaryParams,
+  MarkProviderCallBoundaryResult,
+  MarkProviderAmbiguityBlockedParams,
+  MarkProviderAmbiguityBlockedResult,
   PersistExecutionResultParams,
   PersistExecutionResultResult,
   QuarantineRepository,
@@ -86,6 +92,8 @@ const LEASE_MS = 30_000;
 const REPORT_LEASE_MS = 10_000;
 const PROVIDER_TIMEOUT_MS = 10_000;
 const MAX_ATTEMPTS = 4;
+/** Cửa sổ an toàn idempotency — hằng của test, đuôi hơn 0 để test biên inclusive. */
+const PROVIDER_CALL_SAFE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** Owner của execution trong spec. */
 const OWNER = 'owner-exec-1';
@@ -104,6 +112,7 @@ function config(overrides: Partial<ProcessMailCommandConfig> = {}): ProcessMailC
     executionLeaseMs: LEASE_MS,
     maxExecutionAttempts: MAX_ATTEMPTS,
     providerTimeoutMs: PROVIDER_TIMEOUT_MS,
+    providerCallSafeWindowMs: PROVIDER_CALL_SAFE_WINDOW_MS,
     reportLeaseMs: REPORT_LEASE_MS,
     owner: OWNER,
     quarantineKeyHex: KEY_HEX,
@@ -147,6 +156,7 @@ function processingRow(overrides: Partial<MailJobRecord> = {}): MailJobRecord {
     reportLeaseExpiresAt: null,
     reportAttempts: 0,
     blockedAt: null,
+    providerCallAt: null,
     createdAt: NOW - 1_000,
     updatedAt: NOW - 1_000,
     ...overrides,
@@ -298,6 +308,75 @@ class FakeJobs implements MailJobRepository {
       status: 'blocked',
       blockedAt: params.nowMs,
       lastErrorClass: 'execution-budget-exhausted',
+      outcomeReportState: 'pending',
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      updatedAt: params.nowMs,
+    });
+    this.rows.set(params.deliveryId, blocked);
+    return { kind: 'applied', record: blocked };
+  }
+
+  async markProviderCallBoundary(
+    params: MarkProviderCallBoundaryParams,
+  ): Promise<MarkProviderCallBoundaryResult> {
+    this.calls.push('markProviderCallBoundary');
+    const record = this.rows.get(params.deliveryId) ?? null;
+    if (
+      record === null ||
+      !ownsLease(record, params.owner, params.executionGeneration, params.dispatchGeneration) ||
+      record.status !== 'processing' ||
+      record.outcomeReportState !== 'none'
+    ) {
+      return {
+        kind: 'denied',
+        reason: classifyProviderCallBoundaryDenial(record, {
+          owner: params.owner,
+          executionGeneration: params.executionGeneration,
+          dispatchGeneration: params.dispatchGeneration,
+        }),
+      };
+    }
+    if (record.providerCallAt !== null) {
+      // Guard first-write-only của statement (e) — denial bình thường, không mất claim.
+      return { kind: 'denied', reason: 'already-marked' };
+    }
+
+    const marked = processingRow({
+      ...record,
+      providerCallAt: params.nowMs,
+      updatedAt: params.nowMs,
+    });
+    this.rows.set(params.deliveryId, marked);
+    return { kind: 'applied', record: marked };
+  }
+
+  async markProviderAmbiguityBlocked(
+    params: MarkProviderAmbiguityBlockedParams,
+  ): Promise<MarkProviderAmbiguityBlockedResult> {
+    this.calls.push('markProviderAmbiguityBlocked');
+    const record = this.rows.get(params.deliveryId) ?? null;
+    const applicable =
+      record !== null &&
+      record.dispatchGeneration === params.dispatchGeneration &&
+      record.attempts >= params.maxExecutionAttempts &&
+      !isLeaseActive(record, params.nowMs) &&
+      record.status !== 'sent' &&
+      record.status !== 'failed' &&
+      record.status !== 'blocked';
+
+    if (!applicable || record === null) {
+      return {
+        kind: 'denied',
+        reason: classifyBudgetExhaustedDenial(record, params),
+      };
+    }
+
+    const blocked = processingRow({
+      ...record,
+      status: 'blocked',
+      blockedAt: params.nowMs,
+      lastErrorClass: MAIL_JOB_PROVIDER_AMBIGUOUS_ERROR_CLASS,
       outcomeReportState: 'pending',
       leaseOwner: null,
       leaseExpiresAt: null,
@@ -866,6 +945,7 @@ describe('claim paths', () => {
     expect(harness.jobs.calls).toEqual([
       'createPendingJob',
       'claimSameGeneration',
+      'markProviderCallBoundary',
       'persistExecutionResult',
       'acquireReportLease',
       'completeReport',
@@ -1347,6 +1427,64 @@ function depsWithJobs(over: Harness, jobs: MailJobRepository): ProcessMailComman
   };
 }
 
+/**
+ * Bọc fake của một harness bằng `Object.create` (giữ prototype như `jobsLosingClaim`) rồi
+ * override `markProviderCallBoundary` — các method khác vẫn ghi vào Map/calls của fake gốc.
+ */
+function jobsWithBoundaryDenial(
+  jobs: FakeJobs,
+  reason: 'missing-job' | 'lease-lost' | 'inconsistent',
+): MailJobRepository {
+  const wrapped = Object.create(jobs) as MailJobRepository;
+  wrapped.markProviderCallBoundary = async () => ({ kind: 'denied', reason });
+  return wrapped;
+}
+
+/**
+ * Seed row chưa claim (lease rỗng, attempts để claim dư budget) — claim sẽ bình thường
+ * vào được `executeClaimedDelivery`, nơi `markProviderCallBoundary` bị override.
+ */
+function seedClaimedRow(jobs: FakeJobs): void {
+  jobs.seed(processingRow({ attempts: 0 }));
+}
+
+describe('provider call boundary — statement (e)', () => {
+  it('never calls the provider when the boundary is denied for a lost claim', async () => {
+    // Claim thành công rồi boundary báo denial — nghĩa là mất claim giữa hai bước.
+    // Provider KHÔNG được chạm: một lần gọi sau khi mất lease là đường double-send đầu tiên
+    // mà fencing phải chặn.
+    for (const reason of ['missing-job', 'lease-lost', 'inconsistent'] as const) {
+      const fresh = new Harness();
+      seedClaimedRow(fresh.jobs);
+
+      const outcome = await processMailCommand(
+        CANONICAL_COMMAND,
+        'qmsg-1',
+        depsWithJobs(fresh, jobsWithBoundaryDenial(fresh.jobs, reason)),
+        config(),
+      );
+
+      expect(outcome).toEqual({ kind: 'retry' });
+      expect(fresh.provider.requests).toEqual([]);
+      expect(fresh.gateway.reportCalls).toEqual([]);
+    }
+  });
+
+  it('proceeds to call the provider once on already-marked — replay across a crash', async () => {
+    // `already-marked` không phải mất claim: marker của cùng attempt-chain đã ghi trước
+    // (đoạn sau marker crash), caller vẫn được gọi provider — cùng Idempotency-Key nên
+    // provider dedupe, và marker giữ nguyên mốc gốc (first-write-only).
+    harness.jobs.seed(processingRow({ providerCallAt: NOW - 50 }));
+
+    const outcome = await harness.run();
+
+    expect(outcome).toEqual({ kind: 'ack-processed' });
+    expect(harness.provider.requests).toHaveLength(1);
+    // Marker phải giữ nguyên — KHÔNG overwrite mốc cửa sổ mơ hồ.
+    expect(harness.jobs.row().providerCallAt).toBe(NOW - 50);
+  });
+});
+
 describe('lost claim after the provider was already called', () => {
   it('does not send again and retries when nothing else persisted the result', async () => {
     // Mất claim vì một execution khác đã cầm lease, và **chưa** execution nào persist được:
@@ -1435,6 +1573,128 @@ describe('lost claim after the provider was already called', () => {
     // tự ack, nên trả `retry` ở đây chỉ là một vòng Queue thừa.
     expect(outcome).toEqual({ kind: 'ack-processed' });
     expect(harness.provider.requests).toHaveLength(1);
+  });
+
+  it('acks when the result is already pending report', async () => {
+    // Phần trên của lớp-1 determinism: `outcome_report_state = 'pending'` nghĩa là đã có kết
+    // luận bền vững (không nhất thiết terminal — nhưng intent đã được persist). Ack.
+    const losing = jobsLosingClaim(harness.jobs, async () => {
+      const current = harness.jobs.rows.get(DELIVERY_ID);
+      if (current !== undefined) {
+        harness.jobs.rows.set(
+          DELIVERY_ID,
+          processingRow({ ...current, outcomeReportState: 'pending' }),
+        );
+      }
+      return { kind: 'denied', reason: 'lease-lost' };
+    });
+
+    const outcome = await processMailCommand(
+      CANONICAL_COMMAND,
+      'qmsg-1',
+      depsWithJobs(harness, losing),
+      config(),
+    );
+
+    expect(outcome).toEqual({ kind: 'ack-processed' });
+    expect(harness.jobs.calls).not.toContain('markProviderAmbiguityBlocked');
+  });
+
+  it('retries inside the provider idempotency safety window — no operator block yet', async () => {
+    // Auto-resend trong cửa sổ (marker cách đây 100ms, cửa sổ 24h): Queue redelivery với
+    // CÙNG Idempotency-Key sẽ replay kết quả provider — KHÔNG tự gọi lại tại đây, KHÔNG
+    // block operator bên trong cửa sổ.
+    const losing = jobsLosingClaim(harness.jobs, async () => {
+      const current = harness.jobs.rows.get(DELIVERY_ID);
+      if (current !== undefined) {
+        harness.jobs.rows.set(
+          DELIVERY_ID,
+          processingRow({ ...current, providerCallAt: NOW - 100 }),
+        );
+      }
+      return { kind: 'denied', reason: 'lease-lost' };
+    });
+
+    const outcome = await processMailCommand(
+      CANONICAL_COMMAND,
+      'qmsg-1',
+      depsWithJobs(harness, losing),
+      config(),
+    );
+
+    expect(outcome).toEqual({ kind: 'retry' });
+    expect(harness.jobs.calls).not.toContain('markProviderAmbiguityBlocked');
+    expect(harness.provider.requests).toHaveLength(1);
+  });
+
+  it('marks operator-needed blocked when the ambiguity persists past the safety window', async () => {
+    // Marker đã hơn 24h ⇒ không thể tra idempotency key một cách đáng tin cậy; tự gọi lại
+    // là double-send tiềm tàng. Dừng redelivery, chốt `blocked` + `provider-ambiguous-outcome`
+    // bền vững cho operator (Session 4 redrive có authorize).
+    const losing = jobsLosingClaim(harness.jobs, async () => {
+      const current = harness.jobs.rows.get(DELIVERY_ID);
+      if (current !== undefined) {
+        harness.jobs.rows.set(
+          DELIVERY_ID,
+          processingRow({
+            ...current,
+            attempts: MAX_ATTEMPTS,
+            leaseOwner: null,
+            leaseExpiresAt: null,
+            providerCallAt: NOW - 24 * 60 * 60 * 1000 - 1,
+          }),
+        );
+      }
+      return { kind: 'denied', reason: 'lease-lost' };
+    });
+
+    const outcome = await processMailCommand(
+      CANONICAL_COMMAND,
+      'qmsg-1',
+      depsWithJobs(harness, losing),
+      config(),
+    );
+
+    expect(outcome).toEqual({ kind: 'internal-blocked' });
+    expect(harness.jobs.calls).toContain('markProviderAmbiguityBlocked');
+    const record = harness.jobs.row();
+    expect(record.status).toBe('blocked');
+    expect(record.lastErrorClass).toBe(MAIL_JOB_PROVIDER_AMBIGUOUS_ERROR_CLASS);
+    expect(record.blockedAt).toBe(NOW);
+    expect(record.outcomeReportState).toBe('pending');
+    // KHÔNG reset marker khi reddrive tăng `dispatch_generation` — bền vững xuyên re-drive.
+    expect(record.providerCallAt).toBe(NOW - 24 * 60 * 60 * 1000 - 1);
+  });
+
+  it('acks when the ambiguity block cannot apply because the row already has a conclusion', async () => {
+    // Đang ngoài cửa sổ nhưng hàng có kết luận rồi (status='sent' + report pending): block
+    // bị denial ⇒ re-read thấy kết luận ⇒ ack, không kéo sent về blocked.
+    const losing = jobsLosingClaim(harness.jobs, async () => {
+      const current = harness.jobs.rows.get(DELIVERY_ID);
+      if (current !== undefined) {
+        harness.jobs.rows.set(
+          DELIVERY_ID,
+          processingRow({
+            ...current,
+            status: 'sent',
+            leaseOwner: null,
+            leaseExpiresAt: null,
+            outcomeReportState: 'pending',
+            providerCallAt: NOW - 24 * 60 * 60 * 1000 - 1,
+          }),
+        );
+      }
+      return { kind: 'denied', reason: 'lease-lost' };
+    });
+
+    const outcome = await processMailCommand(
+      CANONICAL_COMMAND,
+      'qmsg-1',
+      depsWithJobs(harness, losing),
+      config(),
+    );
+
+    expect(outcome).toEqual({ kind: 'ack-processed' });
   });
 });
 

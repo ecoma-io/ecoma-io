@@ -349,6 +349,7 @@ describe('MailProviderPort — the only seam out to a provider', () => {
       'MAIL_JOB_REPORTABLE_STATE_VALUES',
       'MAIL_JOB_BUDGET_EXHAUSTED_ERROR_CLASS',
       'MAIL_JOB_DELIVERY_NOT_FOUND_ERROR_CLASS',
+      'MAIL_JOB_PROVIDER_AMBIGUOUS_ERROR_CLASS',
       'MalformedMailJobStateError',
       'MailJobValidationError',
       'sanitizeErrorToken',
@@ -372,6 +373,7 @@ describe('MailProviderPort — the only seam out to a provider', () => {
       'classifyGenerationAdvanceDenial',
       'classifyBudgetExhaustedDenial',
       'classifyLeaseOwnershipDenial',
+      'classifyProviderCallBoundaryDenial',
       'classifyReportLeaseDenial',
       'classifyReportCompletionDenial',
       'dispositionForControlPlaneOutcome',
@@ -379,6 +381,7 @@ describe('MailProviderPort — the only seam out to a provider', () => {
       'isEligibleForStaleLeaseSweep',
       'isEligibleForBlockedBacklogSweep',
       'canPersistExecutionResultFor',
+      'isWithinProviderSafeWindow',
       // §3.1 — quarantine digest
       'QUARANTINE_ID_PATTERN',
       'QUARANTINE_ID_PREFIX',

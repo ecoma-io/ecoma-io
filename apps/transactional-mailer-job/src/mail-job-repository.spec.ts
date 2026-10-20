@@ -828,6 +828,152 @@ describe('markBlockedBudgetExhausted', () => {
   });
 });
 
+describe('markProviderCallBoundary — statement (e)', () => {
+  it('writes the marker once under a live claim', async () => {
+    await seedPending('delivery-boundary');
+    const claimed = await claimOrThrow('delivery-boundary', 'owner-a', T0);
+
+    const marked = await repo.markProviderCallBoundary({
+      deliveryId: 'delivery-boundary',
+      owner: 'owner-a',
+      executionGeneration: claimed.executionGeneration,
+      dispatchGeneration: claimed.dispatchGeneration,
+      nowMs: T0 + 1,
+    });
+    if (marked.kind !== 'applied') {
+      throw new Error('expected marker to apply');
+    }
+    expect(marked.record.providerCallAt).toBe(T0 + 1);
+
+    // First-write-only: lần gọi thứ hai (caller lặp, crash replay…) KHÔNG đụng mốc.
+    const again = await repo.markProviderCallBoundary({
+      deliveryId: 'delivery-boundary',
+      owner: 'owner-a',
+      executionGeneration: claimed.executionGeneration,
+      dispatchGeneration: claimed.dispatchGeneration,
+      nowMs: T0 + 2,
+    });
+    expect(again).toEqual({ kind: 'denied', reason: 'already-marked' });
+    expect((await loadOrThrow('delivery-boundary')).providerCallAt).toBe(T0 + 1);
+  });
+
+  it('keeps the marker across lease reclaim and a newer execution generation', async () => {
+    // Marker không reset khi execution khác reclaim (lease hết hạn, claim lại) — nó là
+    // state theo **delivery**, không phải theo attempt; đúng cơ sở để cửa sổ an toàn của
+    // auto-resend tính từ lần chạm provider đầu tiên.
+    await seedPending('delivery-marker-persist');
+    const claimed = await claimOrThrow('delivery-marker-persist', 'owner-a', T0);
+    await repo.markProviderCallBoundary({
+      deliveryId: 'delivery-marker-persist',
+      owner: 'owner-a',
+      executionGeneration: claimed.executionGeneration,
+      dispatchGeneration: claimed.dispatchGeneration,
+      nowMs: T0 + 1,
+    });
+
+    // Lease hết hạn, execution khác claim lại (token tăng) rồi cũng chạm ranh giới.
+    const reclaimed = await claimOrThrow('delivery-marker-persist', 'owner-b', T0 + LEASE_MS);
+    expect(reclaimed.executionGeneration).toBe(claimed.executionGeneration + 1);
+
+    // Owner mới cũng nhận `already-marked` — marker KHÔNG reset theo generation mới.
+    const markedByNewOwner = await repo.markProviderCallBoundary({
+      deliveryId: 'delivery-marker-persist',
+      owner: 'owner-b',
+      executionGeneration: reclaimed.executionGeneration,
+      dispatchGeneration: reclaimed.dispatchGeneration,
+      nowMs: T0 + LEASE_MS + 1,
+    });
+    expect(markedByNewOwner).toEqual({ kind: 'denied', reason: 'already-marked' });
+    expect((await loadOrThrow('delivery-marker-persist')).providerCallAt).toBe(T0 + 1);
+  });
+
+  it('rejects a stale writer with lease-lost and writes nothing', async () => {
+    await seedPending('delivery-stale-boundary');
+    const claimed = await claimOrThrow('delivery-stale-boundary', 'owner-a', T0);
+    // Lease của owner-a hết hạn, owner-b claim (token tăng).
+    await claimOrThrow('delivery-stale-boundary', 'owner-b', T0 + LEASE_MS);
+
+    const result = await repo.markProviderCallBoundary({
+      deliveryId: 'delivery-stale-boundary',
+      owner: 'owner-a',
+      executionGeneration: claimed.executionGeneration,
+      dispatchGeneration: claimed.dispatchGeneration,
+      nowMs: T0 + LEASE_MS + 1,
+    });
+    expect(result).toEqual({ kind: 'denied', reason: 'lease-lost' });
+    expect((await loadOrThrow('delivery-stale-boundary')).providerCallAt).toBeNull();
+  });
+});
+
+describe('markProviderAmbiguityBlocked — statement (g)', () => {
+  it('blocks an exhausted job outside the safe window with the ambiguity class', async () => {
+    await seedPending('delivery-ambiguity');
+    await claimOrThrow('delivery-ambiguity', 'owner-1', T0);
+    await claimOrThrow('delivery-ambiguity', 'owner-2', T0 + LEASE_MS);
+    const claimed = await claimOrThrow('delivery-ambiguity', 'owner-3', T0 + 2 * LEASE_MS);
+
+    // Mark ranh giới (owner-3 đang giữ lease) để đóng dấu mơ hồ.
+    await repo.markProviderCallBoundary({
+      deliveryId: 'delivery-ambiguity',
+      owner: 'owner-3',
+      executionGeneration: claimed.executionGeneration,
+      dispatchGeneration: claimed.dispatchGeneration,
+      nowMs: T0 + 2 * LEASE_MS + 1,
+    });
+
+    const applied = await repo.markProviderAmbiguityBlocked({
+      deliveryId: 'delivery-ambiguity',
+      dispatchGeneration: 1,
+      nowMs: T0 + 3 * LEASE_MS,
+      maxExecutionAttempts: MAX_EXECUTION_ATTEMPTS,
+    });
+    expect(applied.kind).toBe('applied');
+
+    const record = await loadOrThrow('delivery-ambiguity');
+    expect(record.status).toBe('blocked');
+    expect(record.lastErrorClass).toBe('provider-ambiguous-outcome');
+    expect(record.lastError).toBeNull();
+    expect(record.blockedAt).toBe(T0 + 3 * LEASE_MS);
+    expect(record.outcomeReportState).toBe('pending');
+    expect(record.leaseOwner).toBeNull();
+    // Marker KHÔNG bị đụng — vẫn là mốc attempt đầu tiên chạm provider.
+    expect(record.providerCallAt).toBe(T0 + 2 * LEASE_MS + 1);
+  });
+
+  it('keeps the legacy budget-exhausted semantics intact for a job without the marker', async () => {
+    // Cùng generation, cùng budget, nhưng KHÔNG marker ⇒ statement (g) chỉ chốt vì
+    // ambiguity: khác biệt bắt buộc với đường (c) là `last_error_class`.
+    await seedPending('delivery-ambiguity-nomarker');
+    await claimOrThrow('delivery-ambiguity-nomarker', 'owner-1', T0);
+    await claimOrThrow('delivery-ambiguity-nomarker', 'owner-2', T0 + LEASE_MS);
+    await claimOrThrow('delivery-ambiguity-nomarker', 'owner-3', T0 + 2 * LEASE_MS);
+
+    const applied = await repo.markProviderAmbiguityBlocked({
+      deliveryId: 'delivery-ambiguity-nomarker',
+      dispatchGeneration: 1,
+      nowMs: T0 + 3 * LEASE_MS,
+      maxExecutionAttempts: MAX_EXECUTION_ATTEMPTS,
+    });
+    expect(applied.kind).toBe('applied');
+    expect((await loadOrThrow('delivery-ambiguity-nomarker')).lastErrorClass).toBe(
+      'provider-ambiguous-outcome',
+    );
+  });
+
+  it('denies with budget-not-exhausted while attempts remain', async () => {
+    await seedPending('delivery-ambiguity-early');
+
+    const result = await repo.markProviderAmbiguityBlocked({
+      deliveryId: 'delivery-ambiguity-early',
+      dispatchGeneration: 1,
+      nowMs: T0,
+      maxExecutionAttempts: MAX_EXECUTION_ATTEMPTS,
+    });
+    expect(result).toEqual({ kind: 'denied', reason: 'budget-not-exhausted' });
+    expect((await loadOrThrow('delivery-ambiguity-early')).status).toBe('processing');
+  });
+});
+
 describe('renewExecutionLease', () => {
   it('extends the lease only for the current owner token', async () => {
     await seedPending('delivery-renew');

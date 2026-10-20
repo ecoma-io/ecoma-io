@@ -78,6 +78,17 @@ export const MAIL_JOB_BUDGET_EXHAUSTED_ERROR_CLASS = 'execution-budget-exhausted
 export const MAIL_JOB_DELIVERY_NOT_FOUND_ERROR_CLASS = 'delivery-not-found' as const;
 
 /**
+ * `last_error_class` cho job `blocked` khi auto-resend đã ngoài cửa sổ an toàn: kết quả
+ * provider KHÔNG XÁC ĐỊNH bền vững (marker trước call còn sống, `provider_call_at` cách
+ * đây hơn ~24 giờ là giới hạn upstream của Resend, non-configurable) và worker không được
+ * tự gọi lại provider (issue #37). Chỉ redrive có authorize mở khoá.
+ *
+ * Token là worker-internal — không phải error_class canonical của control plane (sweep đã
+ * lọc trước khi báo wire, `report-sweeps.ts` `canonicalErrorClass`).
+ */
+export const MAIL_JOB_PROVIDER_AMBIGUOUS_ERROR_CLASS = 'provider-ambiguous-outcome' as const;
+
+/**
  * Row `mail_jobs` sau khi đã decode và validate.
  *
  * Mọi giá trị đều đã qua parity invariant của schema: cặp lease cùng null hoặc cùng
@@ -102,6 +113,17 @@ export type MailJobRecord = {
   readonly reportLeaseExpiresAt: number | null;
   readonly reportAttempts: number;
   readonly blockedAt: number | null;
+  /**
+   * Marker bền vững của lần gọi provider đầu tiên đã ghi (migration `0003`), epoch ms.
+   *
+   * `null` = chưa từng có request nào rời khỏi worker được ghi bền vững — có thể chưa gọi,
+   * có thể worker chết giữa hai statement. Giá trị khác null là "provider CÓ THỂ đã nhận
+   * email": bắt đầu cửa sổ mơ hồ theo `provider-safety-window` (không exactly-once §9.3).
+   * Marker **không** bao giờ bị xoá hay reset — kể cả khi redrive tăng
+   * `dispatch_generation` (statement (b) không đụng nó): sự thật về thế giới không rút lại
+   * được.
+   */
+  readonly providerCallAt: number | null;
   readonly createdAt: number;
   readonly updatedAt: number;
 };
