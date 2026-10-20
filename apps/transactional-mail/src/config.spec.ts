@@ -260,6 +260,43 @@ describe('credential registry', () => {
     expect((error as Error).message).toContain('MAIL_INTERNAL_AUTH_SECRET_SVC_ACCOUNT_PREVIOUS');
   });
 
+  it('rejects a lone surrogate in a previous secret', async () => {
+    // Cùng luật của `current`: lone surrogate qua TextEncoder thành U+FFFD, nên hai secret
+    // "khác nhau" theo `===` lại là cùng key material HMAC — chặn lúc boot, fail-closed.
+    const surrogate = 'prev-\uD800-value';
+    const error = await load(
+      makeEnv({ MAIL_INTERNAL_AUTH_SECRET_SVC_AUTH_PREVIOUS: surrogate }),
+    ).catch((thrown: unknown) => thrown);
+    expect(error).toBeInstanceOf(TransactionalMailConfigError);
+    const message = (error as Error).message;
+    expect(message).toContain('MAIL_INTERNAL_AUTH_SECRET_SVC_AUTH_PREVIOUS');
+    // Message nói tên biến, không echo giá trị secret.
+    expect(message).not.toContain(surrogate);
+  });
+
+  it('rejects a previous secret encoding the same bytes as a current secret of another principal', async () => {
+    // `"�A"` và `"\uD800A"` là hai chuỗi theo `===` nhưng `TextEncoder` encode cùng byte
+    // (cùng key material HMAC). Duplicate check của registry so `===` trên chuỗi, nên trước
+    // fix cặp này vào được registry dù `current` đã bị gate lone surrogate chặn — chứng minh
+    // nhánh `previous` là lỗ duy nhất còn mở.
+    const previousEquivalent = '�-mailer-equivalent';
+    const surrogateForm = '\uD800-mailer-equivalent';
+    const error = await load(
+      makeEnv({
+        MAIL_INTERNAL_AUTH_SECRET_SVC_TRANSACTIONAL_MAILER_JOB: previousEquivalent,
+        MAIL_INTERNAL_AUTH_SECRET_SVC_AUTH_PREVIOUS: surrogateForm,
+      }),
+    ).catch((thrown: unknown) => thrown);
+    expect(error).toBeInstanceOf(TransactionalMailConfigError);
+    const message = (error as Error).message;
+    expect(
+      message.includes('MAIL_INTERNAL_AUTH_SECRET_SVC_AUTH_PREVIOUS') ||
+        message.includes('MAIL_INTERNAL_AUTH_SECRET_SVC_TRANSACTIONAL_MAILER_JOB'),
+    ).toBe(true);
+    expect(message).not.toContain(previousEquivalent);
+    expect(message).not.toContain(surrogateForm);
+  });
+
   it('maps permissions per principal, independent of credential kind', async () => {
     const config = await load(makeEnv());
     expect(config.permissionsByPrincipal.get('svc.account')).toEqual([PERMISSION_MESSAGE_CREATE]);

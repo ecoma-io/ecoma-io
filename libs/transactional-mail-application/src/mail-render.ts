@@ -139,6 +139,11 @@ function renderTemplate(
  * match) qua khoảng trắng rồi đòi dấu nháy đóng. Chỉ dấu nháy **nguyên văn trong template**
  * mới mở context attribute — một giá trị chứa `"` ở placeholder liền trước không tạo được
  * context đó, vì giá trị đã qua escape của placeholder đó rồi.
+ *
+ * ⚠️ Skip cả **tab, LF, CR, form feed** chứ không chỉ `0x20`: HTML cho phép whitespace giữa
+ * dấu nháy và value attribute (`href="{{ url }}\n >"` vẫn là một attribute nguyên vẹn). Chỉ
+ * skip `0x20` thì template đó bị coi là context text — giá trị chứa `"` thoát attribute được
+ * (bộ test: `treats a placeholder around newline inside a quoted attribute as attribute context`).
  */
 function placeholderIsInQuotedAttribute(
   template: string,
@@ -147,7 +152,7 @@ function placeholderIsInQuotedAttribute(
 ): boolean {
   let start = offset - 1;
 
-  while (start >= 0 && template[start] === ' ') {
+  while (start >= 0 && isAttributeBoundaryWhitespace(template[start])) {
     start -= 1;
   }
 
@@ -157,11 +162,27 @@ function placeholderIsInQuotedAttribute(
 
   let end = offset + matchLength;
 
-  while (end < template.length && template[end] === ' ') {
+  while (end < template.length && isAttributeBoundaryWhitespace(template[end])) {
     end += 1;
   }
 
   return end < template.length && (template[end] === '"' || template[end] === "'");
+}
+
+/**
+ * Whitespace được phép nằm giữa dấu nháy attribute và value theo HTML: `0x20` cùng các
+ * control character cơ bản (`\t`, `\n`, `\r`, form feed `0x0C`). Đây là tập mà parser HTML
+ * bỏ qua giữa dấu nháy và value — không phải mọi whitespace Unicode (các ký tự khác trình
+ * duyệt không bỏ qua giữa dấu nháy và value).
+ */
+function isAttributeBoundaryWhitespace(character: string): boolean {
+  return (
+    character === ' ' ||
+    character === '\t' ||
+    character === '\n' ||
+    character === '\r' ||
+    character === '\f'
+  );
 }
 
 /**
