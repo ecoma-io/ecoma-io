@@ -10,11 +10,12 @@ import { worktreeNamespace } from './deploy-namespace.js';
 import {
   ensureStack,
   fullStackRef,
+  localPassphrasePath,
   localStateDir,
   pulumiEnv,
   pulumiRun,
-  requirePassphrase,
   resolveContext,
+  resolveLocalPassphrase,
 } from './pulumi-context.js';
 
 const cleanup: string[] = [];
@@ -90,7 +91,7 @@ describe('fullStackRef', () => {
   });
 });
 
-describe('requirePassphrase', () => {
+describe('resolveLocalPassphrase', () => {
   const SAVE = {
     passphrase: process.env.PULUMI_CONFIG_PASSPHRASE,
     file: process.env.PULUMI_CONFIG_PASSPHRASE_FILE,
@@ -103,73 +104,137 @@ describe('requirePassphrase', () => {
     else process.env.PULUMI_CONFIG_PASSPHRASE_FILE = SAVE.file;
   });
 
-  it('missing passphrase → error với hướng dẫn hành động, không fallback', () => {
+  it('no passphrase anywhere → generate a cryptographically random one and store it outside Git', () => {
     delete process.env.PULUMI_CONFIG_PASSPHRASE;
     delete process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
-    const result = requirePassphrase();
-    expect('error' in result).toBe(true);
-    // `Object.prototype.hasOwnProperty` không giữ narrowing nên extract trước
-    // rồi assert — tránh `expect` trong if (vitest/no-conditional-expect).
-    const error = (result as { error?: string }).error ?? '';
-    expect(error).toContain('PULUMI_CONFIG_PASSPHRASE');
-    expect(error).toContain('export');
+    const root = tempWorktree();
+    const result = resolveLocalPassphrase(root, { create: true });
+    expect(result.kind).toBe('worktree');
+    const value = result.kind === 'worktree' ? result.value : '';
+    // 32 random bytes base64url → 43 ký tự, không rỗng, không phải giá trị đoán
+    // được. Chỉ assert độ dài + alphabet: giá trị không được rò ra log.
+    expect(value.length).toBe(43);
+    expect(value).toMatch(/^[A-Za-z0-9_-]+$/u);
+    // Lưu ra file của worktree để lần deploy sau dùng lại cùng passphrase.
+    expect(existsSync(localPassphrasePath(root))).toBe(true);
   });
 
-  it('supplied passphrase → returned as-is, never logged', () => {
+  it('generated passphrase differs between worktrees — no shared secret across stacks', () => {
+    delete process.env.PULUMI_CONFIG_PASSPHRASE;
+    delete process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
+    const a = resolveLocalPassphrase(tempWorktree(), { create: true });
+    const b = resolveLocalPassphrase(tempWorktree(), { create: true });
+    expect(a.kind === 'worktree' && b.kind === 'worktree' && a.value === b.value).toBe(false);
+  });
+
+  it('stored passphrase is reused on the next call — never regenerated per invocation', () => {
+    delete process.env.PULUMI_CONFIG_PASSPHRASE;
+    delete process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
+    const root = tempWorktree();
+    const first = resolveLocalPassphrase(root, { create: true });
+    const second = resolveLocalPassphrase(root, { create: true });
+    expect(first).toEqual(second);
+  });
+
+  it('developer passphrase from the environment wins and is persisted for later runs', () => {
+    delete process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
     process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-secret-value';
-    const result = requirePassphrase();
-    expect(result).toEqual({ passphrase: 'unit-test-secret-value', fromFile: false });
+    const root = tempWorktree();
+    const result = resolveLocalPassphrase(root, { create: true });
+    expect(result).toEqual({ kind: 'inline', value: 'unit-test-secret-value' });
+    // Được ghi vào file → stack tự chứa từ lần chạy sau (kể cả khi biến môi
+    // trường biến mất).
+    expect(resolveLocalPassphrase(root, { create: true })).toEqual({
+      kind: 'worktree',
+      value: 'unit-test-secret-value',
+    });
   });
 
   it('PULUMI_CONFIG_PASSPHRASE_FILE counts as a supply path', () => {
     delete process.env.PULUMI_CONFIG_PASSPHRASE;
     process.env.PULUMI_CONFIG_PASSPHRASE_FILE = '/tmp/some-passphrase-file';
-    const result = requirePassphrase();
-    expect(result).toEqual({ passphrase: undefined, fromFile: true });
+    const root = tempWorktree();
+    const result = resolveLocalPassphrase(root, { create: true });
+    expect(result).toEqual({ kind: 'file' });
+    // Nguồn passphrase ngoài repo → KHÔNG ghi vào file của worktree.
+    expect(existsSync(localPassphrasePath(root))).toBe(false);
   });
 
   it('empty-string passphrase is treated as unset — falls through to _FILE, never accepted (PU6 fail-open)', () => {
     // `export PULUMI_CONFIG_PASSPHRASE=` / CI set biến rỗng: chuỗi rỗng là giá
     // trị hợp lệ với Pulumi, chấp nhận nó = state mã hoá bằng khoá rỗng.
     process.env.PULUMI_CONFIG_PASSPHRASE = '';
-    const noFile = requirePassphrase();
-    expect('error' in noFile && noFile.error.includes('PULUMI_CONFIG_PASSPHRASE')).toBe(true);
+    const root = tempWorktree();
+    const noFile = resolveLocalPassphrase(root, { create: true });
+    expect(noFile.kind).toBe('worktree');
 
     process.env.PULUMI_CONFIG_PASSPHRASE_FILE = '/tmp/some-passphrase-file';
-    const withFile = requirePassphrase();
-    expect(withFile).toEqual({ passphrase: undefined, fromFile: true });
+    const withFile = resolveLocalPassphrase(tempWorktree(), { create: true });
+    expect(withFile).toEqual({ kind: 'file' });
   });
 
   it('empty-string _FILE is treated as unset — same standard as the inline variable (PU6)', () => {
-    // `export PULUMI_CONFIG_PASSPHRASE_FILE=` phải rơi tiếp xuống báo lỗi hành
-    // động được: nếu `_FILE=''` được coi là "đã cung cấp", `pulumiEnv` xoá biến
-    // inline và để lại `_FILE=''` — CLI coi rỗng là chưa set và fail với thông
-    // báo chung chung, mất đúng hướng dẫn của helper này.
+    // `export PULUMI_CONFIG_PASSPHRASE_FILE=` phải rơi tiếp xuống sinh passphrase
+    // của worktree chứ không bị coi là "đã cung cấp".
     delete process.env.PULUMI_CONFIG_PASSPHRASE;
     process.env.PULUMI_CONFIG_PASSPHRASE_FILE = '';
-    const result = requirePassphrase();
-    expect('error' in result && result.error.includes('PULUMI_CONFIG_PASSPHRASE')).toBe(true);
+    const root = tempWorktree();
+    const result = resolveLocalPassphrase(root, { create: true });
+    expect(result.kind).toBe('worktree');
+  });
+
+  it('create: false never writes a file — read-only callers must not mutate the worktree', () => {
+    delete process.env.PULUMI_CONFIG_PASSPHRASE;
+    delete process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
+    const root = tempWorktree();
+    const result = resolveLocalPassphrase(root, { create: false });
+    expect(result).toEqual({ kind: 'none' });
+    expect(existsSync(localPassphrasePath(root))).toBe(false);
+  });
+
+  it('empty passphrase file is treated as absent — not a valid passphrase', () => {
+    const root = tempWorktree();
+    writeFileSync(localPassphrasePath(root), '   \n', 'utf8');
+    const result = resolveLocalPassphrase(root, { create: false });
+    expect(result).toEqual({ kind: 'none' });
   });
 });
 
 describe('pulumiEnv', () => {
-  it('env mang backend URL của ĐÚNG worktree + passphrase, không đụng PULUMI_HOME', () => {
+  it('env carries the backend URL of the RIGHT worktree + passphrase, does not touch PULUMI_HOME', () => {
     const ctx = resolveContext(tempWorktree());
-    const env = pulumiEnv(ctx, 'test-pass');
+    const env = pulumiEnv(ctx, { kind: 'inline', value: 'test-pass' });
     expect(env['PULUMI_BACKEND_URL']).toBe(ctx.stateUrl);
     expect(env['PULUMI_CONFIG_PASSPHRASE']).toBe('test-pass');
     expect(env['PULUMI_SKIP_UPDATE_CHECK']).toBe('1');
     expect('PULUMI_HOME' in env).toBe(false);
   });
 
-  it('passphrase undefined (file path) → PULUMI_CONFIG_PASSPHRASE DELETED, not set empty', () => {
+  it('worktree passphrase is injected into the subprocess env', () => {
+    const ctx = resolveContext(tempWorktree());
+    const env = pulumiEnv(ctx, { kind: 'worktree', value: 'wt-pass' });
+    expect(env['PULUMI_CONFIG_PASSPHRASE']).toBe('wt-pass');
+  });
+
+  it('file path (no inline value) → PULUMI_CONFIG_PASSPHRASE DELETED, not set empty', () => {
     const ctx = resolveContext(tempWorktree());
     // Giả lập env kế thừa có sẵn biến rỗng/lậu từ shell — `delete` phải gỡ
     // được, để CLI tự đọc PULUMI_CONFIG_PASSPHRASE_FILE theo thứ tự chuẩn (PU2).
     process.env.PULUMI_CONFIG_PASSPHRASE = '';
-    const env = pulumiEnv(ctx, undefined);
+    const env = pulumiEnv(ctx, { kind: 'file' });
     expect('PULUMI_CONFIG_PASSPHRASE' in env).toBe(false);
     expect(env['PULUMI_BACKEND_URL']).toBe(ctx.stateUrl);
+  });
+
+  it('no passphrase at all → BOTH variables deleted so the CLI reports the real reason', () => {
+    const ctx = resolveContext(tempWorktree());
+    process.env.PULUMI_CONFIG_PASSPHRASE = 'leftover';
+    process.env.PULUMI_CONFIG_PASSPHRASE_FILE = 'leftover-file';
+    const env = pulumiEnv(ctx, { kind: 'none' });
+    expect('PULUMI_CONFIG_PASSPHRASE' in env).toBe(false);
+    expect('PULUMI_CONFIG_PASSPHRASE_FILE' in env).toBe(false);
+    delete process.env.PULUMI_CONFIG_PASSPHRASE;
+    delete process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
   });
 });
 
@@ -185,8 +250,8 @@ describe('ensureStack — real Pulumi subprocess isolation', () => {
     const wtB = tempWorktree();
     const ctxA = resolveContext(wtA);
     const ctxB = resolveContext(wtB);
-    const envA = pulumiEnv(ctxA, 'concurrent-test-pass');
-    const envB = pulumiEnv(ctxB, 'concurrent-test-pass');
+    const envA = pulumiEnv(ctxA, { kind: 'inline', value: 'concurrent-test-pass' });
+    const envB = pulumiEnv(ctxB, { kind: 'inline', value: 'concurrent-test-pass' });
 
     const projDirA = join(wtA, 'proj-a');
     const projDirB = join(wtB, 'proj-b');
@@ -232,7 +297,7 @@ describe('pulumiRun — prepareStack là opt-in', () => {
     if (!hasCli) return; // skip im lặng — documented limitation
     const wt = tempWorktree();
     const ctx = resolveContext(wt);
-    const env = pulumiEnv(ctx, 'optin-test-pass');
+    const env = pulumiEnv(ctx, { kind: 'inline', value: 'optin-test-pass' });
     const projDir = join(wt, 'proj');
     mkdirSync(projDir, { recursive: true });
     writeFileSync(
@@ -254,7 +319,7 @@ describe('pulumiRun — prepareStack là opt-in', () => {
     if (!hasCli) return; // skip im lặng — documented limitation
     const wt = tempWorktree();
     const ctx = resolveContext(wt);
-    const env = pulumiEnv(ctx, 'optin-test-pass');
+    const env = pulumiEnv(ctx, { kind: 'inline', value: 'optin-test-pass' });
     const projDir = join(wt, 'proj');
     mkdirSync(projDir, { recursive: true });
     writeFileSync(

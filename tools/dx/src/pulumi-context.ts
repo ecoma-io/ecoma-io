@@ -28,7 +28,16 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  writeSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -61,17 +70,31 @@ export interface ExecResult {
   signal?: NodeJS.Signals | null;
 }
 
+/**
+ * Tuỳ chọn cho `exec`.
+ *
+ * `input` — ghi vào stdin của process. Cần thiết khi giá trị phải KHÔNG nằm
+ * trong argv: argv của một process khác đọc được qua `/proc/<pid>/cmdline`
+ * (cùng user) và qua `ps`. `pulumi config set` đọc giá trị từ stdin khi
+ * không có argument value — đo thật trên CLI 3.270.
+ */
+export interface ExecOptions {
+  input?: string;
+}
+
 export function exec(
   command: string,
   args: string[],
   cwd: string,
   env: NodeJS.ProcessEnv,
+  options: ExecOptions = {},
 ): ExecResult {
   const result = spawnSync(command, args, {
     cwd,
     encoding: 'utf8',
     env,
     maxBuffer: 64 * 1024 * 1024,
+    ...(options.input === undefined ? {} : { input: options.input }),
   });
   return {
     status: result.status,
@@ -163,78 +186,200 @@ export function resolveContext(worktreeRootInput?: string): LocalDeployContext {
 }
 
 /**
- * Passphrase của state Pulumi local — BẮT BUỘC, không fallback.
+ * Tên file passphrase local, nằm cạnh state dir trong worktree.
  *
- * Trả về giá trị từ env; thiếu thì trả lỗi với thông báo hành động cụ thể. Env
- * trước hết là của tiến trình hiện tại; `PULUMI_CONFIG_PASSPHRASE_FILE` được
- * Pulumi CLI tự đọc khi biến chính không đặt — orchestration không đọc file,
- * để đường đó nguyên vẹn cho developer.
- *
- * Vì sao KHÔNG có fallback hard-code (từng là `ecoma-local-only`): một passphrase
- * commit trong source là passphrase mà ai đọc repo cũng biết — với AES-256-GCM
- * của Pulumi, nó chính là khoá giải mọi secret trong state (PU1/PU5). Passphrase
- * là encryption material của developer, phải đến từ môi trường của họ.
+ * File này KHÔNG được track: `.gitignore` chặn `.pulumi-local-passphrase` tường
+ * minh (entry tường minh giữ contract — đổi tên file không âm thầm đưa
+ * encryption material vào Git).
  */
-export function requirePassphrase():
-  | { passphrase: string; fromFile: false }
-  | { passphrase: undefined; fromFile: true }
-  | { error: string } {
-  // Chuỗi RỖNG không được coi là "đã cung cấp" (PU6: passphrase rỗng là giá trị
-  // hợp lệ với Pulumi — chấp nhận nó là fail-open: state bị mã hoá bằng khoá
-  // rỗng mà ai cũng giải được). `export VAR=` ở shell hay CI set biến rỗng đều
-  // rơi vào đây — coi như chưa set để rơi tiếp xuống `_FILE`, rồi mới báo lỗi.
-  // CÙNG tiêu chí cho cả hai biến: `_FILE` chỉ kiểm `typeof` thì `export
-  // PULUMI_CONFIG_PASSPHRASE_FILE=` vẫn bị coi là đã cung cấp, pulumiEnv xoá
-  // biến inline và để lại `_FILE=''` — CLI coi rỗng là chưa set và fail với
-  // thông báo chung chung, mất đúng thông điệp hành động của helper này.
+export const LOCAL_PASSPHRASE_FILE = '.pulumi-local-passphrase';
+
+/**
+ * Passphrase dùng cho local Pulumi stack của một worktree.
+ *
+ * `inline` — biến `PULUMI_CONFIG_PASSPHRASE` của môi trường.
+ * `file`   — biến `PULUMI_CONFIG_PASSPHRASE_FILE`; CLI tự đọc file, orchestration
+ *            chỉ biết "đã có đường cung".
+ * `worktree` — passphrase do chính công cụ sinh, lưu ở
+ *            `<worktree>/.pulumi-local-passphrase` (ngoài Git).
+ * `none`   — không có passphrase nào.
+ */
+export type LocalPassphrase =
+  | { kind: 'inline'; value: string }
+  | { kind: 'file' }
+  | { kind: 'worktree'; value: string }
+  | { kind: 'none' };
+
+/** Đường dẫn file passphrase local của một worktree. */
+export function localPassphrasePath(worktreeRoot: string): string {
+  return join(worktreeRoot, LOCAL_PASSPHRASE_FILE);
+}
+
+/**
+ * Sinh passphrase local bằng nguồn ngẫu nhiên mật mã an toàn.
+ *
+ * `randomBytes` của `node:crypto` — KHÔNG dùng `Math.random`, timestamp hay
+ * giá trị đoán được: passphrase là encryption material của state local.
+ */
+function generatePassphrase(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+/**
+ * Đọc passphrase đã lưu trong worktree.
+ *
+ * Trả `undefined` khi file không tồn tại hoặc rỗng — file rỗng tương đương
+ * "chưa có" (một passphrase rỗng là encryption material yếu, không phải
+ * passphrase hợp lệ).
+ */
+function readWorktreePassphrase(worktreeRoot: string): string | undefined {
+  const path = localPassphrasePath(worktreeRoot);
+  if (!existsSync(path)) return undefined;
+  const value = readFileSync(path, 'utf8').trim();
+  return value.length > 0 ? value : undefined;
+}
+
+/**
+ * Lưu passphrase local của worktree, chỉ ghi khi file chưa có.
+ *
+ * Quyền file `0600`: passphrase là encryption material, không cần ai khác đọc.
+ * Ghi kiểu "chỉ khi chưa có" phải là NGUYÊN TỬ (`openSync` cờ `wx` — fail với
+ * `EEXIST` khi file đã có): kiểm `existsSync` rồi ghi là hai bước, hai tiến
+ * trình cùng deploy có thể cùng vượt qua bước kiểm rồi ghi đè lẫn nhau —
+ * process giữ passphrase trong bộ nhớ của mình sẽ không khớp file trên đĩa và
+ * mọi lệnh sau của nó fail "incorrect passphrase". Với `wx`, giá trị đầu tiên
+ * ghi xuống thắng, process thua cuộc đọc lại file được giá trị đúng ở lần
+ * `resolve` kế tiếp.
+ */
+function writeWorktreePassphrase(worktreeRoot: string, value: string): void {
+  const path = localPassphrasePath(worktreeRoot);
+  let fd: number | undefined;
+  try {
+    fd = openSync(path, 'wx', 0o600);
+    writeSync(fd, `${value}\n`, 0, 'utf8');
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      'code' in error &&
+      (error as NodeJS.ErrnoException).code === 'EEXIST'
+    ) {
+      return; // File đã có (race với process khác, hoặc lần chạy trước) — giữ nguyên.
+    }
+    throw error;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+  try {
+    chmodSync(path, 0o600);
+  } catch {
+    // FS không hỗ trợ chmod (một số mount) — bỏ qua, xem JSDoc.
+  }
+}
+
+/**
+ * Ép quyền `0600` cho file secret ghi bằng `writeFileSync` với `mode` — cần
+ * vì `mode` chỉ áp dụng lúc TẠO MỚI: khi file đã tồn tại `writeFileSync` bỏ
+ * qua `mode`, nên một файл `.env`/passphrase tạo trước bởi process khác (hoặc
+ * lần chạy cũ) có thể mang quyền rộng hơn. FS không hỗ trợ chmod (một số
+ * mount) thì bỏ qua — file vẫn ngoài Git, quyền file là lớp phụ.
+ */
+export function chmodFilePrivate(path: string, mode: 0o600): void {
+  try {
+    chmodSync(path, mode);
+  } catch {
+    // FS không hỗ trợ chmod (một số mount) — bỏ qua, xem JSDoc.
+  }
+}
+
+/**
+ * Xác định passphrase cho local Pulumi stack của một worktree.
+ *
+ * Vì sao KHÔNG bỏ hẳn passphrase: Pulumi CLI 3.270 trên DIY backend (`file://`)
+ * **luôn** đòi passphrase — `stack init` fail với "could not create secrets
+ * manager for new stack: passphrase must be set with PULUMI_CONFIG_PASSPHRASE or
+ * PULUMI_CONFIG_PASSPHRASE_FILE", và mọi lệnh nạp stack config (`up`,
+ * `preview`, `destroy`) fail tương tự. Không có cờ nào tắt được: `--secrets-provider`
+ * chỉ nhận `default|passphrase|awskms|azurekeyvault|gcpkms|hashivault`, mà
+ * `default` trên DIY backend vẫn là passphrase provider, và CLI còn kiểm
+ * passphrase với salt của stack kể cả khi stack không có secret nào (sai →
+ * "incorrect passphrase"). Đây là ràng buộc đo được của CLI, không phải lựa
+ * chọn của repo.
+ *
+ * Vì vậy yêu cầu "developer không phải tự đặt passphrase" được giải ở tầng
+ * orchestration: passphrase của local stack do công cụ sinh, lưu ngoài Git, và
+ * truyền vào env của subprocess Pulumi. Developer không cần biết nó tồn tại.
+ *
+ * Thứ tự ưu tiên — file của worktree TRƯỚC biến môi trường: stack local đã
+ * được tạo bằng passphrase trong file đó, nên file luôn khớp state. Biến môi
+ * trường chỉ là fallback cho stack tạo trước khi có file (passphrase của
+ * developer) — và khi lấy từ biến môi trường, giá trị đó được ghi vào file để
+ * stack tự chứa từ lần chạy sau.
+ *
+ * `create: false` = không tạo file (đường read-only như `local-status`); thiếu
+ * passphrase thì trả `{ kind: 'none' }` để caller quyết định, thay vì âm thầm
+ * sinh file trong lệnh không được phép mutate.
+ */
+export function resolveLocalPassphrase(
+  worktreeRoot: string,
+  options: { create: boolean },
+): LocalPassphrase {
+  const stored = readWorktreePassphrase(worktreeRoot);
+  if (stored !== undefined) return { kind: 'worktree', value: stored };
+
   const inline = process.env.PULUMI_CONFIG_PASSPHRASE;
   if (typeof inline === 'string' && inline.length > 0) {
-    return { passphrase: inline, fromFile: false };
+    // Passphrase của developer (stack tạo trước khi có file) — ghi vào file để
+    // stack tự chứa từ lần chạy sau, kể cả khi biến môi trường đổi.
+    if (options.create) writeWorktreePassphrase(worktreeRoot, inline);
+    return { kind: 'inline', value: inline };
   }
+
   const passphraseFile = process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
   if (typeof passphraseFile === 'string' && passphraseFile.length > 0) {
-    // File được CLI tự đọc; với orchestration chỉ cần biết "đã có đường cung".
-    // `passphrase` là undefined — sentinel chuỗi rỗng sẽ bị `pulumiEnv` set vào
-    // env ở vị trí ưu tiên cao nhất, chặn CLI đọc file (PU2: biến chính thắng).
-    return { passphrase: undefined, fromFile: true };
+    return { kind: 'file' };
   }
-  return {
-    error:
-      'PULUMI_CONFIG_PASSPHRASE chưa đặt. Local Pulumi state mã hoá secret bằng passphrase ' +
-      'của riêng máy bạn — cung cấp trước khi chạy:\n' +
-      '  export PULUMI_CONFIG_PASSPHRASE="<passphrase-riêng-của-bạn>"\n' +
-      'hoặc trỏ PULUMI_CONFIG_PASSPHRASE_FILE tới một file ngoài repo. Giữ passphrase ' +
-      'ổn định CHO TỪNG WORKTREE: mất passphrase là mất plaintext của mọi secret trong ' +
-      'state đó vĩnh viễn (Pulumi không khôi phục được). Passphrase không bao giờ được ' +
-      'commit vào Git hay ghi vào .env.',
-  };
+
+  if (options.create) {
+    const generated = generatePassphrase();
+    writeWorktreePassphrase(worktreeRoot, generated);
+    return { kind: 'worktree', value: generated };
+  }
+
+  return { kind: 'none' };
 }
 
 /**
  * Env dùng chung cho mọi lệnh Pulumi trong luồng này.
  *
  * `pulumiEnv(ctx)` không cần `pulumi login`: `PULUMI_BACKEND_URL` chỉ thẳng
- * backend. Passphrase bắt buộc — caller truyền từ `requirePassphrase()`.
+ * backend. Passphrase truyền vào qua `LocalPassphrase`:
  *
- * Passphrase đến qua file (`fromFile: true`): XOÁ biến `PULUMI_CONFIG_PASSPHRASE`
- * khỏi env thay vì set — set chuỗi (kể cả rỗng) đặt biến ở vị trí ưu tiên cao
- * nhất của thứ tự giải passphrase (PU2) và chặn CLI đọc
- * `PULUMI_CONFIG_PASSPHRASE_FILE`; passphrase rỗng còn là GIÁ TRỊ HỢP LỆ (PU6),
- * nên sentinel rỗng vừa chặn đường file vừa là fail-open.
+ * - `inline`/`worktree` → set `PULUMI_CONFIG_PASSPHRASE`.
+ * - `file` → XOÁ biến `PULUMI_CONFIG_PASSPHRASE` khỏi env thay vì set — set
+ *   chuỗi (kể cả rỗng) đặt biến ở vị trí ưu tiên cao nhất của thứ tự giải
+ *   passphrase và chặn CLI đọc `PULUMI_CONFIG_PASSPHRASE_FILE`.
+ * - `none` → xoá **cả hai** biến: CLI phải báo đúng lý do ("passphrase must be
+ *   set with PULUMI_CONFIG_PASSPHRASE or PULUMI_CONFIG_PASSPHRASE_FILE") thay vì
+ *   im lặng đọc một file mà môi trường còn sót lại.
  */
-export function pulumiEnv(
-  ctx: LocalDeployContext,
-  passphrase: string | undefined,
-): NodeJS.ProcessEnv {
+export function pulumiEnv(ctx: LocalDeployContext, passphrase: LocalPassphrase): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     PULUMI_BACKEND_URL: ctx.stateUrl,
     PULUMI_SKIP_UPDATE_CHECK: '1',
   };
-  if (passphrase === undefined) {
-    delete env.PULUMI_CONFIG_PASSPHRASE;
-  } else {
-    env.PULUMI_CONFIG_PASSPHRASE = passphrase;
+  switch (passphrase.kind) {
+    case 'inline':
+    case 'worktree':
+      env.PULUMI_CONFIG_PASSPHRASE = passphrase.value;
+      break;
+    case 'file':
+      delete env.PULUMI_CONFIG_PASSPHRASE;
+      break;
+    case 'none':
+      delete env.PULUMI_CONFIG_PASSPHRASE;
+      delete env.PULUMI_CONFIG_PASSPHRASE_FILE;
+      break;
   }
   return env;
 }

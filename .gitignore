@@ -69,18 +69,23 @@ tsconfig.tsbuildinfo
 # (`docs/overview/02-delivery.md` §7.4.1, `docs/overview/03-operations.md` §3.1).
 # - `.pulumi/` là thư mục state cục bộ mà `pulumi login --local`/file backend
 #   tự sinh.
-# - `Pulumi.*.yaml` là stack config cục bộ (encryptionsalt + ciphertext
-#   `secure:`). Chặn luôn thay vì trông vào từng lần cẩn thận: một secret
-#   ghi sai dạng sẽ trở thành plaintext commit được. `Pulumi.yaml` (manifest)
-#   KHÔNG nằm trong pattern này và vẫn phải commit.
+# - `Pulumi.*.yaml` là stack config cục bộ — chứa `encryptionsalt` và (với
+#   stack staging/production) ciphertext `secure:`. Chặn luôn thay vì trông
+#   vào từng lần cẩn thận: một secret ghi sai dạng sẽ trở thành plaintext
+#   commit được. `Pulumi.yaml` (manifest) KHÔNG nằm trong pattern này và vẫn
+#   phải commit.
 # - Passphrase chỉ sống ở `PULUMI_CONFIG_PASSPHRASE`/`PULUMI_CONFIG_PASSPHRASE_FILE`
-#   ngoài repo.
+#   ngoài repo, hoặc file `.pulumi-local-passphrase` sinh tự động cho local stack.
 .pulumi/
 # State backend `file://` của local deployment — nằm trong worktree
-# (`.pulumi-local-state/.pulumi/...`) và chứa ciphertext secret (password
-# PostgreSQL). Pattern `.pulumi/` ở trên đã che nó, nhưng entry tường minh
-# giữ Contracts: đổi tên thư mục state không âm thầm đưa secret vào Git.
+# (`.pulumi-local-state/.pulumi/...`). Pattern `.pulumi/` ở trên đã che nó,
+# nhưng entry tường minh giữ Contracts: đổi tên thư mục state không âm thầm
+# đưa state vào Git.
 .pulumi-local-state/
+# Passphrase do `pnpm dx local-deploy` sinh cho local stack của worktree
+# (xem `resolveLocalPassphrase` trong `tools/dx/src/pulumi-context.ts`).
+# Entry tường minh: đổi tên file không được âm thầm đưa passphrase vào Git.
+.pulumi-local-passphrase
 Pulumi.*.yaml
 
 

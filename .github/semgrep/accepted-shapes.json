@@ -61,5 +61,35 @@
       "242": "^          \\},$",
       "243": "^        \\}\\)\\),$"
     }
+  },
+  {
+    "rule": "security-sensitive-value-in-http-response",
+    "path": "tools/dx/src/local-deploy.ts",
+    "start": 122,
+    "end": 122,
+    "reason": "Helper noi bo cua CLI tooling (tools/dx) tra mat khau PostgreSQL cho orchestrator - KHONG phai HTTP response: tools/ khong co HTTP handler, gia tri chi dung noi bo de ghi stack config/.env va truyen vao container qua pulumi.secret (redact). Khong ro ra browser/bundle/URL/public output.",
+    "lines": {
+      "122": "^    return \\{ state: 'found', password \\};$"
+    }
+  },
+  {
+    "rule": "security-sensitive-value-in-http-response",
+    "path": "tools/dx/src/local-deploy.ts",
+    "start": 367,
+    "end": 367,
+    "reason": "Helper noi bo cua CLI tooling (tools/dx) tra mat khau PostgreSQL cho orchestrator - KHONG phai HTTP response: tools/ khong co HTTP handler, gia tri chi dung noi bo de ghi stack config/.env va truyen vao container qua pulumi.secret (redact). Khong ro ra browser/bundle/URL/public output.",
+    "lines": {
+      "367": "^    return \\{ ok: true, password: lookup\\.password, generated: false \\};$"
+    }
+  },
+  {
+    "rule": "security-sensitive-value-in-http-response",
+    "path": "tools/dx/src/local-deploy.ts",
+    "start": 439,
+    "end": 439,
+    "reason": "Helper noi bo cua CLI tooling (tools/dx) tra mat khau PostgreSQL cho orchestrator - KHONG phai HTTP response: tools/ khong co HTTP handler, gia tri chi dung noi bo de ghi stack config/.env va truyen vao container qua pulumi.secret (redact). Khong ro ra browser/bundle/URL/public output.",
+    "lines": {
+      "439": "^  return \\{ ok: true, password, generated: true \\};$"
+    }
   }
 ]

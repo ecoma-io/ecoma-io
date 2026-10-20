@@ -34,7 +34,13 @@ import { join } from 'node:path';
 // project, còn disable ở đúng chỗ thì giữ được ranh giới cho phần còn lại của
 // repo.
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
-import { dockerResourceName, worktreeNamespace } from '../../tools/dx/src/deploy-namespace';
+import {
+  dockerResourceName,
+  normalizeWorktreeRoot,
+  worktreeNamespace,
+} from '../../tools/dx/src/deploy-namespace';
+// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do dòng trên
+import { ownershipLabels } from '../../tools/dx/src/deploy-labels';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do dòng trên
 import {
   extractTraefikHostPort,
@@ -239,7 +245,18 @@ const config = new pulumi.Config('namespace');
  * chuỗi rỗng và mọi tên resource trở nên không nhất quán giữa hai lần chạy — đúng
  * loại lỗi mà `deploy-namespace.ts` sinh ra để tránh. Fail sớm hơn là an toàn hơn.
  */
-const ns = worktreeNamespace(config.require('worktreeRoot'));
+const worktreeRoot = config.require('worktreeRoot');
+const ns = worktreeNamespace(worktreeRoot);
+
+/**
+ * Labels ownership cho MỌI resource chương trình này tạo — "giấy khai sinh"
+ * dữ liệu mà `pnpm dx local-cleanup` đọc để quyết định resource nào là mồ côi:
+ * không có bộ labels này, cleanup KHÔNG đụng resource dù tên trông giống
+ * ecoma (`deploy-labels.ts`). `worktreePath` đã qua `normalizeWorktreeRoot`
+ * tại đây: cùng nguồn normalize với side cleanup so sánh, hai lần chạy cùng
+ * worktree không sinh metadata khác nhau.
+ */
+const labels = ownershipLabels(normalizeWorktreeRoot(worktreeRoot), ns);
 
 /**
  * Docker network của worktree này.
@@ -250,6 +267,7 @@ const ns = worktreeNamespace(config.require('worktreeRoot'));
  */
 const network = new docker.Network('network', {
   name: dockerResourceName(ns, 'network'),
+  labels: Object.entries(labels).map(([label, value]) => ({ label, value })),
 });
 
 /**
@@ -269,6 +287,7 @@ const traefik = new docker.Container('traefik', {
   // lại là cơ chế restart policy của Docker, không phải của Pulumi. Chỉ `docker
   // stop` tường minh là được giữ ở trạng thái dừng (policy tôn trọng nó).
   restart: 'unless-stopped',
+  labels: Object.entries(labels).map(([label, value]) => ({ label, value })),
   command: [
     TRAEFIK_ENTRYPOINT_ADDRESS,
     // Docker provider: chỉ route container nào tự gắn label routing.
@@ -366,22 +385,34 @@ const traefik = new docker.Container('traefik', {
 });
 
 /**
- * Password PostgreSQL đến từ Pulumi config dạng secret.
+ * Password PostgreSQL đến từ Pulumi config dạng plaintext (local-dev only).
  *
- * `requireSecret` thay vì literal trong source: secret đọc từ config không bị
- * ghi vào Git, không xuất hiện trong preview, và mỗi máy developer tự đặt được.
+ * Dùng `require` (không `requireSecret`): giá trị được sinh một lần bởi
+ * `tools/dx local-deploy` và lưu dạng plaintext trong stack config local (file
+ * bị `.gitignore` — `Pulumi.*.yaml`). Passphrase local (`.pulumi-local-passphrase`)
+ * mã hoá state Pulumi, KHÔNG mã hoá giá trị config này — nên `postgres:password`
+ * vẫn plaintext theo chủ đích cho môi trường phát triển, KHÔNG áp dụng cho
+ * staging/production.
  *
- * ⚠️ Secret này và volume PostgreSQL PHẢI CÙNG TUỔI: `POSTGRES_PASSWORD` chỉ có
- * tác dụng lúc `initdb` trên volume rỗng. Đổi secret trong stack config sau khi
- * volume đã init sẽ khiến Pulumi thay container (envs nằm trong diff) nhưng
+ * Giá trị vẫn được đánh dấu secret ở runtime qua `pulumi.secret(...)` khi truyền
+ * vào container, để Pulumi redact nó trong diff/log/output — nhưng đó là lớp
+ * redaction, không phải encryption at rest trong config file.
+ *
+ * ⚠️ Password này và volume PostgreSQL PHẢI CÙNG TUỔI: `POSTGRES_PASSWORD` chỉ
+ * có tác dụng lúc `initdb` trên volume rỗng. Đổi password trong stack config sau
+ * khi volume đã init sẽ khiến Pulumi thay container (envs nằm trong diff) nhưng
  * Postgres KHÔNG chạy lại initdb — superuser trong volume vẫn giữ mật khẩu cũ,
  * mọi kết nối bằng giá trị mới nhận `password authentication failed` trong khi
  * healthcheck `pg_isready` vẫn xanh (nó không xác thực mật khẩu). Đường đổi mật
  * khẩu hợp lệ nằm ngoài luồng này (đổi trực tiếp trong database rồi cập nhật
- * secret cho khớp) — xem `docs/services/local-platform/03-operations.md`
+ * config cho khớp) — xem `docs/services/local-platform/03-operations.md`
  * §Vòng đời dữ liệu.
+ *
+ * Orchestration (`tools/dx/src/local-deploy.ts`) chỉ sinh password khi stack mới
+ * VÀ volume chưa tồn tại; nếu volume đã có mà canonical password thiếu thì fail
+ * thay vì sinh password mới không khớp.
  */
-const postgresPassword = new pulumi.Config('postgres').requireSecret('password');
+const postgresPassword = new pulumi.Config('postgres').require('password');
 
 /**
  * Volume dữ liệu PostgreSQL, TÁCH khỏi container VÀ tách khỏi vòng đời stack.
@@ -400,6 +431,7 @@ const postgresVolume = new docker.Volume(
   'postgres-volume',
   {
     name: dockerResourceName(ns, 'postgres-volume'),
+    labels: Object.entries(labels).map(([label, value]) => ({ label, value })),
   },
   { retainOnDelete: true },
 );
@@ -423,15 +455,16 @@ const postgres = new docker.Container('postgres', {
   // container sau reboot/restart daemon — `pulumi up` không làm được điều đó
   // vì input khai và input trong state đều là `unless-stopped`, không có diff.
   restart: 'unless-stopped',
+  labels: Object.entries(labels).map(([label, value]) => ({ label, value })),
   // `envs` là mảng `KEY=VALUE` của provider này (không phải map `env`).
-  // Truyền thẳng object secret của Pulumi vào đây để value được đánh dấu
-  // secret và không bao giờ in ra log hay nằm trong preview dạng plaintext.
+  // `pulumi.secret(...)` đánh dấu value để Pulumi redact trong diff/log/output
+  // — dù config lưu plaintext. `pulumi.interpolate` bên dưới KHÔNG tự redact
+  // (đo thật: `pulumi.interpolate` với config plaintext in ra plaintext trong
+  // output), nên phải bọc `secret` TRƯỚC rồi interpolate.
   envs: [
     `POSTGRES_USER=${POSTGRES_USER}`,
     `POSTGRES_DB=${POSTGRES_DB}`,
-    // `requireSecret` trả về Output<string>: dùng interpolation để Pulumi đánh
-    // dấu secret và không bao giờ in plaintext ra log hay preview.
-    pulumi.interpolate`POSTGRES_PASSWORD=${postgresPassword}`,
+    pulumi.interpolate`POSTGRES_PASSWORD=${pulumi.secret(postgresPassword)}`,
     // TimescaleDB phải được preload mới chạy; nói tường minh thay vì trông
     // vào `postgresql.conf.sample` của image.
     'POSTGRES_SHARED_PRELOAD_LIBRARIES=timescaledb',

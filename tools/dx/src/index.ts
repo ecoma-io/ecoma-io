@@ -23,5 +23,6 @@ export const app = defineCommand({
     'local-deploy': () => import('./local-deploy-command.js').then((m) => m.default),
     'local-status': () => import('./local-status-command.js').then((m) => m.default),
     'local-destroy': () => import('./local-destroy-command.js').then((m) => m.default),
+    'local-cleanup': () => import('./local-cleanup-command.js').then((m) => m.default),
   },
 });

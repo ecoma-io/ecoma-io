@@ -46,6 +46,7 @@
   "files": [
     "index.ts",
     "../../tools/dx/src/deploy-namespace.ts",
+    "../../tools/dx/src/deploy-labels.ts",
     "../../tools/dx/src/platform-outputs-contract.ts"
   ]
 }

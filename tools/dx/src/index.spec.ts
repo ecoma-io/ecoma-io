@@ -56,6 +56,7 @@ describe('app', () => {
         'local-deploy',
         'local-status',
         'local-destroy',
+        'local-cleanup',
       ]),
     );
   });
