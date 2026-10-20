@@ -158,9 +158,12 @@ const verifiedNamespace = pulumi.output(platformNamespace).apply((upstreamNs) =>
 /**
  * Image local của `apps/home`.
  *
- * Build context là **repo root** chứ không phải `apps/home`: `pnpm-lock.yaml`,
- * `pnpm-workspace.yaml`, `patches/` và workspace package `libs/ui-ecoma-logo`
- * đều nằm ở root, và Dockerfile cần chúng để `pnpm install --frozen-lockfile`.
+ * Build context là **repo root** chứ không phải thư mục chứa Dockerfile:
+ * `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `patches/` và workspace package
+ * `libs/ui-ecoma-logo` đều nằm ở root, và Dockerfile cần chúng để
+ * `pnpm install --frozen-lockfile`. Vì vậy mọi path COPY trong Dockerfile
+ * (`deploys/home-deploy/Dockerfile`) là path tương đối với context root,
+ * không phải với `deploys/home-deploy/`.
  *
  * `builder.name = 'default'` là bắt buộc trên máy builder docker driver: khi
  * không khai, provider 0.0.22 tự tạo builder `docker-container` mới và boot
@@ -177,7 +180,7 @@ const imageTag = `ecoma-home-${ns}:local`;
 
 const image = new dockerBuild.Image(dockerResourceName(ns, 'home-image'), {
   context: { location: worktreeRoot },
-  dockerfile: { location: `${worktreeRoot}/apps/home/Dockerfile` },
+  dockerfile: { location: `${worktreeRoot}/deploys/home-deploy/Dockerfile` },
   tags: [imageTag],
   builder: { name: 'default' },
   load: true,

@@ -10,8 +10,9 @@
 #
 # Build context là REPO ROOT (không phải `apps/home`): monorepo pnpm workspace có
 # `libs/ui-ecoma-logo` là workspace dependency của app, và `pnpm-workspace.yaml`
-# + `pnpm-lock.yaml` + `patches/` đều nằm ở root. Dockerfile đặt ở `apps/home`
-# để nằm cạnh app, nhưng mọi path bên dưới là path tương đối so với context root.
+# + `pnpm-lock.yaml` + `patches/` đều nằm ở root. Dockerfile đặt ở `deploys/
+# home-deploy` — nơi sở hữu việc đóng gói image — nhưng mọi path bên dưới là
+# path tương đối so với context root, KHÔNG so với thư mục chứa Dockerfile.
 #
 # Hai stage:
 #   1. `build` — cài dependency, build Nuxt ra `.output`.
