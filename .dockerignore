@@ -2,10 +2,10 @@
 #
 # `home-deploy` build image `apps/home` với context là repo root (`deploys/
 # home-deploy/index.ts` truyền `context: { location: worktreeRoot }`, Dockerfile
-# nằm ở `apps/home` nhưng mọi path COPY là path tương đối với context root), mà
-# Docker CHỈ đọc `.dockerignore` ở gốc context — với context repo root,
-# `apps/home/.dockerignore` bị bỏ qua hoàn toàn. File này là lớp lọc duy nhất
-# cho đường build đó; nó cũng có hiệu lực cho mọi build khác dùng context root.
+# nằm ở `deploys/home-deploy` nhưng mọi path COPY là path tương đối với context
+# root), mà Docker CHỈ đọc `.dockerignore` ở gốc context — với context repo
+# root, `apps/home/.dockerignore` bị bỏ qua hoàn toàn. File này là lớp lọc duy
+# nhất cho đường build đó; nó cũng có hiệu lực cho mọi build khác dùng context root.
 #
 # THIẾT KẾ: whitelist + blacklist lai — dòng `/*` chặn mặc định mọi thứ ở root,
 # rồi mở đúng skeleton (manifest/lockfile/patch) và subtree được phép vào
@@ -18,7 +18,7 @@
 # re-include đúng file cần (`!tools/dx/package.json`).
 #
 # Input bắt buộc của build — đối chiếu từng dòng COPY trong
-# `apps/home/Dockerfile` và `pnpm install` của workspace:
+# `deploys/home-deploy/Dockerfile` và `pnpm install` của workspace:
 # `pnpm-workspace.yaml`, `package.json`, `pnpm-lock.yaml`, `patches/`,
 # `tools/dx/package.json`, `apps/home/**`, `libs/ui-ecoma-logo/**`,
 # `tsconfig.base.json`. Spec `tools/dx/src/docker-context.spec.ts` đọc trực tiếp
