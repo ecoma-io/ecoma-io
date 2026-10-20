@@ -88,6 +88,11 @@ tsconfig.tsbuildinfo
 .pulumi-local-passphrase
 Pulumi.*.yaml
 
+# State lifecycle của Worker process local (`worker-process.ts`): metadata
+# PID/identity của từng `wrangler dev` chạy trong worktree. Entry tường minh:
+# đổi tên thư mục không âm thầm đưa metadata runtime vào Git.
+.worker-local-state/
+
 
 
 # Python: bytecode do `python3 tests/verify-*.py` va `unittest` sinh ra. Loi chay
