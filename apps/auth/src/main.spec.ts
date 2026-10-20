@@ -104,6 +104,92 @@ describe('GET /health', () => {
   });
 });
 
+describe('GET /ready', () => {
+  it('fails closed with 503 and binding_missing when the Hyperdrive binding is absent', async () => {
+    // ⚠️ Thiếu binding là app không phục vụ được request nào, không phải "chạy
+    // được một phần". Nhánh này cắt TRƯỚC probe DB, nên ca này không cần signing
+    // key hợp lệ — chỉ để khẳng định thứ tự các kiểm: binding trước, DB sau.
+    const readyEnv = { ...env };
+    delete (readyEnv as Partial<AuthEnv>).HYPERDRIVE;
+
+    const { lines, result: response } = await captureLogLines(
+      async () => await app.request('/ready', {}, readyEnv),
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'service_unavailable' });
+    // `Retry-After` là một phần của hợp đồng 503 (docs/overview/03-operations.md §3.2).
+    expect(Number(response.headers.get('retry-after'))).toBeGreaterThanOrEqual(1);
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0] ?? '')).toEqual({
+      event: 'ready.failed',
+      status: 503,
+      reason: 'binding_missing',
+    });
+  });
+
+  it('fails closed with 503 and binding_missing when the ACCOUNT_SERVICE binding is absent', async () => {
+    // `HYPERDRIVE` có mà `ACCOUNT_SERVICE` không — vẫn không sẵn sàng: phát hành
+    // không được khi không hỏi được status của account (control point fail-closed
+    // lúc phát hành). Hai binding là hai điều kiện độc lập, không thể một ca thay
+    // thế một ca kia.
+    const readyEnv = { ...env };
+    delete (readyEnv as Partial<AuthEnv>).ACCOUNT_SERVICE;
+
+    const { lines, result: response } = await captureLogLines(
+      async () => await app.request('/ready', {}, readyEnv),
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'service_unavailable' });
+    expect(response.headers.get('retry-after')).not.toBeNull();
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0] ?? '')).toEqual({
+      event: 'ready.failed',
+      status: 503,
+      reason: 'binding_missing',
+    });
+  });
+
+  it('fails closed with 503 and db_unreachable when the database is unreachable — never logs the connection string', async () => {
+    // Connection string cố tình trỏ tới một cổng không có ai nghe — connect
+    // timeout của probe biến nó thành lỗi nhanh ⇒ `db_unreachable`. Ca này đi
+    // ĐỦ đường thật (`createPostgresClient` + timeout riêng của readiness
+    // probe), không stub tầng nào, nên thay đổi ở pool hay driver vẫn bắt được.
+    //
+    // ⚠️ NHÁNH NGƯỢC LẠI của hai test trước: `HYPERDRIVE` tồn tại nhưng DB chết.
+    // Nhánh này cắt ở `probeDatabase`, sau khi cả hai kiểm binding đi qua.
+    const readyEnv: AuthEnv = { ...env };
+    // Cổng 1 trên `127.0.0.1` là một kết nối bị từ chối tức thì (không có daemon
+    // nào nghe ở đó trong runner), nên ca này không chờ timeout dài.
+    readyEnv.HYPERDRIVE = { connectionString: 'postgres://ecoma:nope@127.0.0.1:1/db-auth' };
+
+    const { lines, result: response } = await captureLogLines(
+      async () => await app.request('/ready', {}, readyEnv),
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'service_unavailable' });
+    // 503 của hạ tầng KHÔNG mang `WWW-Authenticate`.
+    expect(response.headers.get('www-authenticate')).toBeNull();
+    expect(lines).toHaveLength(1);
+    const parsed = JSON.parse(lines[0] ?? '') as Record<string, unknown>;
+    expect(parsed).toEqual({
+      event: 'ready.failed',
+      status: 503,
+      reason: 'db_unreachable',
+    });
+    // Message của driver có thể chứa connection string — log chỉ được mã ổn định.
+    expect(lines[0]).not.toContain('127.0.0.1');
+    expect(lines[0]).not.toContain('db-auth');
+  });
+  // ⚠️ Nhánh 200 KHÔNG kiểm ở môi trường Node: nó cần một `auth.oauth_clients`
+  // thật (testcontainers — `internal-auth.spec.ts` dạng đó). Probe đi qua
+  // `createPostgresClient` — cùng pool shape của replay guard, đã được phủ bởi
+  // lib suite — nên các nhánh fail ở mọi tầng dưới route là những nhánh ĐÃ phủ
+  // ở unit này; nhánh còn lại duy nhất là redirect 200, thuộc Integration.
+});
+
 describe('GET /.well-known/openid-configuration', () => {
   it('declares the endpoints the provider actually mounts', async () => {
     // ⚠️ Provider (oidc-provider) là bộ máy thật; discovery của Hono chỉ shadow
