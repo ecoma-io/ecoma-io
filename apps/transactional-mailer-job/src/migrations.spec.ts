@@ -191,6 +191,9 @@ const MAIL_JOBS_COLUMNS = [
   'blocked_at',
   'created_at',
   'updated_at',
+  // Migration 0003 là `ALTER TABLE ... ADD COLUMN` — SQLite append cột mới vào **cuối**,
+  // không chèn theo vị trí trong definion gốc của mail-job #1.
+  'provider_call_at',
 ];
 
 beforeAll(() => {

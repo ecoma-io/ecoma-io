@@ -18,6 +18,8 @@ import {
   isOutcomeReportState,
   isReportLeaseActive,
   isTerminalStatus,
+  isWithinProviderSafeWindow,
+  classifyProviderCallBoundaryDenial,
 } from './mail-job-rules';
 
 /** Mốc thời gian dùng chung — mọi biên được tính trên giá trị tường minh, không dùng đồng hồ. */
@@ -45,6 +47,7 @@ function processingRow(overrides: Partial<MailJobRecord> = {}): MailJobRecord {
     reportLeaseExpiresAt: null,
     reportAttempts: 0,
     blockedAt: null,
+    providerCallAt: null,
     createdAt: NOW - 1_000,
     updatedAt: NOW - 1_000,
     ...overrides,
@@ -315,6 +318,101 @@ describe('classifyLeaseOwnershipDenial', () => {
     expect(classifyLeaseOwnershipDenial(null)).toBe('missing-job');
     expect(classifyLeaseOwnershipDenial(processingRow())).toBe('lease-lost');
     expect(classifyLeaseOwnershipDenial(processingRow({ status: 'sent' }))).toBe('lease-lost');
+  });
+});
+
+describe('classifyProviderCallBoundaryDenial', () => {
+  const expectation = {
+    owner: 'owner-a',
+    executionGeneration: 5,
+    dispatchGeneration: 2,
+  };
+
+  /** Đang giữ lease chuẩn khớp `expectation`, chưa có marker — nền cho phân loại. */
+  function claimedRow(overrides: Partial<MailJobRecord> = {}): MailJobRecord {
+    return processingRow({
+      leaseOwner: expectation.owner,
+      leaseExpiresAt: NOW + 1,
+      executionGeneration: expectation.executionGeneration,
+      dispatchGeneration: expectation.dispatchGeneration,
+      ...overrides,
+    });
+  }
+
+  it('reports missing-job for an absent row before any ownership check', () => {
+    expect(classifyProviderCallBoundaryDenial(null, expectation)).toBe('missing-job');
+  });
+
+  it('reports lease-lost before already-marked so a stale execution cannot reopen the window', () => {
+    // EXECUTE trước (mất claim, marker cũ còn) rồi mới kiểm marker — bảo vệ chung:
+    // một execution stale nhìn thấy marker của attempt trước phải classified là
+    // `lease-lost` (KHÔNG được gọi provider), không phải `already-marked` ("nghe"
+    // là được phép gọi).
+    const staleButMarked = claimedRow({
+      leaseOwner: 'owner-newer',
+      executionGeneration: 6,
+      providerCallAt: NOW - 10,
+    });
+    expect(classifyProviderCallBoundaryDenial(staleButMarked, expectation)).toBe('lease-lost');
+
+    // Cả dispatchGeneration lệch cũng luôn `lease-lost` — cùng chiều fencing.
+    const staleDispatch = claimedRow({ dispatchGeneration: 3 });
+    expect(classifyProviderCallBoundaryDenial(staleDispatch, expectation)).toBe('lease-lost');
+  });
+
+  it('reports already-marked for a live execution replaying after a crash past the marker', () => {
+    // Task #37/#38: `already-marked` là đường bình thường — caller của cùng attempt-chain
+    // vẫn được gọi provider với cùng idempotency key. Marker tồn tại trước + claim còn giữ.
+    const marked = claimedRow({ providerCallAt: NOW - 10 });
+    expect(classifyProviderCallBoundaryDenial(marked, expectation)).toBe('already-marked');
+  });
+
+  it('reports inconsistent when nothing explains a zero-affected-rows update', () => {
+    expect(classifyProviderCallBoundaryDenial(claimedRow(), expectation)).toBe('inconsistent');
+  });
+});
+
+describe('isWithinProviderSafeWindow', () => {
+  const boundaryMs = 24 * 60 * 60 * 1000;
+
+  it('returns null when the marker has never been written', () => {
+    // `null` là một phân loại riêng — kiểm nó trước cửa sổ an toàn, để caller không
+    // tự động suy ra "chưa marker" với "trong cửa sổ".
+    expect(
+      isWithinProviderSafeWindow(processingRow({ providerCallAt: null }), {
+        nowMs: NOW,
+        providerCallSafeWindowMs: boundaryMs,
+      }),
+    ).toBeNull();
+    expect(
+      isWithinProviderSafeWindow(processingRow(), {
+        nowMs: NOW,
+        providerCallSafeWindowMs: boundaryMs,
+      }),
+    ).toBeNull();
+  });
+
+  it('treats the window as inclusive at the exact boundary', () => {
+    const marked = processingRow({ providerCallAt: NOW - boundaryMs });
+    // Biên inclusive: đúng tại `providerCallAt + window = now` là còn trong cửa sổ —
+    // hợp với guard `<=` seçin của isExecutionLeaseActive (biên cuối của một phép tính
+    // thời điểm).
+    expect(
+      isWithinProviderSafeWindow(marked, { nowMs: NOW, providerCallSafeWindowMs: boundaryMs }),
+    ).toBe(true);
+    expect(
+      isWithinProviderSafeWindow(marked, { nowMs: NOW + 1, providerCallSafeWindowMs: boundaryMs }),
+    ).toBe(false);
+  });
+
+  it('treats a marker written after now as inside the window (clock skew, not an error)', () => {
+    // `providerCallAt > now` là lệch đồng hồ giữa các isolate, không phải trạng thái lỗi:
+    // chênh dương vẫn rơi vào "chưa chắc ngoài cửa sổ" — fail-closed về phía auto-resend
+    // trong cửa sổ, KHÔNG operator-blocked.
+    const future = processingRow({ providerCallAt: NOW + 5 });
+    expect(
+      isWithinProviderSafeWindow(future, { nowMs: NOW, providerCallSafeWindowMs: boundaryMs }),
+    ).toBe(true);
   });
 });
 

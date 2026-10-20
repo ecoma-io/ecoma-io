@@ -9,7 +9,7 @@ import {
   QUARANTINE_COLUMNS,
 } from './mail-job-row';
 
-/** Hàng `mail_jobs` hợp lệ theo đúng 18 cột DDL, nền cho mọi ca âm bên dưới. */
+/** Hàng `mail_jobs` hợp lệ theo đúng 19 cột DDL, nền cho mọi ca âm bên dưới. */
 function validRow(): Record<string, unknown> {
   return {
     delivery_id: 'delivery-1',
@@ -28,6 +28,7 @@ function validRow(): Record<string, unknown> {
     report_lease_expires_at: null,
     report_attempts: 0,
     blocked_at: null,
+    provider_call_at: null,
     created_at: 1_800_000_000_000,
     updated_at: 1_800_000_000_500,
   };
@@ -80,6 +81,7 @@ describe('decodeMailJobRow', () => {
       reportLeaseExpiresAt: null,
       reportAttempts: 0,
       blockedAt: null,
+      providerCallAt: null,
       createdAt: 1_800_000_000_000,
       updatedAt: 1_800_000_000_500,
     });
@@ -300,6 +302,7 @@ describe('column lists', () => {
       'report_lease_expires_at',
       'report_attempts',
       'blocked_at',
+      'provider_call_at',
       'created_at',
       'updated_at',
     ]);

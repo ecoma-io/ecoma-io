@@ -29,6 +29,20 @@ export const PROVIDER_KIND_ENV = 'MAIL_PROVIDER_KIND';
 /** Worker Secret trần chờ của **một** request provider (ms). */
 export const PROVIDER_TIMEOUT_ENV = 'MAIL_PROVIDER_TIMEOUT_MS';
 
+/**
+ * Cửa sổ an toàn idempotency theo **delivery** (ms, tính từ `provider_call_at`).
+ *
+ * Resend giữ `Idempotency-Key` khoảng 24 giờ — con số **tài liệu hóa, chưa verify** với
+ * API thật (GitHub issue #37): trong cửa sổ, một attempt bị mest claim vẫn được auto-resend
+ * qua Queue redelivery với CÙNG key; ngoài cửa sổ, worker chốt `provider-ambiguous-outcome`
+ * và dừng — đỏi operator, KHÔNG tự gọi lại provider. Phải <= 24h để không vượt quá cửa sổ
+ * mà provider giữ key; loader kiểm advisory (không phải hợp đồng provider đã chứng minh).
+ */
+export const PROVIDER_CALL_SAFE_WINDOW_ENV = 'MAIL_JOB_PROVIDER_CALL_SAFE_WINDOW_MS';
+
+/** Trần advisory của cửa sổ an toàn — 24 giờ, mốc tài liệu Resend idempotency. */
+const PROVIDER_CALL_SAFE_WINDOW_CEILING_MS = 24 * 60 * 60 * 1000;
+
 /** Hex 64 ký tự chữ thường — hình của một khoá HMAC-SHA-256. */
 const HEX_KEY_64 = /^[0-9a-f]{64}$/u;
 
@@ -67,6 +81,7 @@ export interface LoadedMailerJobConfig {
   readonly maxReportAttempts: number;
   readonly sweepBatchLimit: number;
   readonly providerTimeoutMs: number;
+  readonly providerCallSafeWindowMs: number;
   readonly quarantineHmacKeyHex: string;
 }
 
@@ -86,6 +101,15 @@ export function loadMailerJobConfig(env: MailerJobEnv): LoadedMailerJobConfig {
   const maxReportAttempts = requirePositiveInteger(env, 'MAIL_JOB_MAX_REPORT_ATTEMPTS');
   const sweepBatchLimit = requirePositiveInteger(env, 'MAIL_JOB_SWEEP_BATCH_LIMIT');
   const providerTimeoutMs = requirePositiveInteger(env, PROVIDER_TIMEOUT_ENV);
+  // Cửa sổ an toàn có một trần advisory riêng (24h), ngoài trần >= 1 chung của mọi giá trị
+  // vận hành: vượt trần này nghĩa là cấu hình tin cửa sổ dài hơn mốc mà provider tài liệu
+  // hóa — auto-resend ngoài cửa sổ key-có-thể-đã-lồng là đường double-send tiềm tàng.
+  const providerCallSafeWindowMsRaw = requirePositiveInteger(env, PROVIDER_CALL_SAFE_WINDOW_ENV);
+  if (providerCallSafeWindowMsRaw > PROVIDER_CALL_SAFE_WINDOW_CEILING_MS) {
+    throw new MailerJobConfigError(
+      `${PROVIDER_CALL_SAFE_WINDOW_ENV} phai <= ${PROVIDER_CALL_SAFE_WINDOW_CEILING_MS} (24h - mốc giữ Idempotency-Key mà provider tài liệu hóa)`,
+    );
+  }
   const quarantineHmacKeyHex = requireHexKey(env, 'MAIL_QUARANTINE_HMAC_KEY');
 
   const provider = loadProvider(env, providerTimeoutMs);
@@ -106,6 +130,7 @@ export function loadMailerJobConfig(env: MailerJobEnv): LoadedMailerJobConfig {
     maxReportAttempts,
     sweepBatchLimit,
     providerTimeoutMs,
+    providerCallSafeWindowMs: providerCallSafeWindowMsRaw,
     quarantineHmacKeyHex,
   };
 }

@@ -260,6 +260,7 @@ export default {
           executionLeaseMs: config.executionLeaseMs,
           maxExecutionAttempts: config.maxExecutionAttempts,
           providerTimeoutMs: config.providerTimeoutMs,
+          providerCallSafeWindowMs: config.providerCallSafeWindowMs,
           reportLeaseMs: config.reportLeaseMs,
           owner: `exec_${crypto.randomUUID()}`,
           quarantineKeyHex: config.quarantineHmacKeyHex,
