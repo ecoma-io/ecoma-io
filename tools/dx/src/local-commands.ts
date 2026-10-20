@@ -20,6 +20,20 @@ export const worktreeRootArg = {
 } as const;
 
 /**
+ * Arg `--worktree-root` riêng cho family `local-worker-*` (OCR PR #36 low):
+ * description của `worktreeRootArg` nhắc Docker/Pulumi — hoàn toàn không
+ * liên quan worker runtime; người dùng đọc `--help` sẽ hiểu sai flag điều
+ * khiển gì. Bản này mô tả đúng stateDir/persist dir của worker runtime.
+ */
+export const workerWorktreeRootArg = {
+  type: 'string',
+  description:
+    'Worktree whose worker local state is targeted (.worker-local-state stateDir, ' +
+    'generated configs, --persist-to dir); defaults to this checkout',
+  required: false,
+} as const;
+
+/**
  * Error boundary của entry `run()`: mọi exception thoát từ hàm orchestration
  * (path không tồn tại từ `realpathSync`, `.env` không đọc được, Pulumi fail
  * ngoài nhánh đã xử lý...) thành thông điệp `[local-<cmd>] <lý do>` + exit 1 —
@@ -41,4 +55,25 @@ export function requireDirectoryRoot(raw: unknown): string | undefined {
     throw new Error(`--worktree-root không phải thư mục: ${raw}`);
   }
   return raw;
+}
+
+/**
+ * Bản async của `runLocalCommand` cho orchestration async
+ * (`local-worker-up`/`local-worker-down`): cùng chính sách error
+ * `[local-<cmd>] <lý do>` + exit 1, một nơi duy nhất thay vì lặp IIFE
+ * try/catch ở từng command (OCR PR #36 low — hai bản copy dễ lệch; IIFE
+ * trần còn có nguy cơ unhandled rejection nếu console.error tự throw).
+ *
+ * Trả về promise để caller vẫn có thể `void`-gọi không block run() —
+ * service của citty chạy sync nên exit code được set trong promise body.
+ */
+export function runLocalCommandAsync(command: string, action: () => Promise<void>): Promise<void> {
+  return (async () => {
+    try {
+      await action();
+    } catch (error) {
+      console.error(`[local-${command}] ${error instanceof Error ? error.message : String(error)}`);
+      process.exitCode = 1;
+    }
+  })();
 }

@@ -112,11 +112,15 @@ export interface GeneratedWorkerConfigResult {
 export interface ApplyLocalSeedsOptions {
   /** Đường dẫn committed/generated config dùng làm --config. */
   configPath: string;
-  /** Tên D1 database (database_name) cần execute. */
+  /**
+   * Tên D1 database cần execute — sẽ được đối chiếu với `d1_databases` của
+   * config (khớp `binding` hay `database_name`; identifier lệch chuẩn bị từ
+   * chối trước khi ghép argv của wrangler).
+   */
   databaseName: string;
-  /** Persist dir theo worktree. */
+  /** Persist dir theo worktree (nên absolute — được resolve trước khi dùng). */
   persistTo: string;
-  /** Danh sách file seed (.sql) áp dụng theo thứ tự. */
+  /** Danh sách file seed (.sql) áp dụng theo thứ tự. Rỗng → fail-loud. */
   seedFiles: string[];
   /** Remote mode — PHẢI là false/undefined, truyền true để báo lỗi. */
   remote?: boolean;
@@ -128,7 +132,9 @@ export interface ApplyLocalSeedsOptions {
 
 export interface ApplyLocalMigrationsOptions {
   configPath: string;
+  /** Đối chiếu với d1_databases của config trước khi gọi wrangler. */
   databaseName: string;
+  /** Nên absolute — được resolve trước khi dùng. */
   persistTo: string;
   remote?: boolean;
   wranglerBin?: string;
@@ -142,10 +148,22 @@ export interface ApplyLocalMigrationsOptions {
  * tôn trọng chuỗi. Trả về chuỗi JSON hợp lệ.
  */
 export function stripJsonc(text: string): string {
+  return stripJsoncTracked(text).output;
+}
+
+interface StripJsoncResult {
+  output: string;
+  /** Trạng thái parser Kag cuối cùng — 'normal' là duy nhất hợp lệ ở EOF. */
+  finalState: Exclude<ParserState, 'normal'> | null;
+}
+
+type ParserState = 'normal' | 'string' | 'lineComment' | 'blockComment';
+
+function stripJsoncTracked(text: string): StripJsoncResult {
   let out = '';
   let i = 0;
   const n = text.length;
-  let state: 'normal' | 'string' | 'lineComment' | 'blockComment' = 'normal';
+  let state: ParserState = 'normal';
   while (i < n) {
     const ch = text[i];
     const next = i + 1 < n ? text[i + 1] : '';
@@ -167,13 +185,12 @@ export function stripJsonc(text: string): string {
         continue;
       }
       if (ch === ',') {
-        // trailing comma: bỏ qua nếu ký tự không-space tiếp theo là } hoặc ]
-        let j = i + 1;
-        while (
-          j < n &&
-          (text[j] === ' ' || text[j] === '\t' || text[j] === '\n' || text[j] === '\r')
-        )
-          j += 1;
+        // trailing comma: bỏ qua nếu ký tự có nghĩa tiếp theo là } hoặc ].
+        // "Có nghĩa" loại trừ whitespace VÀ comment (comment bị xoá, không thực
+        // sự tồn tại trong output) — stdout trước đây chỉ quét whitespace nên
+        // `1, // comment\n}` bị giữ dấu phẩy → JSON.parse fail (OCR high
+        // finding, repro thật trên `apps/account/wrangler.jsonc`).
+        const j = skipMeaningless(text, i + 1);
         if (j < n && (text[j] === '}' || text[j] === ']')) {
           i += 1;
           continue;
@@ -221,14 +238,61 @@ export function stripJsonc(text: string): string {
       continue;
     }
   }
-  return out;
+  return {
+    output: out,
+    // 'normal' là duy nhất kết thúc hợp lệ; các state khác báo qua finalState
+    // để `parseJsonc` fail-loud theo loại lỗi (block comment / chuỗi chưa
+    // đóng) thay vì throw mô hồ "không parse được JSONC".
+    finalState: state === 'normal' ? null : (state as Exclude<ParserState, 'normal'>),
+  };
+}
+
+/**
+ * Index ký tự có nghĩa đầu tiên bắt đầu từ `start`: bỏ whitespace và toàn bộ
+ * comment (line + block). Trả về `n` khi không còn ký tự có nghĩa (EOF).
+ * Dùng để quyết định trailing comma — comment bị strip không phạm `}`/`]`.
+ */
+function skipMeaningless(text: string, start: number): number {
+  let j = start;
+  while (j < text.length) {
+    const ch = text[j];
+    if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') {
+      j += 1;
+      continue;
+    }
+    if (ch === '/' && j + 1 < text.length) {
+      const kind = text[j + 1];
+      if (kind === '/') {
+        const stop = text.indexOf('\n', j + 2);
+        j = stop === -1 ? text.length : stop + 1;
+        continue;
+      }
+      if (kind === '*') {
+        const stop = text.indexOf('*/', j + 2);
+        j = stop === -1 ? text.length : stop + 2;
+        continue;
+      }
+    }
+    return j;
+  }
+  return j;
 }
 
 /** Parse JSONC (có comment + trailing comma) thành giá trị JS. Fail-closed khi parse lỗi. */
 export function parseJsonc(text: string): unknown {
-  const cleaned = stripJsonc(text);
+  const { output, finalState } = stripJsoncTracked(text);
+  // Fail-loud theo loại lỗi thay vì throw mô hồ "không parse được JSONC":
+  // block comment/chuỗi không đóng nuốt toàn bộ phần còn lại của file, author
+  // committed config cần biết reachable lỗi ở đâu.
+  if (finalState === 'blockComment') {
+    throw new Error('JSONC có block comment /* không đóng — kiểm lại committed config');
+  }
+  if (finalState === 'string') {
+    throw new Error('JSONC có chuỗi " chưa đóng — kiểm lại committed config');
+  }
+  // 'lineComment' ở EOF là bình thường (// comment cuối file), không phải lỗi.
   try {
-    return JSON.parse(cleaned);
+    return JSON.parse(output);
   } catch (error) {
     throw new Error(`không parse được JSONC: ${(error as Error).message}`, { cause: error });
   }
@@ -236,20 +300,69 @@ export function parseJsonc(text: string): unknown {
 
 // ---------- Validation fail-closed ----------
 
-function assertNoRemoteTrue(value: unknown, path: string): void {
+/**
+ * Pattern một resource identifier hợp lệ cho runtime local — identifier của D1
+ * database/queue/service binding phải là tên thuần. Chặn flag smuggling (OCR
+ * security finding): `--remote` hay bất kỳ token `--...` nào trượt qua
+ * positional arg của wrangler (yargs parse flag ở mọi vị trí) sẽ đổi lệnh
+ * `d1 execute --local` thành đường remote thật.
+ */
+const RESOURCE_IDENTIFIER_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*$/u;
+
+/** Validate một identifier dùng làm positional arg của wrangler CLI. */
+export function validateDatabaseIdentifier(value: string): string {
+  if (!RESOURCE_IDENTIFIER_PATTERN.test(value)) {
+    throw new Error(
+      `database identifier không hợp lệ: '${value}' — chỉ chấp nhận [A-Za-z][A-Za-z0-9_-]* ` +
+        '(yargs parse mọi token --flag bất kể vị trí, identifier lệch chuẩn là flag smuggling)',
+    );
+  }
+  return value;
+}
+
+/**
+ * Container resource dùng `id` làm provisioning identifier thật — chỉ bên
+ * trong các key này thì `id` của committed config phải bị chặn (OCR PR #36
+ * security·medium: chặn mọi key `id` ở mọi độ sâu là false-positive — một
+ * `vars.id` hay `metadata.id` của config local hợp lệ bị reject oan).
+ */
+const REMOTE_ID_CONTAINER_KEYS = new Set(['hyperdrive', 'kv_namespaces', 'r2_buckets']);
+
+const REMOTE_IDENTIFIER_KEYS = new Set(['database_id', 'preview_database_id']);
+
+function assertNoRemoteTrue(value: unknown, path: string, containerKey?: string): void {
   if (value === null || typeof value !== 'object') return;
   if (Array.isArray(value)) {
-    value.forEach((item, index) => assertNoRemoteTrue(item, `${path}[${index}]`));
+    value.forEach((item, index) => assertNoRemoteTrue(item, `${path}[${index}]`, containerKey));
     return;
   }
   for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
     const childPath = path ? `${path}.${key}` : key;
-    if (key === 'remote' && val === true) {
+    // Chặn cả boolean-like string `remote: "true"` lọt qua vars (OCR finding:
+    // boolean-check thuần để hở path này) — normalize lowercase + trim trước
+    // khi so, vì "TRUE"/" True " vẫn truthy theo mọi parser.
+    const truthyRemoteString = typeof val === 'string' && val.trim().toLowerCase() === 'true';
+    if (key === 'remote' && (val === true || val === 'true' || truthyRemoteString)) {
       throw new Error(
-        `wrangler config chứa 'remote: true' tại ${childPath} — PR3 không cho phép remote mode`,
+        `wrangler config chứa 'remote: ${String(val)}' tại ${childPath} — PR3 không cho phép remote mode`,
       );
     }
-    assertNoRemoteTrue(val, childPath);
+    // `id` chỉ chặn trong container resource; `database_id`/`preview_database_id`
+    // chặn mọi nơi. `services[].service` cố ý KHÔNG chặn: là tên Worker cùng
+    // topology local (spike §2 — Service Binding kết nối Worker local theo
+    // tên), chặn sẽ reject chính config của `transactional-mailer-job`.
+    const idBlocked = containerKey !== undefined && REMOTE_ID_CONTAINER_KEYS.has(containerKey);
+    if (
+      (REMOTE_IDENTIFIER_KEYS.has(key) || (key === 'id' && idBlocked)) &&
+      typeof val === 'string' &&
+      val.trim().length > 0
+    ) {
+      throw new Error(
+        `wrangler config chứa resource identifier remote '${key}: ${val}' tại ${childPath} — ` +
+          'local runtime không được resolve tới tài nguyên remote',
+      );
+    }
+    assertNoRemoteTrue(val, childPath, key);
   }
 }
 
@@ -313,6 +426,9 @@ function sanitizeFileName(value: string): string {
   return cleaned.length > 0 ? cleaned : 'worker';
 }
 
+/** Xuất cho status của orchestration đoán tên file generated config chính xác. */
+export { sanitizeFileName };
+
 function deepClone<T>(value: T): T {
   return structuredClone(value);
 }
@@ -345,7 +461,11 @@ export function generateWorkerConfig(
     generated.main = resolve(configDir, generated.main);
   }
 
-  // migrations_dir tuyệt đối cho mọi D1 binding.
+  // migrations_dir tuyệt đối cho mọi D1 binding, và absolutize mọi path
+  // tương đối khác mà committed configs trong repo khai ($schema trỏ
+  // node_modules, assets.directory trỏ output build) — Wrangler resolve mọi
+  // path theo thư mục chứa config file, generated config nằm chỗ khác nên
+  // path tương đối sinh lại trỏ sai (OCR medium finding).
   if (Array.isArray(generated.d1_databases)) {
     for (const entry of generated.d1_databases) {
       if (entry && typeof entry === 'object') {
@@ -358,8 +478,42 @@ export function generateWorkerConfig(
       }
     }
   }
+  if (
+    generated.assets !== null &&
+    typeof generated.assets === 'object' &&
+    !Array.isArray(generated.assets) &&
+    typeof (generated.assets as { directory?: unknown }).directory === 'string' &&
+    ((generated.assets as { directory?: unknown }).directory as string).trim().length > 0 &&
+    !isAbsolute((generated.assets as { directory: string }).directory)
+  ) {
+    const assets = generated.assets as { directory: string };
+    assets.directory = resolve(configDir, assets.directory);
+  }
+  if (
+    typeof generated.$schema === 'string' &&
+    generated.$schema.trim().length > 0 &&
+    !isAbsolute(generated.$schema)
+  ) {
+    // $schema trước đây là path tương đối `../../node_modules/wrangler/...`
+    // theo configDir committed — giữ đúng đích nhưng absolutize (file generated
+    // ở thư mục khác mà path tương đối sẽ trỏ node_modules sai cấp).
+    generated.$schema = resolve(configDir, generated.$schema);
+  }
 
-  // Port dev theo worktree để tránh đụng port giữa các worktree.
+  // Port dev theo worktree để tránh đụng port giữa các worktree, và validate
+  // fail-closed ngay lúc sinh config thay vì để `wrangler dev` fail sau với
+  // lỗi mơ hồ (OCR medium finding: NaN become null sau JSON.stringify, port
+  // <= 0 hay > 65535 hay port privileged được ghi thẳng). >= 1024: tránh
+  // privileged range; dev port KHÔNG dùng 0 (ephemeral ngẫu nhiên, mất tính
+  // lặp lại được của per-namespace allocation).
+  if (options.port !== undefined) {
+    const requested = options.port;
+    if (!Number.isInteger(requested) || requested < 1024 || requested > 65535) {
+      throw new Error(
+        `generateWorkerConfig: port không hợp lệ: ${String(requested)} — phải là integer trong [1024, 65535]`,
+      );
+    }
+  }
   const workerName = options.workerName ?? generated.name;
   const port = options.port ?? allocateWorkerPort(namespace, workerName);
   const existingDev =
@@ -408,7 +562,11 @@ export function generateWorkerConfig(
 
 const DEFAULT_WRANGLER_BIN = join(ROOT_DIR, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
 
-function resolveWranglerInvocation(wranglerBin?: string): { command: string; prefix: string[] } {
+/** Export dùng chung với orchestration — một nguồn duy nhất cho quy tắc invocation. */
+export function resolveWranglerInvocation(wranglerBin?: string): {
+  command: string;
+  prefix: string[];
+} {
   const bin = wranglerBin ?? DEFAULT_WRANGLER_BIN;
   if (bin.endsWith('.js') || bin.endsWith('.mjs') || bin.endsWith('.cjs')) {
     return { command: process.execPath, prefix: [bin] };
@@ -416,32 +574,89 @@ function resolveWranglerInvocation(wranglerBin?: string): { command: string; pre
   return { command: bin, prefix: [] };
 }
 
-// Env tối thiểu cho wrangler subprocess — không leak Cloudflare token/account
-// env từ parent, defense-in-depth dù generateWorkerConfig đã fail-closed remote.
-function sanitizedWranglerEnv(): NodeJS.ProcessEnv {
+/**
+ * Env allowlist CHUNG cho mọi subprocess wrangler (migrations/seeds ở đây và
+ * `wrangler dev` ở worker-orchestration — OCR PR #36 security high: hai bản
+ * copy riêng dễ drift và đường dev phải áp cùng cơ chế cô lập token).
+ * Gồm biến Windows cốt lõi: Node child process thiếu SystemRoot thường fail
+ * ngay khi spawn hoặc hỏng crypto/DNS một cách mơ hồ.
+ */
+const WRANGLER_ENV_ALLOWLIST = [
+  'PATH',
+  'HOME',
+  'USER',
+  'LANG',
+  'LC_ALL',
+  'TMPDIR',
+  'TEMP',
+  'TMP',
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'NO_PROXY',
+  'http_proxy',
+  'https_proxy',
+  'no_proxy',
+  // Windows
+  'SystemRoot',
+  'SYSTEMROOT',
+  'windir',
+  'WINDIR',
+  'COMSPEC',
+  'PATHEXT',
+  'ALLUSERSPROFILE',
+  'APPDATA',
+  'USERPROFILE',
+  'HOMEDRIVE',
+  'HOMEPATH',
+] as const;
+
+/**
+ * HOME cô lập của wrangler subprocess — một thư mục rỗng theo persist dir,
+ * cached OAuth token tại `~/.wrangler/config/default.toml` của máy developer
+ * không được nhìn thấy (OCR security finding: token cache không phải env var
+ * nên whitelist env var lọc không tới; trỏ HOME về thư mục worktree-local
+ * thiếu credentials là defense-in-depth thực sự cho fail-closed). Áp cho
+ * CẢ migrations và `wrangler dev` — process sống lâu nhất, có outbound
+ * network, là chỗ token cache nguy hiểm nhất nếu bị rò.
+ * Best-effort: mkdir fail (snapshot readonly...) không chặn xoay env — vẫn
+ * return một path có thể không tồn tại, wrangler tự fail nếu thật sự cần.
+ */
+function isolatedWranglerHome(persistTo: string): string {
+  const homeDir = join(persistTo, '.wrangler-home');
+  try {
+    mkdirSync(homeDir, { recursive: true });
+  } catch {
+    // ignore — caller đã mkdir persistTo trước khi gọi
+  }
+  return homeDir;
+}
+
+/**
+ * Env allowlist object cho subprocess wrangler, HOME/USERPROFILE/XDG_CONFIG_HOME
+ * cô lập vào thư mục theo `persistTo` (thường là stateDir của worktree).
+ * Export dùng chung: worker-orchestration gọi cho `wrangler dev` thay vì giữ
+ * bản allowlist thứ hai (drift-prone).
+ */
+export function sanitizedWranglerEnv(persistTo: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
-  for (const key of [
-    'PATH',
-    'HOME',
-    'USER',
-    'LANG',
-    'LC_ALL',
-    'TMPDIR',
-    'TEMP',
-    'TMP',
-    'HTTP_PROXY',
-    'HTTPS_PROXY',
-    'NO_PROXY',
-    'http_proxy',
-    'https_proxy',
-    'no_proxy',
-  ]) {
+  for (const key of WRANGLER_ENV_ALLOWLIST) {
     if (process.env[key] !== undefined) env[key] = process.env[key];
   }
+  // HOME/USERPROFILE cô lập — CachedCredentials của wrangler nằm dưới home dir
+  // của user; trỏ cả hai về thư mục trống theo worktree.
+  const isolatedHome = isolatedWranglerHome(persistTo);
+  env.HOME = isolatedHome;
+  env.USERPROFILE = isolatedHome;
+  // XDG_CONFIG_HOME trỏ cùng chỗ — vài distribution Linux của wrangler đọc
+  // credentials dưới $XDG_CONFIG_HOME/.wrangler thay vì ~.
+  env.XDG_CONFIG_HOME = isolatedHome;
   return env;
 }
 
-function runWrangler(args: string[], options: { wranglerBin?: string; cwd?: string }): void {
+function runWrangler(
+  args: string[],
+  options: { wranglerBin?: string; cwd?: string; persistTo: string },
+): void {
   const { command, prefix } = resolveWranglerInvocation(options.wranglerBin);
   const result = spawnSync(command, [...prefix, ...args], {
     cwd: options.cwd ?? process.cwd(),
@@ -449,7 +664,7 @@ function runWrangler(args: string[], options: { wranglerBin?: string; cwd?: stri
     stdio: ['ignore', 'pipe', 'pipe'],
     maxBuffer: 64 * 1024 * 1024,
     timeout: 5 * 60 * 1000, // không chờ wrangler treo vô hạn
-    env: sanitizedWranglerEnv(),
+    env: sanitizedWranglerEnv(options.persistTo),
   });
   if (result.error) {
     if ((result.error as NodeJS.ErrnoException).code === 'ETIMEDOUT') {
@@ -463,17 +678,80 @@ function runWrangler(args: string[], options: { wranglerBin?: string; cwd?: stri
   }
 }
 
+/**
+ * Persist dir dùng `resolve()` trước khi làm anything — PATH tương đối sẽ được
+ * mkdir ở một chỗ (base cwd của dx process) còn wrangler ghi state ở chỗ khác
+ * (base cwd của subprocess = options.cwd), phá cam kết "hai worktree không chia
+ * sẻ bất kỳ byte nào" (OCR low finding). resolve() tại thời điểm gọi: caller
+ * truyền absolute (từ `persistToDir(worktreeRoot)`) thì không đổi; tương đối
+ * thì chuẩn hoá theo cwd hiện tại — mọi call-site của orchestration luôn truyền
+ * absolute, path tương đối chỉ còn từ test/manual invocation.
+ */
+function resolvePersistDir(raw: string): string {
+  const persistTo = resolve(raw);
+  if (!existsSync(persistTo)) {
+    mkdirSync(persistTo, { recursive: true });
+  }
+  return persistTo;
+}
+
+/**
+ * Đối chiếu `databaseName` với `d1_databases` của config — fail-closed trước
+ * khi ghép positional arg của wrangler (OCR high finding: tên gõ sai hay
+ * identifier trỏ resource thật đi thẳng vào subprocess, chỉ fail muộn ở wrangler
+ * với message mơ hồ). Khớp khi bằng `binding` hoặc `database_name` của một
+ * entry D1 bất kỳ. Export cho spec phủ trực tiếp không cần chạy wrangler thật.
+ */
+export function assertDatabaseNameInConfig(configPath: string, databaseName: string): void {
+  const { config } = loadCommittedWranglerConfig(configPath);
+  const databases = Array.isArray(config.d1_databases) ? config.d1_databases : [];
+  for (const entry of databases) {
+    if (entry === null || typeof entry !== 'object') continue;
+    // `database_name` khớp ĐỘC LẬP với `binding` (OCR PR #36 low): entry config
+    // hand-written thiếu `binding` vẫn có thể khớp qua database_name — im lặng
+    // bỏ qua nó là sai khi debug (known list cũng chỉ lookup database_name).
+    const binding = (entry as { binding?: unknown }).binding;
+    if (
+      (typeof binding === 'string' && binding === databaseName) ||
+      (entry as { database_name?: unknown }).database_name === databaseName
+    ) {
+      return;
+    }
+  }
+  const known = databases
+    .map((entry) =>
+      typeof entry === 'object' && entry !== null
+        ? String((entry as { database_name?: unknown }).database_name ?? '?')
+        : '?',
+    )
+    .join(', ');
+  throw new Error(
+    `database '${databaseName}' không khớp binding/database_name nào trong d1_databases của ` +
+      `${configPath} (known: ${known || 'trống'}) — từ chối gọi wrangler với tên không nằm trong config`,
+  );
+}
+
 export function applyLocalD1Seeds(options: ApplyLocalSeedsOptions): void {
   if (options.remote === true) {
     throw new Error('applyLocalD1Seeds: remote mode không được phép (PR3 fail-closed)');
+  }
+  // `seedFiles: []` phải fail-loud (OCR low finding): pattern lệch/ glob sai
+  // để lại state D1 chưa seed, "thành công" âm thầm => bug biểu hiện muộn ở
+  // tầng khác khó truy vết.
+  if (options.seedFiles.length === 0) {
+    throw new Error(
+      'applyLocalD1Seeds: seedFiles rỗng — không seed nào được áp, từ chối chạy thầm lặng (fail-closed)',
+    );
   }
   const configPath = resolve(options.configPath);
   if (!existsSync(configPath)) {
     throw new Error(`config không tồn tại: ${configPath}`);
   }
-  if (!existsSync(options.persistTo)) {
-    mkdirSync(options.persistTo, { recursive: true });
-  }
+  const persistTo = resolvePersistDir(options.persistTo);
+  assertDatabaseNameInConfig(configPath, validateDatabaseIdentifier(options.databaseName));
+  // Mỗi file một lần `d1 execute` — thứ tự đã được caller biên (seedFiles).
+  // Idempotency là trách nhiệm của seed file: INSERT thiếu ON CONFLICT/IF NOT
+  // EXISTS sẽ fail khi chạy lại sau crash (OCR finding — documented ở caller).
   for (const seedFile of options.seedFiles) {
     const absoluteSeed = resolve(seedFile);
     if (!existsSync(absoluteSeed)) {
@@ -483,16 +761,16 @@ export function applyLocalD1Seeds(options: ApplyLocalSeedsOptions): void {
       [
         'd1',
         'execute',
-        options.databaseName,
+        validateDatabaseIdentifier(options.databaseName),
         '--config',
         configPath,
         '--local',
         '--persist-to',
-        options.persistTo,
+        persistTo,
         '--file',
         absoluteSeed,
       ],
-      { wranglerBin: options.wranglerBin, cwd: options.cwd },
+      { wranglerBin: options.wranglerBin, cwd: options.cwd, persistTo },
     );
   }
 }
@@ -505,21 +783,20 @@ export function applyLocalD1Migrations(options: ApplyLocalMigrationsOptions): vo
   if (!existsSync(configPath)) {
     throw new Error(`config không tồn tại: ${configPath}`);
   }
-  if (!existsSync(options.persistTo)) {
-    mkdirSync(options.persistTo, { recursive: true });
-  }
+  const persistTo = resolvePersistDir(options.persistTo);
+  assertDatabaseNameInConfig(configPath, validateDatabaseIdentifier(options.databaseName));
   runWrangler(
     [
       'd1',
       'migrations',
       'apply',
-      options.databaseName,
+      validateDatabaseIdentifier(options.databaseName),
       '--config',
       configPath,
       '--local',
       '--persist-to',
-      options.persistTo,
+      persistTo,
     ],
-    { wranglerBin: options.wranglerBin, cwd: options.cwd },
+    { wranglerBin: options.wranglerBin, cwd: options.cwd, persistTo },
   );
 }

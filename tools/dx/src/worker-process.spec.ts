@@ -16,6 +16,7 @@ import {
   deleteStaleWorkerMetadata,
   identityHashOf,
   isPidAlive,
+  killWorkerProcessByMetadata,
   metadataPathOf,
   pidCmdlineMatches,
   readMetadata,
@@ -28,6 +29,25 @@ import {
 } from './worker-process.js';
 
 const cleanup: string[] = [];
+
+/** Poll `check()` tới khi true hoặc hết `timeoutMs` — dùng cho event async. */
+function waitForCondition(check: () => boolean, timeoutMs: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const deadline = Date.now() + timeoutMs;
+    const tick = (): void => {
+      if (check()) {
+        resolve(true);
+        return;
+      }
+      if (Date.now() >= deadline) {
+        resolve(false);
+        return;
+      }
+      setTimeout(tick, 25);
+    };
+    tick();
+  });
+}
 
 /**
  * Probe TCP `127.0.0.1:<targetPort>` — port-bound readiness for tests (PID
@@ -817,6 +837,102 @@ describe('scanWorkerProcesses / deleteStaleWorkerMetadata / terminateStaleWorker
       'utf8',
     );
     expect(readMetadata(metadataPathOf(dir, 'badhash'))).toBeNull();
+  });
+
+  describe('killWorkerProcessByMetadata', () => {
+    it('returns not-provable for invalid metadata, identity mismatch, or dead pid without touching anything', async () => {
+      const dir = cleanStateDir();
+      const args = [process.execPath, 'worker.js'];
+      // Metadata missing entirely.
+      expect(
+        (
+          await killWorkerProcessByMetadata({
+            metadataPath: metadataPathOf(dir, 'missing'),
+            expectedArgv: args,
+          })
+        ).result,
+      ).toBe('not-provable');
+      // Corrupt metadata.
+      writeFileSync(metadataPathOf(dir, 'corrupt'), '{bad', 'utf8');
+      expect(
+        (
+          await killWorkerProcessByMetadata({
+            metadataPath: metadataPathOf(dir, 'corrupt'),
+            expectedArgv: args,
+          })
+        ).result,
+      ).toBe('not-provable');
+      // Live pid whose argv record does not match expectedArgv.
+      writeFileSync(
+        metadataPathOf(dir, 'mismatch'),
+        JSON.stringify({
+          version: 1,
+          name: 'mismatch',
+          pid: process.pid,
+          argv: [process.execPath, 'other.js'],
+          identityHash: identityHashOf([process.execPath, 'other.js']),
+          startedAt: 1,
+        }),
+        'utf8',
+      );
+      const mismatch = await killWorkerProcessByMetadata({
+        metadataPath: metadataPathOf(dir, 'mismatch'),
+        expectedArgv: args,
+      });
+      expect(mismatch).toMatchObject({ result: 'not-provable' });
+      // Dead pid (process has nothing to kill).
+      writeFileSync(
+        metadataPathOf(dir, 'deadpid'),
+        JSON.stringify({
+          version: 1,
+          name: 'deadpid',
+          pid: 2147483647,
+          argv: args,
+          identityHash: identityHashOf(args),
+          startedAt: 1,
+        }),
+        'utf8',
+      );
+      const dead = await killWorkerProcessByMetadata({
+        metadataPath: metadataPathOf(dir, 'deadpid'),
+        expectedArgv: args,
+      });
+      expect(dead).toMatchObject({ result: 'not-provable' });
+    });
+
+    it('terminates a live long-running child spawned through the real spawn path', async () => {
+      const dir = cleanStateDir();
+      const args = [
+        process.execPath,
+        '-e',
+        'process.on("SIGTERM", () => process.exit(0)); setInterval(() => {}, 1 << 28);',
+      ];
+      const handle = startWorkerProcess({
+        name: 'killby-meta',
+        argv: args,
+        cwd: dir,
+        env: {},
+        stateDir: dir,
+      });
+      const deadline = Date.now() + 5000;
+      while (handle.pid < 0 && Date.now() < deadline) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 10);
+        });
+      }
+      expect(handle.pid).toBeGreaterThan(0);
+      expect(isPidAlive(handle.pid)).toBe(true);
+
+      const outcome = await killWorkerProcessByMetadata({
+        metadataPath: handle.metadataPath,
+        expectedArgv: args,
+        timeoutMs: 3000,
+      });
+      expect(outcome).toEqual({ result: 'done' });
+      const gone = await waitForCondition(() => !isPidAlive(handle.pid), 3000);
+      expect(gone).toBe(true);
+      handle.removeMetadata();
+    });
   });
 
   it('pidCmdlineMatches allows unreadable/absent pid (cross-platform)', () => {

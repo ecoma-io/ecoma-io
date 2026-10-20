@@ -24,5 +24,8 @@ export const app = defineCommand({
     'local-status': () => import('./local-status-command.js').then((m) => m.default),
     'local-destroy': () => import('./local-destroy-command.js').then((m) => m.default),
     'local-cleanup': () => import('./local-cleanup-command.js').then((m) => m.default),
+    'local-worker-up': () => import('./local-worker-up-command.js').then((m) => m.default),
+    'local-worker-status': () => import('./local-worker-status-command.js').then((m) => m.default),
+    'local-worker-down': () => import('./local-worker-down-command.js').then((m) => m.default),
   },
 });
