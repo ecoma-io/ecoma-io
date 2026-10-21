@@ -202,9 +202,11 @@ async function probeDatabase(hyperdrive: { connectionString: string }): Promise<
  * hand-rolled JWKS đã bỏ, một JWKS duy nhất từ chính bộ máy cấp token.
  *
  * ⚠️ "Trung thực" nghĩa là: chỉ quảng bá endpoint provider thực sự mount.
- * `revocation_endpoint` được mount (RFC 7009 bật) ⇒ được khai; `introspection`
+ * `revocation_endpoint` được mount (RFC 7009 bật) và `end_session_endpoint`
+ * được mount (RP-initiated logout bật) ⇒ cả hai được khai; `introspection`
  * và `userinfo` tắt ⇒ không xuất hiện trong document này. Client đọc sai một
- * endpoint không có là đi vào 404.
+ * endpoint không có là đi vào 404 — và NGƯỢC LẠI cũng sai: quảng bá thiếu một
+ * endpoint đang sống là giấu năng lực logout mà provider thật có.
  *
  * ⚠️ Chính provider cũng serve một discovery riêng ở cùng đường (initialize
  * mounts `/.well-known/*` vô điều kiện) — nhưng nó KHÔNG qua adapter TÙY CHỈNH
@@ -221,6 +223,13 @@ function discoveryDocument(config: AuthConfig): Record<string, unknown> {
     token_endpoint: `${issuer}${PROVIDER_ROUTES.tokenRoute}`,
     revocation_endpoint: `${issuer}${PROVIDER_ROUTES.revocation}`,
     jwks_uri: `${issuer}${PROVIDER_ROUTES.jwks}`,
+    // RP-initiated logout ĐÃ bật trong provider (`features.rpInitiatedLogout`,
+    // provider.ts) và route được bridge chuyển tiếp (app.all dưới đây) —
+    // discovery provider thật cũng khai (`discovery.js` chỉ render key này khi
+    // feature bật). Bỏ khai trong khi endpoint sống là quanh client
+    // RP-initiated logout không biết có nó; khai mà không bảo sống là hướng
+    // client vào 404.
+    end_session_endpoint: `${issuer}${PROVIDER_ROUTES.end_session}`,
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     subject_types_supported: ['public'],
@@ -584,6 +593,16 @@ app.all(PROVIDER_ROUTES.revocation, async (c) => {
   return await dispatchToNode(runtime, c.req.raw, c.env as AuthEnv, c.executionCtx);
 });
 app.all(PROVIDER_ROUTES.end_session, async (c) => {
+  const runtime = await getRuntime(c.env as AuthEnv);
+  return await dispatchToNode(runtime, c.req.raw, c.env as AuthEnv, c.executionCtx);
+});
+// ⚠️ `rpInitiatedLogout` bật là provider mount BA route (`initialize_app.js`):
+// `GET /session/end` (init), `POST /session/end/confirm` (confirm form_post) và
+// `GET /session/end/success` (trang kết). Hono KHÔNG tự match subpath của một
+// route tĩnh — thiếu pattern `/*` là confirm POST và success GET 404, tức
+// RP-initiated logout render form nhưng KHÔNG BAO GIỜ hoàn tất được. Đã có bài
+// học `/auth` + `/auth/*` ở trên; `/session/end` chỉ có bản bare là sót lại.
+app.all(`${PROVIDER_ROUTES.end_session}/*`, async (c) => {
   const runtime = await getRuntime(c.env as AuthEnv);
   return await dispatchToNode(runtime, c.req.raw, c.env as AuthEnv, c.executionCtx);
 });
