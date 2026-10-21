@@ -162,7 +162,7 @@ Trường `attempts` là **ngân sách B** cho một `(delivery_id, dispatch_gen
 Hai gói persistence đã tồn tại trong code; từ đây **code là canonical** cho shape chính xác, mục này chỉ giữ ranh giới:
 
 - Port: `libs/transactional-mailer-job-application/src/mail-job-repository-port.ts` — package `@ecoma-io/transactional-mailer-job-application` (`type:application`): interface `MailJobRepository` + `QuarantineRepository` dùng chung cho **cả** execution lẫn reporting, cùng record types, pure rules (`mail-job-rules.ts`) và model/validator (`mail-job-model.ts`). Application không import D1 hay Cloudflare.
-- Implement: `libs/transactional-mailer-job-infrastructure/src/d1-mail-job-repository.ts` + `d1-quarantine-repository.ts` (`type:infrastructure`) — bốn statement canonical §9.2.1 (a)/(b)/(c)/(d) nguyên văn guard, renew/persist/release có guard owner+token, ba query sweep §10, decode row fail-closed (`mail-job-row.ts`).
+- Implement: `libs/transactional-mailer-job-infrastructure/src/d1-mail-job-repository.ts` + `d1-quarantine-repository.ts` (`type:infrastructure`) — sáu statement canonical §9.2.1 và §9.6 (a)/(b)/(c)/(d)/(e)/(g) nguyên văn guard, renew/persist/release có guard owner+token, ba query sweep §10, decode row fail-closed (`mail-job-row.ts`).
 
 Ranh giới và giới hạn của tầng này:
 
@@ -444,7 +444,7 @@ Capability này có **ba trạng thái**, một giá trị tại một thời đ
 
 - Trigger: provider trả `401`/`403` (credential sai/hết hạn), endpoint/credential chưa cấu hình (`provider-not-configured`), ngân sách **B** của generation đã kiệt (`execution-budget-exhausted` — `mail_jobs.attempts` chạm `maxExecutionAttempts`), hoặc kết quả provider mơ hồ ngoài cửa sổ an toàn idempotency (`provider-ambiguous-outcome` — §9.6: `provider_call_at` đã hơn `MAIL_JOB_PROVIDER_CALL_SAFE_WINDOW_MS` khi claim lại hoặc persist-denied). Cả bốn đều là điều kiện **system-level**, không phải provider từ chối nội dung thư.
 - Hành vi: persist `status = blocked` + `last_error_class` + `outcome_report_state = 'pending'`, release lease, báo outcome `blocked` cho control plane, **ack** message (không retry-storm), và alert operator. **KHÔNG** mark `failed` — thư chưa bị provider từ chối.
-- **Redrive là thử lại có kiểm soát, không phải gửi lại tự động.** Chỉ **một** hành vi làm delivery `blocked` trở lại eligible: **control plane tăng `dispatch_generation`** (atomic batch ở `transactional-mail/01-architecture.md` §6.4). Các bước:
+- **Redrive là thử lại có kiểm soát, không phải gửi lại tự động.** Chỉ **một** hành vi làm delivery `blocked` trở lại eligible: **control plane tăng `dispatch_generation`** (atomic batch ở `transactional-mail/01-architecture.md` §6.4). Các bước: 0. **Bước 0 — carve-out cho `provider-ambiguous-outcome`: redrive KHÔNG phải unblock.** Marker `provider_call_at` là per-delivery và không đường nào reset (§9.6 — statement (b) không đụng cột này), nên attempt đầu của generation mới gặp statement (e) với kết quả `already-marked` mang **marker cũ từ trước khi block**. Marker đó thường đã ngoài cửa sổ an toàn (chính tuổi marker là nguyên nhân chốt `blocked` ở lần trước), nên attempt này bị re-block ngay tại statement (g) — release lease rồi chốt `blocked` lần nữa, KHÔNG gọi provider. Đây là **hành vi fail-closed cố ý** của double-send gate, không phải bug: quyết định chấp nhận rủi ro double-send của operator (bước 1) và việc generation mới có giá trị bắt đầu claim mới là hai điều kiện khác nhau; chấp nhận rủi ro không xoá được sự thật rằng một request của delivery này **đã có thể đã rời worker** (`provider_call_at` không reset ⇒ quyền gọi provider quy về tuổi marker, không thuộc ownership — §9.6). Với class này, redrive chỉ re-confirm `blocked` (đốt một slot ngân sách A) và là một **dead-end bền vững** cho generation đó: kể cả khi operator đã xác minh provider chưa từng nhận thư, không đường tự động nào của worker deliver lại được mail — mọi attempt của generation mới đều đi qua đúng chuỗi `already-marked` ngoài cửa sổ ⇒ (g) chốt lại (xem ngữ cảnh vận hành: `03-operations.md` §3.1 hàng 8a, §8 alert `provider-ambiguous-outcome`, §11 hàng 3/11).
   1. Sửa credential/cấu hình provider ở delivery worker (rotate Worker Secret → deploy version mới — [`03-operations.md`](./03-operations.md) §5). **Chỉ áp cho trigger credential/config**: với `execution-budget-exhausted` thì **không** có gì để sửa — bỏ qua bước này, đi thẳng bước 2, vì generation mới tự reset ngân sách B. Với `provider-ambiguous-outcome` thì phải qua **bước 0** — operator **tự cân nhắc rủi ro double-send** (email có thể đã đến tay provider): kiểm provider/receiver đã nhận thư của delivery này chưa, trước khi quyết định redrive; nếu không redrive, delivery giữ nguyên `blocked`.
   2. Gọi endpoint redrive **có authorize** ở control plane (`transactional-mail/01-architecture.md` §7.5 — caller/permission model **chưa chốt, là implementation gate**). Control plane — **producer duy nhất** của `ecoma-mail-delivery` — trong **một** `db.batch()`: `dispatch_generation++`, `status = 'queued'`, `recovery_cycle_count++`, reset outbox row (cùng `delivery_id`, `publish_attempts = 0`). Sau đó nó publish command **cùng `delivery_id`**.
   3. Worker nhận command → **resolve `dispatch_generation` hiện tại từ control plane** (§9.2) → thấy `new_generation > mail_jobs.dispatch_generation` → **generation-advance claim** (§9.2.1 đường (b)) → thử lại. Worker **không** send vào Queue và **không** tự bump generation.
@@ -490,6 +490,19 @@ Quy tắc:
 
 - `applied`: attempt này vừa ghi marker — request sắp đi là lần gọi đầu tiên của delivery.
 - `already-marked`: marker đã tồn tại từ một attempt trước của cùng delivery; statement trả kèm `record` hiện tại, và **không** tự cấp quyền gọi provider — caller bắt buộc đánh giá `isWithinProviderSafeWindow` trên `record.providerCallAt` trước khi quyết định gửi (quyền gọi thuộc về tuổi marker, không thuộc ownership guard). Mọi denial khác (`missing-job`/`lease-lost`/`inconsistent`) nghĩa là **không** gọi provider.
+
+```sql
+UPDATE mail_jobs
+   SET provider_call_at = :now,
+       updated_at       = :now
+ WHERE delivery_id            = :delivery_id
+   AND lease_owner            = :owner
+   AND execution_generation   = :execution_generation
+   AND dispatch_generation    = :generation
+   AND status                 = 'processing'
+   AND outcome_report_state   = 'none'
+   AND provider_call_at IS NULL                                -- first-write-only
+```
 
 **Statement (g) — chốt `blocked` cho mơ hồ ngoài cửa sổ.** Khi caller kết luận mơ hồ nằm ngoài cửa sổ (persist-denied qua `resolveAmbiguityAfterLostClaim`, hoặc `already-marked` ngoài cửa sổ ở attempt mới), nó release lease không-kết-quả rồi chốt operator-needed bằng **một** conditional UPDATE khác:
 

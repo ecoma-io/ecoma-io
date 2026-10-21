@@ -2,12 +2,12 @@
  * Pure state-machine rules cho `mail_jobs` — không I/O, không database, không clock.
  *
  * Nguồn canonical: `docs/services/transactional-mailer-job/01-architecture.md` §9.2.1
- * (bốn statement claim/ghi quyết định), §9.2.2 (ma trận transition), §9.5 (vòng đời
- * báo outcome).
+ * (sáu statement claim/ghi quyết định, §9.6 cho (e)/(g)), §9.2.2 (ma trận transition),
+ * §9.5 (vòng đời báo outcome).
  *
  * ## Vì sao các hàm "phân loại" này tồn tại
  *
- * Bốn statement canonical đều là **một conditional UPDATE duy nhất**. Khi affected
+ * Các statement claim/ghi canonical đều là **một conditional UPDATE duy nhất**. Khi affected
  * rows = 0, không có cách nào biết guard nào đã chặn chỉ bằng affected rows — nên
  * caller phải đọc lại tối thiểu số trường cần thiết và phân loại. Nếu phân loại đó
  * nằm rải rác ở call site thì hai nơi sẽ phân loại hai kiểu, và một kiểu sai sẽ biến

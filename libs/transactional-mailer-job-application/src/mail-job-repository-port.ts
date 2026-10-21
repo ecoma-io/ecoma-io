@@ -2,8 +2,8 @@
  * Repository port cho `mail_jobs` (execution + outcome reporting) và `quarantine`.
  *
  * Nguồn canonical: `docs/services/transactional-mailer-job/01-architecture.md` §9.2.1
- * (bốn statement conditional UPDATE), §9.2.2 (ma trận transition), §9.5 (vòng đời
- * báo outcome), §10 (ba đường sweep).
+ * (sáu statement conditional UPDATE), §9.6 (statement (e)+(g)), §9.2.2 (ma trận transition),
+ * §9.5 (vòng đời báo outcome), §10 (ba đường sweep).
  *
  * Nguyên tắc chung của mọi operation:
  * - Mọi thao tác ghi là **một conditional UPDATE duy nhất** — không read-then-write;

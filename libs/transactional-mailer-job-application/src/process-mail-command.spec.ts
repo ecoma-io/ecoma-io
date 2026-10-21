@@ -165,7 +165,7 @@ function processingRow(overrides: Partial<MailJobRecord> = {}): MailJobRecord {
 }
 
 /**
- * Repository in-memory áp đúng điều kiện của bốn statement canonical.
+ * Repository in-memory áp đúng điều kiện của các statement canonical.
  *
  * Không có I/O, không đọc đồng hồ: mọi guard so sánh với `nowMs` trong tham số, đúng như SQL
  * bind.
