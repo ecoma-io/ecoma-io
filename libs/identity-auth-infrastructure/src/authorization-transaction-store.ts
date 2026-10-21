@@ -436,6 +436,15 @@ export async function findTransactionByHandleY(
  * `db-auth` (`client.begin`) — caller truyền tx vào đây; đứng một mình, hàm này chỉ
  * CAS và ghi idempotency.
  *
+ * ⚠️ WHERE chép nguyên văn khối canonical CAS 2 của
+ * `apps/auth/migrations/0002_authorization_transactions.sql:305-331`, gồm
+ * `account_session_ref = $2 AND sub = $3` — ràng buộc PHIÊN: handle Y nằm trong URL
+ * redirect, có thể lọt sang người khác (referer leak, lịch sử trình duyệt), nên kết
+ * quả consent chỉ được ghi bởi đúng phiên sở hữu transaction. Tham số lấy từ hàng
+ * transaction đã load, không từ request — caller (`consent-handler.ts` decide) đã
+ * dồn chúng về dạng string non-null trước khi gọi; một caller bỏ qua kiểm app-layer
+ * giờ bị CAS chặn ở tầng database thay vì tự tin consume hộ người khác.
+ *
  * Tham số là {@link Queryable}: hình dạng đúng của tx từ callback `begin` —
  * cùng lý do với `advanceTransactionWithHandle` ở trên.
  */
@@ -443,6 +452,8 @@ export async function consumeHandleY(
   client: Queryable,
   params: {
     readonly handleYHash: string;
+    readonly accountSessionRef: string;
+    readonly sub: string;
     readonly decision: 'approve' | 'deny';
     /**
      * ⚠️ KHÔNG ghi cột `event_*` nào — khối bốn cột là idempotency key của
@@ -463,17 +474,19 @@ export async function consumeHandleY(
   const updated = await client.unsafe<RawTransactionRow>(
     `
       UPDATE auth.authorization_transactions
-         SET handle_y_consumed_at = $2
+         SET handle_y_consumed_at = $4
        WHERE handle_hash_y = $1
          AND handle_y_consumed_at IS NULL
-         AND expires_at > $2
+         AND expires_at > $4
+         AND account_session_ref = $2
+         AND sub = $3
       RETURNING transaction_id, handle_hash_x, state, client_id, redirect_uri,
                 requested_scopes, code_challenge, code_challenge_method,
                 browser_binding_hash, key_version, expires_at, sub, acr,
                 authn_at, account_session_ref, client_state, nonce,
                 event_id, event_payload_hash
     `,
-    [base64UrlToBytea(params.handleYHash), params.now],
+    [base64UrlToBytea(params.handleYHash), params.accountSessionRef, params.sub, params.now],
   );
   const row = updated[0];
   return row === undefined ? undefined : mapTransactionRow(row);
