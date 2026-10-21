@@ -2,12 +2,12 @@
  * Pure state-machine rules cho `mail_jobs` — không I/O, không database, không clock.
  *
  * Nguồn canonical: `docs/services/transactional-mailer-job/01-architecture.md` §9.2.1
- * (bốn statement claim/ghi quyết định), §9.2.2 (ma trận transition), §9.5 (vòng đời
- * báo outcome).
+ * (sáu statement claim/ghi quyết định, §9.6 cho (e)/(g)), §9.2.2 (ma trận transition),
+ * §9.5 (vòng đời báo outcome).
  *
  * ## Vì sao các hàm "phân loại" này tồn tại
  *
- * Bốn statement canonical đều là **một conditional UPDATE duy nhất**. Khi affected
+ * Các statement claim/ghi canonical đều là **một conditional UPDATE duy nhất**. Khi affected
  * rows = 0, không có cách nào biết guard nào đã chặn chỉ bằng affected rows — nên
  * caller phải đọc lại tối thiểu số trường cần thiết và phân loại. Nếu phân loại đó
  * nằm rải rác ở call site thì hai nơi sẽ phân loại hai kiểu, và một kiểu sai sẽ biến
@@ -81,7 +81,9 @@ export type LeaseOwnershipDenial =
  * Gồm đầy đủ denial của ownership (cùng guard lease/`execution_generation` với statement
  * persist) cộng thêm `already-marked`: marker là **first-write-only** (`provider_call_at
  * IS NULL` nằm trong WHERE) nên affected rows = 0 có thể nghĩa là một execution trước đó
- * trong cùng attempt-chain đã ghi mốc rồi — điều này **không** phải mất claim.
+ * của cùng delivery đã ghi mốc rồi — điều này **không** phải mất claim. Ba nguyên nhân
+ * lệch ownership/guard (missing-job, lease-lost, inconsistent) đều **KHÔNG** được suy ra
+ * quyền gọi provider; quyền đó của `already-marked` do caller quyết bằng cửa sổ an toàn.
  */
 export type ProviderCallBoundaryDenial = LeaseOwnershipDenial | 'already-marked' | 'inconsistent';
 
@@ -309,6 +311,58 @@ export function classifyLeaseOwnershipDenial(record: MailJobRecord | null): Leas
 }
 
 /**
+ * Lý do statement (g) — chốt `blocked` cho ambiguity ngoài cửa sổ an toàn — trả affected
+ * rows = 0.
+ *
+ * Guard của (g) **không** gồm điều kiện ngân sách B: nguyên nhân chốt là tuổi marker
+ * (`provider_call_at IS NOT NULL`), không phải attempts — mơ hồ phải chốt được ở bất kỳ
+ * attempt nào. Điều kiện còn lại giữ row ở trạng thái kế thừa được: cùng
+ * `dispatch_generation`, không lease hiệu lực, chưa terminal/blocked.
+ */
+export type AmbiguityBlockedDenial =
+  | 'missing-job'
+  | 'generation-mismatch'
+  | 'lease-active'
+  | 'terminal'
+  | 'already-blocked'
+  | 'unmarked'
+  | 'inconsistent';
+
+/**
+ * Phân loại lý do statement (g) trả affected rows = 0.
+ *
+ * `unmarked` là denial mang ý nghĩa an toàn riêng của statement này: caller tuyên bố
+ * ambiguity ngoài cửa sổ nhưng row chưa từng có marker — statement tự bảo vệ định đề của
+ * nó (`provider_call_at IS NOT NULL` ở tầng persistence) thay vì chốt `blocked` với
+ * `last_error_class = 'provider-ambiguous-outcome'` cho một job chưa hề chạm ranh giới
+ * gọi provider (mislead operator redrive).
+ */
+export function classifyAmbiguityBlockedDenial(
+  record: MailJobRecord | null,
+  criteria: { readonly dispatchGeneration: number; readonly nowMs: number },
+): AmbiguityBlockedDenial {
+  if (record === null) {
+    return 'missing-job';
+  }
+  if (record.dispatchGeneration !== criteria.dispatchGeneration) {
+    return 'generation-mismatch';
+  }
+  if (isExecutionLeaseActive(record, criteria.nowMs)) {
+    return 'lease-active';
+  }
+  if (isTerminalStatus(record.status)) {
+    return 'terminal';
+  }
+  if (record.status === 'blocked') {
+    return 'already-blocked';
+  }
+  if (record.providerCallAt === null) {
+    return 'unmarked';
+  }
+  return 'inconsistent';
+}
+
+/**
  * Phân loại lý do statement (e) — ghi marker ranh giới gọi provider — trả affected
  * rows = 0.
  *
@@ -316,11 +370,19 @@ export function classifyLeaseOwnershipDenial(record: MailJobRecord | null): Leas
  * **sau**. Guard của (e) là guard ownership chuẩn cộng `provider_call_at IS NULL`
  * (first-write-only), nên affected rows = 0 có thể do một trong hai — và hai lý do đó có
  * hậu quả ngược nhau: `lease-lost` ⇒ mất claim, KHÔNG được gọi provider; `already-marked`
- * ⇒ marker của attempt-chain này đã ghi trước đó (đoạn sau marker đã crash, hay đơn giản
- * caller gọi hai lần) — **vẫn được** gọi provider với cùng idempotency key, miễn caller
- * vẫn đang giữ claim. Kiểm `already-marked` trước ownership sẽ biến một execution stale
- * (mất lease, chỉ còn marker cũ của attempt trước) thành "được phép gọi lại" — phá bỏ
- * chính fencing mà marker tồn tại để bảo vệ.
+ * ⇒ marker đã có mặt từ một attempt trước đó của cùng delivery (per-delivery lifetime,
+ * không bị reset giữa các attempt hay khi `dispatch_generation` tăng) — caller **vẫn giữ
+ * claim** và quyết định gọi provider hay không thuộc về kiểm tra cửa sổ an toàn trên
+ * `providerCallAt` của record, không thuộc classifier này. Kiểm `already-marked` trước
+ * ownership sẽ biến một execution stale (mất lease, chỉ còn marker cũ của attempt trước)
+ * thành "được phép gọi lại" — phá bỏ chính fencing mà marker tồn tại để bảo vệ.
+ *
+ * Guard trạng thái (status/outcome_report_state) cũng được phân loại tường minh thay vì
+ * dựa vào giả định ngầm "owner khớp ⇒ status khớp": hôm nay mọi writer đổi trạng thái
+ * đều đồng thời null lease owner, nhưng nếu một writer tương lai đổi trạng thái mà giữ
+ * nguyên lease (persist tách release), gán nhầm `already-marked` cho row không còn
+ * `processing`/`none` là hướng sai chính xác mà fencing phải chặn — trả `inconsistent`
+ * (thử lại từ đầu) là hành vi an toàn.
  */
 export function classifyProviderCallBoundaryDenial(
   record: MailJobRecord | null,
@@ -340,11 +402,16 @@ export function classifyProviderCallBoundaryDenial(
   if (lostLease) {
     return 'lease-lost';
   }
+  if (record.status !== 'processing' || record.outcomeReportState !== 'none') {
+    // Owner/token/generation khớp mà trạng thái đã rời execution đang chạy: không suy ra
+    // quyền gọi provider — thử lại từ đầu cho một read-consistent state.
+    return 'inconsistent';
+  }
   if (record.providerCallAt !== null) {
     return 'already-marked';
   }
-  // Owner/token/generation khớp hoàn toàn, marker rỗng, mà UPDATE vẫn trả 0: row đổi
-  // giữa hai lần đọc (lease vừa hết hạn…). Không suy ra gì — thử lại từ đầu.
+  // Owner/token/generation/status khớp hoàn toàn, marker rỗng, mà UPDATE vẫn trả 0:
+  // row đổi giữa hai lần đọc (lease vừa hết hạn…). Không suy ra gì — thử lại từ đầu.
   return 'inconsistent';
 }
 

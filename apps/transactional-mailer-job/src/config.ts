@@ -112,6 +112,21 @@ export function loadMailerJobConfig(env: MailerJobEnv): LoadedMailerJobConfig {
   }
   const quarantineHmacKeyHex = requireHexKey(env, 'MAIL_QUARANTINE_HMAC_KEY');
 
+  // Advisory: cửa sổ an toàn nhỏ hơn trần chờ của một request provider là cấu hình vô nghĩa —
+  // mọi mơ hồ được phát hiện ở `resolveAmbiguityAfterLostClaim` đều xảy ra tối thiểu sau
+  // `providerTimeoutMs` kể từ marker, nên đường auto-resend sau persist-denied sẽ chết âm
+  // thầm và toàn bộ mơ hồ chốt `provider-ambiguous-outcome` đỏi operator. Riêng mơ hồ trên
+  // đường statement (e) nhánh `already-marked` (Queue redelivery sớm sau attempt mất) được
+  // đánh giá theo tuổi marker: với redelivery nhanh, marker còn trẻ và auto-resend vẫn
+  // sống kể cả khi cấu hình lệch này tồn tại. Mâu thuẫn kiểu này phải dừng ở loader
+  // (cùng tinh thần với kiểm tra `maxExecutionAttempts >= 4` ở khối return dưới),
+  // không để operator tự phát hiện qua alert blocked backlog.
+  if (providerCallSafeWindowMsRaw <= providerTimeoutMs) {
+    throw new MailerJobConfigError(
+      `${PROVIDER_CALL_SAFE_WINDOW_ENV} phai > ${PROVIDER_TIMEOUT_ENV}: window nho hon mot provider request thi moi mo ho deu ngoai window`,
+    );
+  }
+
   const provider = loadProvider(env, providerTimeoutMs);
 
   return {

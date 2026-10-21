@@ -277,7 +277,15 @@ export function decodeQuarantineRow(row: Record<string, unknown>): QuarantineRec
   return record;
 }
 
-/** Cột của `mail_jobs` theo đúng thứ tự DDL; mọi SELECT đều chọn danh sách này. */
+/**
+ * Cột của `mail_jobs`; mọi SELECT đều chọn danh sách này và decode theo tên key.
+ *
+ * Thứ tự dưới đây là thứ tự **logical của decoder**, không phải thứ tự vật lý sau
+ * migration `0003`: `ALTER TABLE ADD COLUMN` của SQLite append `provider_call_at` vào
+ * **cuối** bảng (DDL thực tế: `..., blocked_at, created_at, updated_at, provider_call_at`).
+ * Về hoạt động vô hại vì không SELECT nào đọc theo vị trí — nhưng đừng dựa vào thứ tự này
+ * khi so `pragma_table_info` hay đọc `SELECT *`.
+ */
 export const MAIL_JOB_COLUMNS = [
   'delivery_id',
   'message_id',

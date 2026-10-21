@@ -23,7 +23,7 @@
 --
 -- Không CHECK mới: mọi giá trị NULL/số nguyên đều hợp lệ ở mọi status (row terminal vẫn
 -- giữ marker cũ của nó), nên không có parity để encode. Guard thuộc các conditional UPDATE
--- ở consumer, cùng hình dạng với bốn statement canonical khác.
+-- ở consumer, cùng hình dạng với các statement canonical khác.
 --
 -- Expand-compatible: `ALTER TABLE ... ADD COLUMN` trên SQLite là metadata-only, không
 -- rewrite row — row cũ đọc được ngay với giá trị NULL.
