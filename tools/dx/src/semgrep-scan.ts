@@ -54,7 +54,7 @@ import { gitEnv, ROOT_DIR } from './utils.js';
  * bên mà quên bên kia thì test đỏ.
  */
 export const SEMGREP_IMAGE =
-  'semgrep/semgrep:1.181.0@sha256:81474464c1f07483ba0682a44787fd93c91397419762a04abe2bafaae396304b';
+  'semgrep/semgrep:1.182.0@sha256:4a34048c04fef049f71665047f074cffb00cc3d89482f965a5cd151d589237af';
 
 /**
  * Đường dẫn mount BẮT BUỘC phải là `/src`.
