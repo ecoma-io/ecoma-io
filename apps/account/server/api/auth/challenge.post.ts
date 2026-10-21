@@ -163,18 +163,28 @@ export default defineEventHandler(async (event) => {
         return 'silently_rejected' as const;
       }
 
+      const correlationId = material.digest.slice(0, 16);
       const mailResult = await sendConfigured(config, {
         recipient: body.email,
         code: material.code,
-        correlationId: material.digest.slice(0, 16),
+        correlationId,
       });
 
       // Mail lỗi không đổi response (anti-enumeration) — chỉ log mã lý do.
+      //
+      // ⚠️ Nuốt lỗi ở đây KHÔNG đồng nghĩa với ngụy trang: `sendMail` không bao giờ
+      // ném cho lỗi đã phân loại (`rejected`/`invalid_payload`/`unreachable` đều là
+      // `{ ok: false, reason }` — lib/mail.ts), và response luôn 204 giữ nguyên.
+      // Bằng chứng phía service duy nhất của nhánh failed là log `mail_failed`
+      // dưới: đây là contract observability của route (SR-010 — quan sát, không
+      // điều kiện cấp), và không đường nào biến một gửi-thất-bại thành `ok` hay
+      // response "đã gửi" cho client.
       if (!mailResult.ok) {
         writeLog({
           event: 'otp_challenge.mail_failed',
           status: 204,
           reason: mailResult.reason,
+          error_code: mailResult.detail ?? 'none',
         });
       } else {
         writeLog({ event: 'otp_challenge.created', status: 204 });
@@ -198,6 +208,11 @@ export default defineEventHandler(async (event) => {
 /**
  * Gửi mail với URL từ config — tách hàm để route ngắn và để test mock được
  * `sendMail` qua module mock mà không dựng runtime config.
+ *
+ * ⚠️ Contract receiver bắt buộc `Idempotency-Key` per-attempt: `sendMail` tự đặt
+ * header từ `correlationId` ({@link otpMailIdempotencyKey} trong lib/mail.ts), với
+ * correlationId = 16 hex đầu của digest HMAC của attempt tại route này — per-challenge
+ * unique (mỗi attempt sinh digest riêng), deterministic cho retry cùng attempt.
  */
 function sendConfigured(
   config: { mailServiceUrl?: unknown },

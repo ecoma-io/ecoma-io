@@ -86,6 +86,22 @@ export function buildOtpMailRequest(params: {
 }
 
 /**
+ * Khoá idempotency của một attempt gửi mail — prefix chuẩn + phần duy nhất per-attempt.
+ *
+ * ⚠️ `transactional-mail` **bắt buộc** `Idempotency-Key` (`apps/transactional-mail/src/main.ts`,
+ * FR-001 bước 3 — thiếu ⇒ `400 invalid_request`), và phân biệt replay (`200`, cùng
+ * fingerprint) với conflict (`409 idempotency_key_conflict`, cùng key + fingerprint khác —
+ * FR-002). Key vì thế KHÔNG được chỉ từ recipient/template: hai attempt khác nhau của
+ * cùng địa chỉ phải ra hai key khác nhau, còn retry của MỘT attempt phải tái dùng đúng
+ * key đó. `correlationId` truyền vào `buildOtpMailRequest` đã thoả cả hai điều kiện —
+ * mỗi attempt sinh digest HMAC riêng nên 16-hex đầu unique per attempt, deterministic
+ * cho retry, và đủ ngắn để cùng prefix lọt ceiling 128 ký tự.
+ */
+export function otpMailIdempotencyKey(correlationId: string | undefined): string {
+  return `account-otp-corr-${correlationId ?? 'none'}`;
+}
+
+/**
  * Gửi mail qua `POST {mailServiceUrl}/v1/messages`.
  *
  * ⚠️ **Fail-closed là hàm trả `{ ok: false }`, không bao giờ ném cho lỗi đã phân
@@ -115,9 +131,16 @@ export async function sendMail(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), MAIL_TIMEOUT_MS);
   try {
+    // ⚠️ `Idempotency-Key` bắt buộc bởi contract receiver (FR-001 bước 3 — thiếu ⇒
+    // `400 invalid_request`, request không bao giờ tới được hàng SEND). Key từ
+    // attempt cấu tử (correlationId per-challenge) — không phải recipient/template,
+    // vì hai attempt khác nhau cùng địa chỉ phải không va nhau ở bước 5 (FR-002).
     const response = await fetch(`${mailServiceUrl.replace(/\/+$/u, '')}/v1/messages`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': otpMailIdempotencyKey(request.correlation_id),
+      },
       body: JSON.stringify(request),
       signal: controller.signal,
     });
