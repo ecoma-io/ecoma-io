@@ -8,7 +8,7 @@
     "prepare": "pnpm dx repo-prepare"
   },
   "dependencies": {
-    "jose": "6.2.12",
+    "jose": "6.2.13",
     "postgres": "3.4.9"
   },
   "devDependencies": {
@@ -84,7 +84,7 @@
     "vue": "^3.5.13",
     "vue-router": "^5.4.0",
     "vue-tsc": "^2.2.12",
-    "wrangler": "4.151.2"
+    "wrangler": "4.151.3"
   },
   "packageManager": "pnpm@12.14.0"
 }
