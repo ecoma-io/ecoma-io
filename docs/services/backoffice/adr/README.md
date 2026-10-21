@@ -1,0 +1,17 @@
+# Backoffice — ADR index
+
+Architectural decision record (ADR) của `backoffice`. Mỗi quyết định có **một** canonical location là ADR tương ứng; [`01-architecture.md`](../01-architecture.md) §10 giữ con trỏ tới đó. Số thứ tự theo thứ tự bảng §10 tại thời điểm chốt; nhìn lại một quyết định hay đảo nó phải qua ADR mới (không sửa ADR đã Accepted để đổi ý một cách âm thầm) — trừ cập nhật chính tả hay cross-reference không đổi nghĩa.
+
+| #    | Quyết định                                                                                                 | Trạng thái | File                                                                                                       |
+| ---- | ---------------------------------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------- |
+| 0001 | Storage/schema staff/RBAC — `db-backoffice`, PostgreSQL, schema `backoffice`                               | Accepted   | [`0001-storage-schema-staff-rbac.md`](./0001-storage-schema-staff-rbac.md)                                 |
+| 0002 | Ngưỡng revocation latency theo risk class — `normal` ≤ 60s, `high` ≤ 5s (target)                           | Accepted   | [`0002-revocation-latency-risk-class.md`](./0002-revocation-latency-risk-class.md)                         |
+| 0003 | Bootstrap first-administrator + emergency recovery — IaC/manual SQL có audit trail + hai-phím rule         | Accepted   | [`0003-bootstrap-first-admin-recovery.md`](./0003-bootstrap-first-admin-recovery.md)                       |
+| 0004 | Custom role administration — không bật; chỉ system-defined role                                            | Accepted   | [`0004-custom-role-administration.md`](./0004-custom-role-administration.md)                               |
+| 0005 | Step-up mechanism — fresh session ≤ 5 phút trước privileged operation (target)                             | Accepted   | [`0005-step-up-fresh-session.md`](./0005-step-up-fresh-session.md)                                         |
+| 0006 | ABAC/ReBAC/policy engine ngoài — không dùng; RBAC + typed scope + controlled conditions                    | Accepted   | [`0006-no-abac-rebac-policy-engine.md`](./0006-no-abac-rebac-policy-engine.md)                             |
+| 0007 | Role hierarchy — không dùng; gán phẳng                                                                     | Accepted   | [`0007-no-role-hierarchy.md`](./0007-no-role-hierarchy.md)                                                 |
+| 0008 | Retention authorization audit — theo retention policy hệ thống; `backoffice` là consumer, không phải owner | Accepted   | [`0008-audit-retention.md`](./0008-audit-retention.md)                                                     |
+| 0009 | Internal contract nhận kết quả authorization — không có; backend tự enforce, chỉ batch/event-based sync    | Accepted   | [`0009-no-internal-authorization-result-contract.md`](./0009-no-internal-authorization-result-contract.md) |
+
+Quyết định nền tảng của `backoffice` (A21–A24) nằm ở hệ thống, không nhân bản tại đây → [`../../../overview/01-architecture.md`](../../../overview/01-architecture.md) §8.

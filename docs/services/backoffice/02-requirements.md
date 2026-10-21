@@ -155,18 +155,18 @@ Cột "Phương pháp" phân biệt kiểm thử tự động (`test`), kiểm t
 
 Đây là ranh giới, không phải backlog: bất kỳ mục nào ở cột "Không làm" nếu được implement trong `backoffice` sẽ vi phạm ownership đã chốt ([`../../overview/01-architecture.md`](../../overview/01-architecture.md) §8 A21–A24). Không có mục nào là "nếu có thời gian" — mỗi việc đều có chủ sở hữu khác đang làm.
 
-| Không làm                                                              | Vì sao                                                                               | Ai làm thay thế                        |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------- |
-| Account identity, credential, MFA, passkey, recovery                   | `account` sở hữu canonical account identity                                          | `account`                              |
-| OAuth 2.0/OIDC flows, client/redirect URI, token issuance & revocation | `auth` sở hữu giao thức; `backoffice` chỉ tiêu thụ token                             | `auth`                                 |
-| Ánh xạ OAuth scope → application permission                            | **Scope ≠ permission** — `account`/`auth`/`backoffice` đều không làm việc đó (A22)   | không ai làm — hai khái niệm khác nhau |
-| Enforce authorization **thay** resource-owning backend                 | Mỗi backend enforce trên operation của chính nó (A23)                                | resource-owning backend                |
-| Database schema / migration cho staff/RBAC                             | Chưa chốt storage — [`01-architecture.md`](./01-architecture.md) §10                 | —                                      |
-| Policy engine ngoài / ABAC / role hierarchy                            | **Deferred**: v1 = RBAC, bật khi có điều kiện kích hoạt được ghi ở §4.7 của thiết kế | —                                      |
+| Không làm                                                              | Vì sao                                                                                                                                                        | Ai làm thay thế                        |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Account identity, credential, MFA, passkey, recovery                   | `account` sở hữu canonical account identity                                                                                                                   | `account`                              |
+| OAuth 2.0/OIDC flows, client/redirect URI, token issuance & revocation | `auth` sở hữu giao thức; `backoffice` chỉ tiêu thụ token                                                                                                      | `auth`                                 |
+| Ánh xạ OAuth scope → application permission                            | **Scope ≠ permission** — `account`/`auth`/`backoffice` đều không làm việc đó (A22)                                                                            | không ai làm — hai khái niệm khác nhau |
+| Enforce authorization **thay** resource-owning backend                 | Mỗi backend enforce trên operation của chính nó (A23)                                                                                                         | resource-owning backend                |
+| Database schema / migration cho staff/RBAC                             | Storage đã chốt ([ADR-0001](./adr/0001-storage-schema-staff-rbac.md)); schema chi tiết → workstream A ([#85](https://github.com/ecoma-io/ecoma-io/issues/85)) | —                                      |
+| Policy engine ngoài / ABAC / role hierarchy                            | **Deferred**: v1 = RBAC, bật khi có điều kiện kích hoạt được ghi ở §4.7 của thiết kế                                                                          | —                                      |
 
-## 7. Chưa chốt
+## 7. Quyết định kiến trúc
 
-Toàn bộ quyết định chưa chốt của `backoffice` (storage/schema staff/RBAC, revocation latency theo risk class, cách đưa trạng thái authorization tới resource-owning backend, bootstrap first-admin, custom role administration, step-up mechanism, ABAC/ReBAC/role hierarchy, internal contract cho kết quả authorization) được giữ ở **một chỗ canonical duy nhất**: [`01-architecture.md`](./01-architecture.md) §10 — tài liệu này không nhân bản chúng. Retention của authorization audit đi theo policy retention hệ thống, canonical ở [`../../overview/01-architecture.md`](../../overview/01-architecture.md) §10.
+Các quyết định kiến trúc của `backoffice` (storage/schema staff/RBAC, revocation latency theo risk class, cách đưa trạng thái authorization tới resource-owning backend, bootstrap first-admin, custom role administration, step-up mechanism, ABAC/ReBAC/role hierarchy, retention audit, internal contract cho kết quả authorization) được giữ ở **một chỗ con trỏ duy nhất**: [`01-architecture.md`](./01-architecture.md) §10 — mỗi quyết định có canonical là một [ADR](./adr/README.md), tài liệu này không nhân bản quyết định. Retention của authorization audit đi theo policy retention hệ thống, canonical ở [`../../overview/01-architecture.md`](../../overview/01-architecture.md) §10 ([ADR-0008](./adr/0008-audit-retention.md)).
 
 ## 8. Tham chiếu
 

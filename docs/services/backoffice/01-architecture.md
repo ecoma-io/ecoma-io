@@ -1,6 +1,6 @@
 # Backoffice — Architecture
 
-> Phạm vi: thiết kế `backoffice` — ranh giới, domain model khái niệm, authorization model và nơi enforce, token validity vs privilege currency, data/service trust, invariants và Chưa chốt.
+> Phạm vi: thiết kế `backoffice` — ranh giới, domain model khái niệm, authorization model và nơi enforce, token validity vs privilege currency, data/service trust, invariants và các quyết định đã chốt qua ADR.
 > Yêu cầu → [`02-requirements.md`](./02-requirements.md) · system boundary → [`../../overview/01-architecture.md`](../../overview/01-architecture.md) §2.2 · §4 · §8 A21–A24 · §9 · §10 · `account` → [`../account/01-architecture.md`](../account/01-architecture.md) · [`../account/03-operations.md`](../account/03-operations.md) · `auth` → [`../auth/01-architecture.md`](../auth/01-architecture.md) §6.
 > ⚠️ **Hiện trạng:** `apps/backoffice` là Nuxt app (`@ecoma-io/backoffice`) đã tích hợp AppShell (`app/app.vue`), có một **UI prototype** dùng dữ liệu mẫu (Issue #235 → PR #240) cùng `GET /api/greet`. Prototype đó **không** chứng minh có backend hay persistence. **Chưa có** xác thực, staff, role/permission, database binding hay RBAC nào được implement (`wrangler.jsonc` không có binding lưu trữ dữ liệu nào — chỉ có `ASSETS` phục vụ static asset). Hostname production đặt mục tiêu là `office.ecoma.io` ([`01` §7](../../overview/01-architecture.md)), custom domain chưa gán. Trạng thái bề mặt — route, locale, adapter — có canonical ở [`README.md`](./README.md). Toàn bộ tài liệu này là **thiết kế**, không phải hành vi đang chạy.
 
@@ -37,12 +37,12 @@ Tài liệu này mô tả ranh giới, domain model khái niệm và authorizati
 - **`account`** sở hữu canonical account identity: hồ sơ, email đã xác thực, credential, MFA/passkey, browser session, account lifecycle, authn audit. Nó **không** sở hữu staff membership, staff role, permission assignment hay authorization policy của `backoffice`, và **không** được ghi vào dữ liệu staff/role/permission của `backoffice`.
 - **`auth`** sở hữu trách nhiệm giao thức OAuth 2.0 / OIDC: flows, clients, redirect URI validation, token issuance/validation/revocation, audience restriction, assurance. Nó **không** sở hữu business role/permission của `backoffice`. **OAuth scope ≠ application-level permission** (A22).
 - **`backoffice` không phải một IdP thứ hai và không phải credential store.** Authentication tới `backoffice` đi qua `account`/`auth` như mọi application khác; `backoffice` chỉ tiêu thụ Account ID và token đã xác thực, và **không** giữ duplicate credential/MFA/passkey state.
-- **Database trust.** `backoffice` sở hữu database của nó; tên database và schema **chưa chốt** (⚠️ §10). `account` và `auth` **không** được ghi vào dữ liệu staff/role/permission của `backoffice` dù chung hạ tầng/instance — chung PostgreSQL instance ≠ chung write authority. Runtime role chỉ có quyền tối thiểu, tách migrator/runtime privilege; pattern tham chiếu ở [`../account/03-operations.md`](../account/03-operations.md) §3 — **tham chiếu, không sao chép**.
+- **Database trust.** `backoffice` sở hữu database của nó: `db-backoffice`, PostgreSQL, schema `backoffice` ([ADR-0001](./adr/0001-storage-schema-staff-rbac.md)). `account` và `auth` **không** được ghi vào dữ liệu staff/role/permission của `backoffice` dù chung hạ tầng/instance — chung PostgreSQL instance ≠ chung write authority. Runtime role chỉ có quyền tối thiểu, tách migrator/runtime privilege; pattern tham chiếu ở [`../account/03-operations.md`](../account/03-operations.md) §3 — **tham chiếu, không sao chép**.
 - **Trục trạng thái tách đôi.** `staff status` (`active` | `suspended` | `terminated`) là trục **khác hẳn** với account status (`active` | `suspended` | `deleted`); hai khái niệm khác nhau và không suy ra nhau. Ba giá trị cụ thể của `staff status` là **đề xuất** — điều đã chốt là **sự tách trục**, không phải từng nhãn (§4.2).
 
 ## 4. Domain model (khái niệm — không phải schema)
 
-⚠️ Phần này chỉ định nghĩa **ý nghĩa và ràng buộc**. Không có table, cột hay DDL nào được chốt ở đây — storage/schema là quyết định chưa chốt (§10).
+⚠️ Phần này chỉ định nghĩa **ý nghĩa và ràng buộc**. Không có table, cột hay DDL nào được chốt ở đây — thiết kế schema cụ thể thuộc workstream A ([#85](https://github.com/ecoma-io/ecoma-io/issues/85)); engine/database/schema đã chốt ([ADR-0001](./adr/0001-storage-schema-staff-rbac.md)).
 
 ### 4.1. Staff member ↔ Account ID
 
@@ -72,8 +72,8 @@ Tài liệu này mô tả ranh giới, domain model khái niệm và authorizati
 
 - **role** là một tập permission có tên; role là cách gán quyền theo nhóm thay vì gán từng permission.
 - **Không có unrestricted `isAdmin` bypass role**: mọi role đều là tập permission hữu hạn, và mọi đường đều đi qua enforcement như nhau.
-- **system-defined role** vs **custom role** được phân biệt; việc bật custom role administration là quyết định **chưa chốt** (§10).
-- Role hierarchy (role kế thừa role) là **deferred** và không bật mặc định (§4.7).
+- **system-defined role** vs **custom role** được phân biệt; custom role administration **không bật** giai đoạn này, chỉ system-defined role ([ADR-0004](./adr/0004-custom-role-administration.md)).
+- Role hierarchy (role kế thừa role) **không dùng**; gán phẳng ([ADR-0007](./adr/0007-no-role-hierarchy.md), §4.7).
 - Nội dung của từng system-defined role chưa chốt ở đây — nó phải xuất phát từ permission catalog thực tế, không phải từ tài liệu này.
 
 ### 4.5. Staff-role assignment
@@ -90,18 +90,18 @@ Tài liệu này mô tả ranh giới, domain model khái niệm và authorizati
 - **Append-only** và access-restricted; **không** chứa access token, auth secret hay PII.
 - Audit ghi _đã xảy ra gì_, không phải _được phép làm gì_ — nó không thay thế enforcement.
 - **Không giả định xoá vật lý**: `terminated` là trạng thái của record staff, không phải xoá record; lịch sử assignment được giữ để audit còn truy vấn được.
-- Retention cho authorization audit đi theo policy retention hệ thống cho audit/security event — quyết định hệ thống, canonical ở [`../../overview/01-architecture.md`](../../overview/01-architecture.md) §10.
+- Retention cho authorization audit đi theo policy retention hệ thống cho audit/security event — quyết định hệ thống, canonical ở [`../../overview/01-architecture.md`](../../overview/01-architecture.md) §10; `backoffice` là consumer, không phải owner của policy ([ADR-0008](./adr/0008-audit-retention.md)).
 - Logging là một detective control quan trọng, không phải optional (nguyên tắc từ OWASP Authorization Cheat Sheet → [`02-requirements.md`](./02-requirements.md) §8).
 
 ### 4.7. Deferred — chỉ bật khi có điều kiện kích hoạt
 
-| Khái niệm                              | Trạng thái   | Điều kiện kích hoạt xem xét lại                                                 |
-| -------------------------------------- | ------------ | ------------------------------------------------------------------------------- |
-| **role hierarchy**                     | **deferred** | Catalog lớn tới mức kế thừa role là cần thật; mặc định **không bật** (§10)      |
-| **ABAC / ReBAC / policy engine ngoài** | **deferred** | Một yêu cầu resource/context cụ thể được chứng minh là RBAC không đáp ứng (§10) |
-| **departments / groups**               | **deferred** | Có nhu cầu assignment theo tổ chức được lặp lại thay vì gán role từng người     |
+| Khái niệm                              | Trạng thái   | Điều kiện kích hoạt xem xét lại                                                                                                   |
+| -------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| **role hierarchy**                     | **deferred** | Catalog lớn tới mức kế thừa role là cần thật ([ADR-0007](./adr/0007-no-role-hierarchy.md))                                        |
+| **ABAC / ReBAC / policy engine ngoài** | **deferred** | Một yêu cầu resource/context cụ thể được chứng minh là RBAC không đáp ứng ([ADR-0006](./adr/0006-no-abac-rebac-policy-engine.md)) |
+| **departments / groups**               | **deferred** | Có nhu cầu assignment theo tổ chức được lặp lại thay vì gán role từng người                                                       |
 
-ABAC được định nghĩa là logical access control mà kết quả authorize được quyết định bằng cách evaluate **attributes** của subject, object, operation và đôi khi environment conditions (nguồn: NIST SP 800-162, trích trong [`02-requirements.md`](./02-requirements.md) §8). **v1 chỉ RBAC**; bật ABAC/ReBAC/policy engine ngoài là quyết định chưa chốt.
+ABAC được định nghĩa là logical access control mà kết quả authorize được quyết định bằng cách evaluate **attributes** của subject, object, operation và đôi khi environment conditions (nguồn: NIST SP 800-162, trích trong [`02-requirements.md`](./02-requirements.md) §8). **v1 chỉ RBAC** — không dùng ABAC/ReBAC/policy engine ngoài ([ADR-0006](./adr/0006-no-abac-rebac-policy-engine.md)).
 
 ## 5. Authorization model và nơi enforce
 
@@ -114,7 +114,7 @@ ABAC được định nghĩa là logical access control mà kết quả authoriz
 - **Workload/service identity ≠ end-user identity.** Internal call mang danh tính service nào thì không được phép giả danh end-user, và ngược lại; hai trục principal không trộn.
 - **Trusted mapping** từ token subject (`sub`) sang Account ID và sang staff context diễn ra server-side từ token đã xác thực; client không supply được principal, role, permission hay scope.
 - **Internal contracts** không dựa vào vị trí mạng: dùng envelope HMAC (signature + timestamp + nonce, chống replay) theo giao thức canonical ở [`../auth/01-architecture.md`](../auth/01-architecture.md) §5.1.8; **vị trí mạng nội bộ không phải trust** — bằng chứng "Service Binding là isolation, không phải verification" → [`../account/01-architecture.md`](../account/01-architecture.md) §5.1.
-- **`backoffice` không mặc định trở thành lời gọi đồng bộ trên mỗi request.** Resource-owning backend tự enforce với dữ liệu nó có (token + assignment đã đồng bộ); việc có cần một contract nhận kết quả authorization từ `backoffice` hay không là **chưa chốt** (§10).
+- **`backoffice` không mặc định trở thành lời gọi đồng bộ trên mỗi request.** Resource-owning backend tự enforce với dữ liệu nó có (token + assignment đã đồng bộ); **không có** contract nhận kết quả authorization từ `backoffice` ([ADR-0009](./adr/0009-no-internal-authorization-result-contract.md)) — chỉ batch/event-based sync.
 - **Quyết định deny cũng phải quan sát được** như quyết định allow — một request bị từ chối mà không để lại dấu vết là mất tín hiệu điều tra; nội dung audit vẫn theo §4.6, không ghi secret.
 
 ## 6. Token validation và freshness của authorization
@@ -140,17 +140,17 @@ ABAC được định nghĩa là logical access control mà kết quả authoriz
 | **Versioned authorization state**            | Token mang version, backend từ chối version đã bị thu hồi                |
 | **Cache invalidation**                       | Giảm tải; độ trễ invalidation là rủi ro phải đo và giới hạn              |
 
-- **Ngưỡng revocation latency tối đa theo risk class là quyết định chưa chốt (A24, §10)** — phải được định nghĩa **trước khi bật role assignment thật**. Không hứa thu hồi tức thời khi chưa có cơ chế guarantee, và không viết con số nào ở đây.
+- **Ngưỡng revocation latency tối đa theo risk class đã chốt ([ADR-0002](./adr/0002-revocation-latency-risk-class.md)): `normal` ≤ 60 giây, `high` ≤ 5 giây — là target, không tự hiện đại hoá thành cơ chế.** Phải có cơ chế thiết kế đáp ứng ngưỡng trước khi bật role assignment thật; không hứa thu hồi tức thời khi chưa có cơ chế guarantee.
 - **Privilege change → cân nhắc regenerate session/token.** OWASP Session Management Cheat Sheet: session phải invalidate **server-side**, và "The session ID must be renewed or regenerated… after any privilege level change"; xoá cookie một mình **không** invalidate bản sao session bị đánh cắp (trích → [`02-requirements.md`](./02-requirements.md) §8).
 
 ## 7. Step-up authentication, privileged operations và governance
 
-- **Permission ≠ authentication assurance.** Một staff member có permission vẫn có thể bị đòi bước xác thực mạnh hơn cho hành động rủi ro cao; `backoffice` dựa vào **bằng chứng từ flow `auth` đáng tin cậy**, và **không bao giờ tin cờ MFA do client supply** (claim/header do client gửi bị bỏ qua và bị coi là không đáng tin).
+- **Permission ≠ authentication assurance.** Một staff member có permission vẫn có thể bị đòi bước xác thực mạnh hơn cho hành động rủi ro cao; `backoffice` dựa vào **bằng chứng từ flow `auth` đáng tin cậy**, và **không bao giờ tin cờ MFA do client supply** (claim/header do client gửi bị bỏ qua và bị coi là không đáng tin). Cơ chế step-up và freshness window đã chốt → [ADR-0005](./adr/0005-step-up-fresh-session.md).
 - **Cấm:** tự gán role (self-assignment), tự nâng quyền (self-elevation), cấp quyền vượt quá quyền của chính mình (granting above one's own authority).
 - **Separation of duties.** Role administration tách khỏi thao tác nghiệp vụ thường ngày; thao tác rủi ro cao cần phê duyệt độc lập (independent approval).
 - **Mass-affecting role edits phải được gated** — sửa nhiều assignment cùng lúc có blast radius lớn nên phải qua nút kiểm soát riêng.
 - **Concurrency khi đổi quyền phải không mở rộng quyền âm thầm:** re-check authorization **at write time**, không dùng kết quả đã cache từ trước khi quyền bị thay đổi (chống TOCTOU).
-- **Bootstrap first-administrator và emergency recovery phải được document hoá và audit.** Chúng **không** được là cờ bypass/backdoor chưa document hay một đường tắt `isAdmin`; cả hai đều là **quyết định chưa chốt (§10)** và không được thiết kế lén ở đây.
+- **Bootstrap first-administrator và emergency recovery phải được document hoá và audit.** Chúng **không** được là cờ bypass/backdoor chưa document hay một đường tắt `isAdmin`; đường đã chốt là IaC/manual SQL có audit trail + hai-phím rule, không có backdoor code path ([ADR-0003](./adr/0003-bootstrap-first-admin-recovery.md)).
 
 ## 8. Data và service trust
 
@@ -177,16 +177,18 @@ ABAC được định nghĩa là logical access control mà kết quả authoriz
 | 11  | Least-privilege DB credential; runtime privilege ≠ migrator privilege                                                                          | DB grant review: `has_table_privilege` sweep không còn quyền thừa                 |
 | 12  | Authorization audit **append-only**, access-restricted                                                                                         | SQL check: UPDATE/DELETE trên audit bị từ chối; grant read có giới hạn            |
 
-## 10. Chưa chốt
+## 10. Đã chốt qua ADR
 
-| Quyết định chưa chốt                                                                                                                                                                                                                                    | Kích hoạt                                                                    |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| **Storage/schema cho staff/RBAC** — tên database, schema, cách lưu staff/role/permission/assignment. Engine theo quy tắc bounded context ([`01` §4](../../overview/01-architecture.md) A20): `backoffice` là business data → PostgreSQL, chưa provision | Trước khi implement persistence đầu tiên cho staff/RBAC                      |
-| **Ngưỡng revocation latency tối đa theo risk class** (A24)                                                                                                                                                                                              | Trước khi bật role assignment thật                                           |
-| **Cơ chế bootstrap first-administrator + emergency recovery** — đường nào, ai approve, audit ra sao                                                                                                                                                     | Trước khi cấp quyền đầu tiên                                                 |
-| **Có bật custom role administration không** (system-defined vs custom)                                                                                                                                                                                  | Trước khi cho phép tạo role ngoài system-defined                             |
-| **Step-up mechanism + freshness window** cho hành động rủi ro cao                                                                                                                                                                                       | Trước privileged-operation workflow đầu tiên                                 |
-| **Có cần ABAC/ReBAC/policy engine ngoài không**                                                                                                                                                                                                         | Khi có yêu cầu resource/context cụ thể được chứng minh là RBAC không đáp ứng |
-| **Có bật role hierarchy không**                                                                                                                                                                                                                         | Khi catalog cần kế thừa role thay vì gán phẳng                               |
-| **Retention cho authorization audit** — đi theo retention policy hệ thống cho audit/security event (canonical: [`../../overview/01-architecture.md`](../../overview/01-architecture.md) §10)                                                            | Trước production                                                             |
-| **Internal contract** nhận kết quả authorization giữa `backoffice` và resource-owning backend — **chưa chốt cả việc có cần contract như vậy không** (không mặc định một lời gọi đồng bộ mỗi request)                                                    | Trước tích hợp enforcement đầu tiên                                          |
+Chín quyết định từng "chưa chốt" dưới đây đã được chốt bằng architectural decision record ([ADR](./adr/)) — mỗi quyết định có **một** canonical location là ADR tương ứng; bảng này chỉ giữ **con trỏ** tới đó, không nhân bản quyết định. Thay đổi nội dung một quyết định được chốt phải qua ADR tương ứng (hay một ADR mới thay thế nó), không sửa ô bảng ở đây; điều kiện kích hoạt xem xét lại từng quyết định được ghi trong ADR đó. Danh sách trạng thái tổng của bộ ADR → [`adr/README.md`](./adr/README.md).
+
+| Quyết định (đã chốt)                                                                                                                                                                      | ADR                                                                                                                            | Kích hoạt                                                                    |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| **Storage/schema cho staff/RBAC** — engine theo quy tắc bounded context ([`01` §4](../../overview/01-architecture.md) A20)                                                                | [ADR-0001](./adr/0001-storage-schema-staff-rbac.md) — `db-backoffice`, PostgreSQL, schema `backoffice`                         | Trước khi implement persistence đầu tiên cho staff/RBAC                      |
+| **Ngưỡng revocation latency tối đa theo risk class** (A24)                                                                                                                                | [ADR-0002](./adr/0002-revocation-latency-risk-class.md) — `normal` ≤ 60s, `high` ≤ 5s (target)                                 | Trước khi bật role assignment thật                                           |
+| **Cơ chế bootstrap first-administrator + emergency recovery** — đường nào, ai approve, audit ra sao                                                                                       | [ADR-0003](./adr/0003-bootstrap-first-admin-recovery.md) — IaC/manual SQL + hai-phím rule, không có backdoor path              | Trước khi cấp quyền đầu tiên                                                 |
+| **Có bật custom role administration không** (system-defined vs custom)                                                                                                                    | [ADR-0004](./adr/0004-custom-role-administration.md) — không bật; chỉ system-defined role                                      | Trước khi cho phép tạo role ngoài system-defined                             |
+| **Step-up mechanism + freshness window** cho hành động rủi ro cao                                                                                                                         | [ADR-0005](./adr/0005-step-up-fresh-session.md) — fresh session ≤ 5 phút (target) trước privileged operation                   | Trước privileged-operation workflow đầu tiên                                 |
+| **Có cần ABAC/ReBAC/policy engine ngoài không**                                                                                                                                           | [ADR-0006](./adr/0006-no-abac-rebac-policy-engine.md) — không dùng; RBAC + typed scope + controlled conditions                 | Khi có yêu cầu resource/context cụ thể được chứng minh là RBAC không đáp ứng |
+| **Có bật role hierarchy không**                                                                                                                                                           | [ADR-0007](./adr/0007-no-role-hierarchy.md) — không dùng; gán phẳng                                                            | Khi catalog cần kế thừa role thay vì gán phẳng                               |
+| **Retention cho authorization audit** — theo retention policy hệ thống cho audit/security event (canonical: [`../../overview/01-architecture.md`](../../overview/01-architecture.md) §10) | [ADR-0008](./adr/0008-audit-retention.md) — `backoffice` là consumer, không phải owner của policy                              | Trước production                                                             |
+| **Internal contract** nhận kết quả authorization giữa `backoffice` và resource-owning backend                                                                                             | [ADR-0009](./adr/0009-no-internal-authorization-result-contract.md) — không có; backend tự enforce, chỉ batch/event-based sync | Trước tích hợp enforcement đầu tiên                                          |
