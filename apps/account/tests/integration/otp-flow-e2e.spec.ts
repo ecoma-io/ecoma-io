@@ -28,7 +28,12 @@ import sessionRoute from '../../server/api/auth/session.get';
 import verifyRoute from '../../server/api/auth/verify.post';
 import { writeLog } from '../../server/utils/logger';
 import { OTP_ACR } from '../../server/lib/session';
-import { insertChallenge } from '../../server/lib/otp';
+import {
+  OTP_RATE_LIMIT_SHORT_MAX,
+  OTP_RATE_LIMIT_SHORT_WINDOW_SECONDS,
+  countChallengesSince,
+  insertChallenge,
+} from '../../server/lib/otp';
 import {
   ACCOUNT_DATABASE,
   type AccountDatabase,
@@ -827,6 +832,58 @@ describe.skipIf(!dockerAvailable)('email OTP flow end-to-end', () => {
     }
   });
 
+  it('caps concurrent challenges for one address at the rolling-window limit', async () => {
+    // OCR-3 (run 39571892639): phép đo rolling-window chỉ nằm ở pre-check route
+    // (ngoài transaction) thì N request đồng thời cùng thấy còn dư allowance rồi
+    // cùng ghi — trần 3/15 phút không giữ được. Test này neo điều ngược lại: N
+    // request CÙNG LÚC cho một địa chỉ phải kết thúc với đúng `OTP_RATE_LIMIT_SHORT_MAX`
+    // hàng trong cửa sổ ngắn (các request dư bị chặn bên trong transaction của
+    // `insertChallenge`), mọi response vẫn 204 (anti-enumeration — nhánh bị chặn
+    // không được phân biệt), và mail chỉ đi ra tối đa bằng số challenge thật.
+    const mail = installMailStub();
+    try {
+      const CONCURRENCY = 8;
+      const responses = await Promise.all(
+        Array.from({ length: CONCURRENCY }, () =>
+          post('/api/auth/challenge', { email: EMAIL_MAIN }),
+        ),
+      );
+
+      for (const response of responses) {
+        expect(response.status).toBe(204);
+        expect(await response.text()).toBe('');
+      }
+      expect(mail.sent.length).toBeLessThanOrEqual(OTP_RATE_LIMIT_SHORT_MAX);
+
+      const pool = await db.createRuntimePool();
+      try {
+        const hash = (await import('node:crypto'))
+          .createHash('sha256')
+          .update(EMAIL_MAIN.trim().toLowerCase())
+          .digest('hex');
+        const shortCount = await countChallengesSince(
+          pool,
+          hash,
+          OTP_RATE_LIMIT_SHORT_WINDOW_SECONDS,
+        );
+        // Trần cửa sổ ngắn được giữ nguyên dưới tải đồng thời — đây là điều OCR
+        // chỉ ra đã để trượt trước khi fix. Kì vọng chỉ cận trên (≤ 3), không
+        // equality (== 3): 8 request xuất phát qua `Promise.all` được tuần tự
+        // hoá theo scheduling của Node — bao nhiêu trong chúng kịp tới
+        // `insertChallenge` trước khi request thứ 4 thấy cửa sổ tràn là thứ
+        // không kiểm soát được. Test này neo bất biến "không lọt qua trần";
+        // equality sẽ là assert tuỳ nó độ trôi của scheduler. Test race cooldown
+        // phía dưới cùng mẫu: sự kiện bất định thì assert bất biến, không assert
+        // progress cụ thể.
+        expect(shortCount).toBeLessThanOrEqual(OTP_RATE_LIMIT_SHORT_MAX);
+      } finally {
+        await pool.end();
+      }
+    } finally {
+      mail.restore();
+    }
+  });
+
   it('rejects the second challenge in a cooldown race deterministically via the in-transaction guard', async () => {
     // Hồi quy cho kẽ hở race đo được trên CI (mail.sent == 2): pre-check cooldown
     // của route đọc ngoài transaction, nên T2 có thể vượt pre-check khi bảng còn
@@ -875,6 +932,11 @@ describe.skipIf(!dockerAvailable)('email OTP flow end-to-end', () => {
           purpose: 'login',
           expiresAt: new Date(Date.now() + 600_000),
           resendCooldownSeconds: 60,
+          // 1 hàng active (T1) < trần 3 — cả hai cửa sổ đều còn dư allowance, nên
+          // guard rate-limit không kích hoạt: `null` của outcome này là của guard
+          // cooldown, đúng contract cũ mà test neo.
+          rateLimitShortWindowSeconds: 900,
+          rateLimitHourWindowSeconds: 3600,
         });
         expect(outcome).toBeNull();
       } finally {
@@ -893,6 +955,102 @@ describe.skipIf(!dockerAvailable)('email OTP flow end-to-end', () => {
       expect(after[0]?.id).toBe(activeId);
     } finally {
       mail.restore();
+    }
+  });
+
+  it('re-measures the rolling window after the row lock, so a waiter behind a consuming transaction gets null', async () => {
+    // OCR-3 path (b) consume-slot-freed: T2 block trong `SELECT … FOR UPDATE`
+    // khi T1 commit (consume X + INSERT Y) — phép đếm của T2 PHẢI chạy SAU khi
+    // thoát block để thấy Y; nếu đếm chạy trước khoá (snapshot lấy trước khi T1
+    // commit) T2 chỉ thấy cửa sổ còn dư allowance và insert thành công, tràn
+    // trần. Kịch bản không đo được qua route (mỗi web handler call là tuần tự);
+    // contract được neo trực tiếp: transaction "T1" trên một PoolClient giữ
+    // khoá hàng active, còn `insertChallenge` của T2 chạy song song trên
+    // connection khác.
+    const pool = await db.createRuntimePool();
+    const hash = (await import('node:crypto'))
+      .createHash('sha256')
+      .update(EMAIL_MAIN.trim().toLowerCase())
+      .digest('hex');
+    // Trạng thái trước race: R1 active, created 61s trước (CÒN trong cửa sổ
+    // 15 phút, NGOÀI cooldown 60s) và R2 vừa consume (vẫn được đếm — rate limit
+    // đếm tần suất cấp mã, kể cả hàng đã consume). Cửa sổ đang thấy 2/3 — còn
+    // đúng 1 allowance.
+    const holder = await pool.connect();
+    try {
+      await holder.query(
+        `INSERT INTO account.otp_challenges (address_hash, code_digest, purpose, expires_at, created_at)
+         VALUES ($1, $2, 'login', $3, now() - interval '61 seconds')`,
+        [hash, 'b'.repeat(64), new Date(Date.now() + 600_000)],
+      );
+      await holder.query(
+        `INSERT INTO account.otp_challenges (address_hash, code_digest, purpose, expires_at, consumed_at)
+         VALUES ($1, $2, 'login', $3, now())`,
+        [hash, 'b'.repeat(64), new Date(Date.now() + 600_000 - 61_000)],
+      );
+
+      // T1 giữ khoá hàng active của R1 (SELECT … FOR UPDATE, chưa commit) —
+      // T2 sẽ block đúng tại statement đó của transaction.
+      await holder.query('BEGIN');
+      await holder.query(
+        `SELECT id FROM account.otp_challenges
+          WHERE address_hash = $1 AND purpose = 'login' AND consumed_at IS NULL
+          FOR UPDATE`,
+        [hash],
+      );
+
+      // T2 phát động — sẽ chờ khoá. Không await: nó chưa thể kết thúc.
+      const waiter = insertChallenge(pool, {
+        addressHash: hash,
+        digest: 'd'.repeat(64),
+        purpose: 'login',
+        expiresAt: new Date(Date.now() + 600_000),
+        resendCooldownSeconds: 60,
+        rateLimitShortWindowSeconds: 900,
+        rateLimitHourWindowSeconds: 3600,
+      });
+      // Barrier theo mẫu pg_sleep của repo: cho T2 thời gian vào block trước
+      // khi T1 commit (nếu T2 chưa kịp vào block cũng không sao — mọi phối cảnh
+      // đều phải qua cùng các assertion phía dưới).
+      await holder.query(`SELECT pg_sleep(1)`);
+
+      // T1 "commit": consume R1 (ngoài cooldown, 61s) + INSERT Y consume-ngay
+      // (không lấy slot active — hợp lệ nhờ partial UNIQUE chỉ tính
+      // consumed_at IS NULL; vẫn được đếm trong cửa sổ). Sau commit, cửa sổ có
+      // R1 + R2 + Y = 3 = trần.
+      await holder.query(
+        `UPDATE account.otp_challenges
+            SET consumed_at = now()
+          WHERE address_hash = $1 AND purpose = 'login' AND consumed_at IS NULL`,
+        [hash],
+      );
+      await holder.query(
+        `INSERT INTO account.otp_challenges (address_hash, code_digest, purpose, expires_at, consumed_at)
+         VALUES ($1, $2, 'login', $3, now())`,
+        [hash, 'e'.repeat(64), new Date(Date.now() + 600_000)],
+      );
+      await holder.query('COMMIT');
+
+      // T2 thoát block. Cooldown check trượt qua (không còn hàng active), rồi
+      // đếm — chạy SAU khoá nên thấy đủ 3 hàng ⇒ trần ⇒ `null`. Với thứ tự ĐẢO
+      // (đếm trước khoá), T2 thấy 2 hàng (≤3) và INSERT thành công ⇒ tổng 4
+      // hàng — sai OCR-3. Hai assert dưới phân biệt hai thứ tự:
+      expect(await waiter).toBeNull();
+      const after = await db.connect().then(async (c2) => {
+        try {
+          const { rows } = await c2.query<{ count: number }>(
+            `SELECT count(*)::int AS count FROM account.otp_challenges`,
+          );
+          return rows;
+        } finally {
+          await c2.end();
+        }
+      });
+      expect(Number(after[0]?.count)).toBe(3);
+    } finally {
+      await holder.query('ROLLBACK').catch(() => undefined);
+      holder.release();
+      await pool.end();
     }
   });
 

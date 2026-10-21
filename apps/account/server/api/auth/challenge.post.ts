@@ -34,9 +34,38 @@
  * biệt với thành công. Challenge active còn cooldown: consume và cấp mã mới
  * **không** diễn ra — người dùng nhấn resend liên tục không được mail mới trước
  * 60 giây, nhưng không được biết là bị chặn.
+ *
+ * ## Binding handle X — first-binding-wins tại đây (FR-006c, FR-006c2)
+ *
+ * Khi body mang `handle` (opaque handle X do `auth` cấp trong `?handle=` của
+ * `/login`), route ghi binding đầu tiên vào `login_handoffs` **trước** khi cấp
+ * mã: handle X phải gắn với session đã trình nó (§3.6), không sau khi đăng nhập.
+ * FR-006c: nếu browser chưa có session nào, một **session anonymous** được tạo
+ * rồi handle bind vào đó — X không bao giờ được bind vào "không có session".
+ *
+ * Binding là một `INSERT ... ON CONFLICT DO NOTHING` duy nhất (first-binding-
+ * wins, AC-008b2): request này thắng khi chưa ai bind, và đi tiếp bình thường;
+ * khi session khác đã bind trước, request này chỉ **so khớp** và cũng đi tiếp
+ * bình thường — response vẫn 204, anti-enumeration không bị phá. Việc từ chối
+ * thật sự diễn ra ở `/api/auth/handoff` (so khớp trước push), không ở đây: một
+ * nhánh bị chặn ở challenge sẽ là một response phân biệt được cho kẻ dò, còn
+ * ở đây im lặng đúng nghĩa "route cấp mã không biết gì về tranh chấp binding".
+ *
+ * ⚠️ **Không log giá trị handle** — chỉ `handle_hash` (§3.6; X đi qua query
+ * string, lọt vào access log của tầng trung gian).
+ *
+ * ⚠️ `handle` sai hình dạng (không phải chuỗi 1–1000 ký tự) bị 400 trước khi
+ * chạm crypto/DB — cùng cách body sai hình dạng của `email` là 400.
  */
 
-import { createError, defineEventHandler, readValidatedBody, setResponseHeader } from 'h3';
+import {
+  createError,
+  defineEventHandler,
+  getCookie,
+  readValidatedBody,
+  setCookie,
+  setResponseHeader,
+} from 'h3';
 
 import { accountHyperdrive } from '../../utils/bindings';
 import { writeLog } from '../../utils/logger';
@@ -59,9 +88,24 @@ import {
   OTP_TTL_SECONDS,
   resolveOtpTarget,
 } from '../../lib/otp';
+import { LOGIN_HANDOFF_TTL_SECONDS, bindHandleFirst, hashHandle } from '../../lib/handoff';
+import {
+  ANONYMOUS_SESSION_TTL_SECONDS,
+  SESSION_COOKIE_NAME,
+  SESSION_ABSOLUTE_SECONDS,
+  createSessionIdentifier,
+  hashSessionIdentifier,
+  insertAnonymousSession,
+} from '../../lib/session';
 
 /** Body hợp lệ: `email` là chuỗi có hình dạng địa chỉ, giới hạn độ dài để chống abuse. */
-function isChallengeBody(value: unknown): { email: string } | false {
+interface ChallengeBody {
+  email: string;
+  /** Handle X opaque — tùy chọn; chỉ luồng `/authorize` của `auth` mới mang. */
+  handle?: string;
+}
+
+function isChallengeBody(value: unknown): ChallengeBody | false {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
@@ -77,7 +121,17 @@ function isChallengeBody(value: unknown): { email: string } | false {
   ) {
     return false;
   }
-  return { email };
+  // Handle opaque — hình dạng tối thiểu, cận trên chặn abuse, cùng cận với
+  // `isHandoffBody` (`handoff.post.ts`): không parse, không kiểm định dạng
+  // khác. `undefined` = gọi từ `/login` thuần (không có luồng `/authorize`).
+  const handle = (value as { handle?: unknown }).handle;
+  if (
+    handle !== undefined &&
+    (typeof handle !== 'string' || handle.length === 0 || handle.length > 1_000)
+  ) {
+    return false;
+  }
+  return handle === undefined ? { email } : { email, handle };
 }
 
 export default defineEventHandler(async (event) => {
@@ -106,24 +160,186 @@ export default defineEventHandler(async (event) => {
 
   const { hash } = await normalizeAndHashEmail(body.email);
 
-  let outcome: 'sent' | 'silently_rejected';
+  // Quyết định rate-limit/cooldown **trước** block binding (OCR): block binding
+  // ghi `account_sessions` anonymous + `login_handoffs` — hàng DB thật của một
+  // endpoint public. Rate limit đếm `otp_challenges` (ghi sau state này) nên nó
+  // không gate được phần trước; với handle mới + không cookie, mỗi request bị
+  // limit vẫn tạo 2 hàng. Xác định sớm nhánh bị chặn để **bỏ qua ghi binding**
+  // — response vẫn 204, anti-enumeration giữ nguyên (kẻ dò không phân biệt được
+  // nhánh này), chỉ lượng ghi DB là 0.
+  let otpBlocked: boolean;
   try {
-    outcome = await withRequestPool(hyperdrive, async (pool) => {
-      // Rate limit TRƯỚC mọi thứ: hai cửa sổ trượt, chặn là im lặng.
+    otpBlocked = await withRequestPool(hyperdrive, async (pool) => {
+      // Hai cửa sổ trượt của rate limit — phép đo **pre-check** ngoài transaction.
+      // Đây không phải guard cấp mã (guard cuối cùng nằm trong `insertChallenge`,
+      // xem OCR-3) — vai trò của phép đo này là DOẦN ĐO trước khi block binding
+      // có cơ hội ghi hàng: request sắp bị rate-limit/cooldown không được tạo ra
+      // hàng `account_sessions`/`login_handoffs` mới (OCR vòng 2). Phép đo ngoài
+      // transaction không tuần tự hoá được với INSERT — N request đồng thời có
+      // thể cùng thấy còn dư allowance rồi cùng đi tiếp; phần tràn còn lại do
+      // đo trong `insertChallenge` đóng lại.
       const [shortCount, hourCount] = await Promise.all([
         countChallengesSince(pool, hash, OTP_RATE_LIMIT_SHORT_WINDOW_SECONDS),
         countChallengesSince(pool, hash, OTP_RATE_LIMIT_HOUR_WINDOW_SECONDS),
       ]);
       if (isRateLimited(shortCount, hourCount)) {
-        return 'silently_rejected' as const;
+        return true;
       }
-
-      // Cooldown resend: challenge active mới tạo dưới 60s thì không cấp lại.
+      // Cooldown resend cùng họ: một challenge active còn dưới 60s nghĩa là
+      // request này không được cấp mã — cũng không ghi binding mới.
       const active = await findActiveChallenge(pool, hash, OTP_PURPOSE_LOGIN);
-      if (active !== null && isResendBlocked(active.created_at, Date.now())) {
-        return 'silently_rejected' as const;
-      }
+      return active !== null && isResendBlocked(active.created_at, Date.now());
+    });
+  } catch {
+    writeLog({ event: 'otp_challenge.failed', status: 503, reason: 'db_unreachable' });
+    throw createError({ statusCode: 503, statusMessage: 'Service Unavailable' });
+  }
+  if (otpBlocked) {
+    writeLog({ event: 'otp_challenge.suppressed', status: 204 });
+    event.node.res.statusCode = 204;
+    return null;
+  }
 
+  // Binding handle X — TRƯỚC khi cấp mã (FR-006c: "ràng buộc ngay khi được
+  // trình"). Chỉ chạy khi body mang handle; `/login` thuần đi tiếp như cũ.
+  //
+  // ⚠️ Chỉ tới được đây khi phép đo pre-check phía trên chưa thấy request bị
+  // chặn — tức là mỗi lần ghi binding tương ứng một attempt **có thể** được cấp
+  // mã, không phải mỗi lần dò. Guard cấp mã cuối cùng vẫn nằm trong
+  // `insertChallenge` (OCR-3), nên một request race lọt qua pre-check có thể
+  // bị chặn ở đó — trong trường hợp đó nó đã ghi binding mà không cấp mã; đây
+  // là mức chênh lệch gần như không thể xảy ra (binding chỉ ghi khi request đi
+  // qua cùng phép đo) và chấp nhận được vì binding tự hoá theo TTL 10 phút
+  // (không prune job) và response vẫn 204 mọi nhánh.
+  //
+  // ⚠️ Nhánh lỗi của phần này **không** bao giờ đổi response: binding thành
+  // công hay thua đều 204 — từ chối thật sự là việc của handoff route, một
+  // response khác nhau ở đây là oracle cho kẻ dò đúng như mọi nhánh khác trên.
+  if (body.handle !== undefined) {
+    const handleHash = await hashHandle(body.handle);
+    try {
+      await withRequestPool(hyperdrive, async (handoffPool) => {
+        // Session trình X: cookie hiện có (nếu còn khớp một hàng còn sống)
+        // hoặc session anonymous được tạo ngay đây — FR-006c, X không bind vào
+        // "không có session".
+        //
+        // L3: `expires_at` được kiểm ở đây chứ không chỉ `revoked_at` — một
+        // session đã quá idle-expiry nhưng chưa bị thu hồi không được chọn làm
+        // session trình X (nó sẽ bị `isSessionLive` của handoff route từ chối
+        // sau này, để lại binding orphan + một log `binding_mismatch` sai nhánh).
+        // Điều kiện `expires_at > now()` là chính phép kiểm của `isSessionLive`
+        // đẩy xuống SQL, đáng tin hơn đồng hồ Worker so với hàng.
+        const previousCookie = getCookie(event, SESSION_COOKIE_NAME);
+        let presentSessionRef: string | undefined;
+        if (previousCookie !== undefined) {
+          const idHash = await hashSessionIdentifier(previousCookie);
+          const existing = await handoffPool.query<{
+            session_ref: string;
+            revoked_at: Date | null;
+          }>(
+            `SELECT session_ref, revoked_at FROM account.account_sessions
+              WHERE id_hash = $1 AND revoked_at IS NULL AND expires_at > now()
+              LIMIT 1`,
+            [idHash],
+          );
+          const row = existing.rows[0];
+          if (row !== undefined) {
+            presentSessionRef = row.session_ref;
+          }
+        }
+        if (presentSessionRef === undefined) {
+          // Không cookie / cookie không khớp gì (hoặc đã chết): cấp session
+          // anonymous mới. Rotate FR-004a lúc verify sẽ thu hồi nó trong cùng
+          // transaction — anonymous session chỉ là vật chứa của binding,
+          // không có quyền nào.
+          //
+          // L2: hai Statement (session anonymous + binding) chạy trong **một**
+          // transaction `PoolClient` — cùng hình thức `insertAuthenticatedSession`
+          // (§3.6.2). Nếu binding fail sau khi session đã ghi trên `Pool` thuần,
+          // một hàng anonymous orphan không có đường dọn nào sẽ nằm lại; quấn
+          // transaction khiến hai bước cùng thành công hay cùng không có gì —
+          // đúng nghĩa "X không bind vào một session không tồn tại được phép
+          // sinh ra".
+          const identifier = createSessionIdentifier();
+          const idHash = await hashSessionIdentifier(identifier);
+          const anonymousRef = await hashSessionIdentifier(`${identifier}:ref:anonymous`);
+          const client = await handoffPool.connect();
+          try {
+            await client.query('BEGIN');
+            await insertAnonymousSession(client, {
+              idHash,
+              sessionRef: anonymousRef,
+              expiresAt: new Date(Date.now() + ANONYMOUS_SESSION_TTL_SECONDS * 1000),
+            });
+            await bindHandleFirst(client, {
+              handleHash,
+              presentSessionRef: anonymousRef,
+              expiresAt: new Date(Date.now() + LOGIN_HANDOFF_TTL_SECONDS * 1000),
+            });
+            await client.query('COMMIT');
+            // Cookie đi ra ngoài response ở cuối handler — cùng thuộc tính với
+            // cookie của verify (FR-004). setCookie ghi header response NGAY LẶP
+            // TỨC, nên nó PHẢI đứng sau COMMIT: bind hay COMMIT thất bại ⇒
+            // rollback ⇒ không cookie nào rò ra browser trỏ tới một hàng session
+            // không tồn tại trong DB.
+            setCookie(event, SESSION_COOKIE_NAME, identifier, {
+              maxAge: SESSION_ABSOLUTE_SECONDS,
+              path: '/',
+              secure: true,
+              httpOnly: true,
+              sameSite: 'lax',
+            });
+          } catch (error) {
+            await client.query('ROLLBACK').catch(() => undefined);
+            throw error;
+          } finally {
+            client.release();
+          }
+          presentSessionRef = anonymousRef;
+        }
+
+        const binding = await bindHandleFirst(handoffPool, {
+          handleHash,
+          presentSessionRef,
+          expiresAt: new Date(Date.now() + LOGIN_HANDOFF_TTL_SECONDS * 1000),
+        });
+        // So khớp thôi — không ghi đè, không phân nhánh response. Binding của
+        // session khác được giữ nguyên vẹn (FR-006c3, lớp 1); handoff route
+        // là nơi fail `binding_mismatch` (§3.6: so khớp trước push).
+        writeLog({
+          event: 'otp_challenge.handoff_binding',
+          status: 204,
+          bound_to_current: binding.session_ref === presentSessionRef,
+        });
+        return undefined;
+      });
+    } catch {
+      // DB chết khi ghi binding: 503 chung như mọi lỗi DB của route. Không có
+      // đường nào "bỏ qua binding mà vẫn cấp mã" — X không bind nghĩa là
+      // `/login?handle=X` của trình duyệt này không thể hoàn tất handoff sau;
+      // đó là fail-closed đúng nghĩa, và 503 là response chung của mọi hỏng DB.
+      writeLog({
+        event: 'otp_challenge.failed',
+        status: 503,
+        reason: 'handoff_binding_unavailable',
+      });
+      throw createError({ statusCode: 503, statusMessage: 'Service Unavailable' });
+    }
+  }
+
+  let outcome: 'sent' | 'silently_rejected';
+  try {
+    outcome = await withRequestPool(hyperdrive, async (pool) => {
+      // OCR-3: phép đo rolling-window cuối cùng đã được dời **vào transaction**
+      // của `insertChallenge` (khoá hàng active `FOR UPDATE` trước — đếm hai cửa
+      // sổ sau, Hyperdrive không hỗ trợ advisory lock nên tuần tự hoá dựa vào
+      // chuỗi khoá hàng + partial UNIQUE index) — đó là nơi tuần tự hoá thực sự
+      // với COMMIT của transaction trước cùng địa chỉ. Phép đo `otpBlocked` phía
+      // trên chỉ gate block binding (để không ghi `account_sessions`/
+      // `login_handoffs` cho request sẽ bị rate-limit) và không còn là guard cấp
+      // mã. Route không đo lại ở đây nữa: đo lại bằng `Pool` chung là redundant
+      // query, và không tuần tự hoá được gì với INSERT.
+      //
       // Sinh mã + digest — cho **mọi** địa chỉ, kể cả lạ (challenge ma).
       const material = await createOtpChallenge(otpSecret, OTP_PURPOSE_LOGIN);
       const expiresAt = new Date(Date.now() + OTP_TTL_SECONDS * 1000);
@@ -138,11 +354,14 @@ export default defineEventHandler(async (event) => {
           purpose: OTP_PURPOSE_LOGIN,
           expiresAt,
           resendCooldownSeconds: OTP_RESEND_COOLDOWN_SECONDS,
+          rateLimitShortWindowSeconds: OTP_RATE_LIMIT_SHORT_WINDOW_SECONDS,
+          rateLimitHourWindowSeconds: OTP_RATE_LIMIT_HOUR_WINDOW_SECONDS,
         });
         if (inserted === null) {
-          // Thua cooldown **trong** transaction: request song song vừa commit một
-          // challenge còn trong 60s. Đây cùng họ với pre-check cooldown ở trên —
-          // branch bị chặn bình thường, về `silently_rejected` (204).
+          // Bị chặn **trong** transaction — cửa sổ trượt đã tràn hoặc request
+          // song song vừa commit một challenge còn trong 60s cooldown. Cả hai
+          // cùng họ nhánh bị chặn bình thường, về `silently_rejected` (204): KHÔNG
+          // có hàng nào bị consume, KHÔNG có mail đi ra.
           return 'silently_rejected' as const;
         }
       } catch (error) {

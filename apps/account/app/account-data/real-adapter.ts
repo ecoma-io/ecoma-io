@@ -106,13 +106,21 @@ export function createServerAccountAdapter(options: MockAdapterOptions = {}): Ac
      * ⚠️ Không có cách nào cho UI phân biệt "địa chỉ không tồn tại" ra khỏi
      * "đã gửi" — route là anti-enumeration, và UI,vì thế,từ chối đường nào đó vì nó: mọi
      * request thành công đều được hiện như một challenge đã gửi.
+     *
+     * Handle continuation đi **vào body** của request (FR-006c: binding được
+     * ghi tại bước challenge): server cần nó để ghi `login_handoffs` cho
+     * session trình X. Nó KHÔNG đi vào URL — trên URL thì handle lọt vào
+     * access log, `Referer` và lịch sử proxy.
      */
     requestLoginChallenge: async (
       email: string,
-      _continuationHandle?: string,
+      continuationHandle?: string,
     ): Promise<Result<LoginChallenge>> => {
-      const response = await postJson('/api/auth/challenge', { email });
-      void _continuationHandle;
+      // Handle opaque, hình dạng tối thiểu ở server — adapter chỉ forward.
+      const response = await postJson('/api/auth/challenge', {
+        email,
+        ...(continuationHandle === undefined ? {} : { handle: continuationHandle }),
+      });
       if (!response.ok) {
         // 400 (body sai hình dạng) hoặc 503 (config/DB chết) — hiển thị lỗi
         // chung; không phân biệt detail ra UI.

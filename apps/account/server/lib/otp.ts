@@ -261,7 +261,12 @@ export interface OtpChallengeRow {
   readonly created_at: Date;
 }
 
-/** Loại row rút gọn phục vụ tra cứu active. */
+/**
+ * Loại pool mà persistence của module này nhận — luôn là `Pool` của caller. Các
+ * hàm tự mở `PoolClient` bên trong transaction; không nhận `PoolClient` từ ngoài
+ * (khác với `bindHandleFirst`/`insertAnonymousSession` chạy trong transaction do
+ * caller mở).
+ */
 type QueryablePool = import('pg').Pool;
 
 /**
@@ -330,38 +335,76 @@ export function isResendBlocked(lastCreatedAt: Date, nowMs: number): boolean {
 }
 
 /**
- * Ghi một challenge mới, **consume challenge active cũ trong cùng transaction**.
+ * Ghi một challenge mới, **consume challenge active cũ trong cùng transaction**,
+ * đồng thời chạy phép đo **cuối cùng** của rolling-window rate limit **trong**
+ * transaction đó — ngay sau khi thoát khoá hàng active.
  *
- * ⚠️ Hai lệnh trong MỘT transaction là điều kiện của ràng buộc unique partial:
- * `INSERT` khi còn hàng active phải lỗi, nên consume-trước-ghi là thứ giữ mọi
- * resend đi qua đúng một đường. Transaction rollback khi `INSERT` ném — hàng cũ
- * được trả lại trạng thái active, không mất mát.
+ * ## Hai neo tuần tự hoá, không advisory lock
  *
- * ⚠️ Guard cooldown phải nằm **trong** transaction này, không chỉ ở pre-check của
- * route: pre-check đọc ngoài transaction, nên hai request song song có thể cùng
- * thấy "không bị chặn" rồi cùng tới đây. Không có guard thì request đến sau
- * consume chính hàng vừa được request trước commit (mới sinh, còn trong cooldown)
- * và insert thành công — hai mail cho hai request cùng lúc, vi phạm đúng điều
- * route hứa. Cần **hai** lớp, vì READ COMMITTED cho mỗi statement một snapshot
- * riêng — một lớp duy nhất để lọt:
+ * Transaction này là nơi duy nhất quyết định "request này được cấp mã hay không";
+ * mọi guard phải ở đây chứ không ở pre-check của route (route đọc bằng `Pool`
+ * chung ngoài transaction — N request đồng thời có thể cùng vượt phép đo
+ * pre-check `otpBlocked` rồi cùng tới đây, xem `challenge.post.ts`). Với READ
+ * COMMITTED, tuần tự hoá dựa trên HAI neo tuỳ theo trạng thái bảng:
  *
- *  1. `SELECT … FOR UPDATE` khoá hàng active **nhìn thấy được** rồi mới kiểm
- *     cooldown: hàng đã commit trước khi transaction bắt đầu thì trả `null` ngay,
- *     không consume, không insert, không ném.
- *  2. Consume-`UPDATE` chỉ consume hàng **ngoài** cooldown. Statement này có
- *     snapshot mới riêng, nên một hàng commit **sau** `SELECT` của transaction
- *     này vẫn đụng được — không có điều kiện thì nó consume đúng hàng mới đó rồi
- *     `INSERT` thắng (đo được: test race vẫn thấy 2 mail dù có lớp 1). Với điều
- *     kiện, hàng mới còn cooldown không bị consume, và `INSERT` va partial UNIQUE
- *     index → 23505 → caller coi như thua race.
+ * - **Có hàng active** → chuỗi khoá hàng: `SELECT … FOR UPDATE` là statement
+ *   blocking của transaction này; transaction trước cùng địa chỉ giữ khoá tới
+ *   COMMIT. Khi khoá được nhả, statement KẾ TIẾP của transaction này mở snapshot
+ *   mới — thấy đủ mọi hàng transaction trước đã commit (READ COMMITTED: mỗi
+ *   statement một snapshot). Chính vì thế phép đếm cửa sổ **phải đứng SAU**
+ *   statement khoá: đo trước khi chờ khoá thì snapshot của phép đếm lấy trước khi
+ *   predecessor commit, không thấy hàng mới của nó — request thua-rác không bị
+ *   chặn và cửa sổ trượt tràn.
+ * - **Không có hàng active** (địa chỉ mới hoặc mọi hàng đã consume) → partial
+ *   UNIQUE index `(address_hash, purpose) WHERE consumed_at IS NULL` là neo:
+ *   các `INSERT` đồng thời được tuần tự hoá bởi chính index; request thua nhận
+ *   23505 và caller coi như nhánh bị chặn bình thường.
+ *
+ * ⚠️ **Không dùng advisory lock** (`pg_advisory_xact_lock`/`pg_advisory_lock`):
+ * Hyperdrive — đường production của database này (`accountHyperdrive`) — không
+ * hỗ trợ nhóm statement đó (`cloudflare-docs:
+ * hyperdrive/reference/supported-databases-and-features`). Hai neo trên đủ để
+ * đóng race, đúng cơ chế Postgres thường, chạy được trên Hyperdrive.
+ *
+ * Tại sao KHÔNG dùng `SERIALIZABLE` + retry 40001: hai neo trên đã loại mọi
+ * đường tràn đo được (path fresh-address được index giữ, path consume-slot-freed
+ * được thứ tự khoá-trước–đếm-sau giữ), nên chi phí vòng retry + rollback của
+ * isolation level mạnh hơn không mua thêm bất biến nào. SERIALIZABLE chỉ
+ * cần khi phép đo phải tuần tự với **nhiều** hàng — ở đây mọi phép ghi cùng địa
+ * chỉ đều đi qua một trong hai neo.
+ *
+ * ## Thứ tự guard trong transaction
+ *
+ *  1. **Khoá hàng active** `SELECT … FOR UPDATE` — statement blocking; đồng thời
+ *     giữ đúng một định nghĩa cooldown: `now()` của transaction là cố định,
+ *     `created_at` so qua `isResendBlocked` bằng chuẩn của route.
+ *  2. **Cooldown resend** — hàng active còn trong 60s ⇒ nhả khoá (`COMMIT`),
+ *     trả `null`. Không đếm, không consume, không insert.
+ *  3. **Đếm hai cửa sổ trượt** (15 phút / 1 giờ) — một câu SELECT hai
+ *     `count(*) FILTER`, đứng SAU bước khoá (trường hợp chờ khoá thì snapshot
+ *     này thấy đủ mọi hàng predecessor đã commit). Đếm **mọi** hàng trong cửa
+ *     sổ kể cả đã consume: giới hạn là về tần suất cấp mã. Vượt trần ⇒ COMMIT
+ *     nhả khoá, trả `null` — nhánh bị chặn bình thường, route đổi thành 204 im
+ *     lặng (anti-enumeration: mọi nhánh bị chặn cùng response).
+ *  4. **Consume-`UPDATE`** chỉ consume hàng ngoài cooldown — hàng sinh ra trong
+ *     cooldown là hàng của request khác thắng gần đây, request này không cướp.
+ *     Hàng commit sau statement 1 chỉ lọt qua statement này và kết thúc ở 23505
+ *     của `INSERT` (đo được: test race vẫn thấy 2 mail nếu bỏ điều kiện).
+ *  5. **INSERT** va partial UNIQUE index: một challenge active cho mỗi
+ *     (address, purpose) là thuộc tính của DB, không phải quy tắc app.
+ *
+ * Unique partial index tại INSERT vẫn là ràng buộc cuối cùng (23505 → caller
+ * coi như thua race); transaction rollback khi `INSERT` ném — hàng cũ trả lại
+ * trạng thái active, không mất mát.
  *
  * Lỗi flaky của `otp-flow-e2e.spec.ts` trên CI là bằng chứng đo được của kẽ hở
- * này; cả hai lớp đều được chạy thật khi xác minh bản sửa.
+ * cooldown; cả hai lớp cooldown đều được chạy thật khi xác minh bản sửa.
  *
  * @returns Hàng đã ghi (để route biết `id` và `expires_at` khi cần); `null` khi
- *   hàng active hiện tại còn trong cooldown — caller (route) coi `null` lẫn lỗi
- *   unique violation như điều kiện bị chặn bình thường của luồng và trả 204 im
- *   lặng, **không** retry ngầm.
+ *   bị chặn bởi bất kỳ guard nào trong transaction — cooldown còn hiệu lực hoặc
+ *   cửa sổ trượt đã tràn. Caller (route) coi `null` lẫn lỗi unique violation như
+ *   điều kiện bị chặn bình thường của luồng và trả 204 im lặng, **không** retry
+ *   ngầm.
  */
 export async function insertChallenge(
   pool: QueryablePool,
@@ -372,14 +415,21 @@ export async function insertChallenge(
     expiresAt: Date;
     /** Cửa sổ cooldown resend — policy của caller, route truyền thẳng hằng của module. */
     resendCooldownSeconds: number;
+    /** Cửa sổ ngắn của rate limit (giây) — cùng nguồn với phép đo pre-check route. */
+    rateLimitShortWindowSeconds: number;
+    /** Cửa sổ dài của rate limit (giây) — cùng nguồn với phép đo pre-check route. */
+    rateLimitHourWindowSeconds: number;
   },
 ): Promise<{ id: string; expiresAt: Date } | null> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     // Lớp 1: khoá hàng active nhìn thấy được trước khi đọc `created_at`, để phép
-    // đọc và phép ghi phía dưới thành một điểm tuần tự đối với hàng đó. `now()`
-    // của một transaction là cố định, còn `created_at` do `INSERT` của
+    // đọc và phép ghi phía dưới thành một điểm tuần tự đối với hàng đó. Statement
+    // này cũng là neo tuần tự hoá của phép đếm CỬA SỔ TRƯỢT phía dưới: transaction
+    // trước cùng địa chỉ giữ khoá tới COMMIT, và sau khi thoát khoá, statement kế
+    // tiếp mở snapshot READ COMMITTED mới — thấy đủ mọi hàng nó vừa commit.
+    // `now()` của một transaction là cố định, còn `created_at` do `INSERT` của
     // transaction khác ghi — so sánh qua `isResendBlocked` giữ đúng một định nghĩa
     // cooldown cho cả route và đây.
     const active = await client.query<{ id: string; created_at: Date }>(
@@ -398,7 +448,37 @@ export async function insertChallenge(
       await client.query('COMMIT');
       return null;
     }
-    // Lớp 2: chỉ consume hàng ngoài cooldown — hàng sinh ra trong cooldown là hàng
+    // Lớp 2: đếm hai cửa sổ trượt — đứng SAU statement khoá (lớp 1), KHÔNG trước.
+    // Thứ tự này là phần đóng path "consume-slot-freed": T2 block trong lớp 1 trong
+    // khi T1 commit (consume X + insert Y); khi T2 thoát block, statement đếm này
+    // mở snapshot mới và thấy hàng Y của T1 — nếu trần đã cạn thì T2 trả `null`
+    // thay vì insert. Đo trước lớp 1 thì snapshot của phép đếm lấy trước khi T1
+    // commit, không thấy Y (path OCR-3), và trần giữ không được. Không khoá tư vấn
+    // được dùng: Hyperdrive (đường production) không hỗ trợ advisory lock.
+    // Với địa chỉ chưa từng có hàng (không ai FOR UPDATE được gì) thì partial
+    // UNIQUE index tại INSERT là neo tuần tự hoá — các INSERT đồng thời được index
+    // xếp hàng, request thua 23505, caller coi như nhánh bị chặn.
+    const window = await client.query<{ short_count: number; hour_count: number }>(
+      `SELECT count(*) FILTER (WHERE created_at > now() - make_interval(secs => $3))::int AS short_count,
+              count(*) FILTER (WHERE created_at > now() - make_interval(secs => $4))::int AS hour_count
+         FROM account.otp_challenges
+        WHERE address_hash = $1 AND purpose = $2`,
+      [
+        params.addressHash,
+        params.purpose,
+        params.rateLimitShortWindowSeconds,
+        params.rateLimitHourWindowSeconds,
+      ],
+    );
+    const windowRow = window.rows[0];
+    if (isRateLimited(windowRow?.short_count ?? 0, windowRow?.hour_count ?? 0)) {
+      // Cửa sổ trượt hết allowance: không consume, không ghi — nhánh bị chặn
+      // bình thường. COMMIT để nhả khoá, trả `null` cùng hợp đồng với nhánh
+      // cooldown: route đổi nó thành 204 im lặng.
+      await client.query('COMMIT');
+      return null;
+    }
+    // Lớp 3: chỉ consume hàng ngoài cooldown — hàng sinh ra trong cooldown là hàng
     // của một request khác thắng gần đây, request này không được cướp. Hàng commit
     // sau `SELECT` ở trên chỉ lọt qua statement này, và với điều kiện thì nó kết
     // thúc ở 23505 của `INSERT` dưới thay vì thành mail thứ hai.

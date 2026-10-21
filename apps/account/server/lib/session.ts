@@ -40,6 +40,21 @@ export const SESSION_IDLE_SECONDS = 12 * 3600;
 /** Absolute lifetime của session (giây) — 7 ngày. */
 export const SESSION_ABSOLUTE_SECONDS = 7 * 24 * 3600;
 
+/**
+ * TTL của session anonymous (giây) — 10 phút, **cùng mốc** với
+ * `LOGIN_HANDOFF_TTL_SECONDS` của `server/lib/handoff.ts` (bằng TTL transaction
+ * phía auth).
+ *
+ * ⚠️ Đây là TTL **chỉ áp lên hàng DB** (`expires_at` của `account_sessions`
+ * anonymous), không áp lên cookie: cookie được cấp với `Max-Age`
+ * `SESSION_ABSOLUTE_SECONDS` như mọi session. Session anonymous chỉ là vật
+ * chứa của binding handoff (FR-006c) — rotate FR-004a lúc verify thu hồi nó
+ * trong cùng transaction; nếu luồng dừng giữa chừng, hàng tự hết IDC sau 10
+ * phút và không sống sót quá TTL của chính binding nó chứa. Đổi một trong hai
+ * mốc phải qua test pin ở `session.spec.ts` / `handoff.spec.ts`.
+ */
+export const ANONYMOUS_SESSION_TTL_SECONDS = 600;
+
 /** Độ dài byte của session identifier — 256 bit entropy, FR-004. */
 export const SESSION_ID_BYTES = 32;
 
@@ -179,6 +194,15 @@ export async function loadSessionByHash(
  * Rotate (FR-004a): caller truyền `revokeSessionRef` — session được xác thực lại
  * sẽ bị thu hồi trong **cùng transaction** với việc tạo hàng mới, không có khoảng
  * chết sống sót giữa hai thao tác.
+ *
+ * Chuyển binding handoff (FR-006c4, §3.6.2): caller truyền
+ * `carryHandoffFromSessionRef` — binding `login_handoffs` đang trỏ vào session
+ * cũ bị chuyển sang session mới, `state = 'session_rotated'`, trong **cùng
+ * transaction** rotate. Đây là đường duy nhất mà `session_ref` của một binding
+ * được phép đổi (guard trigger 0001 chỉ cho `bound → session_rotated`); tách
+ * khỏi transaction rotate là để binding trỏ vào một session đã thu hồi
+ * trong khoảng chết — đúng cái §3.6.2 gọi là login hỏng. Session cũ không giữ
+ * binding nào ⇒ UPDATE khớp 0 hàng, luồng đăng nhập thuần không bị ảnh hưởng.
  */
 export async function insertAuthenticatedSession(
   pool: import('pg').Pool,
@@ -190,6 +214,8 @@ export async function insertAuthenticatedSession(
     authnAt: Date;
     expiresAt: Date;
     revokeSessionRef?: string;
+    /** Binding handoff của session cũ cần chuyển sang session mới (FR-006c4). */
+    carryHandoffFromSessionRef?: string;
   },
 ): Promise<void> {
   const client = await pool.connect();
@@ -202,6 +228,16 @@ export async function insertAuthenticatedSession(
           WHERE session_ref = $1 AND revoked_at IS NULL`,
         [params.revokeSessionRef],
       );
+    }
+    if (params.carryHandoffFromSessionRef !== undefined) {
+      // Chuyển binding qua helper nội bộ bên dưới — câu UPDATE của nó nhận
+      // `PoolClient` đang giữ transaction này, KHÔNG đi qua `Pool`: truyền
+      // `Pool` vào đây sẽ để hàm tự `connect()` ngoài transaction rotate,
+      // mất đúng tính atomic của §3.6.2.
+      await carryHandoffInsideRotation(client, {
+        fromSessionRef: params.carryHandoffFromSessionRef,
+        toSessionRef: params.sessionRef,
+      });
     }
     await client.query(
       `INSERT INTO account.account_sessions
@@ -223,6 +259,61 @@ export async function insertAuthenticatedSession(
   } finally {
     client.release();
   }
+}
+
+/**
+ * Chuyển binding handoff **bên trong** transaction rotate — helper nhận
+ * `PoolClient`, KHÔNG nhận `Pool`.
+ *
+ * ⚠️ Câu SQL của hàm này là **cùng một câu UPDATE** với
+ * `carryHandoffToNewSession` của `server/lib/handoff.ts` (hàm nhận
+ * `PoolClient`, được viết cho caller ngoài — test và các đường tái sử dụng).
+ * Nhân bản 5 dòng SQL thay vì import vòng (`handoff.ts` không import
+ * `session.ts`, và cả hai cùng là policy module chạy edge): đang giữ một
+ * `PoolClient` transaction thì gọi qua `Pool` là mất transaction — nhiệm vụ
+ * của helper này là bảo toàn transaction caller.
+ */
+async function carryHandoffInsideRotation(
+  client: import('pg').PoolClient,
+  params: { fromSessionRef: string; toSessionRef: string },
+): Promise<void> {
+  await client.query(
+    // Cùng câu UPDATE với `carryHandoffToNewSession` (server/lib/handoff.ts) —
+    // guard trigger 0001 chỉ cho phép `bound → session_rotated` kèm đổi
+    // `session_ref`; session cũ không giữ binding nào khớp 0 hàng và luồng
+    // đăng nhập thuần đi tiếp bình thường.
+    `UPDATE account.login_handoffs
+        SET session_ref = $2, state = 'session_rotated'
+      WHERE session_ref = $1 AND state = 'bound'`,
+    [params.fromSessionRef, params.toSessionRef],
+  );
+}
+
+/**
+ * Ghi **hàng session anonymous** — session chưa xác thực của browser đang trình
+ * handle X (FR-006c: "nếu chưa có session thì tạo anonymous session rồi mới
+ * ràng buộc").
+ *
+ * ⚠️ `acr` + `authn_at` để NULL — đúng invariant cặp `(acr, authn_at)` của 0001:
+ * session chưa vượt qua bất kỳ phương thức nào không có bằng chứng nào để ghi.
+ *
+ * ⚠️ Session anonymous **không mang `user_sub`** — nó thuộc về browser, không
+ * thuộc về người dùng nào; identity chỉ đi vào hàng session ở bước rotate
+ * ({@link insertAuthenticatedSession}).
+ */
+export async function insertAnonymousSession(
+  pool: import('pg').Pool | import('pg').PoolClient,
+  params: {
+    idHash: string;
+    sessionRef: string;
+    expiresAt: Date;
+  },
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO account.account_sessions (id_hash, session_ref, expires_at)
+     VALUES ($1, $2, $3)`,
+    [params.idHash, params.sessionRef, params.expiresAt],
+  );
 }
 
 /**

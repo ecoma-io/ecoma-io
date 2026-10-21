@@ -60,10 +60,20 @@ const ALLOWED_FIELDS = [
   'error_code',
   'reason',
   'request_id',
+  // `handle_hash` — giá trị đã băm của handle X, không phải giá trị rõ. Luật của
+  // §3.6 ("không log handle rõ") chặn giá trị rõ, không phải hash của nó; hash
+  // là định danh điều tra của một binding.
+  'handle_hash',
+  // Phân nhóm of binding: `missing` | `binding_mismatch` | `unusable` | `matched` —
+  // mã nội bộ của nhánh so khớp, mang dữ liệu hành chính, không mang handle.
+  'binding_kind',
+  // "Binding này có thuộc về session đang trình X không" — boolean kết luận của
+  // phép so khớp, không dẫn được về giá trị handle hay về session_ref.
+  'bound_to_current',
 ] as const;
 
 /** Field trong allowlist mà giá trị bắt buộc phải đã băm trước. */
-const HASHED_ONLY_FIELDS: ReadonlySet<string> = new Set(['session_id']);
+const HASHED_ONLY_FIELDS: ReadonlySet<string> = new Set(['session_id', 'handle_hash']);
 
 /** Bảng ghi log chuẩn hoá — mọi dòng đều có `event` để group được. */
 export interface LogFields {
@@ -81,6 +91,12 @@ export interface LogFields {
   reason?: string;
   /** UUID sinh ở server để nối các dòng log của cùng một request. */
   request_id?: string;
+  /** **Đã băm** — hash của handle X; giá trị rõ không bao giờ được ghi (§3.6). */
+  handle_hash?: string;
+  /** Nhánh so khớp binding — mã nội bộ, không mang handle hay session_ref. */
+  binding_kind?: 'missing' | 'binding_mismatch' | 'unusable' | 'matched';
+  /** Kết luận so khớp "binding có thuộc session trình X không". */
+  bound_to_current?: boolean;
 }
 
 /** Bao nhiêu ký tự được giữ lại cho mỗi field trước khi cắt. */
@@ -122,6 +138,11 @@ export function pickLogFields(fields: LogFields): Record<string, string | number
   for (const key of ALLOWED_FIELDS) {
     const value = fields[key];
     if (value === undefined || value === null) {
+      continue;
+    }
+
+    if (typeof value === 'boolean') {
+      out[key] = value ? 1 : 0;
       continue;
     }
 

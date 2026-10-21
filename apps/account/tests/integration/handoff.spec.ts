@@ -7,15 +7,26 @@
  * một thanh chặn để hai lệnh `INSERT` thực sự cùng lúc.
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { createApp, createRouter, toWebHandler, type WebHandler } from 'h3';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import challengeRoute from '../../server/api/auth/challenge.post';
+import verifyRoute from '../../server/api/auth/verify.post';
+import handoffRoute from '../../server/api/auth/handoff.post';
 
 import {
+  ACCOUNT_DATABASE,
   type AccountDatabase,
   futureInstant,
   hashIdentifier,
   probeDocker,
   startAccountDatabase,
 } from './harness.ts';
+import { installRuntimeConfigStub, type AccountTestRuntimeConfig } from './nuxt-globals.ts';
+
+vi.mock('../../server/utils/logger', () => ({
+  writeLog: vi.fn<(entry: Record<string, unknown>) => void>(),
+}));
 
 const dockerAvailable = await probeDocker();
 
@@ -672,5 +683,516 @@ describe.skipIf(!dockerAvailable)('login_handoffs', () => {
       expect(rotatedRow.state).toBe('session_rotated');
       expect(rotatedRow.session_ref).toBe('asr-rotated-ref');
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Route-level: luồng challenge → verify → handoff đi qua `login_handoffs` thật.
+//
+// Hình thức giống `bff-routes-e2e.spec.ts`: route thật (import trực tiếp),
+// DB thật qua credential runtime, `AUTH_SERVICE` là binding hình-thật-hành-vi-gả
+// (envelope đủ để route coi là gọi xong, không mở Worker `auth` thật). Cái cần
+// chứng minh là **ràng buộc handle X ↔ session** sống sót qua ba route — không
+// phải envelope (khối đó của `bff-routes-e2e`).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ROUTE_HANDLE = 'X-route-level-handle-value';
+const OTP_SECRET = 'test-otp-hmac-secret-0123456789abcdef';
+const INTERNAL_SECRET = 'test-internal-hmac-secret-0123456789abcdef';
+const CONTINUE_URL = 'https://auth.test/continue?token=x';
+
+/**
+ * Các helper dưới đây nằm ở **module scope** thay vì trong `describe`: đúng
+ * gợi ý `unicorn/consistent-function-scoping` của oxlint — chúng không đọc biến
+ * nào của suite (chỉ nhận tham số), lồng vào `describe` là tái tạo function
+ * mỗi lần khai báo suite mà không mang ngữ cảnh nào.
+ */
+
+function installMailStub(): { sent: unknown[]; restore: () => void } {
+  const sent: unknown[] = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+    sent.push(body);
+    return new Response(
+      JSON.stringify({
+        id: 'msg-1',
+        delivery_id: 'dlv-1',
+        app: 'account',
+        template: body['template'],
+        template_version: 1,
+        status: 'queued',
+        created: true,
+        created_at: new Date().toISOString(),
+      }),
+      { status: 200 },
+    );
+  }) as typeof fetch;
+  return {
+    sent,
+    restore: () => {
+      globalThis.fetch = original;
+    },
+  };
+}
+
+async function post(
+  handler: WebHandler,
+  path: string,
+  body: unknown,
+  init: { headers?: Record<string, string>; cookie?: string } = {},
+): Promise<Response> {
+  const headers: Record<string, string> = { 'content-type': 'application/json', ...init.headers };
+  if (init.cookie !== undefined) {
+    headers['cookie'] = init.cookie;
+  }
+  return handler(
+    new Request(`http://localhost${path}`, { method: 'POST', headers, body: JSON.stringify(body) }),
+  );
+}
+
+function cookieValue(cookies: string[], name: string): string | undefined {
+  const found = cookies.find((cookie) => cookie.startsWith(`${name}=`));
+  return found === undefined ? undefined : found.slice(name.length + 1).split(';')[0];
+}
+
+function authCookieHeader(cookies: { sessionCookie: string; csrfCookie: string }): string {
+  return `__Host-account-session=${cookies.sessionCookie}; __Host-account-csrf=${cookies.csrfCookie}`;
+}
+
+describe.skipIf(!dockerAvailable)('login_handoffs routes', () => {
+  let db: AccountDatabase;
+  let handler: WebHandler;
+  let setRuntimeConfig: ReturnType<typeof installRuntimeConfigStub>;
+  let connectionString: string;
+  const authCalls: Array<{ body: Record<string, unknown> }> = [];
+
+  /** Binding giả của `AUTH_SERVICE` — ghi nhận call, trả response do test chọn. */
+  function installAuthStub(response: { status: number; body: unknown } | undefined): {
+    binding: { fetch: (input: Request, init?: RequestInit) => Promise<Response> };
+  } {
+    return {
+      binding: {
+        fetch: async (input: Request) => {
+          const raw = await input.clone().arrayBuffer();
+          authCalls.push({
+            body: JSON.parse(new TextDecoder().decode(raw)) as Record<string, unknown>,
+          });
+          if (response === undefined) {
+            throw new Error('auth stub: no configured response for this test step');
+          }
+          return new Response(JSON.stringify(response.body), { status: response.status });
+        },
+      },
+    };
+  }
+
+  function runtimeConfig(
+    authStub:
+      | { binding: { fetch: (input: Request, init?: RequestInit) => Promise<Response> } }
+      | undefined,
+  ): AccountTestRuntimeConfig {
+    return {
+      internalHmacSecret: INTERNAL_SECRET,
+      otpHmacSecret: OTP_SECRET,
+      mailServiceUrl: 'https://mail.test',
+      cloudflare: {
+        env: {
+          DB_ACCOUNT: { connectionString },
+          ...(authStub === undefined ? {} : { AUTH_SERVICE: authStub.binding }),
+        },
+      },
+    };
+  }
+
+  beforeAll(async () => {
+    db = await startAccountDatabase();
+    connectionString = `postgres://ecoma_account_runtime:${db.rolePassword}@${db.host}:${db.port}/${ACCOUNT_DATABASE}`;
+    setRuntimeConfig = installRuntimeConfigStub(runtimeConfig(undefined));
+    const app = createApp();
+    const router = createRouter();
+    router.post('/api/auth/challenge', challengeRoute);
+    router.post('/api/auth/verify', verifyRoute);
+    router.post('/api/auth/handoff', handoffRoute);
+    app.use(router.handler);
+    handler = toWebHandler(app);
+  }, 180_000);
+
+  afterAll(async () => {
+    await db?.stop();
+  });
+
+  beforeEach(async () => {
+    authCalls.length = 0;
+    setRuntimeConfig(runtimeConfig(undefined));
+    await db.truncateData();
+    const client = await db.connect();
+    try {
+      await client.query(`INSERT INTO account.users (sub) VALUES ($1)`, ['sub_handoff_routes']);
+      // Hai địa chỉ seed: `user@example.com` là chủ binding chính, còn
+      // `second@example.com` cho các arrange "trình duyệt thứ hai" — rate gate
+      // của route đếm per-address, nếu hai arrange dùng chung một địa chỉ thì
+      // request thứ hai bị cooldown chặn trước khi tới nhánh binding (OCR-2),
+      // arrange không còn chứng minh điều nó muốn chứng minh.
+      await client.query(
+        `INSERT INTO account.email_addresses (user_sub, address_normalized, address_hash, status, is_sign_in, verified_at)
+         VALUES ($1, $2, $3, 'verified', true, now())`,
+        ['sub_handoff_routes', 'user@example.com', hashIdentifier('user@example.com')],
+      );
+      await client.query(
+        `INSERT INTO account.email_addresses (user_sub, address_normalized, address_hash, status, is_sign_in, verified_at)
+         VALUES ($1, $2, $3, 'verified', true, now())`,
+        ['sub_handoff_routes', 'second@example.com', hashIdentifier('second@example.com')],
+      );
+      await client.query(
+        `INSERT INTO account.email_addresses (user_sub, address_normalized, address_hash, status, is_sign_in, verified_at)
+         VALUES ($1, $2, $3, 'verified', true, now())`,
+        ['sub_handoff_routes', 'conflict@example.com', hashIdentifier('conflict@example.com')],
+      );
+    } finally {
+      await client.end();
+    }
+  });
+
+  /**
+   * Challenge **với** handle (browser của luồng `/authorize`): đúng thứ tự
+   * production. Trả cookie anonymous mà route cấp trước khi verify rotate.
+   */
+  async function challengeWithHandle(
+    handle: string,
+    email = 'user@example.com',
+  ): Promise<{ sessionCookie: string | undefined; csrfCookie: string | undefined; code: string }> {
+    const mail = installMailStub();
+    let code: string;
+    let cookies: string[];
+    try {
+      const response = await post(handler, '/api/auth/challenge', {
+        email,
+        handle,
+      });
+      expect(response.status).toBe(204);
+      code = (mail.sent[0] as { variables?: { code?: string } } | undefined)?.variables
+        ?.code as string;
+      cookies = response.headers.getSetCookie();
+    } finally {
+      mail.restore();
+    }
+    return {
+      sessionCookie: cookieValue(cookies, '__Host-account-session'),
+      csrfCookie: cookieValue(cookies, '__Host-account-csrf'),
+      code,
+    };
+  }
+
+  /** Verify → cookie session xác thực vẹn (session mới kế thừa binding — FR-006c4). */
+  async function verifyAndLogin(
+    email: string,
+    code: string,
+    cookieOverride?: string,
+  ): Promise<{ sessionCookie: string; csrfCookie: string; csrfToken: string }> {
+    const response = await post(
+      handler,
+      '/api/auth/verify',
+      { email, code },
+      cookieOverride === undefined ? {} : { cookie: `__Host-account-session=${cookieOverride}` },
+    );
+    expect(response.status).toBe(200);
+    const cookies = response.headers.getSetCookie();
+    const sessionCookie = cookieValue(cookies, '__Host-account-session');
+    const csrfCookie = cookieValue(cookies, '__Host-account-csrf');
+    expect(typeof sessionCookie).toBe('string');
+    expect(typeof csrfCookie).toBe('string');
+    return {
+      sessionCookie: sessionCookie as string,
+      csrfCookie: csrfCookie as string,
+      csrfToken: csrfCookie as string,
+    };
+  }
+
+  async function bindingRow(
+    handleHash: string,
+  ): Promise<{ session_ref: string; state: string } | undefined> {
+    const client = await db.connect();
+    try {
+      const { rows } = await client.query<{ session_ref: string; state: string }>(
+        `SELECT session_ref, state FROM account.login_handoffs WHERE handle_hash = $1`,
+        [handleHash],
+      );
+      return rows[0];
+    } finally {
+      await client.end();
+    }
+  }
+
+  function runtimeSessionRef(): Promise<string | undefined> {
+    return (async () => {
+      const client = await db.connect();
+      try {
+        const { rows } = await client.query<{ session_ref: string }>(
+          `SELECT session_ref FROM account.account_sessions WHERE revoked_at IS NULL LIMIT 1`,
+        );
+        return rows[0]?.session_ref;
+      } finally {
+        await client.end();
+      }
+    })();
+  }
+
+  it('AC-008b2 via routes: challenge with handle binds first; a second browser challenging the same handle does not get the binding', async () => {
+    const stub = installAuthStub(undefined);
+    setRuntimeConfig(runtimeConfig(stub));
+
+    const first = await challengeWithHandle(ROUTE_HANDLE);
+    expect(first.sessionCookie).toBeDefined();
+    // First-binding-wins: binding tồn tại ngay sau challenge, chưa đến verify.
+    const bound = await bindingRow(hashIdentifier(ROUTE_HANDLE));
+    expect(bound?.state).toBe('bound');
+
+    // Email khác cho trình duyệt 2: rate gate per-email chỉ chặn địa chỉ đã
+    // vừa challenge trong cooldown — object của arrange này là tranh binding,
+    // không phải rate limit (có test riêng ở dưới cho rate path).
+    const second = await challengeWithHandle(ROUTE_HANDLE, 'second@example.com');
+    // Cùng 204 anti-enumeration cho cả hai arrange không phân biệt thắng/thua.
+    // Binding vẫn là của session đầu — không request nào ghi đè được.
+    const untouched = await bindingRow(hashIdentifier(ROUTE_HANDLE));
+    expect(untouched?.state).toBe('bound');
+    expect(untouched?.session_ref).toBe(bound?.session_ref);
+
+    void first;
+    void second;
+  });
+
+  it('AC-008b5 via routes: verify rotation carries the binding to the authenticated session in the same transaction', async () => {
+    const stub = installAuthStub(undefined);
+    setRuntimeConfig(runtimeConfig(stub));
+
+    const preLogin = await challengeWithHandle(ROUTE_HANDLE);
+    const boundBefore = await bindingRow(hashIdentifier(ROUTE_HANDLE));
+    expect(boundBefore?.state).toBe('bound');
+
+    const code = preLogin.code;
+    const login = await verifyAndLogin('user@example.com', code, preLogin.sessionCookie);
+
+    // Session mới kế thừa binding: `session_ref` đã đổi đúng một lần (cùng
+    // transaction rotate — nếu tách rời, AC-008b5 của khối này bị hỏng và
+    // session đã bị thu hồi này sẽ trỏ binding tới chết).
+    const carried = await bindingRow(hashIdentifier(ROUTE_HANDLE));
+    expect(carried?.state).toBe('session_rotated');
+    const liveRef = await runtimeSessionRef();
+    expect(carried?.session_ref).toBe(liveRef);
+
+    // Handoff của **session mới** là bên hợp lệ — push được.
+    const handoffStub = installAuthStub({
+      status: 200,
+      body: { outcome: 'granted', continue_url: CONTINUE_URL },
+    });
+    setRuntimeConfig(runtimeConfig(handoffStub));
+    const response = await post(
+      handler,
+      '/api/auth/handoff',
+      { handle: ROUTE_HANDLE },
+      {
+        cookie: authCookieHeader(login),
+        headers: { 'x-ecoma-csrf': login.csrfToken },
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      ok: true,
+      outcome: 'granted',
+      continueUrl: CONTINUE_URL,
+    });
+    // Chỉ một phương thức push duy nhất được sinh ra từ cả luồng.
+    expect(authCalls).toHaveLength(1);
+  });
+
+  it('AC-008b3 via routes: another browser presenting X at handoff time gets binding_mismatch and never reaches auth', async () => {
+    // Hai trình duyệt đăng nhập thành công — session A giữ X, session B không.
+    const stub = installAuthStub(undefined);
+    setRuntimeConfig(runtimeConfig(stub));
+    const preLoginA = await challengeWithHandle(ROUTE_HANDLE);
+    const loginA = await verifyAndLogin(
+      'user@example.com',
+      preLoginA.code,
+      preLoginA.sessionCookie,
+    );
+
+    // Sticky B: challenge khác (sau cooldown? dùng handle khác cho B không bị
+    // chặn cooldown resend của chính challenge A) và verify riêng.
+    const mailB = installMailStub();
+    let codeB: string;
+    try {
+      const challengeB = await post(handler, '/api/auth/challenge', {
+        email: 'user@example.com',
+        handle: 'X-other-handle-B',
+      });
+      expect(challengeB.status).toBe(204);
+      codeB = (mailB.sent[0] as { variables?: { code?: string } }).variables?.code as string;
+    } finally {
+      mailB.restore();
+    }
+    const loginB = await verifyAndLogin('user@example.com', codeB);
+    expect(loginB.sessionCookie).not.toBe(loginA.sessionCookie);
+
+    // B trình X — đúng ngoài binding của nó: fail-closed + không call auth.
+    const handoffGuardStub = installAuthStub({
+      status: 200,
+      body: { outcome: 'granted', continue_url: CONTINUE_URL },
+    });
+    setRuntimeConfig(runtimeConfig(handoffGuardStub));
+    const response = await post(
+      handler,
+      '/api/auth/handoff',
+      { handle: ROUTE_HANDLE },
+      {
+        cookie: authCookieHeader(loginB),
+        headers: { 'x-ecoma-csrf': loginB.csrfToken },
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: false, reason: 'binding_mismatch' });
+    // Không push về auth — binding_mismatch chặn TRƯỚC envelope.
+    expect(authCalls).toHaveLength(0);
+
+    // A vẫn dùng được tài nguyên của mình — binding không bị dây bẩn bởi B.
+    void preLoginA;
+  });
+
+  it('AC-008b6 via routes: a consumed handoff rejects its own session (no silent reuse, FR-006d2)', async () => {
+    const stub = installAuthStub({
+      status: 200,
+      body: { outcome: 'granted', continue_url: CONTINUE_URL },
+    });
+    setRuntimeConfig(runtimeConfig(stub));
+
+    const preLogin = await challengeWithHandle(ROUTE_HANDLE);
+    const login = await verifyAndLogin('user@example.com', preLogin.code, preLogin.sessionCookie);
+
+    const first = await post(
+      handler,
+      '/api/auth/handoff',
+      { handle: ROUTE_HANDLE },
+      {
+        cookie: authCookieHeader(login),
+        headers: { 'x-ecoma-csrf': login.csrfToken },
+      },
+    );
+    expect(first.status).toBe(200);
+    expect(await first.json()).toEqual({ ok: true, outcome: 'granted', continueUrl: CONTINUE_URL });
+    expect(authCalls).toHaveLength(1);
+
+    // Trình lại X sau khi dùng: từ chối — state `consumed`, không push thêm.
+    const second = await post(
+      handler,
+      '/api/auth/handoff',
+      { handle: ROUTE_HANDLE },
+      {
+        cookie: authCookieHeader(login),
+        headers: { 'x-ecoma-csrf': login.csrfToken },
+      },
+    );
+    expect(second.status).toBe(200);
+    expect(await second.json()).toEqual({ ok: false, reason: 'binding_mismatch' });
+    // Không một lần push thứ hai nào: handoff là single-use (FR-006d2).
+    expect(authCalls).toHaveLength(1);
+    const consumed = await bindingRow(hashIdentifier(ROUTE_HANDLE));
+    expect(consumed?.state).toBe('consumed');
+  });
+
+  it('challenge with a handle keeps anti-enumeration: still 204 when another session already holds the binding', async () => {
+    const stub = installAuthStub(undefined);
+    setRuntimeConfig(runtimeConfig(stub));
+
+    // Email khác cho request xung đột: muốn chứng minh "binding không bị ghi
+    // đè dưới 204", không phải "rate gate chặn trả 204" — cooldown per-email
+    // của request thứ hai làm mờ object nếu cùng địa chỉ (OCR-2).
+    await challengeWithHandle(ROUTE_HANDLE);
+    const conflict = await challengeWithHandle(ROUTE_HANDLE, 'conflict@example.com');
+    expect(conflict.sessionCookie).toBeDefined();
+
+    // Không phân biệt mã lỗi hay response — anti-enumeration bất biến.
+    const row = await bindingRow(hashIdentifier(ROUTE_HANDLE));
+    expect(row?.state).toBe('bound');
+
+    // Cả hai request đều 204; chỉ binding đầu tiên là tồn tại.
+    const count = await (async () => {
+      const client = await db.connect();
+      try {
+        const { rows } = await client.query<{ count: number }>(
+          `SELECT count(*)::int AS count FROM account.login_handoffs WHERE handle_hash = $1`,
+          [hashIdentifier(ROUTE_HANDLE)],
+        );
+        return rows[0]?.count;
+      } finally {
+        await client.end();
+      }
+    })();
+    expect(count).toBe(1);
+  });
+
+  it('OCR rate gate: a rate-limited challenge with a handle writes no new account_sessions or login_handoffs rows', async () => {
+    // OCR-2: block binding phải đứng SAU rate gate — một request bị limit (vẫn
+    // 204, anti-enumeration) không được sinh hàng DB. Đây là đường "một request
+    // mang handle mới nhưng vừa bị cooldown/rate limit": nếu gate sai chỗ, nó
+    // tạo một `account_sessions` anonymous + một `login_handoffs`.
+    const stub = installAuthStub(undefined);
+    setRuntimeConfig(runtimeConfig(stub));
+
+    // Arrange: challenge đầu thành công (binding được ghi, một cặp hàng).
+    const first = await challengeWithHandle(ROUTE_HANDLE);
+    expect(first.sessionCookie).toBeDefined();
+
+    // Challenge thứ hai với handle RIÊNG và CÙNG email — rơi vào resend
+    // cooldown (challenge active dưới 60s), route 204 im lặng.
+    const secondHandle = 'X-rate-limited-handle';
+    const second = await challengeWithHandle(secondHandle);
+    void second;
+
+    // Không hàng nào được sinh cho handle thứ hai — binding bị gate chặn TRƯỚC
+    // khi ghi.
+    const countRows = await (async () => {
+      const client = await db.connect();
+      try {
+        const { rows } = await client.query<{ count: number }>(
+          `SELECT count(*)::int AS count FROM account.login_handoffs WHERE handle_hash = $1`,
+          [hashIdentifier(secondHandle)],
+        );
+        return rows[0]?.count;
+      } finally {
+        await client.end();
+      }
+    })();
+    expect(countRows).toBe(0);
+
+    // Không `account_sessions` anonymous nào khác cũng được tạo (binding là
+    // thứ kéo nó vào — nếu gate đúng chỗ, request bị chặn không sinh session).
+    const client2 = await db.connect();
+    try {
+      const { rows } = await client2.query<{ count: number }>(
+        `SELECT count(*)::int AS count FROM account.account_sessions WHERE revoked_at IS NULL`,
+      );
+      // Challenge 1 tạo đúng một session anonymous (chưa verify). Challenge 2
+      // bị gate — không thêm hàng nào.
+      expect(rows[0]?.count).toBe(1);
+    } finally {
+      await client2.end();
+    }
+  });
+
+  it('the raw handle never reaches login_handoffs: only the hash is stored', async () => {
+    const stub = installAuthStub(undefined);
+    setRuntimeConfig(runtimeConfig(stub));
+    await challengeWithHandle(ROUTE_HANDLE);
+
+    const client = await db.connect();
+    try {
+      const { rows } = await client.query<{ count: number }>(
+        `SELECT count(*)::int AS count FROM account.login_handoffs WHERE handle_hash = $1 OR handle_hash LIKE '%' || $2 || '%'`,
+        [ROUTE_HANDLE, ROUTE_HANDLE],
+      );
+      expect(rows[0]?.count).toBe(0);
+    } finally {
+      await client.end();
+    }
   });
 });
