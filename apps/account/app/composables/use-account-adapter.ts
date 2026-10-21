@@ -1,6 +1,6 @@
 import { useNuxtApp, type NuxtApp } from '#app';
 import type { AccountAdapter } from '../account-data/types';
-import { createMockAccountAdapter } from '../account-data/mock-adapter';
+import { createServerAccountAdapter } from '../account-data/real-adapter';
 
 /** App Nuxt đã mang adapter, gắn thêm vào nó. */
 type AccountNuxtApp = NuxtApp & {
@@ -11,8 +11,14 @@ type AccountNuxtApp = NuxtApp & {
  * Điểm chọn implementation adapter — **nơi duy nhất** quyết định UI nói chuyện
  * với nguồn dữ liệu nào.
  *
- * Hôm nay chỉ có mock. Khi contract BFF thật có mặt, thay thân hàm này bằng
- * adapter thật; toàn bộ UI phía trên không đổi vì nó chỉ biết `AccountAdapter`.
+ * Trả **server adapter** (`real-adapter.ts`): các luồng auth đã nối với BFF
+ * thật (`/api/auth/*`, `/api/consent/*`); phần dữ liệu tài khoản còn lại vẫn
+ * mô phỏng bên trong nó, và `isPreview` vẫn `true` để banner "preview data"
+ * phản ánh đúng phần chưa nối.
+ *
+ * ⚠️ Giữ mock ở đây nghĩa là dự phòng khác cho test harness: `tests/harness.ts`
+ * gắn adapter test riêng vào `nuxtApp.$accountAdapter` trước khi mount, nên
+ * factory này chạy production — mock xoá bằng một dòng nếu cần.
  *
  * ⚠️ **Không** dùng `useState` cho adapter. `useState` trả `Ref<UnwrapRef<T>>`, mà
  * `UnwrapRef` biến một **interface có phương thức** thành object thuần phẳng —
@@ -31,6 +37,6 @@ type AccountNuxtApp = NuxtApp & {
  */
 export function useAccountAdapter(): AccountAdapter {
   const nuxtApp = useNuxtApp() as AccountNuxtApp;
-  nuxtApp.$accountAdapter ??= createMockAccountAdapter();
+  nuxtApp.$accountAdapter ??= createServerAccountAdapter();
   return nuxtApp.$accountAdapter;
 }

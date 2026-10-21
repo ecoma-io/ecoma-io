@@ -28,6 +28,7 @@ const messages: AccountMessages = {
     optional: 'không bắt buộc',
     simulated: 'Mô phỏng',
     unavailable: 'Không có',
+    continue: 'Tiếp tục',
   },
 
   shell: {

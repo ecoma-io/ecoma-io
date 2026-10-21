@@ -227,6 +227,23 @@ export type AccountAdapter = {
   verifyLoginCode(code: string): Promise<Result<void>>;
 
   /**
+   * Hoàn tất bàn giao về `auth` sau khi mã được chấp nhận (handle `X` từ
+   * `?handle=` của `/login`).
+   *
+   * Trả `continueUrl` khi `auth` quyết định outcome ngay trong response
+   * (`granted` ⇒ URL cuối của RP; `consent_required` ⇒ `/consent?handle=Y` của
+   * `account`); `already_processed` ⇒ `undefined` (không continuation — phần
+   * hợp đồng này được `auth` kiểm theo protocol, UI tôn trọng). Fail (auth
+   * chết, result `rejected`…) ⇒ `ok: false` — người dùng retry được, và KHÔNG
+   * có đường nào coi "push xong" là "hoàn tất bàn giao" khi chưa có URL.
+   *
+   * ⚠️ UI relay `continueUrl` bằng cách điều hướng browser; nó không tự ghép
+   * chuỗi, không thêm tham số. Handle đi qua đây và KHÔNG được log hay dán vào
+   * kiểu dữ liệu nào khác.
+   */
+  completeHandoff(handle: string): Promise<Result<{ readonly continueUrl: string | undefined }>>;
+
+  /**
    * Đọc consent context cho một authorization request.
    *
    * Nhận opaque handle do BFF cấp; UI **chỉ chuyển tiếp** nó, không diễn giải,
@@ -234,5 +251,19 @@ export type AccountAdapter = {
    * khi handle không hợp lệ/hết hạn.
    */
   getConsentContext(handle: string): Promise<ConsentContext | undefined>;
-  decideConsent(handle: string, decision: 'approve' | 'deny'): Promise<Result<void>>;
+
+  /**
+   * Ghi nhận quyết định consent và nhận URL tiếp theo khi `auth` cấp.
+   *
+   * `continueUrl` là URL do `auth` dựng (contract trả bắt buộc ở cả hai
+   * outcome — phần vắng mặt này chỉ xảy ra ở mock, nơi không có grant và
+   * không có trình duyệt để điều hướng). UI relay URL bằng điều hướng browser;
+   * nó không tự dựng redirect và không thêm tham số nào. Handle đã bị tiêu thụ
+   * sau khi thành công, nên UI không gửi lại nó: thành công của method này là
+   * trạng thái chết (terminal), khác với các thao tác ghi retry-able khác.
+   */
+  decideConsent(
+    handle: string,
+    decision: 'approve' | 'deny',
+  ): Promise<Result<{ readonly continueUrl: string | undefined }>>;
 };

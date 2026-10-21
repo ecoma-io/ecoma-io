@@ -400,7 +400,6 @@ export function createMockAccountAdapter(options: MockAdapterOptions = {}): Acco
         value: { email, mode: challengeMode, expiresAt: '2026-10-13T09:15:00.000Z' },
       };
     },
-
     verifyLoginCode: async (code): Promise<Result<void>> => {
       const refused = refuse<void>('verifyLoginCode');
       if (refused) {
@@ -413,6 +412,16 @@ export function createMockAccountAdapter(options: MockAdapterOptions = {}): Acco
         : { ok: false, reason: 'invalid code' };
     },
 
+    /**
+     * ⚠️ Mock **không có BFF** — hoàn tất bàn giao không tồn tại ở preview.
+     * Trả `{ ok: false }` thay vì tự dựng một `continueUrl` giả: báo trước
+     * sẽ chặn đúng đường "coi như đã bàn giao" mà luồng thật phải đi qua auth.
+     */
+    completeHandoff: async (_handle): Promise<Result<{ continueUrl: string | undefined }>> => ({
+      ok: false,
+      reason: 'mock adapter: no server handoff in preview',
+    }),
+
     getConsentContext: async (handle): Promise<ConsentContext | undefined> =>
       handle === MOCK_CONSENT_HANDLE ? MOCK_CONSENT : undefined,
 
@@ -422,8 +431,11 @@ export function createMockAccountAdapter(options: MockAdapterOptions = {}): Acco
      * là quy ước của repo cho tham số bắt buộc phải có trong chữ ký (interface định
      * nghĩa nó) nhưng implementation này chưa dùng.
      */
-    decideConsent: async (handle, _decision): Promise<Result<void>> => {
-      const refused = refuse<void>('decideConsent');
+    decideConsent: async (
+      handle,
+      _decision,
+    ): Promise<Result<{ continueUrl: string | undefined }>> => {
+      const refused = refuse<{ continueUrl: string | undefined }>('decideConsent');
       if (refused) {
         return refused;
       }
@@ -431,9 +443,10 @@ export function createMockAccountAdapter(options: MockAdapterOptions = {}): Acco
         return { ok: false, reason: 'unknown consent request' };
       }
       // Mock ghi lại quyết định **chỉ trong bộ nhớ**: không có grant nào được
-      // cấp, không có redirect nào được dựng. Việc dựng redirect thuộc `auth`
-      // và UI cố ý không có đường nào làm việc đó.
-      return { ok: true, value: undefined };
+      // cấp, không có redirect nào được dựng. `continueUrl: undefined` cũng có
+      // chủ đích: một mock dựng URL là mock tự chọn đích — điều chỉ `auth`
+      // được làm ở luồng thật. UI hiển thị kết quả thành công, không điều hướng.
+      return { ok: true, value: { continueUrl: undefined } };
     },
   };
 }

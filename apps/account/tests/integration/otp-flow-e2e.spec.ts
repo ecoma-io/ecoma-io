@@ -75,14 +75,22 @@ function fullRuntimeConfig(connectionString: string): AccountTestRuntimeConfig {
  * ra cho địa chỉ verified, và KHÔNG đi ra cho địa chỉ lạ".
  */
 function installMailStub(options: { status?: number; shape?: unknown } = {}): {
-  sent: Array<{ url: string; body: Record<string, unknown> }>;
+  sent: Array<{ url: string; headers: Record<string, string>; body: Record<string, unknown> }>;
   restore: () => void;
 } {
-  const sent: Array<{ url: string; body: Record<string, unknown> }> = [];
+  const sent: Array<{
+    url: string;
+    headers: Record<string, string>;
+    body: Record<string, unknown>;
+  }> = [];
   const original = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
-    sent.push({ url: String(input), body });
+    const headers: Record<string, string> = {};
+    for (const [key, value] of new Headers(init?.headers).entries()) {
+      headers[key] = value;
+    }
+    sent.push({ url: String(input), headers, body });
     const payload = options.shape ?? {
       id: 'msg-1',
       delivery_id: 'dlv-1',
@@ -347,6 +355,12 @@ describe.skipIf(!dockerAvailable)('email OTP flow end-to-end', () => {
       // Đúng một mail đi ra — cho địa chỉ verified. Địa chỉ lạ và body sai: không mail.
       expect(mail.sent).toHaveLength(1);
       expect(mail.sent[0]?.url).toBe('https://mail.test/v1/messages');
+      // Idempotency-Key bắt buộc của contract TM: phải có, ≤ 128 ký tự.
+      const idem =
+        mail.sent[0]?.headers['idempotency-key'] ?? mail.sent[0]?.headers['Idempotency-Key'];
+      expect(typeof idem).toBe('string');
+      expect((idem as string).length).toBeGreaterThan(0);
+      expect((idem as string).length).toBeLessThanOrEqual(128);
     } finally {
       mail.restore();
     }
