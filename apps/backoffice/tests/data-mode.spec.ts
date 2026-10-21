@@ -32,6 +32,7 @@ describe('resolveBackofficeDataMode', () => {
     ['thừa khoảng trắng', 'prototype '],
     ['từ đồng nghĩa không được hỗ trợ', 'preview'],
     ['từ đồng nghĩa không được hỗ trợ', 'mock'],
+    ['từ đồng nghĩa không được hỗ trợ', 'realtime'],
     ['chuỗi boolean', 'true'],
     ['giá trị không liên quan', 'yes'],
     ['giá trị của app khác', 'staging'],

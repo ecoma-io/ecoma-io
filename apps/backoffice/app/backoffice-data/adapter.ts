@@ -20,14 +20,32 @@ import { createMockBackofficeAdapter } from './mock-adapter';
 import type { BackofficeDataAdapter } from './types';
 import { createUnavailableBackofficeAdapter } from './unavailable-adapter';
 
-export function createBackofficeAdapter(mode: BackofficeDataMode): BackofficeDataAdapter {
-  // So với hằng của `data-mode.ts` chứ không viết lại literal: hai chỗ cùng khai
-  // `'prototype'` thì "nguồn duy nhất" chỉ đúng ở trong comment, và đổi tên mode
-  // ở một chỗ sẽ làm adapter lặng lẽ rơi về unavailable (fail-closed nên không lộ
-  // dữ liệu — nhưng staging im lặng mất mẫu và không có tín hiệu nào báo sai).
-  if (mode === BACKOFFICE_PREVIEW_DATA_MODE) {
-    return createMockBackofficeAdapter();
-  }
+/**
+ * Bảng factory theo chế độ dữ liệu — seam cho workstream B: khi backend thật có
+ * mặt, một mode mới (ví dụ `'realtime'`) sẽ vào đây dưới dạng một entry mới trỏ
+ * vào factory thật thay vì để mode đó rơi về unavailable.
+ *
+ * ⚠️ `'unavailable'` không có entry trong bảng vì nó không phải giá trị cấu hình
+ * mà là **trạng thái fail-closed**: mọi mode không có entry — hôm nay là mọi thứ
+ * ngoài `'prototype'` — đều qua fallback `createUnavailableBackofficeAdapter()`
+ * bên dưới. Ngữ nghĩa fail-closed KHÔNG đổi: chỉ `'prototype'` mở mock, mọi mode
+ * khác đều unavailable.
+ *
+ * ⚠️ Khoá dùng hằng `BACKOFFICE_PREVIEW_DATA_MODE` chứ không literal `'prototype'`
+ * (nguyên tắc "so với hằng" của bản if trước): bảng được ép kiểu đủ mọi khoá của
+ * `BackofficeDataMode` qua khai báo kiểu dưới đây, nên đổi giá trị mode ở
+ * `data-mode.ts` mà không đổi ánh xạ là lỗi type — thay vì adapter lặng lẽ rơi về
+ * unavailable và staging mất mẫu không có tín hiệu nào.
+ */
+const ADAPTER_FACTORIES = {
+  [BACKOFFICE_PREVIEW_DATA_MODE]: () => createMockBackofficeAdapter(),
+} as unknown as Readonly<Record<BackofficeDataMode, () => BackofficeDataAdapter>>;
 
-  return createUnavailableBackofficeAdapter();
+export function createBackofficeAdapter(mode: BackofficeDataMode): BackofficeDataAdapter {
+  // Lấy factory trong bảng, thiếu thì fallback, rồi **gọi factory một lần** —
+  // một biến trung gian cho phép gán `createUnavailableBackofficeAdapter` (không
+  // gọi sẵn) làm fallback, nhờ đó không có ngoặc nào nhầm cặp thứ tự gọi.
+  const factory = ADAPTER_FACTORIES[mode] ?? createUnavailableBackofficeAdapter;
+
+  return factory();
 }
