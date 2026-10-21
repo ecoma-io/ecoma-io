@@ -70,6 +70,37 @@ function writeCommittedConfig(dir: string, name: string): string {
 }
 
 /**
+ * Queue app fixture — worker có `-job` trong tên là consumer (shape config
+ * thật: consume queue + workers_dev false như web-push-notification-job),
+ * ngược lại producer. Dùng cho test readiness inference và boot order theo
+ * queue dependency của discovery (PR6); fixture chỉ cần shape khớp, không
+ * mô phỏng semantics push bound context.
+ */
+function writeLikelyQueueApp(
+  dir: string,
+  dirName: string,
+  workerName: string,
+  queueName: { queue: string },
+): string {
+  const isConsumer = workerName.includes('-job');
+  const config = {
+    name: workerName,
+    main: 'dist/main.js',
+    compatibility_date: '2026-10-05',
+    workers_dev: false,
+    d1_databases: [{ binding: 'push-job', database_name: 'push-job' }],
+    queues: isConsumer
+      ? { consumers: [{ queue: queueName.queue }] }
+      : { producers: [{ queue: queueName.queue }] },
+  };
+  const appDir = join(dir, 'apps', dirName);
+  mkdirSync(appDir, { recursive: true });
+  const path = join(appDir, 'wrangler.jsonc');
+  writeFileSync(path, JSON.stringify(config), 'utf8');
+  return path;
+}
+
+/**
  * Fake wrangler migration bin (`.sh`, exit 0) — `resolveWranglerInvocation`
  * chạy bin KHÔNG phải `.js` trực tiếp (không qua node), nên shebang + chmod.
  */
@@ -182,20 +213,114 @@ function fakeSpawnFactory(
 const DEAD_PID = 2147483647;
 
 describe('MAIL_WORKER_ENTRIES', () => {
-  it('declares the two mail workers in boot order with valid entry names', () => {
-    expect(MAIL_WORKER_ENTRIES.map((entry) => entry.entryName)).toEqual([
+  it('discovers a two-mail-worker root in boot order with valid entry names', () => {
+    // Fixture worktree có đúng hai app mail (writeCommittedConfig tạo
+    // <root>/apps/<name>/wrangler.jsonc) — discovery sống cùng worktree,
+    // không scan repo checkout.
+    const root = makeWorktreeFixture('entries-happy');
+    writeCommittedConfig(root, 'transactional-mail');
+    writeCommittedConfig(root, 'transactional-mailer-job');
+    const entries = MAIL_WORKER_ENTRIES(root);
+    expect(entries.map((entry) => entry.entryName)).toEqual([
       'transactional-mail',
       'transactional-mailer-job',
     ]);
-    for (const entry of MAIL_WORKER_ENTRIES) {
+    for (const entry of entries) {
       expect(entry.entryName).toMatch(/^[A-Za-z0-9._-]+$/u);
     }
   });
 
-  it('control plane readiness is http-health, consumer is log-banner', () => {
-    const [control, consumer] = MAIL_WORKER_ENTRIES;
+  it('mail control plane readiness is http-health, queue consumer is log-banner', () => {
+    // Readiness inference theo discovery: control plane (không consumer,
+    // workers_dev không false) → http-health; consumer (consumers + khai
+    // tường minh workers_dev:false) → log-banner. Fixture phải là một pair
+    // hoàn chỉnh (producer + consumer) — discovery fail-closed khi consumer
+    // không có producer trong repo scan.
+    const root = makeWorktreeFixture('entries-readiness');
+    writeLikelyQueueApp(root, 'transactional-mail', 'ecoma-transactional-mail', {
+      queue: 'ecoma-mail-delivery',
+    });
+    writeLikelyQueueApp(root, 'transactional-mailer-job', 'ecoma-transactional-mailer-job', {
+      queue: 'ecoma-mail-delivery',
+    });
+    const [control, consumer] = MAIL_WORKER_ENTRIES(root);
     expect(control.readiness.kind).toBe('http-health');
     expect(consumer.readiness.kind).toBe('log-banner');
+  });
+
+  it('discovers a new app by its committed config without registration', () => {
+    // PR6 contract: app khai wrangler.jsonc = tự động vào runtime. App mới
+    // không có binding nào → không dep nào, boot theo alphabet sau main pair.
+    const root = makeWorktreeFixture('entries-new-app');
+    writeCommittedConfig(root, 'transactional-mail');
+    writeCommittedConfig(root, 'transactional-mailer-job');
+    writeCommittedConfig(root, 'sample-app');
+    const names = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
+    expect(names).toContain('sample-app');
+  });
+
+  it('boot order respects queue dependency (producer before consumer)', () => {
+    const root = makeWorktreeFixture('entries-queue-order');
+    // push pair thật: control plane produce queue, consumer consume nó.
+    writeCommittedConfig(root, 'transactional-mail');
+    writeCommittedConfig(root, 'transactional-mailer-job');
+    writeLikelyQueueApp(root, 'push-notification', 'ecoma-push-notification', {
+      queue: 'ecoma-push-delivery',
+    });
+    writeLikelyQueueApp(root, 'web-push-notification-job', 'ecoma-web-push-notification-job', {
+      queue: 'ecoma-push-delivery',
+    });
+    const order = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
+    expect(order.indexOf('push-notification')).toBeLessThan(
+      order.indexOf('web-push-notification-job'),
+    );
+  });
+
+  it('boot order respects service binding (peer boots first)', () => {
+    const root = makeWorktreeFixture('entries-service-order');
+    // Mail pair fixture: consumer khai `services[].service` trỏ Worker name
+    // `ecoma-transactional-mail` — đúng khớp worker name of producer, và
+    // cả hai khai `queues` cùng tên để không orphan queue. Tên `name` bắt
+    // buộc `ecoma-` vì service dep đối chiếu worker name, không entry name.
+    const appDir = join(root, 'apps', 'transactional-mail');
+    mkdirSync(appDir, { recursive: true });
+    writeFileSync(
+      join(appDir, 'wrangler.jsonc'),
+      JSON.stringify({
+        name: 'ecoma-transactional-mail',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'mail', database_name: 'mail' }],
+        queues: { producers: [{ queue: 'ecoma-mail-delivery' }] },
+      }),
+      'utf8',
+    );
+    const jobDir = join(root, 'apps', 'transactional-mailer-job');
+    mkdirSync(jobDir, { recursive: true });
+    writeFileSync(
+      join(jobDir, 'wrangler.jsonc'),
+      JSON.stringify({
+        name: 'ecoma-transactional-mailer-job',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'mail-job', database_name: 'mail-job' }],
+        queues: { consumers: [{ queue: 'ecoma-mail-delivery' }] },
+        services: [{ binding: 'TRANSACTIONAL_MAIL_SERVICE', service: 'ecoma-transactional-mail' }],
+      }),
+      'utf8',
+    );
+    const order = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
+    expect(order.indexOf('transactional-mail')).toBeLessThan(
+      order.indexOf('transactional-mailer-job'),
+    );
+  });
+
+  it('fails closed when a consumer queue has no producer in the repo scan', () => {
+    const root = makeWorktreeFixture('orphan-queue');
+    writeLikelyQueueApp(root, 'web-push-notification-job', 'ecoma-web-push-notification-job', {
+      queue: 'ecoma-push-delivery',
+    });
+    expect(() => MAIL_WORKER_ENTRIES(root)).toThrow(/queue consumer không có producer/u);
   });
 });
 
@@ -245,8 +370,8 @@ describe('portCandidates', () => {
 describe('startWorkerRuntime', () => {
   it('happy path with fake spawnImpl + fake migrations bin: rows, argv, ports recorded', async () => {
     const root = makeWorktreeFixture('happy');
-    for (const entry of MAIL_WORKER_ENTRIES) {
-      writeCommittedConfig(root, entry.entryName);
+    for (const name of ['transactional-mail', 'transactional-mailer-job']) {
+      writeCommittedConfig(root, name);
     }
     const migrationsBin = writeFakeMigrationsBin(root);
 
@@ -344,8 +469,8 @@ describe('startWorkerRuntime', () => {
       // fetch được gọi cho control plane readiness.
       expect(fetchSpy).toHaveBeenCalled();
       // Fake children không phải process thật — dọn metadata để không rò.
-      for (const entry of MAIL_WORKER_ENTRIES) {
-        rmSync(metadataPathOf(join(root, '.worker-local-state'), entry.entryName), { force: true });
+      for (const name of ['transactional-mail', 'transactional-mailer-job']) {
+        rmSync(metadataPathOf(join(root, '.worker-local-state'), name), { force: true });
       }
     } finally {
       fetchSpy.mockRestore();
@@ -354,8 +479,8 @@ describe('startWorkerRuntime', () => {
 
   it('redistributes the port when a real server holds the desired port busy', async () => {
     const root = makeWorktreeFixture('port-busy');
-    for (const entry of MAIL_WORKER_ENTRIES) {
-      writeCommittedConfig(root, entry.entryName);
+    for (const name of ['transactional-mail', 'transactional-mailer-job']) {
+      writeCommittedConfig(root, name);
     }
     const migrationsBin = writeFakeMigrationsBin(root);
 
@@ -392,8 +517,8 @@ describe('startWorkerRuntime', () => {
       // Consumer dùng port hash riêng của nó — không đụng desired.
       const desiredJob = allocateWorkerPort(namespace, 'transactional-mailer-job');
       expect(result.workers[1].port).toBe(desiredJob);
-      for (const entry of MAIL_WORKER_ENTRIES) {
-        rmSync(metadataPathOf(join(root, '.worker-local-state'), entry.entryName), { force: true });
+      for (const name of ['transactional-mail', 'transactional-mailer-job']) {
+        rmSync(metadataPathOf(join(root, '.worker-local-state'), name), { force: true });
       }
     } finally {
       fetchSpy.mockRestore();
@@ -405,8 +530,8 @@ describe('startWorkerRuntime', () => {
 
   it('migration errors propagate (fail-closed) without spawning anything', async () => {
     const root = makeWorktreeFixture('migration-fail');
-    for (const entry of MAIL_WORKER_ENTRIES) {
-      writeCommittedConfig(root, entry.entryName);
+    for (const name of ['transactional-mail', 'transactional-mailer-job']) {
+      writeCommittedConfig(root, name);
     }
     // Fake bin exit 3 → runWrangler throw.
     const failingBin = join(root, 'failing-wrangler.sh');
@@ -425,8 +550,8 @@ describe('startWorkerRuntime', () => {
 
   it('readiness timeout stops the child, removes metadata and throws with tail', async () => {
     const root = makeWorktreeFixture('readiness-timeout');
-    for (const entry of MAIL_WORKER_ENTRIES) {
-      writeCommittedConfig(root, entry.entryName);
+    for (const name of ['transactional-mail', 'transactional-mailer-job']) {
+      writeCommittedConfig(root, name);
     }
     const migrationsBin = writeFakeMigrationsBin(root);
 
@@ -570,6 +695,9 @@ describe('statusWorkerRuntime', () => {
     const root = makeWorktreeFixture('status-rows');
     const stateDir = join(root, '.worker-local-state');
     mkdirSync(stateDir, { recursive: true });
+    // `standard` của PR6 là "entry name nằm trong discovery của worktree" —
+    // fixture phải khai app đúng tên trong apps/ thì row mới chuẩn.
+    writeCommittedConfig(root, 'transactional-mail');
     const args = [process.execPath, 'x.js'];
     writeFileSync(
       metadataPathOf(stateDir, 'transactional-mail'),

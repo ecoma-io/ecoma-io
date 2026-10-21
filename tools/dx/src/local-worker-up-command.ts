@@ -10,10 +10,11 @@ import { startWorkerRuntime, statusWorkerRuntime } from './worker-orchestration.
 /**
  * Entry `pnpm dx local-worker-up`.
  *
- * Bring up WORKER runtime của worktree (hai `wrangler dev` process: control
- * plane `transactional-mail` trước, consumer `transactional-mailer-job` sau;
- * chia sẻ `--persist-to` theo worktree; migration D1 local chạy trước khi
- * spawn).
+ * Bring up WORKER runtime của worktree — mọi app ecoma có committed
+ * `apps/<dir>/wrangler.jsonc` trong worktree này (PR6 discovery): scan
+ * configs, suy topology (service binding + queue producer/consumer), rồi
+ * từng process `wrangler dev` boot theo thứ tự topological. Runtime chia sẻ
+ * `--persist-to` theo worktree; migration D1 local chạy trước khi spawn.
  *
  * Hành vi process-quan-trọng: `startWorkerProcess` spawn worker DETACHED
  * (process group riêng) — sau khi lệnh này exit 0, process tree (`wrangler
@@ -21,8 +22,9 @@ import { startWorkerRuntime, statusWorkerRuntime } from './worker-orchestration.
  * `local-worker-down` tắt chúng. Đây là thiết kế có chủ ý: CLI chỉ là điểm
  * điều khiển, không phải process manager giữ process con bằng Lifecycle.
  *
- * Readiness trước khi in "ready": control plane phải trả 2xx cho `GET
- * /health` (poll ≤250ms, timeout 60s); consumer phải in boot banner wrangler
+ * Readiness trước khi in "ready": control plane-ish app (không queue
+ * consumer / workers_dev không tắt) phải trả 2xx cho `GET /health` (poll
+ * ≤250ms, timeout 60s); queue-only consumer phải in boot banner wrangler
  * (`/Ready on http/`) ra stdout/stderr. Không đạt → error fail-closed,
  * exitCode 1; process vừa spawn được stop (metadata chỉ remove khi process
  * được chứng minh chết).
@@ -37,7 +39,7 @@ export default defineCommand({
   meta: {
     name: 'local-worker-up',
     description:
-      'Bring up the local worker runtime (transactional-mail + transactional-mailer-job) for this worktree',
+      'Bring up the local worker runtime for all discovered apps (apps/*/wrangler.jsonc) of this worktree',
   },
 
   args: {

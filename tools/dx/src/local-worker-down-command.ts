@@ -27,7 +27,7 @@ export default defineCommand({
   meta: {
     name: 'local-worker-down',
     description:
-      'Stop the local worker runtime (transactional-mail + transactional-mailer-job) for this worktree',
+      'Stop the local worker runtime for all discovered apps (apps/*/wrangler.jsonc) of this worktree',
   },
 
   args: {
