@@ -278,9 +278,22 @@ export async function runConsentDecide(params: {
         throw new ConsentRaceError('transaction da doi trang thai');
       }
       // (2) Consume Y CAS SAU. Thua ⇒ throw ⇒ rollback kể cả advance.
+      //
+      // ⚠️ `accountSessionRef`/`sub` truyền từ HÀNG đã load — identity
+      // authoritative của bước decide đã qua kiểm app-layer ở trên (lỗi 422 trước
+      // khi vào tx). Điểm của bind này khác kiểm đó: kiểm app-layer là
+      // read-then-CAS (TOCTOU giữa load và consume), còn bind là điều kiện của
+      // chính câu CAS — canonical CAS 2 của `0002` mà
+      // `authorization-transaction-store.ts` chép (xem comment `consumeHandleY`).
+      // KNOWN LIMITATION: `sub` nullable trên DTO nhưng CHECK schema (`0002`)
+      // đảm bảo sub IS NULL chỉ ở hàng chưa qua CAS 1; khi state đã của
+      // `awaiting_consent` (CHECK `handle_y_state_check`), CAS 1 đã bind sub
+      // non-null — nhưng TS không biết điều đó, nên phải dồn về '' khi thiếu.
       const handleYHash = await hashHandle(handleY);
       const consumed = await consumeHandleY(tx, {
         handleYHash,
+        accountSessionRef: transaction.account_session_ref ?? '',
+        sub: transaction.sub ?? '',
         decision,
         eventId,
         payloadHash,

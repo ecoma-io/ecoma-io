@@ -18,6 +18,11 @@ import { runSessionVerified } from './session-verified-handler';
 import { runConsentContext, runConsentDecide } from './consent-handler';
 import { probeDocker, startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
 
+// `consumeHandleY` gọi TRỰC TIẾP cho test ASR-khác của issue #57 — như một
+// caller tương lai có thể làm (bỏ qua kiểm app-layer), để assert rằng bind SQL
+// tự nó bảo vệ phiên sở hữu transaction.
+import { consumeHandleY } from '@ecoma-io/identity-auth-infrastructure';
+
 /**
  * Hai back-channel handlers trên PostgreSQL THẬT: `session/verified` (CAS consume X
  * + bind) và `consent/decide` (advance → consume Y — MỘT transaction).
@@ -1166,6 +1171,136 @@ describe('back-channel handlers — against a real PostgreSQL', () => {
           SELECT state FROM auth.authorization_transactions WHERE transaction_id = ${txId}
         `;
         expect(rows[0]?.state).toBe('ready_to_complete');
+      } finally {
+        await cleanup(migrator, []);
+        await runtime.end({ timeout: 1 });
+        await migrator.end({ timeout: 1 });
+      }
+    });
+
+    it('decide with the owning ASR — consume Y CAS wins and Y is consumed', async () => {
+      // ⚠️ Test này ghim điều kiện `account_session_ref = $2 AND sub = $3` của
+      // CAS 2 (canonical `0002` lines 305-331 — ví bug đã đo được: SQL của
+      // `consumeHandleY` từng thiếu hai điều kiện này, nên một handle Y lọt sang
+      // phiên khác vẫn consume được nếu caller bỏ qua kiểm app-layer). Nhánh
+      // ĐÚNG phiên phải remain: 1 hàng consumed, state advance được.
+      const { runtime, migrator } = await setup();
+      try {
+        await seedClient(migrator, CLIENT_ID);
+        const txId = newTxId('cy1');
+        const handleY = await deriveHandle({
+          key: HANDLE_KEY,
+          transactionId: txId,
+          domain: HANDLE_DOMAINS.consentContinuation,
+        });
+        await seedTransaction(runtime, {
+          transactionId: txId,
+          handleHashX: 'ZZkVq2oFfTAgy1WcdbeNkanIsw6CwJh0jAcs8CtGYWw',
+          browserBindingHash: 'AAIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHw4',
+          state: 'awaiting_consent',
+          bound: true,
+          handleHashY: await hashHandle(handleY),
+        });
+
+        const result = await runConsentDecide({
+          provider: stubProvider(),
+          postgresClient: runtime as unknown as PostgresClientLike,
+          payload: {
+            handle: handleY,
+            decision: 'approve',
+            account_session_ref: 'asr-handlers-test',
+          },
+          handleKey: HANDLE_KEY,
+          now: new Date(),
+        });
+        // Interaction stub ⇒ fail-closed sau commit: consume Y đã THẮNG nhưng
+        // response 422 — bằng chứng của consume nằm ở trạng thái DB dưới, không
+        // phải status.
+        expect(result.status).toBe(422);
+
+        const rows = await migrator<{ consumed: string | null; state: string }[]>`
+          SELECT handle_y_consumed_at::text AS consumed, state
+            FROM auth.authorization_transactions WHERE transaction_id = ${txId}
+        `;
+        expect(rows[0]?.consumed).not.toBeNull();
+        expect(rows[0]?.state).toBe('ready_to_complete');
+      } finally {
+        await cleanup(migrator, []);
+        await runtime.end({ timeout: 1 });
+        await migrator.end({ timeout: 1 });
+      }
+    });
+
+    it('decide with a DIFFERENT ASR — consume Y CAS loses 0 rows, Y stays unconsumed and consumable by the owner', async () => {
+      // ⚠️ Regression cho chính lỗi của issue #57: ASR khác ⇒ CAS 0 rows.
+      // Đường handler đã có kiểm app-layer (422 trước khi vào tx), nên để chạm
+      // ĐƯỢC CAS với ASR sai — đúng scenario "direct caller bỏ qua kiểm
+      // app-layer" mà issue mô tả — test này gọi `consumeHandleY` TRỰC TIẾP
+      // trong một tx của runtime, như một caller tương lai sẽ làm. Hợp đồng:
+      // bind SQL tự nó bào vệ, không phụ thuộc kiểm ở tầng app.
+      const { runtime, migrator } = await setup();
+      try {
+        await seedClient(migrator, CLIENT_ID);
+        const txId = newTxId('cy2');
+        const handleY = await deriveHandle({
+          key: HANDLE_KEY,
+          transactionId: txId,
+          domain: HANDLE_DOMAINS.consentContinuation,
+        });
+        await seedTransaction(runtime, {
+          transactionId: txId,
+          handleHashX: 'ZZkVq2oFfTAgy1WcdbeNkanIsw6CwJh0jAcs8CtGYWw',
+          browserBindingHash: 'AAIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHw4',
+          state: 'awaiting_consent',
+          bound: true,
+          handleHashY: await hashHandle(handleY),
+        });
+        const handleYHash = await hashHandle(handleY);
+
+        // Attacker consume Y trong tx của mình — session/sub khác.
+        await runtime.begin(async (tx) => {
+          const consumed = await consumeHandleY(tx as never, {
+            handleYHash,
+            accountSessionRef: 'asr-NGUOI-KHAC',
+            sub: 'sub-handlers-test-000000000000000000000000000',
+            decision: 'approve',
+            eventId: 'consent:approve:' + txId,
+            payloadHash: 'payload-hash-of-attacker-0000000000000000000',
+            now: new Date(),
+          });
+          // ⚠️ Bind session/sub vào SQL ⇒ CAS 0 hàng: thua mà KHÔNG viết gì.
+          expect(consumed).toBeUndefined();
+        });
+
+        // Trạng thái DB nguyên vẹn sau lần thử sai: Y chưa consumed, state chưa advance.
+        const rows = await migrator<{ consumed: string | null; state: string }[]>`
+          SELECT handle_y_consumed_at::text AS consumed, state
+            FROM auth.authorization_transactions WHERE transaction_id = ${txId}
+        `;
+        expect(rows[0]?.consumed).toBeNull();
+        expect(rows[0]?.state).toBe('awaiting_consent');
+
+        // Y VẪN dùng được bởi phiên thật, sau khi attacker đã thử và thua
+        // (idempotency replay hợp đồng §5.1.5b không bị bind làm hỏng).
+        const result = await runConsentDecide({
+          provider: stubProvider(),
+          postgresClient: runtime as unknown as PostgresClientLike,
+          payload: {
+            handle: handleY,
+            decision: 'approve',
+            account_session_ref: 'asr-handlers-test',
+          },
+          handleKey: HANDLE_KEY,
+          now: new Date(),
+        });
+        expect(result.status).toBe(422); // fail-closed interaction stub
+
+        const after = await migrator<{ consumed: string | null; state: string }[]>`
+          SELECT handle_y_consumed_at::text AS consumed, state
+            FROM auth.authorization_transactions WHERE transaction_id = ${txId}
+        `;
+        expect(after[0]?.consumed).not.toBeNull();
+        expect(after[0]?.state).toBe('ready_to_complete');
       } finally {
         await cleanup(migrator, []);
         await runtime.end({ timeout: 1 });
