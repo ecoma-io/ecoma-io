@@ -29,6 +29,9 @@ export const PROVIDER_KIND_ENV = 'MAIL_PROVIDER_KIND';
 /** Worker Secret trần chờ của **một** request provider (ms). */
 export const PROVIDER_TIMEOUT_ENV = 'MAIL_PROVIDER_TIMEOUT_MS';
 
+/** Lease execution của một generation (`mail_jobs.lease_expires_at`, ms). */
+export const EXECUTION_LEASE_ENV = 'MAIL_JOB_EXECUTION_LEASE_MS';
+
 /**
  * Cửa sổ an toàn idempotency theo **delivery** (ms, tính từ `provider_call_at`).
  *
@@ -96,7 +99,7 @@ export interface LoadedMailerJobConfig {
  */
 export function loadMailerJobConfig(env: MailerJobEnv): LoadedMailerJobConfig {
   const maxExecutionAttempts = requirePositiveInteger(env, 'MAIL_JOB_MAX_EXECUTION_ATTEMPTS');
-  const executionLeaseMs = requirePositiveInteger(env, 'MAIL_JOB_EXECUTION_LEASE_MS');
+  const executionLeaseMs = requirePositiveInteger(env, EXECUTION_LEASE_ENV);
   const reportLeaseMs = requirePositiveInteger(env, 'MAIL_JOB_REPORT_LEASE_MS');
   const maxReportAttempts = requirePositiveInteger(env, 'MAIL_JOB_MAX_REPORT_ATTEMPTS');
   const sweepBatchLimit = requirePositiveInteger(env, 'MAIL_JOB_SWEEP_BATCH_LIMIT');
@@ -124,6 +127,22 @@ export function loadMailerJobConfig(env: MailerJobEnv): LoadedMailerJobConfig {
   if (providerCallSafeWindowMsRaw <= providerTimeoutMs) {
     throw new MailerJobConfigError(
       `${PROVIDER_CALL_SAFE_WINDOW_ENV} phai > ${PROVIDER_TIMEOUT_ENV}: window nho hon mot provider request thi moi mo ho deu ngoai window`,
+    );
+  }
+
+  // Kiểm chéo của lease execution: ghim bất đẳng thức gia hạn §9.2.1 — "leaseMs phải lớn
+  // hơn runtime resolution + provider timeout + ghi D1 + margin" — thành điều kiện loader,
+  // vì `mail-provider-port` dựng deadline của một request provider bằng
+  // `min(now + providerTimeoutMs, lease_expires_at)` (chống overlap với generation kế sau
+  // khi lease được renew). Với `executionLeaseMs <= providerTimeoutMs`, deadline sập về
+  // lease expiry: không còn chỗ cho một lần gọi provider trọn vẹn nào trong lease, mọi
+  // request bị cắt ngắn ở lease expiry — theo contract adapter, request gặp
+  // `deadlineMs <= now` trả ngay `rejected`/`retryable` ⇒ RETRY, không bao giờ tới làn
+  // ambiguity. Bắt ở loader — cùng tinh thần với `MAIL_JOB_MAX_EXECUTION_ATTEMPTS >= 4`,
+  // không để operator tự phát hiện qua alert blocked backlog.
+  if (executionLeaseMs <= providerTimeoutMs) {
+    throw new MailerJobConfigError(
+      `${EXECUTION_LEASE_ENV} phai > ${PROVIDER_TIMEOUT_ENV} (mot request provider tron ven phai vua trong lease - bat dang thuc gia han §9.2.1)`,
     );
   }
 
