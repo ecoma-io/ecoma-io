@@ -1,0 +1,167 @@
+/**
+ * Apply migration lên PostgreSQL thật và đo trạng thái sau đó.
+ *
+ * Không dùng `describe` cấp module rồi `beforeAll` bên trong: phải `await` được
+ * `probeDocker()` ở tầng module để `describe.skipIf` biết quyết định, và một
+ * probe hỏng không được làm đỏ cả file.
+ */
+
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import { BACKOFFICE_DATABASE } from '../../db/migrate.mts';
+import {
+  type BackofficeDatabase,
+  applyMigrations,
+  probeDocker,
+  startBackofficeDatabase,
+} from './harness.ts';
+
+const dockerAvailable = await probeDocker();
+
+const EXPECTED_TABLES = [
+  'authorization_audit',
+  'permissions',
+  'role_assignments',
+  'role_permissions',
+  'roles',
+  'staff',
+];
+
+async function tableNames(db: BackofficeDatabase): Promise<string[]> {
+  const client = await db.connect();
+  try {
+    const { rows } = await client.query<{ table_name: string }>(
+      `SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'backoffice' ORDER BY table_name`,
+    );
+    return rows.map((row) => row.table_name);
+  } finally {
+    await client.end();
+  }
+}
+
+describe.skipIf(!dockerAvailable)('db-backoffice migrations on a real PostgreSQL', () => {
+  let db: BackofficeDatabase;
+
+  beforeAll(async () => {
+    db = await startBackofficeDatabase();
+  }, 180_000);
+
+  afterAll(async () => {
+    await db?.stop();
+  });
+
+  it('applies every migration file from an empty database', async () => {
+    expect(await tableNames(db)).toEqual(EXPECTED_TABLES);
+  });
+
+  it('is repeatable: re-applying every file changes nothing', async () => {
+    // Quay lại đúng đường code mà lần apply đầu trong `startBackofficeDatabase`
+    // đã đi: `applyAllMigrations` với advisory lock. Hai lần liên tiếp — file id
+    // idempotent (`CREATE … IF NOT EXISTS`, guard `pg_roles`, `CREATE OR REPLACE
+    // FUNCTION`) nên lần hai phải là no-op, và lần thứ ba chứng minh điều đó
+    // thay vì tin lời bình luận.
+    const client = await db.connect();
+    try {
+      await applyMigrations(client);
+      await applyMigrations(client);
+    } finally {
+      await client.end();
+    }
+
+    expect(await tableNames(db)).toEqual(EXPECTED_TABLES);
+  });
+
+  it('takes the pg advisory lock before applying, so a concurrent runner blocks', async () => {
+    // Khóa là `hashtext(BACKOFFICE_DATABASE)` phía server (xem `apply.mts`) —
+    // một số được chọn theo tên database để hai service chung instance không
+    // tranh một khóa. Test hành vi: giữ khóa ở session khác + `lock_timeout`
+    // ngắn ⇒ apply phải ném; nếu runner bị mất khóa (hay đổi cách lấy khóa)
+    // thì apply chạy trọn (migrations idempotent) và test đỏ vì không ném gì.
+    const holder = await db.connect();
+    const runner = await db.connect();
+    try {
+      await holder.query('SELECT pg_advisory_lock(hashtext($1))', [BACKOFFICE_DATABASE]);
+      await runner.query(`SET lock_timeout = '500ms'`);
+      await expect(applyMigrations(runner)).rejects.toThrow(/lock timeout/iu);
+    } finally {
+      await runner.query('RESET lock_timeout').catch(() => undefined);
+      await holder.query('SELECT pg_advisory_unlock(hashtext($1))', [BACKOFFICE_DATABASE]);
+      await holder.end();
+      await runner.end();
+    }
+  });
+
+  it('leaves the runtime role able to do DML and nothing else', async () => {
+    // DML smoke trên bảng `staff` qua runtime role, rồi một `CREATE TABLE` bị
+    // từ chối. Hai nửa phải nằm trong MỘT test: "chỉ DML" là cặp điều kiện —
+    // đủ DML và không DDL — tách hai test thì một nửa lỗi không làm đỏ cặp.
+    const runtime = await db.asRuntime();
+    try {
+      await runtime.query(`INSERT INTO backoffice.staff (sub) VALUES ('sub_migrations_smoke')`);
+      const { rows } = await runtime.query<{ sub: string }>(
+        `SELECT sub FROM backoffice.staff WHERE sub = 'sub_migrations_smoke'`,
+      );
+      expect(rows).toHaveLength(1);
+    } finally {
+      await runtime.end();
+    }
+
+    const again = await db.asRuntime();
+    try {
+      await expect(again.query('CREATE TABLE backoffice.nope (id int)')).rejects.toThrow(
+        /permission denied/iu,
+      );
+    } finally {
+      await again.end();
+    }
+  });
+
+  it('fails 0002 when the runtime role lost CONNECT on db-backoffice', async () => {
+    // Guard trong `0002` phải kiểm `ecoma_backoffice_runtime`, không phải
+    // `current_user`: migrator LUÔN có CONNECT (nó vừa kết nối để chạy
+    // migration) nên kiểm `current_user` là câu đúng luôn đúng. Giữ tài sản này:
+    // revoke CONNECT của runtime (và PUBLIC — CONNECT là quyền mặc định của
+    // PUBLIC trên database của mình) ⇒ apply phải ném; thay đổi kiểm
+    // `current_user` thì apply chạy trọn và test đỏ.
+    //
+    // Dọn dẹp trong `finally` khôi phục cả hai grant để các test khác không đỏ
+    // vì cùng một database bị sửa.
+    const client = await db.connect();
+    try {
+      await client.query(`REVOKE CONNECT ON DATABASE "${BACKOFFICE_DATABASE}" FROM PUBLIC`);
+      await client.query(
+        `REVOKE CONNECT ON DATABASE "${BACKOFFICE_DATABASE}" FROM ecoma_backoffice_runtime`,
+      );
+      await expect(applyMigrations(client)).rejects.toThrow(
+        /ecoma_backoffice_runtime mat quyen CONNECT/u,
+      );
+    } finally {
+      // `0002` bọc trong `BEGIN;` — khi DO block raise, simple query dừng giữa
+      // chừng và để connection ở trạng thái aborted transaction; ROLLBACK
+      // trước rồi mới cấp lại. (`ROLLBACK` không có transaction cũng vô hại.)
+      await client.query('ROLLBACK').catch(() => undefined);
+      await client.query(`GRANT CONNECT ON DATABASE "${BACKOFFICE_DATABASE}" TO PUBLIC`);
+      await client.query(
+        `GRANT CONNECT ON DATABASE "${BACKOFFICE_DATABASE}" TO ecoma_backoffice_runtime`,
+      );
+      await client.end();
+    }
+  });
+
+  it('marks db:migrate cache false, because DATABASE_URL is not an input', async () => {
+    // `nx:run-commands` được cache mặc định; `DATABASE_URL` không nằm trong inputs
+    // nào nên lần chạy thứ hai trả kết quả **cached** và KHÔNG migrate database
+    // thật — một lần chạy "xanh" không đổi gì. Cross-check đọc nguồn như các hằng
+    // khác: package.json là JSON nên không thể comment trong đó
+    // (`apps/backoffice/package.json` target `db:migrate`).
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+
+    const manifest = JSON.parse(
+      readFileSync(resolve(import.meta.dirname, '../../package.json'), 'utf8'),
+    ) as { nx?: { targets?: Record<string, { cache?: boolean }> } };
+
+    expect(manifest.nx?.targets?.['db:migrate']?.cache).toBe(false);
+  });
+});
