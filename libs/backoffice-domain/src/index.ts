@@ -39,6 +39,15 @@ export {
   type BackofficeAccountId,
 } from './account-id';
 export {
+  REVOCATION_FRESHNESS_TTL_SECONDS,
+  can,
+  type AuthorizationDecision,
+  type AuthorizationDenialReason,
+  type AuthorizationRiskClass,
+  type CatalogPermission,
+  type GrantedAssignment,
+} from './authorization-policy';
+export {
   BACKOFFICE_DOMAIN_ERROR_MESSAGES,
   backofficeDomainError,
   isBackofficeDomainError,
