@@ -16,7 +16,7 @@ Mỗi bounded context có thể có nhiều deploy unit; `docs/services/<name>/`
 
 - [Account](./services/account/README.md) — UI + BFF + login/consent + credential + browser session, sở hữu `db-account`.
 - [Auth](./services/auth/README.md) — API-only OAuth 2.0/OIDC authorization server (issuer `https://auth.ecoma.io`), sở hữu `db-auth`.
-- [Backoffice](./services/backoffice/README.md) — staff directory, role/permission catalog và authorization audit cho thao tác đặc quyền.
+- [Backoffice](./services/backoffice/README.md) — staff directory, role/permission catalog và authorization audit cho thao tác đặc quyền; quyết định §10 đã chốt qua [ADR](./services/backoffice/adr/README.md).
 - [Pact Broker](./services/pact-broker/README.md) — hợp đồng consumer-driven contract testing (pacts, verifications, can-i-deploy), hai deploy unit API + dashboard, sở hữu `db-pact-broker`.
 - [Cache](./services/cache/README.md) — self-hosted Nx remote cache.
 - [Push Notification](./services/push-notification/README.md) — control plane của notification (Cloudflare D1).
