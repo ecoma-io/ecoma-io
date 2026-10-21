@@ -430,29 +430,40 @@ export async function insertChallenge(
 }
 
 /**
- * Tăng `attempts` của challenge — một UPDATE nguyên tử.
+ * Khoá challenge đã quá TTL — một UPDATE nguyên tử theo (address, purpose).
  *
- * Cộng thêm ở server (`attempts + 1`) chứ không ghi giá trị client gửi: hai
- * request verify cạnh nhau cùng đọc `attempts = 4` rồi cùng ghi `5` là hai lần
- * nhập sai được tính một — trần 5 lần thành trần tuỳ hứng. `attempts = attempts + 1`
- * trong một câu là nguyên tử theo PostgreSQL row-level lock.
+ * `findActiveChallenge` trả hàng chưa consume gần nhất và **không** lọc theo
+ * `expires_at`: "chưa consume" không đồng nghĩa "còn hiệu lực". Mọi call-site
+ * hiện tại tự so `isExpired` trước khi tin kết quả (route `verify` làm vậy),
+ * nên hàng hết hạn không tự hoạt động được — việc khoá này là hygiene, không
+ * phải vá lỗ hổng. Nhưng nó giữ một bất biến mà chỉ một UPDATE nguyên tử cột
+ * được: `consumed_at IS NULL` luôn nghĩa "chưa đi qua vòng đời". Không khoá thì
+ * hàng hết hạn nằm ở trạng thái "active theo ràng buộc" mãi mãi, và một đường
+ * code sau này chỉ tin điều kiện active (mà quên `isExpired`) sẽ đọc được một
+ * challenge đã chết như còn sống.
  *
- * @returns Số `attempts` sau khi tăng, hoặc `null` khi challenge đã bị consume
- *   bởi request khác giữa chừng (điều kiện `consumed_at IS NULL` không còn khớp).
+ * Route `verify` gọi khi phát hiện hết hạn. Mốc thời gian do caller truyền để
+ * cùng một nguồn với phép `isExpired` đã quyết định nhánh; điều kiện trong SQL
+ * so `expires_at` với mốc đó, không với `now()` DB — hai đồng hồ của Worker và
+ * DB lệch nhau vài giây không đổi kết quả của TTL mười phút.
+ *
+ * @returns Số hàng đã khoá (1 khi có hàng hết hạn chưa consume; 0 khi không).
  */
-export async function recordFailedAttempt(
+export async function expireChallengeIfExpired(
   pool: QueryablePool,
-  challengeId: string,
-): Promise<number | null> {
-  const result = await pool.query<{ attempts: number }>(
+  addressHash: string,
+  purpose: string,
+  nowMs: number,
+): Promise<number> {
+  const result = await pool.query(
     `UPDATE account.otp_challenges
-        SET attempts = attempts + 1
-      WHERE id = $1 AND consumed_at IS NULL
-      RETURNING attempts`,
-    [challengeId],
+        SET consumed_at = now()
+      WHERE address_hash = $1 AND purpose = $2
+        AND consumed_at IS NULL
+        AND expires_at <= $3`,
+    [addressHash, purpose, new Date(nowMs)],
   );
-  const row = result.rows[0];
-  return row === undefined ? null : row.attempts;
+  return result.rowCount ?? 0;
 }
 
 /**
@@ -470,6 +481,49 @@ export async function consumeChallenge(pool: QueryablePool, challengeId: string)
     [challengeId],
   );
   return (result.rowCount ?? 0) > 0;
+}
+
+/**
+ * Tăng `attempts` và khoá ngay khi đạt trần — trong **một** câu UPDATE.
+ *
+ * Tính nguyên tử của riêng phép cộng không đủ. `attempts = attempts + 1` bảo
+ * đảm hai request cạnh nhau không đè mất lần đếm của nhau, nhưng nếu việc khoá
+ * (consume khi `attempts >= MAX_OTP_ATTEMPTS`) là một UPDATE riêng chạy
+ * **sau** ở route thì giữa hai câu có khoảng trống: lần thử chạm trần và lần
+ * thử `MAX_OTP_ATTEMPTS + 1` chen vào đó và tăng tiếp — trần 5 quay thành trần
+ * tuỳ hứng (test concurrency đo được trần chạy tới 10). Điều kiện khoá do đó
+ * phải nằm trong chính câu tăng, tính trên giá trị cột đã cộng.
+ *
+ * Câu SQL thực hiện cùng lúc hai hành vi, trong một transaction ngầm của
+ * PostgreSQL:
+ *
+ * 1. `attempts = attempts + 1` — nguyên tử theo PostgreSQL row-level lock. Phép
+ *    so của khoá viết `attempts + 1 >= MAX` (giá trị MỚI) vì bên phải phép gán
+ *    `SET` đọc giá trị CŨ của hàng.
+ * 2. `consumed_at = now()` khi `attempts` cộng xong đã đạt trần — khoá còn
+ *    active chạm trần ngay lập tức, không chờ route quyết định.
+ *
+ * Cả hai chỉ khớp khi challenge chưa consume (`consumed_at IS NULL`): request
+ * khác đã consume giữa chừng thì không tăng, không khoá — cùng hợp đồng trả
+ * `null` như một UPDATE tăng thuần tuý.
+ *
+ * @returns Số `attempts` sau khi tăng, hoặc `null` khi challenge đã bị consume
+ *   bởi request khác giữa chừng.
+ */
+export async function recordFailedAttemptAndLock(
+  pool: QueryablePool,
+  challengeId: string,
+): Promise<number | null> {
+  const result = await pool.query<{ attempts: number }>(
+    `UPDATE account.otp_challenges
+        SET attempts = attempts + 1,
+            consumed_at = CASE WHEN attempts + 1 >= $2 THEN now() ELSE consumed_at END
+      WHERE id = $1 AND consumed_at IS NULL
+      RETURNING attempts`,
+    [challengeId, MAX_OTP_ATTEMPTS],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : row.attempts;
 }
 
 /**

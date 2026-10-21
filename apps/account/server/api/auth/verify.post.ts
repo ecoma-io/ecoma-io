@@ -5,8 +5,9 @@
  *
  * 1. Đọc body (`email`, `code`), hash địa chỉ như challenge đã làm.
  * 2. Tìm challenge active. Không có / hết hạn / hết lượt thử → 400 chung chung.
- * 3. Digest mã và so timing-safe với `code_digest`. Sai → tăng `attempts` (nguyên
- *    tử), 400 chung chung khi còn lượt, khoá challenge khi vượt trần.
+ * 3. Digest mã và so timing-safe với `code_digest`. Sai → tăng `attempts` và
+ *    khoá ngay khi đạt trần — cùng trong MỘT câu UPDATE nguyên tử; 400 chung
+ *    chung.
  * 4. Đúng → tra cứu địa chỉ **một lần nữa** tại thời điểm verify (không tin thứ
  *    tự事件 giữa challenge và verify): địa chỉ phải vẫn `verified`, account vẫn
  *    `active` — fail-closed với trạng thái account.
@@ -45,13 +46,13 @@ import { writeLog } from '../../utils/logger';
 import { withRequestPool } from '../../utils/db';
 import {
   consumeChallenge,
+  expireChallengeIfExpired,
   findActiveChallenge,
   lookupVerifiedAddress,
-  MAX_OTP_ATTEMPTS,
   normalizeAndHashEmail,
   OTP_PURPOSE_LOGIN,
   otpDigest,
-  recordFailedAttempt,
+  recordFailedAttemptAndLock,
   resolveOtpTarget,
   timingSafeDigestEqual,
 } from '../../lib/otp';
@@ -115,19 +116,28 @@ export default defineEventHandler(async (event) => {
   try {
     const result = await withRequestPool(hyperdrive, async (pool) => {
       const challenge = await findActiveChallenge(pool, hash, OTP_PURPOSE_LOGIN);
-      if (challenge === null || isExpired(challenge.expires_at, Date.now())) {
+      if (challenge === null) {
         writeLog({ event: 'otp_verify.rejected', status: 400, reason: 'no_active_challenge' });
+        return false;
+      }
+      const nowMs = Date.now();
+      if (isExpired(challenge.expires_at, nowMs)) {
+        // Hết hạn: khoá nguyên tử hàng này (hygiene vòng đời — chi tiết ở
+        // `expireChallengeIfExpired`) rồi từ chối như mọi nhánh khác. Khoá KHÔNG
+        // đổi response: vẫn 400 chung chung, không chữ "hết hạn" phân biệt được
+        // ra ngoài.
+        await expireChallengeIfExpired(pool, hash, OTP_PURPOSE_LOGIN, nowMs);
+        writeLog({ event: 'otp_verify.rejected', status: 400, reason: 'challenge_expired' });
         return false;
       }
 
       const digest = await otpDigest(otpSecret, OTP_PURPOSE_LOGIN, body.code);
       if (!timingSafeDigestEqual(digest, challenge.code_digest)) {
-        const attempts = await recordFailedAttempt(pool, challenge.id);
+        // Tăng và khoá trong MỘT câu UPDATE: nếu khoá là UPDATE riêng chạy sau,
+        // hai request cạnh nhau có khoảng trống giữa tăng và khoá để lần thử
+        // thứ MAX_OTP_ATTEMPTS + 1 tăng tiếp — trần thành tuỳ hứng.
+        await recordFailedAttemptAndLock(pool, challenge.id);
         writeLog({ event: 'otp_verify.rejected', status: 400, reason: 'code_mismatch' });
-        if (attempts !== null && attempts >= MAX_OTP_ATTEMPTS) {
-          // Khoá challenge: consume luôn — không còn lượt nào cho mã này.
-          await consumeChallenge(pool, challenge.id);
-        }
         return false;
       }
 
