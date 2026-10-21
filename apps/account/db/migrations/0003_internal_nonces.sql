@@ -56,13 +56,16 @@ COMMENT ON COLUMN account.internal_nonces.expires_at IS
 -- Đúng một truy vấn đọc bảng này: dọn nonce hết hạn theo lô. Không
 -- truy vấn nào khác lọc theo `expires_at`, nên index phục vụ riêng câu đó.
 --
--- ⚠️ Câu prune này **đã được cấu hình lên lịch**: job `prune-account` trong
--- `.github/workflows/identity-nonce-prune.yaml` chạy nó bằng credential `ecoma_account_migrator`,
--- riêng cho từng DB. Trạng thái là **đã cấu hình, chưa xác minh runtime**: cần Environment
--- `nonce-prune-account` cùng secret `DB_ACCOUNT_MIGRATOR_URL` và đường kết nối tới `db-account`
--- từ CI runner — chưa được provision. Runbook chính của prune nằm ở
--- `docs/services/auth/03-operations.md` §3.3 (tài liệu của auth là chỗ duy nhất mô tả cơ chế
--- CI/run của cả hai job). Hệ quả phình bảng là vấn đề vận hành, KHÔNG làm yếu replay guard.
+-- ⚠️ Câu prune này **đã được cấu hình lên lịch**: cron Worker `apps/auth-nonce-prune-job`
+-- chạy nó qua Hyperdrive binding `DB_ACCOUNT`, dùng credential `ecoma_account_nonce_pruner`
+-- (role tạo ở `0007_nonce_pruner_role.sql`) — riêng cho từng DB. Trước đây job này là GitHub
+-- Action `.github/workflows/identity-nonce-prune.yaml` chạy bằng credential
+-- `ecoma_account_migrator`; workflow đã bị thay và xoá (issue #82). Trạng thái là **đã cấu
+-- hình, chưa xác minh runtime**: cần Hyperdrive config của `db-account` (binding
+-- `DB_ACCOUNT` trong `apps/auth-nonce-prune-job/wrangler.jsonc` vẫn mang id placeholder) —
+-- chưa được provision. Runbook chính của prune nằm ở `docs/services/auth-nonce-prune-job/`
+-- (tài liệu của job là chỗ duy nhất mô tả cơ chế cron của cả hai kho). Hệ quả phình bảng là
+-- vấn đề vận hành, KHÔNG làm yếu replay guard.
 CREATE INDEX IF NOT EXISTS internal_nonces_expires_at_idx
   ON account.internal_nonces (expires_at);
 

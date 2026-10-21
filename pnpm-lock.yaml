@@ -457,6 +457,16 @@ importers:
         specifier: 12.2.1
         version: 12.2.1(supports-color@10.2.2)
 
+  apps/auth-nonce-prune-job:
+    dependencies:
+      pg:
+        specifier: ^8.23.1
+        version: 8.23.1
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
+
   apps/backoffice:
     dependencies:
       '@ecoma-io/backoffice-domain':

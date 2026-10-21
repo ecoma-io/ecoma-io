@@ -108,11 +108,19 @@ function connectMigrator(): ReturnType<typeof createPostgresClient> {
 /**
  * Đọc nội dung file migration `0010` (kho nonce của auth).
  *
- * Nằm ở phạm vi module vì cả hai test file-assert dùng chung: một bản khai bên trong
+ * Nằm ở phạm vi module vì các test file-assert dùng chung: một bản khai bên trong
  * `describe` bị `unicorn/consistent-function-scoping` bắt vì nó không capture biến nào.
  */
 function readMigration0010(): string {
   return readFileSync(join(MIGRATIONS_DIR, '0010_internal_nonces.sql'), 'utf8');
+}
+
+/**
+ * Đọc nội dung file migration `0014` (role pruner) — test file-assert dùng để
+ * cross-check khuôn role mà lưới an toàn tạo ra với khuôn mà provisioning tạo ra.
+ */
+function readMigration0014(): string {
+  return readFileSync(join(MIGRATIONS_DIR, '0014_nonce_pruner_role.sql'), 'utf8');
 }
 
 /**
@@ -246,6 +254,32 @@ describe('migration 0010 — asserted against the FILE, runs without PostgreSQL'
     for (const line of grants) {
       expect(line).not.toMatch(/\bALL\b/u);
     }
+  });
+
+  it('the DO-block fallback creates the pruner role shaped like provisioning: with LOGIN', () => {
+    // Lưới an toàn phải tạo đúng khuôn với các đường provisioning: harness
+    // integration và runbook đều tạo pruner bằng `CREATE ROLE … LOGIN …`. Thiếu
+    // `LOGIN` thì một cluster sạch gọi file này chạy một mình sẽ nếu guard
+    // `pg_roles` tạo ra role NOLOGIN — Hyperdrive không xác thực được bằng
+    // credential nào của nó, job đo `db_unreachable` vĩnh viễn trong khi
+    // migrations vẫn xanh; chạy lại migration không cứu được vì guard bỏ qua role
+    // đã tồn tại. Assert trên FILE đúng nằm trong group này chứ không ở
+    // `describe` có PostgreSQL: schema được áp MỘT LẦN khi container mới lên, nên
+    // trên database đã migrate, sửa file tạo role không đổi schema hiện hành, các
+    // test hành vi không bắt được một mutation như vậy (cùng lý do của hai test ở
+    // trên).
+    const fallback = /CREATE ROLE\s+ecoma_auth_nonce_pruner\s+(?<flags>[\S\s]*?)\s*END;/u.exec(
+      readMigration0014(),
+    );
+    const flags = fallback?.groups?.['flags'] ?? '';
+    expect(flags).toMatch(/\bLOGIN\b/u);
+    // Các cờ hạn chế còn lại phải giữ nguyên — `LOGIN` không được mua bằng cách bỏ
+    // một cờ `NO*` nào, tức role fallback không được nới đặc quyền theo hướng khác.
+    expect(flags).toMatch(/\bNOSUPERUSER\b/u);
+    expect(flags).toMatch(/\bNOCREATEDB\b/u);
+    expect(flags).toMatch(/\bNOCREATEROLE\b/u);
+    expect(flags).toMatch(/\bNOINHERIT\b/u);
+    expect(flags).toMatch(/\bNOBYPASSRLS\b/u);
   });
 });
 

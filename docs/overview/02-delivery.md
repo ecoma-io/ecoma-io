@@ -120,6 +120,7 @@ Taxonomy (`apps`/`libs`/`tests`) và cấu trúc Nx project → [`05-code-archit
 
 - **Chốt: migration PostgreSQL là CI job, dùng PostgreSQL client kết nối thẳng.** Cần đúng endpoint, credential, tên database — có sẵn ở mọi database hosting tier (`03` §6). Đổi tier chỉ đổi biến môi trường, lệnh migration không đổi.
 - Loại trừ mọi đường chạy migration từ trong Worker: Hyperdrive **không hỗ trợ advisory lock** (`04` HD6) nên không giữ được lock chống chạy chồng; `cloudflare:sockets` chỉ plaintext TCP (`04` VP2) — không có TLS cho credential; Worker cron chạy migration nghĩa là migration phụ thuộc application plane.
+- Dọc đường đó, một Worker cron **có thể** chạy DML có chọn lọc qua Hyperdrive — khác loại với migration: không cần advisory lock và không đổi schema. Job hiện tại là `auth-nonce-prune-job` (cron DELETE nonce hết hạn bằng role DML hẹp của từng database — `docs/services/auth-nonce-prune-job/01-architecture.md`); đường sự vụ này KHÔNG mở cửa cho migration từ Worker, rule loại trừ ở bullet trên vẫn giữ nguyên.
 - Đường vào database này là **admin path** riêng cho CI, không phải application access path (`01` §1.1). Credential `_migrator` chỉ tồn tại trong CI secret store, không bao giờ là Worker secret (§6).
 
 ---

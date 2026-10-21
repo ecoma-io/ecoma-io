@@ -270,6 +270,13 @@ async function provision(superuser: Client): Promise<void> {
   // `0002_roles_and_grants.sql`.
   await superuser.query(`REVOKE CONNECT ON DATABASE "${AUTH_DATABASE}" FROM PUBLIC`);
   await superuser.query(`REVOKE CONNECT ON DATABASE "${AUTH_DATABASE}" FROM ecoma_account_runtime`);
+  // Role pruner của cron Worker `apps/auth-nonce-prune-job` (`0007`): cùng lí do
+  // hai role trên — migrator `NOCREATEROLE` không tự tạo được, guard của `0007`
+  // chỉ là lưới an toàn nên role phải do admin tạo trước khi migration chạy.
+  await superuser.query(
+    `CREATE ROLE ecoma_account_nonce_pruner LOGIN PASSWORD '${ROLE_PASSWORD}' ` +
+      `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`,
+  );
 }
 
 /**

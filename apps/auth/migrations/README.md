@@ -74,18 +74,26 @@ không nằm chung transaction".
 
 ## Vai trò của operator
 
-Các file ở đây **không tạo role**. Việc tạo database, ba role và thu cross-connect là
-**bước operator, ngoài CI** — đây là lựa chọn của workstream `account`, và unit này **bám theo
-đúng lựa chọn đó** (auth 03-operations.md §3 mô tả cùng mô hình ba tầng; đọc thêm
-`docs/services/account/03-operations.md` §3). Lý do giữ ngoài migration: role/database là hạ
-tầng, không phải schema; chúng phải tồn tại trước để migration **có người chạy và nơi chạy**.
+Các file ở đây **không tạo role chủ**. Việc tạo database, ba role gốc (owner/migrator/runtime)
+và thu cross-connect là **bước operator, ngoài CI** — đây là lựa chọn của workstream `account`,
+và unit này **bám theo đúng lựa chọn đó** (auth 03-operations.md §3 mô tả cùng mô hình ba tầng;
+đọc thêm `docs/services/account/03-operations.md` §3). Lý do giữ ngoài migration: role/database
+là hạ tầng, không phải schema; chúng phải tồn tại trước để migration **có người chạy và nơi chạy**.
+
+⚠️ Ngoại lệ kiểu file: `0014_nonce_pruner_role.sql` **có** khối `DO $$` tạo role, nhưng đó chỉ
+là **lưới an toàn idempotent** trên một cluster sạch — role vẫn phải được provisioning tạo sẵn
+(bước 2 dưới đây), vì migrator là `NOCREATEROLE` không tự CREATE được. Pruner là role DML-cấp
+bảng, không phải role chủ; nó không thay đổi mô hình "provisioning trước, schema sau".
 
 Trình tự operator (provisioning, theo auth 03-operations.md §3.2):
 
 1. Tạo database `db-auth`.
-2. Tạo **ba** role theo mô hình ba tầng: owner/admin (`ecoma_owner`, không chạy trong Worker,
-   cầm ngoài VPS cho DR), migrator (`ecoma_auth_migrator`, quyền DDL, chỉ chạy trong CI), và
-   runtime (`ecoma_auth_runtime`, chỉ DML).
+2. Tạo **bốn** role theo mô hình ba tầng cộng một role pruner: owner/admin
+   (`ecoma_owner`, không chạy trong Worker, cầm ngoài VPS cho DR), migrator
+   (`ecoma_auth_migrator`, quyền DDL, chỉ chạy trong CI), runtime
+   (`ecoma_auth_runtime`, chỉ DML), và pruner (`ecoma_auth_nonce_pruner`,
+   chỉ `SELECT, DELETE` trên `auth.internal_nonces` — principal của cron Worker
+   `apps/auth-nonce-prune-job`, tạo trong migration `0014`).
 3. Gán quyền hạ tầng:
    - `GRANT CREATE` trên `db-auth` cho `ecoma_auth_migrator` (role này tạo schema `auth` và
      các bảng; xem `0001` ở phần mở đầu);
@@ -211,18 +219,33 @@ SELECT grantee, table_name,
 --       outbox_events                → INSERT, SELECT        (UPDATE ở mức cột, xem (2b))
 --       10 bảng còn lại              → DELETE, INSERT, SELECT, UPDATE
 --     KHÔNG được có: TRUNCATE, TRIGGER, REFERENCES, CREATE trên schema nào.
+--     Role riêng `ecoma_auth_nonce_pruner` (prune job) được sweep riêng ở ô (2d).
 
--- (2c) internal_nonces — quyền phải là ĐÚNG hai, không UPDATE và không DELETE.
+-- (2c) internal_nonces — quyền runtime phải là ĐÚNG hai, không UPDATE và không DELETE.
 --     Nới `expires_at` của một nonce đã ghi là nới cửa sổ replay, tức là sửa dữ
 --     liệu kiểm soát bảo mật. `DELETE` còn nặng hơn: xoá một nonce **còn hiệu lực**
---     là mở lại cửa sổ replay cho đúng envelope đó, nên prune là job của
---     `ecoma_auth_migrator` (học thuyết ở `0009`) — đường serving path không giữ
---     quyền xoá. Grant nằm ở `0010` chứ không ở `0009` vì `0009` chạy trước và
+--     là mở lại cửa sổ replay cho đúng envelope đó, nên prune là job của role
+--     `ecoma_auth_nonce_pruner` (tạo ở `0014_nonce_pruner_role.sql`; trước đây job
+--     GitHub Action dùng `ecoma_auth_migrator` — workflow đã bị thay bởi cron Worker
+--     `apps/auth-nonce-prune-job`, và Worker không được cầm credential `_migrator_`).
+--     Grant nằm ở `0010` chứ không ở `0009` vì `0009` chạy trước và
 --     `GRANT` lên bảng chưa tồn tại là lỗi — xem chú thích cuối `0010`.
 SELECT array_agg(privilege_type ORDER BY privilege_type)
   FROM information_schema.role_table_grants
  WHERE table_schema = 'auth' AND table_name = 'internal_nonces'
    AND grantee = 'ecoma_auth_runtime';                -- phải = {INSERT,SELECT}
+
+-- (2d) internal_nonces — sweep của role PRUNER (tạo ở `0014_nonce_pruner_role.sql`).
+--     Cron Worker `apps/auth-nonce-prune-job` kết nối bằng credential
+--     `ecoma_auth_nonce_pruner` (Hyperdrive binding `DB_AUTH`), nên quyền của nó
+--     đủ để job chạy và KHÔNG hơn gì cần thiết nếu credential rò.
+SELECT array_agg(privilege_type ORDER BY privilege_type)
+  FROM information_schema.role_table_grants
+ WHERE table_schema = 'auth' AND table_name = 'internal_nonces'
+   AND grantee = 'ecoma_auth_nonce_pruner';           -- phải = {DELETE,SELECT}
+--     KHÔNG được có: INSERT, UPDATE, TRUNCATE, TRIGGER, REFERENCES (khối REVOKE
+--     ở `0014`), và không được có quyền nào trên bảng khác của schema `auth`
+--     (chỉ `USAGE` schema là đủ — thuật toán của job không chạm bảng khác).
 
 -- (2b) outbox_events — UPDATE chỉ trên 4 cột, không trên payload/event_id.
 SELECT table_name, column_name
@@ -249,6 +272,9 @@ SELECT count(*) FROM information_schema.columns
 
 -- (5) Runtime không được CREATE trên schema nào.
 SELECT has_schema_privilege('ecoma_auth_runtime', 'auth', 'CREATE');          -- phải = f
+
+-- (6) Role pruner cũng KHÔNG được CREATE trên schema nào.
+SELECT has_schema_privilege('ecoma_auth_nonce_pruner', 'auth', 'CREATE');     -- phải = f
 ```
 
 ---
