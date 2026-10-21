@@ -10,11 +10,12 @@ import { startWorkerRuntime, statusWorkerRuntime } from './worker-orchestration.
 /**
  * Entry `pnpm dx local-worker-up`.
  *
- * Bring up WORKER runtime của worktree — mọi app ecoma có committed
- * `apps/<dir>/wrangler.jsonc` trong worktree này (PR6 discovery): scan
- * configs, suy topology (service binding + queue producer/consumer), rồi
- * từng process `wrangler dev` boot theo thứ tự topological. Runtime chia sẻ
- * `--persist-to` theo worktree; migration D1 local chạy trước khi spawn.
+ * Bring up WORKER runtime của worktree — mọi app ecoma OPT-IN qua marker
+ * `apps/<dir>/local-worker.jsonc` (PR6 discovery): scan các app có marker,
+ * đọc ready tường minh trong marker, suy topology (service binding + queue
+ * producer/consumer), rồi từng process `wrangler dev` boot theo thứ tự
+ * topological. Runtime chia sẻ `--persist-to` theo worktree; migration D1
+ * local chạy trước khi spawn.
  *
  * Hành vi process-quan-trọng: `startWorkerProcess` spawn worker DETACHED
  * (process group riêng) — sau khi lệnh này exit 0, process tree (`wrangler
@@ -22,9 +23,11 @@ import { startWorkerRuntime, statusWorkerRuntime } from './worker-orchestration.
  * `local-worker-down` tắt chúng. Đây là thiết kế có chủ ý: CLI chỉ là điểm
  * điều khiển, không phải process manager giữ process con bằng Lifecycle.
  *
- * Readiness trước khi in "ready": control plane-ish app (không queue
- * consumer / workers_dev không tắt) phải trả 2xx cho `GET /health` (poll
- * ≤250ms, timeout 60s); queue-only consumer phải in boot banner wrangler
+ * Readiness trước khi in "ready" — KHAI TRONG MARKER, không suy từ config
+ * wrangler (OCR bug-critical trên PR #69: inference `workers_dev`/`queues`
+ * làm queue-only worker không khai `workers_dev` bị poll `/health` 60s
+ * timeout): `readiness: 'http-health'` → poll `GET /health` 2xx (poll
+ * ≤250ms, timeout 60s); `readiness: 'log-banner'` → chờ boot banner wrangler
  * (`/Ready on http/`) ra stdout/stderr. Không đạt → error fail-closed,
  * exitCode 1; process vừa spawn được stop (metadata chỉ remove khi process
  * được chứng minh chết).
@@ -39,7 +42,7 @@ export default defineCommand({
   meta: {
     name: 'local-worker-up',
     description:
-      'Bring up the local worker runtime for all discovered apps (apps/*/wrangler.jsonc) of this worktree',
+      'Bring up the local worker runtime for discovered apps (apps/*/local-worker.jsonc opt-in marker) of this worktree',
   },
 
   args: {

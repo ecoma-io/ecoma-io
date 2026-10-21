@@ -21,19 +21,69 @@
  *   để redelivery hoạt động — trên wrangler dev, producer của queue phải có
  *   config rõ ràng; spike §2 evidence). Topo-sort trên graph đó; cycle →
  *   fail với đường cycle rõ ràng, KHÔNG boot nửa vời.
- * - **Readiness**: app có `workers_dev: false` + consumers (queue-only
- *   worker, không fetch handler serving) → banner; còn lại HTTP `/health`.
- *   Trong wrangler dev, mọi Worker đều mở HTTP dev port kể cả queue-only —
- *   banner vẫn hoạt động (stream từ stdout/stderr của process).
+ * - **Readiness**: KHÔNG suy đoán. Mỗi app khai tường minh trong marker file
+ *   `local-worker.jsonc` (xem dưới) — `readiness: 'http-health'` (poll
+ *   `GET /health`) hoặc `'log-banner'` (banner `Ready on http` của wrangler
+ *   dev). Sai/giá trị lạ → fail-loud với path cụ thể, không boot.
+ *
+ * ## Opt-in marker `apps/<dir>/local-worker.jsonc`
+ *
+ * Không phải mọi `wrangler.jsonc` là một Worker local runtime: Nuxt/Nitro app
+ * (`account`, `backoffice`, `home`, `pact-broker-app`) cũng khai wrangler config
+ * cho deploy production nhưng local của chúng chạy Docker/Traefik, không qua
+ * `wrangler dev` — quét mù mọi `wrangler.jsonc` sẽ nhốt các app đó vào một
+ * readiness `http-health` không bao giờ đạt (OCR bug-high trên PR #69). Vì vậy
+ * việc tham gia local runtime là OPT-IN: app khai marker file mới được scanned.
+ * Marker chứa readiness declaration duy nhất (một field, hai giá trị hợp lệ)
+ * — KHÔNG suy từ `workers_dev` hay `queues.consumers` nữa: `transactional-mailer
+ * -job` KHÔNG khai `workers_dev` trong config committed (undefined, không phải
+ * `false`) nên inference cũ làm worker queue-only bị poll `/health` 60s timeout
+ * (OCR bug-critical trên PR #69). Opt-out cũng tường minh: xoá marker = rút app
+ * khỏi local runtime, thay vì phải sửa `tools/dx`.
  */
 
-import { readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { loadCommittedWranglerConfig, type CommittedWranglerConfig } from './worker-config.js';
+import {
+  loadCommittedWranglerConfig,
+  parseJsonc,
+  type CommittedWranglerConfig,
+} from './worker-config.js';
 import { ROOT_DIR } from './utils.js';
 
-/** Entry đã discovered từ một `wrangler.jsonc`. */
+/** Tên marker file opt-in của local worker runtime trong từng `apps/<dir>`. */
+export const LOCAL_WORKER_MARKER = 'local-worker.jsonc';
+
+/** Readiness một app khai tường minh trong marker — không suy từ binding nào. */
+export type ReadinessDeclaration = 'http-health' | 'log-banner';
+
+/**
+ * Đọc marker opt-in `apps/<dir>/local-worker.jsonc` → readiness declaration.
+ *
+ * Marker phải tồn tại (đã kiểm trước khi gọi) và parse được:
+ * `{"readiness": "http-health" | "log-banner"}`. Sai shape hay giá trị lạ →
+ * throw với path cụ thể — fail-loud (OCR bug-critical: readiness suy từ
+ * `workers_dev`/`queues` khiến app không có `/health` bị poll 60s timeout).
+ */
+export function loadReadinessDeclaration(markerPath: string): ReadinessDeclaration {
+  const marker = parseJsonc(readFileSync(markerPath, 'utf8'));
+  if (marker === null || typeof marker !== 'object' || Array.isArray(marker)) {
+    throw new Error(
+      `local worker marker phải là object: ${markerPath} — "readiness": "http-health" | "log-banner"`,
+    );
+  }
+  const declared = (marker as Record<string, unknown>).readiness;
+  if (declared !== 'http-health' && declared !== 'log-banner') {
+    throw new Error(
+      `readiness không hợp lệ trong ${markerPath}: '${String(declared)}' — ` +
+        'chỉ khai "readiness": "http-health" | "log-banner" (no inference)',
+    );
+  }
+  return declared;
+}
+
+/** Entry đã discovered từ một `wrangler.jsonc` + marker opt-in của app đó. */
 export interface DiscoveredWorkerEntry {
   /** Entry metadata name (file `<name>.json` trong stateDir). */
   entryName: string;
@@ -54,8 +104,8 @@ export interface DiscoveredWorkerEntry {
   producesQueues: string[];
   /** Các queue mà entry này CONSUME — producer phải boot trước để redelivery. */
   consumesQueues: string[];
-  /** Readiness đã suy: `http-health` cho worker có serving port, banner ngược lại. */
-  readiness: 'http-health' | 'log-banner';
+  /** Readiness app KHAI trong marker opt-in — không suy từ config wrangler. */
+  readiness: ReadinessDeclaration;
   /** Nhãn ngắn phục vụ report/error. */
   label: string;
 }
@@ -71,10 +121,22 @@ export type TopoSortResult = { ok: true; order: string[] } | { ok: false; cycleP
 // -------------------------------------------------------------------
 
 /**
- * Scan mọi `apps/<dir>/wrangler.jsonc` và trả entries theo boot topo-order.
- * Config không parse được bị BỎ QUA (app đó không tham gia local runtime)
- * chứ không abort toàn bộ — còn dependency lệch sau khi entry được lập thì
- * topo-sort fail-closed ở dưới.
+ * Scan `apps/<dir>` OPT-IN qua marker `local-worker.jsonc` và trả entries theo
+ * boot topo-order.
+ *
+ * Một app THAM GIA local runtime khi và chỉ khi cả hai điều kiện đều đạt:
+ *
+ * 1. Marker `apps/<dir>/local-worker.jsonc` tồn tại — app khai tường minh nó
+ *    muốn chạy qua `wrangler dev` của local runtime. Không marker → app KHÔNG
+ *    tham gia (Nuxt app giữ wrangler config cho production deploy nhưng local
+ *    của chúng chạy Docker/Traefik — quét mù mọi `wrangler.jsonc` là OCR
+ *    bug-high trên PR #69).
+ * 2. `wrangler.jsonc` load được (fail-closed validation sẵn của PR3).
+ *
+ * Config không parse được BỎ QUA (app đó out) chứ không abort toàn bộ — còn
+ * dependency lệch sau khi entry được lập thì topo-sort fail-closed ở dưới.
+ * Marker sống nhưng config hỏng thì cũng bỏ app đó — nếu đây là lỗi thật thì
+ * lỗi hiện rõ khi up (missing service/queue dependency), không phải lúc scan.
  *
  * Thư mục `apps` không tồn tại (đáng ngờ nhưng không phải lỗi chết) — trả về
  * entries rỗng thay vì fail, để up command báo "no worker apps found" một
@@ -96,14 +158,24 @@ export function discoverWorkerEntries(rootDir?: string): DiscoveredWorkerEntry[]
   // chỗ không mutation nào ngoài mong muốn — target es2022 không có toSorted.
   appDirs.sort();
   for (const dir of appDirs) {
-    const committedConfigPath = join(appsRoot, dir, 'wrangler.jsonc');
+    const appDir = join(appsRoot, dir);
+    const markerPath = join(appDir, LOCAL_WORKER_MARKER);
+    // (1) Opt-in gate — chỉ app có marker được quét tiếp.
+    if (!existsSync(markerPath)) continue;
     try {
+      // (2) Cấu hình phải load được — hỏng thì app khỏi runtime (fail-closed).
+      const committedConfigPath = join(appDir, 'wrangler.jsonc');
       const { config } = loadCommittedWranglerConfig(committedConfigPath);
-      entries.push(entryFromCommittedConfig(dir, committedConfigPath, config));
+      // (3) Readiness là DECLARATION trong marker — sai shape/giá trị fail:
+      // app này có marker + config load OK nhưng readiness sai vẫn phải ra
+      // khỏi danh sách, không fallback ngầm gây readiness timeout
+      // (OCR bug-critical).
+      const readiness = loadReadinessDeclaration(markerPath);
+      entries.push(entryFromCommittedConfig(dir, committedConfigPath, config, readiness));
     } catch {
-      // Config rác (ví dụ wrapper tool app, future scaffolding) — bỏ qua
-      // để không chặn boot của các app thật. Chỉ `wrangler.jsonc` tồn
-      // tại + parse được mới có nghĩa là app này muốn chạy qua local worker.
+      // Marker parse lỗi, config lỗi, readiness sai đều được nuốt tại đây —
+      // app out khỏi runtime; lệch phụ thuộc thật sẽ fail rõ ở topo-sort
+      // (orphan queue / service binding ngoài repo scan).
       continue;
     }
   }
@@ -112,12 +184,15 @@ export function discoverWorkerEntries(rootDir?: string): DiscoveredWorkerEntry[]
 
 /**
  * Suy entry từ CommittedWranglerConfig — mọi hình dạng đến đều gọi thẳng
- * `loadCommittedWranglerConfig` (fail-closed sẵn).
+ * `loadCommittedWranglerConfig` (fail-closed sẵn). Readiness truyền vào là
+ * declaration đã đọc từ marker (`loadReadinessDeclaration`) — KHÔNG suy từ
+ * workers_dev/queues nữa.
  */
 function entryFromCommittedConfig(
   appDirName: string,
   committedConfigPath: string,
   config: CommittedWranglerConfig,
+  readiness: ReadinessDeclaration,
 ): DiscoveredWorkerEntry {
   const appDir = join(committedConfigPath, '..');
   const d1s = config.d1_databases ?? [];
@@ -135,14 +210,9 @@ function entryFromCommittedConfig(
   const producesQueues = readQueueReferences(queues.producers);
   const consumesQueues = readQueueReferences(queues.consumers);
 
-  // Readiness inference:
-  // - queue-only worker (consumer bits, workers_dev=false, KHÔNG serving
-  //   route cho runtime query) → banner `Ready on http` (case-sensitive);
-  // - còn lại → HTTP `/health` poll.
-  const hasQueueConsumer = consumesQueues.length > 0;
-  const readiness: DiscoveredWorkerEntry['readiness'] =
-    hasQueueConsumer && config.workers_dev === false ? 'log-banner' : 'http-health';
-
+  // Readiness là DECLARATION (truyền từ marker) — comment inference cũ đã
+  // sửa: suy từ `workers_dev`/`queues.consumers` làm readiness poll timeout
+  // trên config không khai `workers_dev` (OCR bug-critical trên PR #69).
   return {
     entryName: appDirName,
     committedConfigPath,

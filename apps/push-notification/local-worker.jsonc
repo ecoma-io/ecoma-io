@@ -1,0 +1,11 @@
+{
+  // Opt-in marker của local worker runtime (PR6 discovery, issue #68):
+  // sự hiện diện của file này khai báo "app này chạy qua `wrangler dev` của
+  // `pnpm dx local-worker-up`" — không marker nghĩa là app KHÔNG tham gia
+  // runtime đó. Readiness là DECLARATION, không suy từ config wrangler:
+  // control plane serve `GET /health` (src/main.ts — ít routes, không DB).
+  // TODO(split PR): app hiện KHÔNG build được local (`main` trỏ `dist/main.js`
+  // chưa build) — nếu `local-worker-up` fail trên app này trong thời gian tới
+  // thì rút marker thay vì infer readiness mới.
+  "readiness": "http-health",
+}

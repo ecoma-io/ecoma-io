@@ -27,7 +27,7 @@ export default defineCommand({
   meta: {
     name: 'local-worker-down',
     description:
-      'Stop the local worker runtime for all discovered apps (apps/*/wrangler.jsonc) of this worktree',
+      'Stop the local worker runtime for discovered apps (apps/*/local-worker.jsonc opt-in marker) of this worktree',
   },
 
   args: {

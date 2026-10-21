@@ -70,11 +70,26 @@ function writeCommittedConfig(dir: string, name: string): string {
 }
 
 /**
+ * Ghi marker opt-in `local-worker.jsonc` vào app dir — PR6 dùng marker là
+ * opt-in gate + readiness declaration duy nhất. `writeCommittedConfig` và
+ * `writeLikelyQueueApp` gọi cât có thể để fixture sống như một app thật.
+ */
+function writeLocalWorkerMarker(
+  dir: string,
+  dirName: string,
+  readiness: 'http-health' | 'log-banner',
+): void {
+  const appDir = join(dir, 'apps', dirName);
+  mkdirSync(appDir, { recursive: true });
+  writeFileSync(join(appDir, 'local-worker.jsonc'), `${JSON.stringify({ readiness })}\n`, 'utf8');
+}
+
+/**
  * Queue app fixture — worker có `-job` trong tên là consumer (shape config
- * thật: consume queue + workers_dev false như web-push-notification-job),
- * ngược lại producer. Dùng cho test readiness inference và boot order theo
- * queue dependency của discovery (PR6); fixture chỉ cần shape khớp, không
- * mô phỏng semantics push bound context.
+ * thật: consume queue như transactional-mailer-job), ngược lại producer.
+ * Marker readiness được khai tường minh theo `isConsumer`: queue-only
+ * worker không expose HTTP → banner; producer có serving route → HTTP.
+ * Dùng cho test boot order theo queue dependency của discovery (PR6).
  */
 function writeLikelyQueueApp(
   dir: string,
@@ -97,6 +112,7 @@ function writeLikelyQueueApp(
   mkdirSync(appDir, { recursive: true });
   const path = join(appDir, 'wrangler.jsonc');
   writeFileSync(path, JSON.stringify(config), 'utf8');
+  writeLocalWorkerMarker(dir, dirName, isConsumer ? 'log-banner' : 'http-health');
   return path;
 }
 
@@ -215,11 +231,13 @@ const DEAD_PID = 2147483647;
 describe('MAIL_WORKER_ENTRIES', () => {
   it('discovers a two-mail-worker root in boot order with valid entry names', () => {
     // Fixture worktree có đúng hai app mail (writeCommittedConfig tạo
-    // <root>/apps/<name>/wrangler.jsonc) — discovery sống cùng worktree,
-    // không scan repo checkout.
+    // <root>/apps/<name>/wrangler.jsonc + marker) — discovery sống cùng
+    // worktree, không scan repo checkout.
     const root = makeWorktreeFixture('entries-happy');
     writeCommittedConfig(root, 'transactional-mail');
     writeCommittedConfig(root, 'transactional-mailer-job');
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
+    writeLocalWorkerMarker(root, 'transactional-mailer-job', 'log-banner');
     const entries = MAIL_WORKER_ENTRIES(root);
     expect(entries.map((entry) => entry.entryName)).toEqual([
       'transactional-mail',
@@ -230,17 +248,33 @@ describe('MAIL_WORKER_ENTRIES', () => {
     }
   });
 
-  it('mail control plane readiness is http-health, queue consumer is log-banner', () => {
-    // Readiness inference theo discovery: control plane (không consumer,
-    // workers_dev không false) → http-health; consumer (consumers + khai
-    // tường minh workers_dev:false) → log-banner. Fixture phải là một pair
-    // hoàn chỉnh (producer + consumer) — discovery fail-closed khi consumer
-    // không có producer trong repo scan.
-    const root = makeWorktreeFixture('entries-readiness');
+  it('readiness comes from the marker declaration, never from queues or workers_dev inference', () => {
+    // OCR bug-critical trên PR #69: readiness cũ suy từ
+    // `consumers.length > 0 && workers_dev === false` — config committed của
+    // transactional-mailer-job KHÔNG khai workers_dev (undefined) nên worker
+    // queue-only bị suy nhầm http-health rồi poll timeout. Bây giờ readiness
+    // là DECLARATION trong marker: cùng shape config, readiness đổi theo
+    // marker chứ không theo config.
+    const root = makeWorktreeFixture('entries-readiness-declared');
+    // Queue-only consumer KHÔNG khai workers_dev (undefined như config thật)
+    // — marker vẫn quyết.
+    const jobDir = join(root, 'apps', 'transactional-mailer-job');
+    mkdirSync(jobDir, { recursive: true });
+    writeFileSync(
+      join(jobDir, 'wrangler.jsonc'),
+      JSON.stringify({
+        name: 'ecoma-transactional-mailer-job',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'mail-job', database_name: 'mail-job' }],
+        queues: { consumers: [{ queue: 'ecoma-mail-delivery' }] },
+      }),
+      'utf8',
+    );
+    writeLocalWorkerMarker(root, 'transactional-mailer-job', 'log-banner');
+    // Producer HTTP khai workers_dev: false (shape như web-push-notification-job)
+    // — marker vẫn quyết ngược.
     writeLikelyQueueApp(root, 'transactional-mail', 'ecoma-transactional-mail', {
-      queue: 'ecoma-mail-delivery',
-    });
-    writeLikelyQueueApp(root, 'transactional-mailer-job', 'ecoma-transactional-mailer-job', {
       queue: 'ecoma-mail-delivery',
     });
     const [control, consumer] = MAIL_WORKER_ENTRIES(root);
@@ -248,13 +282,54 @@ describe('MAIL_WORKER_ENTRIES', () => {
     expect(consumer.readiness.kind).toBe('log-banner');
   });
 
-  it('discovers a new app by its committed config without registration', () => {
-    // PR6 contract: app khai wrangler.jsonc = tự động vào runtime. App mới
-    // không có binding nào → không dep nào, boot theo alphabet sau main pair.
+  it('skips an app whose marker file is absent (Nuxt app keeps its own local path)', () => {
+    // OCR bug-high trên PR #69: quét mù mọi wrangler.jsonc nhốt Nuxt app
+    // (backoffice, home, pact-broker-app — main trỏ .output/server chưa build,
+    // không /health) vào runtime không bao giờ ready. Opt-in marker là gate:
+    // app không marker → out khỏi discovery, im lặng không block app khác.
+    const root = makeWorktreeFixture('entries-marker-absent');
+    writeCommittedConfig(root, 'transactional-mail');
+    writeCommittedConfig(root, 'transactional-mailer-job');
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
+    writeLocalWorkerMarker(root, 'transactional-mailer-job', 'log-banner');
+    writeCommittedConfig(root, 'backoffice'); // wrangler.jsonc có, marker KHÔNG
+    const names = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
+    expect(names).toEqual(['transactional-mail', 'transactional-mailer-job']);
+  });
+
+  it('skips an app whose marker readiness value is not one of the declared kinds', () => {
+    // Fail-closed cho marker hỏng: app đó out khỏi runtime thay vì fallback
+    // readiness ngầm (fallback ngầm chính là bug OCR bug-critical).
+    const root = makeWorktreeFixture('entries-marker-bad-value');
+    writeCommittedConfig(root, 'transactional-mail');
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
+    writeCommittedConfig(root, 'broken-app');
+    const appDir = join(root, 'apps', 'broken-app');
+    writeFileSync(join(appDir, 'local-worker.jsonc'), '{"readiness": "tcp-poll"}', 'utf8');
+    const names = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
+    expect(names).toEqual(['transactional-mail']);
+  });
+
+  it('skips an app whose marker JSON is unparseable (fail-closed, not fallback)', () => {
+    const root = makeWorktreeFixture('entries-marker-bad-json');
+    writeCommittedConfig(root, 'transactional-mail');
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
+    writeCommittedConfig(root, 'broken-app');
+    const appDir = join(root, 'apps', 'broken-app');
+    writeFileSync(join(appDir, 'local-worker.jsonc'), '{ readiness: ', 'utf8');
+    const names = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
+    expect(names).toEqual(['transactional-mail']);
+  });
+
+  it('discovers a new app by its committed config and its marker without registration', () => {
+    // PR6 contract: app khai wrangler.jsonc + marker = tự động vào runtime.
     const root = makeWorktreeFixture('entries-new-app');
     writeCommittedConfig(root, 'transactional-mail');
     writeCommittedConfig(root, 'transactional-mailer-job');
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
+    writeLocalWorkerMarker(root, 'transactional-mailer-job', 'log-banner');
     writeCommittedConfig(root, 'sample-app');
+    writeLocalWorkerMarker(root, 'sample-app', 'http-health');
     const names = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
     expect(names).toContain('sample-app');
   });
@@ -264,6 +339,8 @@ describe('MAIL_WORKER_ENTRIES', () => {
     // push pair thật: control plane produce queue, consumer consume nó.
     writeCommittedConfig(root, 'transactional-mail');
     writeCommittedConfig(root, 'transactional-mailer-job');
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
+    writeLocalWorkerMarker(root, 'transactional-mailer-job', 'log-banner');
     writeLikelyQueueApp(root, 'push-notification', 'ecoma-push-notification', {
       queue: 'ecoma-push-delivery',
     });
@@ -282,6 +359,8 @@ describe('MAIL_WORKER_ENTRIES', () => {
     // `ecoma-transactional-mail` — đúng khớp worker name of producer, và
     // cả hai khai `queues` cùng tên để không orphan queue. Tên `name` bắt
     // buộc `ecoma-` vì service dep đối chiếu worker name, không entry name.
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
+    writeLocalWorkerMarker(root, 'transactional-mailer-job', 'log-banner');
     const appDir = join(root, 'apps', 'transactional-mail');
     mkdirSync(appDir, { recursive: true });
     writeFileSync(
@@ -372,6 +451,7 @@ describe('startWorkerRuntime', () => {
     const root = makeWorktreeFixture('happy');
     for (const name of ['transactional-mail', 'transactional-mailer-job']) {
       writeCommittedConfig(root, name);
+      writeLocalWorkerMarker(root, name, name.includes('job') ? 'log-banner' : 'http-health');
     }
     const migrationsBin = writeFakeMigrationsBin(root);
 
@@ -481,6 +561,7 @@ describe('startWorkerRuntime', () => {
     const root = makeWorktreeFixture('port-busy');
     for (const name of ['transactional-mail', 'transactional-mailer-job']) {
       writeCommittedConfig(root, name);
+      writeLocalWorkerMarker(root, name, name.includes('job') ? 'log-banner' : 'http-health');
     }
     const migrationsBin = writeFakeMigrationsBin(root);
 
@@ -532,6 +613,7 @@ describe('startWorkerRuntime', () => {
     const root = makeWorktreeFixture('migration-fail');
     for (const name of ['transactional-mail', 'transactional-mailer-job']) {
       writeCommittedConfig(root, name);
+      writeLocalWorkerMarker(root, name, name.includes('job') ? 'log-banner' : 'http-health');
     }
     // Fake bin exit 3 → runWrangler throw.
     const failingBin = join(root, 'failing-wrangler.sh');
@@ -552,6 +634,7 @@ describe('startWorkerRuntime', () => {
     const root = makeWorktreeFixture('readiness-timeout');
     for (const name of ['transactional-mail', 'transactional-mailer-job']) {
       writeCommittedConfig(root, name);
+      writeLocalWorkerMarker(root, name, name.includes('job') ? 'log-banner' : 'http-health');
     }
     const migrationsBin = writeFakeMigrationsBin(root);
 
@@ -698,6 +781,7 @@ describe('statusWorkerRuntime', () => {
     // `standard` của PR6 là "entry name nằm trong discovery của worktree" —
     // fixture phải khai app đúng tên trong apps/ thì row mới chuẩn.
     writeCommittedConfig(root, 'transactional-mail');
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
     const args = [process.execPath, 'x.js'];
     writeFileSync(
       metadataPathOf(stateDir, 'transactional-mail'),
