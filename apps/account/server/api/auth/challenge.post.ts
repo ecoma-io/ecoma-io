@@ -170,7 +170,14 @@ export default defineEventHandler(async (event) => {
   let otpBlocked: boolean;
   try {
     otpBlocked = await withRequestPool(hyperdrive, async (pool) => {
-      // Hai cửa sổ trượt của rate limit — cùng phép đo với block OTP phía dưới.
+      // Hai cửa sổ trượt của rate limit — phép đo **pre-check** ngoài transaction.
+      // Đây không phải guard cấp mã (guard cuối cùng nằm trong `insertChallenge`,
+      // xem OCR-3) — vai trò của phép đo này là DOẦN ĐO trước khi block binding
+      // có cơ hội ghi hàng: request sắp bị rate-limit/cooldown không được tạo ra
+      // hàng `account_sessions`/`login_handoffs` mới (OCR vòng 2). Phép đo ngoài
+      // transaction không tuần tự hoá được với INSERT — N request đồng thời có
+      // thể cùng thấy còn dư allowance rồi cùng đi tiếp; phần tràn còn lại do
+      // đo trong `insertChallenge` đóng lại.
       const [shortCount, hourCount] = await Promise.all([
         countChallengesSince(pool, hash, OTP_RATE_LIMIT_SHORT_WINDOW_SECONDS),
         countChallengesSince(pool, hash, OTP_RATE_LIMIT_HOUR_WINDOW_SECONDS),
@@ -196,9 +203,14 @@ export default defineEventHandler(async (event) => {
   // Binding handle X — TRƯỚC khi cấp mã (FR-006c: "ràng buộc ngay khi được
   // trình"). Chỉ chạy khi body mang handle; `/login` thuần đi tiếp như cũ.
   //
-  // ⚠️ Chỉ tới được đây khi request **sẽ** đi tiếp tới bước cấp mã (rate-limit
-  // và cooldown đã gate phía trên), vì thế mỗi lần ghi binding tương ứng một
-  // attempt thật, không phải mỗi lần dò.
+  // ⚠️ Chỉ tới được đây khi phép đo pre-check phía trên chưa thấy request bị
+  // chặn — tức là mỗi lần ghi binding tương ứng một attempt **có thể** được cấp
+  // mã, không phải mỗi lần dò. Guard cấp mã cuối cùng vẫn nằm trong
+  // `insertChallenge` (OCR-3), nên một request race lọt qua pre-check có thể
+  // bị chặn ở đó — trong trường hợp đó nó đã ghi binding mà không cấp mã; đây
+  // là mức chênh lệch gần như không thể xảy ra (binding chỉ ghi khi request đi
+  // qua cùng phép đo) và chấp nhận được vì binding tự hoá theo TTL 10 phút
+  // (không prune job) và response vẫn 204 mọi nhánh.
   //
   // ⚠️ Nhánh lỗi của phần này **không** bao giờ đổi response: binding thành
   // công hay thua đều 204 — từ chối thật sự là việc của handoff route, một
@@ -318,11 +330,15 @@ export default defineEventHandler(async (event) => {
   let outcome: 'sent' | 'silently_rejected';
   try {
     outcome = await withRequestPool(hyperdrive, async (pool) => {
-      // Rate-limit + cooldown đã được kiểm **trước block binding** ở trên
-      // (quyết định `otpBlocked`) — đo đếm lặp lại ở đây là query thừa và một
-      // mốc thời gian thứ hai. Nét khác biệt duy nhất giữ lại ở đây là kiểm race
-      // với cooldown **trong** `insertChallenge` (concurrent request vừa commit
-      // challenge còn trong 60s) — cửa sổ nhỏ giữa hai phép đo của cùng request.
+      // OCR-3: phép đo rolling-window cuối cùng đã được dời **vào transaction**
+      // của `insertChallenge` (khoá hàng active `FOR UPDATE` trước — đếm hai cửa
+      // sổ sau, Hyperdrive không hỗ trợ advisory lock nên tuần tự hoá dựa vào
+      // chuỗi khoá hàng + partial UNIQUE index) — đó là nơi tuần tự hoá thực sự
+      // với COMMIT của transaction trước cùng địa chỉ. Phép đo `otpBlocked` phía
+      // trên chỉ gate block binding (để không ghi `account_sessions`/
+      // `login_handoffs` cho request sẽ bị rate-limit) và không còn là guard cấp
+      // mã. Route không đo lại ở đây nữa: đo lại bằng `Pool` chung là redundant
+      // query, và không tuần tự hoá được gì với INSERT.
       //
       // Sinh mã + digest — cho **mọi** địa chỉ, kể cả lạ (challenge ma).
       const material = await createOtpChallenge(otpSecret, OTP_PURPOSE_LOGIN);
@@ -338,11 +354,14 @@ export default defineEventHandler(async (event) => {
           purpose: OTP_PURPOSE_LOGIN,
           expiresAt,
           resendCooldownSeconds: OTP_RESEND_COOLDOWN_SECONDS,
+          rateLimitShortWindowSeconds: OTP_RATE_LIMIT_SHORT_WINDOW_SECONDS,
+          rateLimitHourWindowSeconds: OTP_RATE_LIMIT_HOUR_WINDOW_SECONDS,
         });
         if (inserted === null) {
-          // Thua cooldown **trong** transaction: request song song vừa commit một
-          // challenge còn trong 60s. Đây cùng họ với pre-check cooldown ở trên —
-          // branch bị chặn bình thường, về `silently_rejected` (204).
+          // Bị chặn **trong** transaction — cửa sổ trượt đã tràn hoặc request
+          // song song vừa commit một challenge còn trong 60s cooldown. Cả hai
+          // cùng họ nhánh bị chặn bình thường, về `silently_rejected` (204): KHÔNG
+          // có hàng nào bị consume, KHÔNG có mail đi ra.
           return 'silently_rejected' as const;
         }
       } catch (error) {
