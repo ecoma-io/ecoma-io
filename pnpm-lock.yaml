@@ -459,6 +459,9 @@ importers:
 
   apps/backoffice:
     dependencies:
+      '@ecoma-io/backoffice-domain':
+        specifier: workspace:*
+        version: link:../../libs/backoffice-domain
       '@ecoma-io/ui-app-shell':
         specifier: workspace:*
         version: link:../../libs/ui-app-shell

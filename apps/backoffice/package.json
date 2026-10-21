@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "dependencies": {
+    "@ecoma-io/backoffice-domain": "workspace:*",
     "@ecoma-io/ui-app-shell": "workspace:*",
     "@ecoma-io/ui-ecoma-logo": "workspace:*"
   },
