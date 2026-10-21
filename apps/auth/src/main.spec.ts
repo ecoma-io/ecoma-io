@@ -240,6 +240,21 @@ describe('GET /.well-known/openid-configuration', () => {
     expect(body).not.toHaveProperty('userinfo_endpoint');
   });
 
+  it('end_session is declared like the provider does (rpInitiatedLogout enabled), and advertised matches the mounted route', async () => {
+    // ⚠️ Regression: route `/session/end` luôn sống (app.all của
+    // PROVIDER_ROUTES chuyển tiếp cho bridge), provider thật cũng quảng bá nó
+    // khi rpInitiatedLogout bật (discovery.js) — nhưng bản shadow này BỎ khai
+    // ⇒ một RP đọc discovery không biết logout chạy ở đâu. Test ghim cả hai
+    // chiều: giá trị trong document đúng route được mount, VÀ đúng hằng
+    // `PROVIDER_ROUTES` — đổi route trong provider.ts mà quên discovery là
+    // test đỏ ngay.
+    const body = (await (await get('/.well-known/openid-configuration')).json()) as Record<
+      string,
+      unknown
+    >;
+    expect(body.end_session_endpoint).toBe(`${TEST_ISSUER}/session/end`);
+  });
+
   it('the RFC 8414 shadow serves the same document', async () => {
     const body = (await (await get('/.well-known/oauth-authorization-server')).json()) as Record<
       string,
@@ -277,6 +292,33 @@ describe('GET /.well-known/jwks.json', () => {
 });
 
 describe('provider routes — the Node bridge is 500 under Node tests and NEVER a faked 200', () => {
+  it('the end-session route family — init, confirm subpath, success subpath — is registered (never 404)', async () => {
+    // ⚠️ F1: `rpInitiatedLogout` bật là provider mount BA route
+    // (`initialize_app.js`): `GET /session/end`, `POST /session/end/confirm`,
+    // `GET /session/end/success`. Hono KHÔNG tự match subpath của một route
+    // tĩnh — clone bug đã fix ở `/auth` năm xưa (`/auth` bare + `/auth/*`):
+    // đăng ký chỉ `/session/end` bare là confirm POST + success GET 404, tức
+    // logout render form nhưng KHÔNG BAO GIỜ hoàn tất. Chuỗi 3 request qua
+    // `app.request` (lane Hono thật, KHÔNG bắn thẳng Node server như
+    // oidc-end-session.spec.ts) khẳng định cả BA đều đến được bridge.
+    //
+    // Dưới Node test, runtime dựng thất bại ⇒ mỗi request trả 500 — nhưng 500
+    // chỉ đúng khi request ĐI QUA lane bridge; 404 nghĩa là route chết trước
+    // khi chạm bước chuyển tiếp.
+    const init = await get('/session/end');
+    expect(init.status).not.toBe(404);
+
+    const confirm = await app.request(
+      '/session/end/confirm',
+      { method: 'POST', body: 'xsrf=x&logout=yes' },
+      env,
+    );
+    expect(confirm.status).not.toBe(404);
+
+    const success = await get('/session/end/success');
+    expect(success.status).not.toBe(404);
+  });
+
   it('/auth (the provider authorization endpoint) never returns 200 under any Node test environment', async () => {
     // ⚠️ `cloudflare:node` chỉ tồn tại trên workerd. Trong vitest (Node), việc
     // dựng runtime thất bại — response phải là 500 (lỗi hạ tầng của môi trường
