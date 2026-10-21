@@ -19,6 +19,7 @@
  */
 import type { MailJobRecord, QuarantineRecord } from './mail-job-model';
 import type {
+  AmbiguityBlockedDenial,
   BudgetExhaustedDenial,
   GenerationAdvanceDenial,
   LeaseOwnershipDenial,
@@ -162,11 +163,16 @@ export type ReleaseExecutionLeaseResult =
 /**
  * Tham số của statement (e) — ghi marker ranh giới gọi provider (migration `0003`).
  *
- * Bắt buộc gọi **ngay trước** khi request tới provider trong một attempt, một lần cho
- * attempt-chain: statement là first-write-only (`provider_call_at IS NULL` trong WHERE),
- * nên lần gọi thứ hai trong cùng attempt-chain là no-op idempotent, không ghi đè mốc cũ.
- * Guard lease/`execution_generation` như statement persist — một execution mất claim
- * không ghi được marker của generation khác.
+ * Bắt buộc gọi **ngay trước** khi request tới provider trong một attempt: statement là
+ * first-write-only (`provider_call_at IS NULL` trong WHERE), nên lần gọi thứ hai là
+ * no-op idempotent trả `already-marked`, không ghi đè mốc cũ. Guard lease/
+ * `execution_generation` như statement persist — một execution mất claim không ghi được
+ * marker của generation khác.
+ *
+ * Phạm vi marker là **per-delivery**: không có đường nào reset nó giữa các attempt hay
+ * kể cả khi redrive tăng `dispatch_generation` (statement (b) không đụng cột này), nên
+ * `already-marked` hoàn toàn có thể do một attempt-chain **trước đó** của cùng delivery
+ * ghi — mốc giữ nguyên từ lần gọi đầu tiên.
  */
 export type MarkProviderCallBoundaryParams = {
   readonly deliveryId: string;
@@ -179,31 +185,43 @@ export type MarkProviderCallBoundaryParams = {
 export type MarkProviderCallBoundaryResult =
   | { readonly kind: 'applied'; readonly record: MailJobRecord }
   /**
-   * `already-marked` là kết quả **bình thường** khi một marker trước đó của cùng
-   * attempt-chain đã ghi — caller vẫn tiếp tục gọi provider. Hai nhánh còn lại
-   * (`missing-job`/`lease-lost`) là "mất claim": KHÔNG gọi provider.
+   * `already-marked` là kết quả **bình thường** khi marker đã có mặt — record kèm theo
+   * là record **mới nhất** mà UPDATE không áp vì guard `provider_call_at IS NULL`, và
+   * `providerCallAt` của nó chính là mốc mà caller bắt buộc phải đánh giá cửa sổ an toàn
+   * (quyết định có được gọi lại provider không thuộc về caller, gọi qua
+   * `isWithinProviderSafeWindow`). KHÔNG được gọi provider chỉ vì nhận được `already-marked`.
+   * Ba nhánh còn lại (`missing-job`/`lease-lost`/`inconsistent`) nghĩa là KHÔNG gọi
+   * provider; `inconsistent` thử lại từ đầu. `record` có thể null trên `missing-job`
+   * (row không tồn tại nên không có gì để đính kèm).
    */
-  | { readonly kind: 'denied'; readonly reason: ProviderCallBoundaryDenial };
+  | {
+      readonly kind: 'denied';
+      readonly reason: ProviderCallBoundaryDenial;
+      readonly record: MailJobRecord | null;
+    };
 
 /**
  * Tham số của statement (g) — chốt trạng thái operator-needed cho ambiguity ngoài cửa
  * sổ (issue #37).
  *
- * Là statement image của đường (c) nhưng ghi `provider-ambiguous-outcome` thay vì
- * `execution-budget-exhausted`: cùng guard (`attempts >= max`, không lease hiệu lực,
- * `status NOT IN (terminal, blocked)`, cùng `dispatch_generation`), cùng shape kết quả
- * nên phân loại denial cũng dùng `BudgetExhaustedDenial`.
+ * Điều kiện chốt là **tuổi marker** (`provider_call_at IS NOT NULL`, không phụ thuộc
+ * `attempts`): mơ hồ ngoài cửa sổ phải chốt được ở **bất kỳ** attempt nào, vì gọi lại
+ * provider ngoài cửa sổ không còn chống duplicate. Guard còn lại giữ trạng thái hợp lệ:
+ * cùng `dispatch_generation`, không lease hiệu lực, chưa terminal/blocked.
  */
 export type MarkProviderAmbiguityBlockedParams = {
   readonly deliveryId: string;
   readonly dispatchGeneration: number;
   readonly nowMs: number;
-  readonly maxExecutionAttempts: number;
 };
 
 export type MarkProviderAmbiguityBlockedResult =
   | { readonly kind: 'applied'; readonly record: MailJobRecord }
-  | { readonly kind: 'denied'; readonly reason: BudgetExhaustedDenial };
+  | {
+      readonly kind: 'denied';
+      readonly reason: AmbiguityBlockedDenial;
+      readonly record: MailJobRecord | null;
+    };
 
 /**
  * Tham số của đường ghi `last_error_class` cho lỗi **trước claim** (§9.2.2 hàng 19 — lookup
@@ -350,14 +368,16 @@ export interface MailJobRepository {
   renewExecutionLease(params: RenewExecutionLeaseParams): Promise<RenewExecutionLeaseResult>;
   /**
    * Ghi marker ranh giới gọi provider — statement (e) của migration `0003` — **ngay
-   * trước** request provider đầu tiên của attempt-chain.
+   * trước** request provider trong mỗi attempt.
    *
-   * First-write-only: chỉ áp khi `provider_call_at IS NULL`; `already-marked` nghĩa là
-   * marker đã tồn tại (không ghi đè) và caller vẫn được gọi provider — mốc của marker giữ
-   * nguyên giá trị từ lần đầu. Guard `lease_owner` + `execution_generation` +
+   * First-write-only: chỉ áp khi `provider_call_at IS NULL`. `already-marked` nghĩa là
+   * marker đã tồn tại từ một attempt trước của cùng delivery (marker per-delivery, không
+   * bị reset kể cả khi `dispatch_generation` tăng) và **không** tự cấp quyền gọi provider:
+   * caller bắt buộc đánh giá `isWithinProviderSafeWindow` trên `record.providerCallAt`
+   * trước khi quyết định gửi. Guard `lease_owner` + `execution_generation` +
    * `dispatch_generation` giữ caller là execution đang claim.
    *
-   * Marker này là biến thời gian của cửa sổ mơ hồ (\`provider-safety-window\`): provider
+   * Marker này là biến thời gian của cửa sổ mơ hồ (provider-safety-window): provider
    * CÓ THỂ đã nhận mail từ `provider_call_at`, nên recovery sau crash dùng nó để quyết
    * gọi lại (trong cửa sổ) hay block operator-needed (ngoài cửa sổ).
    */
@@ -367,11 +387,13 @@ export interface MailJobRepository {
   /**
    * Chốt operator-needed cho ambiguity ngoài cửa sổ an toàn — statement (g) (issue #37).
    *
-   * Cùng guard với đường (c) (`attempts >= maxExecutionAttempts`, không execution lease
-   * hiệu lực, `status NOT IN ('sent','failed','blocked')`, cùng `dispatch_generation`)
-   * nhưng ghi `last_error_class = 'provider-ambiguous-outcome'`: job `blocked` bền vững,
-   * report `pending` để alert sweep block-backlog đón; chỉ redrive có authorize mở khoá.
-   * KHÔNG tự gọi lại provider trong worker (ngoài cửa sổ, gọi lại không dedupe được).
+   * Điều kiện chốt: cùng `dispatch_generation`, không execution lease hiệu lực,
+   * `status NOT IN ('sent','failed','blocked')`, **`provider_call_at IS NOT NULL`**.
+   * Không có điều kiện `attempts`: mơ hồ phải chốt được ở bất kỳ attempt nào — gọi lại
+   * provider ngoài cửa sổ không còn chống duplicate. Ghi `last_error_class =
+   * 'provider-ambiguous-outcome'`: job `blocked` bền vững, report `pending` để alert
+   * sweep block-backlog đón; chỉ redrive có authorize mở khoá. KHÔNG tự gọi lại provider
+   * trong worker (ngoài cửa sổ, gọi lại không dedupe được).
    */
   markProviderAmbiguityBlocked(
     params: MarkProviderAmbiguityBlockedParams,
@@ -410,6 +432,7 @@ export interface QuarantineRepository {
 
 export type { MailJobRecord, QuarantineRecord };
 export type {
+  AmbiguityBlockedDenial,
   BudgetExhaustedDenial,
   GenerationAdvanceDenial,
   LeaseOwnershipDenial,

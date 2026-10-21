@@ -23,6 +23,7 @@ import type {
 import type { MailJobRecord, QuarantineRecord } from './mail-job-model';
 import { MAIL_JOB_PROVIDER_AMBIGUOUS_ERROR_CLASS } from './mail-job-model';
 import {
+  classifyAmbiguityBlockedDenial,
   classifyBudgetExhaustedDenial,
   classifyGenerationAdvanceDenial,
   classifyLeaseOwnershipDenial,
@@ -335,11 +336,12 @@ class FakeJobs implements MailJobRepository {
           executionGeneration: params.executionGeneration,
           dispatchGeneration: params.dispatchGeneration,
         }),
+        record,
       };
     }
     if (record.providerCallAt !== null) {
       // Guard first-write-only của statement (e) — denial bình thường, không mất claim.
-      return { kind: 'denied', reason: 'already-marked' };
+      return { kind: 'denied', reason: 'already-marked', record };
     }
 
     const marked = processingRow({
@@ -359,7 +361,7 @@ class FakeJobs implements MailJobRepository {
     const applicable =
       record !== null &&
       record.dispatchGeneration === params.dispatchGeneration &&
-      record.attempts >= params.maxExecutionAttempts &&
+      record.providerCallAt !== null &&
       !isLeaseActive(record, params.nowMs) &&
       record.status !== 'sent' &&
       record.status !== 'failed' &&
@@ -368,7 +370,11 @@ class FakeJobs implements MailJobRepository {
     if (!applicable || record === null) {
       return {
         kind: 'denied',
-        reason: classifyBudgetExhaustedDenial(record, params),
+        reason: classifyAmbiguityBlockedDenial(record, {
+          dispatchGeneration: params.dispatchGeneration,
+          nowMs: params.nowMs,
+        }),
+        record,
       };
     }
 
@@ -1436,7 +1442,11 @@ function jobsWithBoundaryDenial(
   reason: 'missing-job' | 'lease-lost' | 'inconsistent',
 ): MailJobRepository {
   const wrapped = Object.create(jobs) as MailJobRepository;
-  wrapped.markProviderCallBoundary = async () => ({ kind: 'denied', reason });
+  wrapped.markProviderCallBoundary = async () => ({
+    kind: 'denied',
+    reason,
+    record: jobs.rows.get(DELIVERY_ID) ?? null,
+  });
   return wrapped;
 }
 
@@ -1695,6 +1705,71 @@ describe('lost claim after the provider was already called', () => {
     );
 
     expect(outcome).toEqual({ kind: 'ack-processed' });
+  });
+});
+
+describe('already-marked outside the safe window — statement (g) from the executor', () => {
+  it('releases its own lease and marks operator-needed instead of resending', async () => {
+    // Redelivery claim lại được lease (sau khi lease cũ hết hạn, marker còn) với marker ĐÃ
+    // HƠN cửa sổ an toàn. Cũ: nhánh already-marked resend vô điều kiện ⇒ auto-resend ngoài
+    // cửa sổ. Mới: fail-closed — release không-kết-quả rồi statement (g) chốt
+    // operator-needed; provider KHÔNG được chạm lần hai.
+    const fresh = new Harness();
+    fresh.jobs.seed(
+      processingRow({
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        executionGeneration: 1,
+        attempts: 0,
+        providerCallAt: NOW - 24 * 60 * 60 * 1000 - 1,
+      }),
+    );
+
+    const outcome = await processMailCommand(CANONICAL_COMMAND, 'qmsg-1', fresh.deps(), config());
+
+    expect(outcome).toEqual({ kind: 'internal-blocked' });
+    expect(fresh.provider.requests).toEqual([]);
+    expect(fresh.jobs.calls).toContain('claimSameGeneration');
+    expect(fresh.jobs.calls).toContain('releaseExecutionLease');
+    expect(fresh.jobs.calls).toContain('markProviderAmbiguityBlocked');
+    const record = fresh.jobs.row();
+    expect(record.status).toBe('blocked');
+    expect(record.lastErrorClass).toBe(MAIL_JOB_PROVIDER_AMBIGUOUS_ERROR_CLASS);
+    expect(record.blockedAt).toBe(NOW);
+    expect(record.outcomeReportState).toBe('pending');
+    expect(record.leaseOwner).toBeNull();
+    expect(record.providerCallAt).toBe(NOW - 24 * 60 * 60 * 1000 - 1);
+  });
+
+  it('retries when the release is denied because the row changed under it', async () => {
+    // Row đổi dưới chân (execution khác đã cầm lease): release denial ⇒ statement (g) cũng
+    // denial ⇒ RETRY — không tự quyết trên state cũ.
+    const fresh = new Harness();
+    fresh.jobs.seed(
+      processingRow({
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        executionGeneration: 1,
+        providerCallAt: NOW - 24 * 60 * 60 * 1000 - 1,
+      }),
+    );
+    const wrapped = Object.create(fresh.jobs) as MailJobRepository;
+    wrapped.releaseExecutionLease = async () => ({
+      kind: 'denied',
+      reason: 'lease-lost',
+    });
+
+    const outcome = await processMailCommand(
+      CANONICAL_COMMAND,
+      'qmsg-1',
+      depsWithJobs(fresh, wrapped),
+      config(),
+    );
+
+    expect(outcome).toEqual({ kind: 'retry' });
+    expect(fresh.provider.requests).toEqual([]);
+    expect(fresh.jobs.calls).not.toContain('markProviderAmbiguityBlocked');
+    expect(fresh.jobs.row().status).toBe('processing');
   });
 });
 

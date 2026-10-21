@@ -46,6 +46,7 @@ import type {
   OutcomeReportResult,
 } from './mail-delivery-gateway';
 import type { MailJobRecord, QuarantineReason } from './mail-job-model';
+import { MAIL_JOB_PROVIDER_AMBIGUOUS_ERROR_CLASS } from './mail-job-model';
 import {
   canPersistExecutionResultFor,
   dispositionForControlPlaneOutcome,
@@ -720,16 +721,22 @@ async function executeClaimedDelivery(
     deadlineMs,
   };
 
-  // Statement (e): ghi marker ranh giới gọi provider TRƯỚC request đầu tiên rời khỏi
-  // worker (issue #37). Từ mốc này provider CÓ THỂ đã nhận mail dù worker chết trước khi
-  // persist kết quả — `provider_call_at` là thời điểm bắt đầu cửa sổ mơ hồ §9.3.
+  // Statement (e): ghi marker ranh giới gọi provider TRƯỚC request rời khỏi worker cho
+  // attempt này (issue #37). Từ mốc này provider CÓ THỂ đã nhận mail dù worker chết trước
+  // khi persist kết quả — `provider_call_at` là thời điểm bắt đầu cửa sổ mơ hồ §9.3.
   //
-  // `already-marked` nghĩa là marker đã tồn tại (đoạn sau marker từng crash, hay caller
-  // gọi hai lần): tiếp tục gọi provider, vì mốc giữ nguyên giá trị từ lần đầu — đúng
-  // semantics first-write-only của marker.
+  // Quyết định "có được gọi provider không" là **fail-closed**: chỉ hai kết quả được phép
+  // đi tiếp, mọi denial còn lại đều RETRY. Điều này chống fail-open trên nhánh denial
+  // tương lai được thêm vào union mà call site bỏ quên cập nhật.
   //
-  // `missing-job`/`lease-lost` nghĩa là đã mất claim giữa lúc re-validate và bây giờ:
-  // KHÔNG gọi provider. `inconsistent` likewise — row đổi dưới chân, phải thử lại.
+  // - `applied`: marker vừa ghi — attempt này là lần gọi đầu, tự do tiến hành.
+  // - `already-marked`: marker từ một attempt trước của cùng delivery (per-delivery,
+  //   không reset). Tuổi marker quyết định: còn trong cửa sổ an toàn ⇒ gửi lại với cùng
+  //   `Idempotency-Key` là an toàn (provider dedupe, hoặc chưa thấy request đầu); ngoài
+  //   cửa sổ ⇒ KHÔNG gửi — route thẳng statement (g) chốt operator-needed.
+  // - `lease-lost`/`inconsistent`: mất claim hoặc row đổi dưới chân — KHÔNG gọi provider,
+  //   thử lại từ đầu (`lease-lost` theo hành vi persist-mapped denial; `inconsistent`
+  //   không suy ra gì). `missing-job` likewise.
   const marked = await deps.jobs.markProviderCallBoundary({
     deliveryId,
     owner: expectation.owner,
@@ -737,12 +744,62 @@ async function executeClaimedDelivery(
     dispatchGeneration: expectation.dispatchGeneration,
     nowMs: config.nowMs,
   });
-  if (
-    marked.kind === 'denied' &&
-    (marked.reason === 'missing-job' ||
-      marked.reason === 'lease-lost' ||
-      marked.reason === 'inconsistent')
-  ) {
+  if (marked.kind === 'applied') {
+    // Attempt này vừa ghi marker — request sắp đi là lần gọi đầu.
+  } else if (marked.reason === 'already-marked') {
+    // Marker cũ: chỉ trong cửa sổ an toàn mới được gọi lại. Record kèm theo denial là
+    // record mới nhất tái truy xuất `providerCallAt` — không cần read-then-decide ngoài
+    // statement (tránh TOCTOU giữa UPDATE và read-back). `record` không thể null trên
+    // already-marked (marker phải tồn tại ⇒ row tồn tại), nhưng vẫn fail-closed.
+    if (marked.record === null) {
+      return RETRY;
+    }
+    const inWindow = isWithinProviderSafeWindow(marked.record, {
+      nowMs: config.nowMs,
+      providerCallSafeWindowMs: config.providerCallSafeWindowMs,
+    });
+    if (inWindow === false) {
+      // Ngoài cửa sổ: tự gọi lại không còn chống duplicate ⇒ chốt operator-needed
+      // (statement (g), không phụ thuộc ngân sách B) thay vì gửi. Guard "không lease
+      // hiệu lực" của statement (g) vỡ bởi chính lease của attempt này — release
+      // KHÔNG-kết-quả trước (ghi lý do để vết, không làm mất quyền chốt block) rồi
+      // mới gọi; nếu release bị denial (row đổi dưới chân) thì statement (g) cũng sẽ
+      // denial tương tự ⇒ RETRY cho một lượt Queue quyết.
+      const released = await deps.jobs.releaseExecutionLease({
+        deliveryId,
+        owner: expectation.owner,
+        executionGeneration: expectation.executionGeneration,
+        dispatchGeneration: expectation.dispatchGeneration,
+        nowMs: config.nowMs,
+        lastError: undefined,
+        lastErrorClass: MAIL_JOB_PROVIDER_AMBIGUOUS_ERROR_CLASS,
+      });
+      if (released.kind === 'applied') {
+        const blocked = await deps.jobs.markProviderAmbiguityBlocked({
+          deliveryId,
+          dispatchGeneration: expectation.dispatchGeneration,
+          nowMs: config.nowMs,
+        });
+        if (blocked.kind === 'applied') {
+          return { kind: 'internal-blocked' };
+        }
+        // Đã settle (blocked/terminal) hay row đổi dưới chân? Cùng chữ ký "khi nào việc
+        // của message này đã xong" với nhánh reread của `resolveAmbiguityAfterLostClaim`.
+        const reread = await deps.jobs.loadJobByDeliveryId(deliveryId);
+        if (reread !== null && hasSettledOrAdvanced(reread, expectation.dispatchGeneration)) {
+          return ACK_PROCESSED;
+        }
+      }
+      return RETRY;
+    }
+    // `inWindow === true` (còn trong cửa sổ) ⇒ tiến hành gọi provider với cùng key.
+    if (inWindow !== true) {
+      // `null` (không marker) là trạng thái không thể xảy ra trên nhánh `already-marked`
+      // (classifier đảm bảo `providerCallAt !== null`) — nhưng fail-closed: không quyết
+      // bằng mốc nào ⇒ RETRY, hợp nhất hành vi với `resolveAmbiguityAfterLostClaim`.
+      return RETRY;
+    }
+  } else {
     return RETRY;
   }
 
@@ -852,8 +909,9 @@ async function releaseAfterRejection(
  * Không thể "gửi lại" trong cùng message này (một message một lần gọi, §11.2). Quyết định
  * đi qua hai lớp:
  *
- * **Lớp 1 — determinism**: nếu row hiện tại đã có kết quả bền vững (report `pending`,
- * hoặc generation đã tiến) thì mọi thứ đã xong không phụ thuộc ambiguity: ack.
+ * **Lớp 1 — determinism**: nếu row hiện tại đã có kết luận bền vững (mọi report state
+ * khác `none`, hay status đã rời `processing` — cùng định đề `hasSettledOrAdvanced`) hoặc
+ * generation đã tiến thì mọi thứ đã xong không phụ thuộc ambiguity: ack.
  *
  * **Lớp 2 — ambiguity (migration `0003`)**: row vẫn `processing`/`none` ⇒ chưa ai persist
  * kết quả. Marker `provider_call_at` nói có thể đã có request rời worker từ bao giờ:
@@ -883,8 +941,7 @@ async function resolveAmbiguityAfterLostClaim(
     return RETRY;
   }
 
-  const superseded = current.dispatchGeneration !== expectation.dispatchGeneration;
-  if (superseded || current.outcomeReportState === 'pending') {
+  if (hasSettledOrAdvanced(current, expectation.dispatchGeneration)) {
     return ACK_PROCESSED;
   }
 
@@ -902,23 +959,37 @@ async function resolveAmbiguityAfterLostClaim(
     deliveryId,
     dispatchGeneration: current.dispatchGeneration,
     nowMs: config.nowMs,
-    maxExecutionAttempts: config.maxExecutionAttempts,
   });
   if (blocked.kind === 'applied') {
     return { kind: 'internal-blocked' };
   }
 
   // Không áp được blocked (row đổi giữa hai lệnh gọi, đã terminal, lease sống…) — chọn
-  // theo state hiện tại: row đã xong ⇒ ack, còn lại ⇒ retry cho một lượt Queue quyết.
+  // theo state hiện tại: mọi điều "đã settle" (report đã chốt, terminal, blocked) hay
+  // generation đã tiến ⇒ ack; còn lại ⇒ retry cho một lượt Queue quyết. `retry` chỉ dùng
+  // khi chưa có gì bền vững để mất.
   const reread = await deps.jobs.loadJobByDeliveryId(deliveryId);
-  if (
-    reread !== null &&
-    (reread.outcomeReportState === 'pending' ||
-      reread.dispatchGeneration !== current.dispatchGeneration)
-  ) {
+  if (reread !== null && hasSettledOrAdvanced(reread, current.dispatchGeneration)) {
     return ACK_PROCESSED;
   }
   return RETRY;
+}
+
+/**
+ * Row hiện tại đã có kết luận bền vững (mọi report state khác `none` — `pending` đang
+ * chờ báo còn sống, `reported`/`superseded`/`orphaned` đã chốt) hay generation đã tiến.
+ * Dùng cho cả lớp 1 determinism của `resolveAmbiguityAfterLostClaim` lẫn nhánh reread —
+ * cùng một định đề "khi nào việc của message này đã xong" ở cả hai chỗ.
+ */
+function hasSettledOrAdvanced(
+  current: MailJobRecord,
+  expectationDispatchGeneration: number,
+): boolean {
+  return (
+    current.outcomeReportState !== 'none' ||
+    current.status !== 'processing' ||
+    current.dispatchGeneration !== expectationDispatchGeneration
+  );
 }
 
 /**

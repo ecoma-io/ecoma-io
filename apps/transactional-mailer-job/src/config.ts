@@ -33,7 +33,7 @@ export const PROVIDER_TIMEOUT_ENV = 'MAIL_PROVIDER_TIMEOUT_MS';
  * Cửa sổ an toàn idempotency theo **delivery** (ms, tính từ `provider_call_at`).
  *
  * Resend giữ `Idempotency-Key` khoảng 24 giờ — con số **tài liệu hóa, chưa verify** với
- * API thật (GitHub issue #37): trong cửa sổ, một attempt bị mest claim vẫn được auto-resend
+ * API thật (GitHub issue #37): trong cửa sổ, một attempt bị mất claim vẫn được auto-resend
  * qua Queue redelivery với CÙNG key; ngoài cửa sổ, worker chốt `provider-ambiguous-outcome`
  * và dừng — đỏi operator, KHÔNG tự gọi lại provider. Phải <= 24h để không vượt quá cửa sổ
  * mà provider giữ key; loader kiểm advisory (không phải hợp đồng provider đã chứng minh).
@@ -103,7 +103,7 @@ export function loadMailerJobConfig(env: MailerJobEnv): LoadedMailerJobConfig {
   const providerTimeoutMs = requirePositiveInteger(env, PROVIDER_TIMEOUT_ENV);
   // Cửa sổ an toàn có một trần advisory riêng (24h), ngoài trần >= 1 chung của mọi giá trị
   // vận hành: vượt trần này nghĩa là cấu hình tin cửa sổ dài hơn mốc mà provider tài liệu
-  // hóa — auto-resend ngoài cửa sổ key-có-thể-đã-lồng là đường double-send tiềm tàng.
+  // hóa — auto-resend ngoài cửa sổ key-có-thể-đã-hết-giữ là đường double-send tiềm tàng.
   const providerCallSafeWindowMsRaw = requirePositiveInteger(env, PROVIDER_CALL_SAFE_WINDOW_ENV);
   if (providerCallSafeWindowMsRaw > PROVIDER_CALL_SAFE_WINDOW_CEILING_MS) {
     throw new MailerJobConfigError(
@@ -111,6 +111,22 @@ export function loadMailerJobConfig(env: MailerJobEnv): LoadedMailerJobConfig {
     );
   }
   const quarantineHmacKeyHex = requireHexKey(env, 'MAIL_QUARANTINE_HMAC_KEY');
+
+  // Advisory: cửa sổ an toàn nhỏ hơn trần chờ của một request provider là cấu hình vô nghĩa —
+  // mọi mơ hồ được phát hiện ở `resolveAmbiguityAfterLostClaim` đều xảy ra tối thiểu sau
+  // `providerTimeoutMs` kể từ marker (vì bất biến `executionLeaseMs > providerTimeoutMs`
+  // được kiểm ở dưới cùng file này), nên đường auto-resend sau persist-denied sẽ chết âm
+  // thầm và toàn bộ mơ hồ chốt `provider-ambiguous-outcome` đỏi operator. Riêng mơ hồ trên
+  // đường statement (e) nhánh `already-marked` (Queue redelivery sớm sau attempt mất) được
+  // đánh giá theo tuổi marker: với redelivery nhanh, marker còn trẻ và auto-resend vẫn
+  // sống kể cả khi cấu hình lệch này tồn tại. Mâu thuẫn kiểu này phải dừng ở loader
+  // (cùng tinh thần với kiểm tra `maxExecutionAttempts >= 4` nào ở khối return dưới),
+  // không để operator tự phát hiện qua alert blocked backlog.
+  if (providerCallSafeWindowMsRaw <= providerTimeoutMs) {
+    throw new MailerJobConfigError(
+      `${PROVIDER_CALL_SAFE_WINDOW_ENV} phai > ${PROVIDER_TIMEOUT_ENV}: window nho hon mot provider request thi moi mo ho deu ngoai window`,
+    );
+  }
 
   const provider = loadProvider(env, providerTimeoutMs);
 
@@ -125,7 +141,12 @@ export function loadMailerJobConfig(env: MailerJobEnv): LoadedMailerJobConfig {
         : raiseConfig(
             'MAIL_JOB_MAX_EXECUTION_ATTEMPTS phai >= 4 (max_retries + 1 cua Queue consumer)',
           ),
-    executionLeaseMs,
+    executionLeaseMs:
+      executionLeaseMs > providerTimeoutMs
+        ? executionLeaseMs
+        : raiseConfig(
+            'MAIL_JOB_EXECUTION_LEASE_MS phai > MAIL_PROVIDER_TIMEOUT_MS: lease gan hon provider timeout thi moi ho danh gia marker co the xay ra truoc moi ho duoc phat hien',
+          ),
     reportLeaseMs,
     maxReportAttempts,
     sweepBatchLimit,

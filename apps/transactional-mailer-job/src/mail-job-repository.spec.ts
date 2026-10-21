@@ -853,7 +853,11 @@ describe('markProviderCallBoundary — statement (e)', () => {
       dispatchGeneration: claimed.dispatchGeneration,
       nowMs: T0 + 2,
     });
-    expect(again).toEqual({ kind: 'denied', reason: 'already-marked' });
+    expect(again).toEqual({
+      kind: 'denied',
+      reason: 'already-marked',
+      record: await loadOrThrow('delivery-boundary'),
+    });
     expect((await loadOrThrow('delivery-boundary')).providerCallAt).toBe(T0 + 1);
   });
 
@@ -883,7 +887,11 @@ describe('markProviderCallBoundary — statement (e)', () => {
       dispatchGeneration: reclaimed.dispatchGeneration,
       nowMs: T0 + LEASE_MS + 1,
     });
-    expect(markedByNewOwner).toEqual({ kind: 'denied', reason: 'already-marked' });
+    expect(markedByNewOwner).toEqual({
+      kind: 'denied',
+      reason: 'already-marked',
+      record: await loadOrThrow('delivery-marker-persist'),
+    });
     expect((await loadOrThrow('delivery-marker-persist')).providerCallAt).toBe(T0 + 1);
   });
 
@@ -900,7 +908,11 @@ describe('markProviderCallBoundary — statement (e)', () => {
       dispatchGeneration: claimed.dispatchGeneration,
       nowMs: T0 + LEASE_MS + 1,
     });
-    expect(result).toEqual({ kind: 'denied', reason: 'lease-lost' });
+    expect(result).toEqual({
+      kind: 'denied',
+      reason: 'lease-lost',
+      record: await loadOrThrow('delivery-stale-boundary'),
+    });
     expect((await loadOrThrow('delivery-stale-boundary')).providerCallAt).toBeNull();
   });
 });
@@ -925,7 +937,6 @@ describe('markProviderAmbiguityBlocked — statement (g)', () => {
       deliveryId: 'delivery-ambiguity',
       dispatchGeneration: 1,
       nowMs: T0 + 3 * LEASE_MS,
-      maxExecutionAttempts: MAX_EXECUTION_ATTEMPTS,
     });
     expect(applied.kind).toBe('applied');
 
@@ -941,35 +952,43 @@ describe('markProviderAmbiguityBlocked — statement (g)', () => {
   });
 
   it('keeps the legacy budget-exhausted semantics intact for a job without the marker', async () => {
-    // Cùng generation, cùng budget, nhưng KHÔNG marker ⇒ statement (g) chỉ chốt vì
-    // ambiguity: khác biệt bắt buộc với đường (c) là `last_error_class`.
+    // Cùng generation, nhưng KHÔNG marker ⇒ statement (g) từ chối với `unmarked`:
+    // đặc tính của statement là chốt ambiguity, chỉ mở khi marker tồn tại — job chưa
+    // từng chạm ranh giới gọi provider không thuộc đường chốt này.
     await seedPending('delivery-ambiguity-nomarker');
     await claimOrThrow('delivery-ambiguity-nomarker', 'owner-1', T0);
     await claimOrThrow('delivery-ambiguity-nomarker', 'owner-2', T0 + LEASE_MS);
     await claimOrThrow('delivery-ambiguity-nomarker', 'owner-3', T0 + 2 * LEASE_MS);
 
-    const applied = await repo.markProviderAmbiguityBlocked({
+    const result = await repo.markProviderAmbiguityBlocked({
       deliveryId: 'delivery-ambiguity-nomarker',
       dispatchGeneration: 1,
       nowMs: T0 + 3 * LEASE_MS,
-      maxExecutionAttempts: MAX_EXECUTION_ATTEMPTS,
     });
-    expect(applied.kind).toBe('applied');
-    expect((await loadOrThrow('delivery-ambiguity-nomarker')).lastErrorClass).toBe(
-      'provider-ambiguous-outcome',
-    );
+    expect(result).toEqual({
+      kind: 'denied',
+      reason: 'unmarked',
+      record: await loadOrThrow('delivery-ambiguity-nomarker'),
+    });
+    expect((await loadOrThrow('delivery-ambiguity-nomarker')).lastErrorClass).toBeNull();
   });
 
-  it('denies with budget-not-exhausted while attempts remain', async () => {
+  it('denies with unmarked while the delivery has never reached the provider boundary', async () => {
+    // Statement (g) là khép khóa theo tuổi marker, không theo ngân sách B: mơ hồ ngoài
+    // cửa sổ phải chốt được ở bất kỳ attempt nào — chỉ chốt khi `attempts` cạn sẽ để
+    // redelivery gọi lại provider ngoài cửa sổ (duplicate không chống được).
     await seedPending('delivery-ambiguity-early');
 
     const result = await repo.markProviderAmbiguityBlocked({
       deliveryId: 'delivery-ambiguity-early',
       dispatchGeneration: 1,
       nowMs: T0,
-      maxExecutionAttempts: MAX_EXECUTION_ATTEMPTS,
     });
-    expect(result).toEqual({ kind: 'denied', reason: 'budget-not-exhausted' });
+    expect(result).toEqual({
+      kind: 'denied',
+      reason: 'unmarked',
+      record: await loadOrThrow('delivery-ambiguity-early'),
+    });
     expect((await loadOrThrow('delivery-ambiguity-early')).status).toBe('processing');
   });
 });

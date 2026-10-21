@@ -10,6 +10,7 @@ import {
   assertPositiveInteger,
   assertSafeInteger,
   classifyBudgetExhaustedDenial,
+  classifyAmbiguityBlockedDenial,
   classifyGenerationAdvanceDenial,
   classifyLeaseOwnershipDenial,
   classifyReportCompletionDenial,
@@ -337,7 +338,10 @@ export class D1MailJobRepository implements MailJobRepository {
   }
 
   /**
-   * Statement (e) — ghi `provider_call_at` lần đầu cho attempt-chain này.
+   * Statement (e) — ghi `provider_call_at` lần đầu cho delivery này. Marker per-delivery:
+   * first-write-only, tồn tại xuyên attempt-chain và xuyên generation (không đường nào
+   * reset nó — kể cả statement (b)); `already-marked` không tự cấp quyền gọi provider,
+   * caller tự đánh giá cửa sổ an toàn trên record kèm denial.
    *
    * Conditional UPDATE duy nhất, first-write-only: WHERE là guard ownership chuẩn cộng
    * `provider_call_at IS NULL`. Marker chạy **trước** lần đầu request rời khỏi Worker cho
@@ -394,25 +398,30 @@ export class D1MailJobRepository implements MailJobRepository {
         executionGeneration: params.executionGeneration,
         dispatchGeneration: params.dispatchGeneration,
       }),
+      record,
     };
   }
 
   /**
    * Statement (g) — chốt operator-needed cho ambiguity ngoài cửa sổ an toàn.
    *
-   * Clone của đường (c) với `last_error_class` khác: cùng guard
-   * (`attempts >= :max`, không lease hiệu lực, `status NOT IN (terminal, blocked)`, cùng
-   * `dispatch_generation`) nên phân loại denial dùng lại `classifyBudgetExhaustedDenial`
-   * — hai statement khác nhau chỉ ở **nguyên nhân** của lần chốt, không ở **điều kiện**
-   * chốt. Khác đường (c): ở đây không có lỗi provider nào ghi vào `last_error`
-   * (ambiguity là trạng thái worker, không phải lỗi provider).
+   * **Không** kế thừa guard ngân sách của đường (c): nguyên nhân chốt là **tuổi marker**
+   * (`provider_call_at IS NOT NULL` — định đề khai báo của statement), không phải
+   * `attempts`. Chỉ ngân sách làm điều kiện sẽ để ambiguity ngoài cửa sổ tại attempt còn
+   * ngân sách lọt qua denial `budget-not-exhausted` → RETRY → redelivery gọi provider lại
+   * ngoài cửa sổ — đúng hazard mà statement này tồn tại để chặn. Điều kiện còn lại giữ
+   * row kế thừa được: cùng `dispatch_generation`, không lease hiệu lực, chưa terminal/
+   * blocked. Không có lỗi provider nào ghi vào `last_error` (ambiguity là trạng thái
+   * worker, không phải lỗi provider). `IS NOT NULL` là lớp cuối chống misuse ở tầng
+   * persistence: caller phải tự đánh giá cửa sổ trước (`isWithinProviderSafeWindow`), nhưng
+   * statement này không bao giờ chốt `provider-ambiguous-outcome` cho một job chưa từng
+   * chạm ranh giới gọi provider.
    */
   async markProviderAmbiguityBlocked(
     params: MarkProviderAmbiguityBlockedParams,
   ): Promise<MarkProviderAmbiguityBlockedResult> {
     assertBoundedString(params.deliveryId, 'deliveryId');
     assertPositiveInteger(params.dispatchGeneration, 'dispatchGeneration');
-    assertPositiveInteger(params.maxExecutionAttempts, 'maxExecutionAttempts');
     assertSafeInteger(params.nowMs, 'nowMs');
 
     const result = await this.#db
@@ -427,9 +436,9 @@ export class D1MailJobRepository implements MailJobRepository {
                 updated_at = ?
           WHERE delivery_id = ?
             AND dispatch_generation = ?
-            AND attempts >= ?
             AND (lease_expires_at IS NULL OR lease_expires_at <= ?)
-            AND status NOT IN ('sent', 'failed', 'blocked')`,
+            AND status NOT IN ('sent', 'failed', 'blocked')
+            AND provider_call_at IS NOT NULL`,
       )
       .bind(
         params.nowMs,
@@ -437,7 +446,6 @@ export class D1MailJobRepository implements MailJobRepository {
         params.nowMs,
         params.deliveryId,
         params.dispatchGeneration,
-        params.maxExecutionAttempts,
         params.nowMs,
       )
       .run();
@@ -451,7 +459,14 @@ export class D1MailJobRepository implements MailJobRepository {
     }
 
     const record = await this.#read(params.deliveryId);
-    return { kind: 'denied', reason: classifyBudgetExhaustedDenial(record, params) };
+    return {
+      kind: 'denied',
+      reason: classifyAmbiguityBlockedDenial(record, {
+        dispatchGeneration: params.dispatchGeneration,
+        nowMs: params.nowMs,
+      }),
+      record,
+    };
   }
 
   async persistExecutionResult(

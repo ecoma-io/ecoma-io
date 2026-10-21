@@ -373,6 +373,7 @@ describe('MailProviderPort — the only seam out to a provider', () => {
       'classifyGenerationAdvanceDenial',
       'classifyBudgetExhaustedDenial',
       'classifyLeaseOwnershipDenial',
+      'classifyAmbiguityBlockedDenial',
       'classifyProviderCallBoundaryDenial',
       'classifyReportLeaseDenial',
       'classifyReportCompletionDenial',
