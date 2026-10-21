@@ -829,10 +829,25 @@ describe.skipIf(!dockerAvailable)('login_handoffs routes', () => {
     const client = await db.connect();
     try {
       await client.query(`INSERT INTO account.users (sub) VALUES ($1)`, ['sub_handoff_routes']);
+      // Hai địa chỉ seed: `user@example.com` là chủ binding chính, còn
+      // `second@example.com` cho các arrange "trình duyệt thứ hai" — rate gate
+      // của route đếm per-address, nếu hai arrange dùng chung một địa chỉ thì
+      // request thứ hai bị cooldown chặn trước khi tới nhánh binding (OCR-2),
+      // arrange không còn chứng minh điều nó muốn chứng minh.
       await client.query(
         `INSERT INTO account.email_addresses (user_sub, address_normalized, address_hash, status, is_sign_in, verified_at)
          VALUES ($1, $2, $3, 'verified', true, now())`,
         ['sub_handoff_routes', 'user@example.com', hashIdentifier('user@example.com')],
+      );
+      await client.query(
+        `INSERT INTO account.email_addresses (user_sub, address_normalized, address_hash, status, is_sign_in, verified_at)
+         VALUES ($1, $2, $3, 'verified', true, now())`,
+        ['sub_handoff_routes', 'second@example.com', hashIdentifier('second@example.com')],
+      );
+      await client.query(
+        `INSERT INTO account.email_addresses (user_sub, address_normalized, address_hash, status, is_sign_in, verified_at)
+         VALUES ($1, $2, $3, 'verified', true, now())`,
+        ['sub_handoff_routes', 'conflict@example.com', hashIdentifier('conflict@example.com')],
       );
     } finally {
       await client.end();
@@ -845,13 +860,14 @@ describe.skipIf(!dockerAvailable)('login_handoffs routes', () => {
    */
   async function challengeWithHandle(
     handle: string,
+    email = 'user@example.com',
   ): Promise<{ sessionCookie: string | undefined; csrfCookie: string | undefined; code: string }> {
     const mail = installMailStub();
     let code: string;
     let cookies: string[];
     try {
       const response = await post(handler, '/api/auth/challenge', {
-        email: 'user@example.com',
+        email,
         handle,
       });
       expect(response.status).toBe(204);
@@ -932,7 +948,10 @@ describe.skipIf(!dockerAvailable)('login_handoffs routes', () => {
     const bound = await bindingRow(hashIdentifier(ROUTE_HANDLE));
     expect(bound?.state).toBe('bound');
 
-    const second = await challengeWithHandle(ROUTE_HANDLE);
+    // Email khác cho trình duyệt 2: rate gate per-email chỉ chặn địa chỉ đã
+    // vừa challenge trong cooldown — object của arrange này là tranh binding,
+    // không phải rate limit (có test riêng ở dưới cho rate path).
+    const second = await challengeWithHandle(ROUTE_HANDLE, 'second@example.com');
     // Cùng 204 anti-enumeration cho cả hai arrange không phân biệt thắng/thua.
     // Binding vẫn là của session đầu — không request nào ghi đè được.
     const untouched = await bindingRow(hashIdentifier(ROUTE_HANDLE));
@@ -1084,8 +1103,11 @@ describe.skipIf(!dockerAvailable)('login_handoffs routes', () => {
     const stub = installAuthStub(undefined);
     setRuntimeConfig(runtimeConfig(stub));
 
+    // Email khác cho request xung đột: muốn chứng minh "binding không bị ghi
+    // đè dưới 204", không phải "rate gate chặn trả 204" — cooldown per-email
+    // của request thứ hai làm mờ object nếu cùng địa chỉ (OCR-2).
     await challengeWithHandle(ROUTE_HANDLE);
-    const conflict = await challengeWithHandle(ROUTE_HANDLE);
+    const conflict = await challengeWithHandle(ROUTE_HANDLE, 'conflict@example.com');
     expect(conflict.sessionCookie).toBeDefined();
 
     // Không phân biệt mã lỗi hay response — anti-enumeration bất biến.
@@ -1106,6 +1128,55 @@ describe.skipIf(!dockerAvailable)('login_handoffs routes', () => {
       }
     })();
     expect(count).toBe(1);
+  });
+
+  it('OCR rate gate: a rate-limited challenge with a handle writes no new account_sessions or login_handoffs rows', async () => {
+    // OCR-2: block binding phải đứng SAU rate gate — một request bị limit (vẫn
+    // 204, anti-enumeration) không được sinh hàng DB. Đây là đường "một request
+    // mang handle mới nhưng vừa bị cooldown/rate limit": nếu gate sai chỗ, nó
+    // tạo một `account_sessions` anonymous + một `login_handoffs`.
+    const stub = installAuthStub(undefined);
+    setRuntimeConfig(runtimeConfig(stub));
+
+    // Arrange: challenge đầu thành công (binding được ghi, một cặp hàng).
+    const first = await challengeWithHandle(ROUTE_HANDLE);
+    expect(first.sessionCookie).toBeDefined();
+
+    // Challenge thứ hai với handle RIÊNG và CÙNG email — rơi vào resend
+    // cooldown (challenge active dưới 60s), route 204 im lặng.
+    const secondHandle = 'X-rate-limited-handle';
+    const second = await challengeWithHandle(secondHandle);
+    void second;
+
+    // Không hàng nào được sinh cho handle thứ hai — binding bị gate chặn TRƯỚC
+    // khi ghi.
+    const countRows = await (async () => {
+      const client = await db.connect();
+      try {
+        const { rows } = await client.query<{ count: number }>(
+          `SELECT count(*)::int AS count FROM account.login_handoffs WHERE handle_hash = $1`,
+          [hashIdentifier(secondHandle)],
+        );
+        return rows[0]?.count;
+      } finally {
+        await client.end();
+      }
+    })();
+    expect(countRows).toBe(0);
+
+    // Không `account_sessions` anonymous nào khác cũng được tạo (binding là
+    // thứ kéo nó vào — nếu gate đúng chỗ, request bị chặn không sinh session).
+    const client2 = await db.connect();
+    try {
+      const { rows } = await client2.query<{ count: number }>(
+        `SELECT count(*)::int AS count FROM account.account_sessions WHERE revoked_at IS NULL`,
+      );
+      // Challenge 1 tạo đúng một session anonymous (chưa verify). Challenge 2
+      // bị gate — không thêm hàng nào.
+      expect(rows[0]?.count).toBe(1);
+    } finally {
+      await client2.end();
+    }
   });
 
   it('the raw handle never reaches login_handoffs: only the hash is stored', async () => {
