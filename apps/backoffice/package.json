@@ -8,8 +8,12 @@
   },
   "devDependencies": {
     "@nuxtjs/i18n": "10.6.0",
+    "@testcontainers/postgresql": "12.2.1",
+    "@types/pg": "^8.23.1",
     "@vite-pwa/assets-generator": "1.0.4",
-    "@vite-pwa/nuxt": "1.1.1"
+    "@vite-pwa/nuxt": "1.1.1",
+    "pg": "^8.23.1",
+    "testcontainers": "12.2.1"
   },
   "nx": {
     "tags": [
@@ -80,6 +84,32 @@
         "dependsOn": [
           "nuxt-prepare"
         ]
+      },
+      "db:migrate": {
+        "executor": "nx:run-commands",
+        "cache": false,
+        "options": {
+          "cwd": "apps/backoffice",
+          "command": "npx tsx --tsconfig tsconfig.db.json db/apply.mts"
+        }
+      },
+      "test-integration": {
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "build",
+          "nuxt-prepare"
+        ],
+        "options": {
+          "cwd": "apps/backoffice",
+          "command": "npx vitest run tests/integration"
+        }
+      },
+      "typecheck-db": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "apps/backoffice",
+          "command": "npx tsc --noEmit -p tsconfig.db.json"
+        }
       }
     }
   }
