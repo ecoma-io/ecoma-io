@@ -27,7 +27,7 @@ export default defineCommand({
   meta: {
     name: 'local-worker-down',
     description:
-      'Stop the local worker runtime (transactional-mail + transactional-mailer-job) for this worktree',
+      'Stop the local worker runtime of this worktree (scans stateDir metadata; does not re-run opt-in marker discovery)',
   },
 
   args: {

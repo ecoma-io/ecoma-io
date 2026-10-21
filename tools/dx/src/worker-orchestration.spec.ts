@@ -9,6 +9,7 @@
  */
 
 import type { ChildProcess, spawn as childSpawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -66,6 +67,59 @@ function writeCommittedConfig(dir: string, name: string): string {
   mkdirSync(appDir, { recursive: true });
   const path = join(appDir, 'wrangler.jsonc');
   writeFileSync(path, JSON.stringify(config), 'utf8');
+  return path;
+}
+
+/** Spy console.warn — chặn stderr-warn assertions không đụng output thật. */
+function viSpyOnConsoleWarn(): ReturnType<typeof vi.spyOn> {
+  return vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+}
+
+/**
+ * Ghi marker opt-in `local-worker.jsonc` vào app dir — PR6 dùng marker là
+ * opt-in gate + readiness declaration duy nhất. `writeCommittedConfig` và
+ * `writeLikelyQueueApp` gọi cât có thể để fixture sống như một app thật.
+ */ function writeLocalWorkerMarker(
+  dir: string,
+  dirName: string,
+  readiness: 'http-health' | 'log-banner',
+): void {
+  const appDir = join(dir, 'apps', dirName);
+  mkdirSync(appDir, { recursive: true });
+  writeFileSync(join(appDir, 'local-worker.jsonc'), `${JSON.stringify({ readiness })}\n`, 'utf8');
+}
+
+/**
+ * Queue app fixture — worker có `-job` trong tên là consumer (shape config
+ * thật: consume queue như transactional-mailer-job), ngược lại producer.
+ * Marker readiness được khai tường minh theo `isConsumer`: queue-only
+ * worker không expose HTTP → banner; producer có serving route → HTTP.
+ * Dùng cho test boot order theo queue dependency của discovery (PR6).
+ */
+function writeLikelyQueueApp(
+  dir: string,
+  dirName: string,
+  workerName: string,
+  queueName: { queue: string },
+): string {
+  const isConsumer = workerName.includes('-job');
+  const config = {
+    name: workerName,
+    main: 'dist/main.js',
+    compatibility_date: '2026-10-05',
+    workers_dev: false,
+    // OCR round-2 F8: mỗi app một database_name riêng — hai app của cùng
+    // fixture dùng chung 'push-job' là duplicate database_name fail-closed.
+    d1_databases: [{ binding: 'push-job', database_name: `${dirName}-db` }],
+    queues: isConsumer
+      ? { consumers: [{ queue: queueName.queue }] }
+      : { producers: [{ queue: queueName.queue }] },
+  };
+  const appDir = join(dir, 'apps', dirName);
+  mkdirSync(appDir, { recursive: true });
+  const path = join(appDir, 'wrangler.jsonc');
+  writeFileSync(path, JSON.stringify(config), 'utf8');
+  writeLocalWorkerMarker(dir, dirName, isConsumer ? 'log-banner' : 'http-health');
   return path;
 }
 
@@ -182,20 +236,678 @@ function fakeSpawnFactory(
 const DEAD_PID = 2147483647;
 
 describe('MAIL_WORKER_ENTRIES', () => {
-  it('declares the two mail workers in boot order with valid entry names', () => {
-    expect(MAIL_WORKER_ENTRIES.map((entry) => entry.entryName)).toEqual([
+  it('discovers a two-mail-worker root in boot order with valid entry names', () => {
+    // Fixture worktree có đúng hai app mail (writeCommittedConfig tạo
+    // <root>/apps/<name>/wrangler.jsonc + marker) — discovery sống cùng
+    // worktree, không scan repo checkout.
+    const root = makeWorktreeFixture('entries-happy');
+    writeCommittedConfig(root, 'transactional-mail');
+    writeCommittedConfig(root, 'transactional-mailer-job');
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
+    writeLocalWorkerMarker(root, 'transactional-mailer-job', 'log-banner');
+    const entries = MAIL_WORKER_ENTRIES(root);
+    expect(entries.map((entry) => entry.entryName)).toEqual([
       'transactional-mail',
       'transactional-mailer-job',
     ]);
-    for (const entry of MAIL_WORKER_ENTRIES) {
+    for (const entry of entries) {
       expect(entry.entryName).toMatch(/^[A-Za-z0-9._-]+$/u);
     }
   });
 
-  it('control plane readiness is http-health, consumer is log-banner', () => {
-    const [control, consumer] = MAIL_WORKER_ENTRIES;
+  it('readiness comes from the marker declaration, never from queues or workers_dev inference', () => {
+    // OCR bug-critical trên PR #69: readiness cũ suy từ
+    // `consumers.length > 0 && workers_dev === false` — config committed của
+    // transactional-mailer-job KHÔNG khai workers_dev (undefined) nên worker
+    // queue-only bị suy nhầm http-health rồi poll timeout. Bây giờ readiness
+    // là DECLARATION trong marker: cùng shape config, readiness đổi theo
+    // marker chứ không theo config.
+    const root = makeWorktreeFixture('entries-readiness-declared');
+    // Queue-only consumer KHÔNG khai workers_dev (undefined như config thật)
+    // — marker vẫn quyết.
+    const jobDir = join(root, 'apps', 'transactional-mailer-job');
+    mkdirSync(jobDir, { recursive: true });
+    writeFileSync(
+      join(jobDir, 'wrangler.jsonc'),
+      JSON.stringify({
+        name: 'ecoma-transactional-mailer-job',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'mail-job', database_name: 'mail-job' }],
+        queues: { consumers: [{ queue: 'ecoma-mail-delivery' }] },
+      }),
+      'utf8',
+    );
+    writeLocalWorkerMarker(root, 'transactional-mailer-job', 'log-banner');
+    // Producer HTTP khai workers_dev: false (shape như web-push-notification-job)
+    // — marker vẫn quyết ngược.
+    writeLikelyQueueApp(root, 'transactional-mail', 'ecoma-transactional-mail', {
+      queue: 'ecoma-mail-delivery',
+    });
+    const [control, consumer] = MAIL_WORKER_ENTRIES(root);
     expect(control.readiness.kind).toBe('http-health');
     expect(consumer.readiness.kind).toBe('log-banner');
+  });
+
+  it('skips an app whose marker file is absent (Nuxt app keeps its own local path)', () => {
+    // OCR bug-high trên PR #69: quét mù mọi wrangler.jsonc nhốt Nuxt app
+    // (backoffice, home, pact-broker-app — main trỏ .output/server chưa build,
+    // không /health) vào runtime không bao giờ ready. Opt-in marker là gate:
+    // app không marker → out khỏi discovery, im lặng không block app khác.
+    const root = makeWorktreeFixture('entries-marker-absent');
+    writeCommittedConfig(root, 'transactional-mail');
+    writeCommittedConfig(root, 'transactional-mailer-job');
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
+    writeLocalWorkerMarker(root, 'transactional-mailer-job', 'log-banner');
+    writeCommittedConfig(root, 'backoffice'); // wrangler.jsonc có, marker KHÔNG
+    const names = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
+    expect(names).toEqual(['transactional-mail', 'transactional-mailer-job']);
+  });
+
+  it('skips an app whose marker readiness value is not one of the declared kinds', () => {
+    // Fail-closed cho marker hỏng: app đó out khỏi runtime thay vì fallback
+    // readiness ngầm (fallback ngầm chính là bug OCR bug-critical).
+    const root = makeWorktreeFixture('entries-marker-bad-value');
+    writeCommittedConfig(root, 'transactional-mail');
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
+    writeCommittedConfig(root, 'broken-app');
+    const appDir = join(root, 'apps', 'broken-app');
+    writeFileSync(join(appDir, 'local-worker.jsonc'), '{"readiness": "tcp-poll"}', 'utf8');
+    const names = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
+    expect(names).toEqual(['transactional-mail']);
+  });
+
+  it('skips an app whose marker JSON is unparseable (fail-closed, not fallback)', () => {
+    const root = makeWorktreeFixture('entries-marker-bad-json');
+    writeCommittedConfig(root, 'transactional-mail');
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
+    writeCommittedConfig(root, 'broken-app');
+    const appDir = join(root, 'apps', 'broken-app');
+    writeFileSync(join(appDir, 'local-worker.jsonc'), '{ readiness: ', 'utf8');
+    const names = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
+    expect(names).toEqual(['transactional-mail']);
+  });
+
+  it('skips an app whose marker carries unknown keys (single-field contract, no silent ignore)', () => {
+    // Contract của marker là readiness declaration DUY NHẤT — key lạ (vd
+    // `"path"` tác giả tưởng đổi health path, hay field copy lẫn từ config
+    // wrangler) phải fail-loud tại load, không nuốt ngầm.
+    const root = makeWorktreeFixture('entries-marker-unknown-key');
+    writeCommittedConfig(root, 'transactional-mail');
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
+    writeCommittedConfig(root, 'broken-app');
+    const appDir = join(root, 'apps', 'broken-app');
+    writeFileSync(
+      join(appDir, 'local-worker.jsonc'),
+      '{"readiness": "http-health", "path": "/api/health"}\n',
+      'utf8',
+    );
+    const names = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
+    expect(names).toEqual(['transactional-mail']);
+  });
+
+  it('warns on stderr when an opted-in app is skipped because its marker cannot load', () => {
+    // Fail-closed nhưng quan sát được: marker tồn tại = app chủ động opt-in,
+    // lý do rơi ra phải hiện trên stderr (stdout giữ JSON cho status).
+    const root = makeWorktreeFixture('entries-marker-bad-json-warn');
+    writeCommittedConfig(root, 'transactional-mail');
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
+    writeCommittedConfig(root, 'broken-app');
+    const appDir = join(root, 'apps', 'broken-app');
+    writeFileSync(join(appDir, 'local-worker.jsonc'), '{ readiness: ', 'utf8');
+    const warnSpy = viSpyOnConsoleWarn();
+    try {
+      const names = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
+      expect(names).toEqual(['transactional-mail']);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(String(warnSpy.mock.calls[0]?.[0])).toContain('broken-app');
+      expect(String(warnSpy.mock.calls[0]?.[0])).toContain('local-worker.jsonc');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('skips an app whose marker path is a directory instead of a file', () => {
+    // statSync gate: marker bị tạo nhầm thành thư mục phải đi hành vi
+    // "không marker" (skip tĩnh) thay vì EISDIR rơi vào catch chung.
+    const root = makeWorktreeFixture('entries-marker-is-dir');
+    writeCommittedConfig(root, 'transactional-mail');
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
+    writeCommittedConfig(root, 'broken-app');
+    mkdirSync(join(root, 'apps', 'broken-app', 'local-worker.jsonc'), { recursive: true });
+    const names = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
+    expect(names).toEqual(['transactional-mail']);
+  });
+
+  it('discovers a new app by its committed config and its marker without registration', () => {
+    // PR6 contract: app khai wrangler.jsonc + marker = tự động vào runtime.
+    const root = makeWorktreeFixture('entries-new-app');
+    writeCommittedConfig(root, 'transactional-mail');
+    writeCommittedConfig(root, 'transactional-mailer-job');
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
+    writeLocalWorkerMarker(root, 'transactional-mailer-job', 'log-banner');
+    // OCR round-2 F8: sample-app phải khai database_name RIÊNG — dùng chung
+    // 'mail' như writeCommittedConfig cũ giờ là duplicate database_name
+    // fail-closed (mỗi service own data của nó).
+    const sampleDir = join(root, 'apps', 'sample-app');
+    mkdirSync(sampleDir, { recursive: true });
+    writeFileSync(
+      join(sampleDir, 'wrangler.jsonc'),
+      JSON.stringify({
+        name: 'ecoma-sample-app',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'sample', database_name: 'sample-db' }],
+      }),
+      'utf8',
+    );
+    writeLocalWorkerMarker(root, 'sample-app', 'http-health');
+    const names = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
+    expect(names).toContain('sample-app');
+  });
+
+  it('fails composition when an app declares more than one D1 database (bridge is single-DB)', () => {
+    // Bridge MailWorkerEntry chỉ mang một database; app khai ≥2 `d1_databases`
+    // phải fail-loud ở composition thay vì boot với database thứ hai không bao
+    // giờ được migrate (`no such table` lúc runtime).
+    const root = makeWorktreeFixture('entries-multi-d1');
+    const appDir = join(root, 'apps', 'multi-db');
+    mkdirSync(appDir, { recursive: true });
+    writeFileSync(
+      join(appDir, 'wrangler.jsonc'),
+      JSON.stringify({
+        name: 'ecoma-multi-db',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [
+          { binding: 'one', database_name: 'db-one' },
+          { binding: 'two', database_name: 'db-two' },
+        ],
+      }),
+      'utf8',
+    );
+    writeLocalWorkerMarker(root, 'multi-db', 'http-health');
+    expect(() => MAIL_WORKER_ENTRIES(root)).toThrow(/hai database|2 D1 database|multi-db/u);
+  });
+
+  it('statusWorkerRuntime degrades to standard=false when discovery fails (read-only contract)', () => {
+    // statusWorkerRuntime bị gọi cả trong error path của local-worker-up —
+    // nếu discovery throw (topology lỗi) thì snapshot phải sống, không exit 1
+    // im lặng: degrade standard=false cho mọi row + stderr warn.
+    const root = makeWorktreeFixture('status-discovery-fail');
+    writeCommittedConfig(root, 'transactional-mail');
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
+    // Consumer khai queue mà không producer nào trong repo → topoSort throw.
+    // (helper writeLikelyQueueApp chọn produces/consumers theo `-job` trong
+    // tên Worker, nên dùng config consumer tường minh ở đây.)
+    writeCommittedConfig(root, 'orphan-consumer-job');
+    writeLocalWorkerMarker(root, 'orphan-consumer-job', 'log-banner');
+    const orphanDir = join(root, 'apps', 'orphan-consumer-job');
+    writeFileSync(
+      join(orphanDir, 'wrangler.jsonc'),
+      JSON.stringify({
+        name: 'ecoma-orphan-consumer-job',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'orphan', database_name: 'orphan' }],
+        queues: { consumers: [{ queue: 'ecoma-orphan-queue' }] },
+      }),
+      'utf8',
+    );
+    // Cài metadata mồ côi stateDir để có row để assert trạng thái degrade.
+    const stateDir = join(root, '.worker-local-state');
+    mkdirSync(stateDir, { recursive: true });
+    const argv = ['/x/wrangler', 'dev', '--config', 'wrangler.jsonc'];
+    writeFileSync(
+      join(stateDir, 'transactional-mail.json'),
+      JSON.stringify({
+        version: 1,
+        name: 'transactional-mail',
+        pid: DEAD_PID,
+        argv,
+        identityHash: identityHashOf(argv),
+        startedAt: Date.now(),
+      }),
+      'utf8',
+    );
+    const warnSpy = viSpyOnConsoleWarn();
+    try {
+      // Tiền đề: riêng discovery phải throw (topology lỗi thật).
+      expect(() => MAIL_WORKER_ENTRIES(root)).toThrow(/queue consumer/u);
+      const rows = statusWorkerRuntime({ worktreeRoot: root });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.standard).toBe(false);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(String(warnSpy.mock.calls[0]?.[0])).toContain('discovery fail');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('boot order respects queue dependency (producer before consumer)', () => {
+    const root = makeWorktreeFixture('entries-queue-order');
+    // push pair thật: control plane produce queue, consumer consume nó.
+    writeCommittedConfig(root, 'transactional-mail');
+    writeCommittedConfig(root, 'transactional-mailer-job');
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
+    writeLocalWorkerMarker(root, 'transactional-mailer-job', 'log-banner');
+    writeLikelyQueueApp(root, 'push-notification', 'ecoma-push-notification', {
+      queue: 'ecoma-push-delivery',
+    });
+    writeLikelyQueueApp(root, 'web-push-notification-job', 'ecoma-web-push-notification-job', {
+      queue: 'ecoma-push-delivery',
+    });
+    const order = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
+    expect(order.indexOf('push-notification')).toBeLessThan(
+      order.indexOf('web-push-notification-job'),
+    );
+  });
+
+  it('boot order respects service binding (peer boots first)', () => {
+    const root = makeWorktreeFixture('entries-service-order');
+    // Mail pair fixture: consumer khai `services[].service` trỏ Worker name
+    // `ecoma-transactional-mail` — đúng khớp worker name of producer, và
+    // cả hai khai `queues` cùng tên để không orphan queue. Tên `name` bắt
+    // buộc `ecoma-` vì service dep đối chiếu worker name, không entry name.
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
+    writeLocalWorkerMarker(root, 'transactional-mailer-job', 'log-banner');
+    const appDir = join(root, 'apps', 'transactional-mail');
+    mkdirSync(appDir, { recursive: true });
+    writeFileSync(
+      join(appDir, 'wrangler.jsonc'),
+      JSON.stringify({
+        name: 'ecoma-transactional-mail',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'mail', database_name: 'mail' }],
+        queues: { producers: [{ queue: 'ecoma-mail-delivery' }] },
+      }),
+      'utf8',
+    );
+    const jobDir = join(root, 'apps', 'transactional-mailer-job');
+    mkdirSync(jobDir, { recursive: true });
+    writeFileSync(
+      join(jobDir, 'wrangler.jsonc'),
+      JSON.stringify({
+        name: 'ecoma-transactional-mailer-job',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'mail-job', database_name: 'mail-job' }],
+        queues: { consumers: [{ queue: 'ecoma-mail-delivery' }] },
+        services: [{ binding: 'TRANSACTIONAL_MAIL_SERVICE', service: 'ecoma-transactional-mail' }],
+      }),
+      'utf8',
+    );
+    const order = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
+    expect(order.indexOf('transactional-mail')).toBeLessThan(
+      order.indexOf('transactional-mailer-job'),
+    );
+  });
+
+  it('fails closed when a consumer queue has no producer in the repo scan', () => {
+    const root = makeWorktreeFixture('orphan-queue');
+    writeLikelyQueueApp(root, 'web-push-notification-job', 'ecoma-web-push-notification-job', {
+      queue: 'ecoma-push-delivery',
+    });
+    expect(() => MAIL_WORKER_ENTRIES(root)).toThrow(/queue consumer không có producer/u);
+  });
+
+  it('fails closed when two apps declare the same D1 database_name (services own their data)', () => {
+    // OCR round-2 finding F8: `database_name` là định danh object D1 trong
+    // persist dir chia sẻ theo worktree — hai app cùng tên là cùng bind MỘT
+    // SQLite local (migrations đè nhau, hai service đọc/ghi chung data),
+    // vi phạm invariant "services own their data". Phải fail-closed như
+    // orphan queue, không boot nửa vời.
+    const root = makeWorktreeFixture('entries-duplicate-d1');
+    for (const dirName of ['first-service', 'second-service']) {
+      const appDir = join(root, 'apps', dirName);
+      mkdirSync(appDir, { recursive: true });
+      writeFileSync(
+        join(appDir, 'wrangler.jsonc'),
+        JSON.stringify({
+          name: `ecoma-${dirName}`,
+          main: 'dist/main.js',
+          compatibility_date: '2026-10-05',
+          d1_databases: [{ binding: 'shared', database_name: 'shared-db' }],
+        }),
+        'utf8',
+      );
+      writeLocalWorkerMarker(root, dirName, 'http-health');
+    }
+    expect(() => MAIL_WORKER_ENTRIES(root)).toThrow(
+      /'shared-db' được khai bởi nhiều app \(first-service, second-service\)/u,
+    );
+  });
+
+  it('fails closed when two opted-in apps declare the same wrangler worker name', () => {
+    // OCR round-2 finding F2: Map `byWorkerName` last-wins im lặng — tên
+    // Worker trùng khiến generated config sinh theo worker name ghi đè file
+    // của nhau (thư mục generated dùng chung) và service binding neo sai
+    // peer. Fail-loud liệt kê cả hai entryNames tại graph build.
+    const root = makeWorktreeFixture('entries-duplicate-worker-name');
+    for (const dirName of ['first-copy', 'second-copy']) {
+      const appDir = join(root, 'apps', dirName);
+      mkdirSync(appDir, { recursive: true });
+      writeFileSync(
+        join(appDir, 'wrangler.jsonc'),
+        JSON.stringify({
+          name: 'ecoma-duplicated-name',
+          main: 'dist/main.js',
+          compatibility_date: '2026-10-05',
+          d1_databases: [{ binding: 'db', database_name: 'dup-db' }],
+        }),
+        'utf8',
+      );
+      writeLocalWorkerMarker(root, dirName, 'http-health');
+    }
+    // Sort alphabet tại scan nên lần chạm thứ hai là 'second-copy'.
+    expect(() => MAIL_WORKER_ENTRIES(root)).toThrow(
+      /'ecoma-duplicated-name'.*'first-copy'.*'second-copy'/u,
+    );
+  });
+
+  it('fails closed when a D1 entry misses or misspells database_name (no silent empty string)', () => {
+    // OCR round-2 finding F7: `validateCommittedWranglerConfig` không kiểm
+    // shape từng d1 entry — thiếu/gõ sai key (`databaseName:` camelCase)
+    // lọt xuống bridge thành `''` → app có D1 thật bị coi là "không có D1",
+    // migrations bị nhảy im lặng. Fail-loud: throw từ entryFromCommittedConfig
+    // → app out khỏi discovery, và lý do quan sát được qua stderr warn
+    // (marker tồn tại = app chủ động opt-in) — cùng cơ chế với config hỏng.
+    const root = makeWorktreeFixture('entries-d1-missing-name');
+    const appDir = join(root, 'apps', 'd1-broken');
+    mkdirSync(appDir, { recursive: true });
+    writeFileSync(
+      join(appDir, 'wrangler.jsonc'),
+      JSON.stringify({
+        name: 'ecoma-d1-broken',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'mail', databaseName: 'misspelled' }],
+      }),
+      'utf8',
+    );
+    writeLocalWorkerMarker(root, 'd1-broken', 'http-health');
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const names = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
+      expect(names).toEqual([]);
+      expect(spy).toHaveBeenCalledTimes(1);
+      const warning = String(spy.mock.calls[0]?.[0]);
+      expect(warning).toContain('d1-broken');
+      expect(warning).toContain('database_name');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it.each([
+    {
+      picture: 'queues section is a string',
+      src: JSON.stringify({
+        name: 'ecoma-queues-bad-shape',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'db', database_name: 'qs-db' }],
+        queues: 'ecoma-some-queue',
+      }),
+    },
+    {
+      picture: 'queues.producers is an object (not an array)',
+      src: JSON.stringify({
+        name: 'ecoma-queues-bad-shape',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'db', database_name: 'qs-db' }],
+        queues: { producers: { queue: 'ecoma-some-queue' } },
+      }),
+    },
+    {
+      picture: 'queues.consumers is an object (not an array)',
+      src: JSON.stringify({
+        name: 'ecoma-queues-bad-shape',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'db', database_name: 'qs-db' }],
+        queues: { consumers: { queue: 'ecoma-some-queue' } },
+      }),
+    },
+  ])('fails closed when $picture (no silent empty deps)', ({ src }) => {
+    // OCR round-2 finding F9: shape sai của `queues` rơi vào readQueueRefs →
+    // trả `[]` NGẦM (fail-OPEN) — deps consumer rỗng làm orphan-queue guard
+    // bị bypass (consumer boot, redelivery KHÔNG hoạt động nhưng up báo
+    // thành công). Assert tường minh thay vì nhặt rác.
+    const root = makeWorktreeFixture('entries-queues-bad-shape');
+    const appDir = join(root, 'apps', 'queues-bad-shape');
+    mkdirSync(appDir, { recursive: true });
+    writeFileSync(join(appDir, 'wrangler.jsonc'), src, 'utf8');
+    writeLocalWorkerMarker(root, 'queues-bad-shape', 'http-health');
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      // App có marker nên lỗi shape phải khiến nó ra khỏi discovery — nhưng
+      // vẫn phải QUAN SÁT ĐƯỢC: stderr warn mang lý do cụ thể (path + shape).
+      const names = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
+      expect(names).toEqual([]);
+      expect(spy).toHaveBeenCalledTimes(1);
+      const warning = String(spy.mock.calls[0]?.[0]);
+      expect(warning).toContain('queues-bad-shape');
+      expect(warning).toMatch(/queues/u);
+      expect(warning).toMatch(/phải là (object|array)/u);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it.each([
+    {
+      picture: 'a producers item is null',
+      src: JSON.stringify({
+        name: 'ecoma-queue-item-null',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'db', database_name: 'qi-null-db' }],
+        queues: { producers: [null] },
+      }),
+      expectedFragment: /không phải object/u,
+    },
+    {
+      picture: 'a producers item is missing the queue key',
+      src: JSON.stringify({
+        name: 'ecoma-queue-item-missing-key',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'db', database_name: 'qi-missing-db' }],
+        queues: { producers: [{ exchange: 'ecoma-typo' }] },
+      }),
+      expectedFragment: /'queue'/u,
+    },
+    {
+      picture: 'a consumers item misspells queue as queu',
+      src: JSON.stringify({
+        name: 'ecoma-queue-item-typo',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'db', database_name: 'qi-typo-db' }],
+        queues: { consumers: [{ queu: 'ecoma-typo-queue' }] },
+      }),
+      expectedFragment: /'queue'/u,
+    },
+  ])(
+    'fails closed when $picture (a queue entry cannot silently vanish)',
+    ({ src, expectedFragment }) => {
+      // OCR round-4 (F2): entry khai queue section nhưng thiếu/sai key `queue`
+      // trước đây bị FILTER NGẦM — không đóng góp queue reference ⇒ consumer
+      // lọt khỏi orphan-guard và mất cạnh topo-sort. Giờ fail-loud (app out
+      // khỏi discovery + stderr warn quan sát được, cùng cơ chế shape khác).
+      const root = makeWorktreeFixture('queue-item-bad-shape');
+      const appDir = join(root, 'apps', 'queue-item-bad-shape');
+      mkdirSync(appDir, { recursive: true });
+      writeFileSync(join(appDir, 'wrangler.jsonc'), src, 'utf8');
+      writeLocalWorkerMarker(root, 'queue-item-bad-shape', 'http-health');
+      const spy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      try {
+        const names = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
+        expect(names).toEqual([]);
+        expect(spy).toHaveBeenCalledTimes(1);
+        const warning = String(spy.mock.calls[0]?.[0]);
+        expect(warning).toContain('queue-item-bad-shape');
+        expect(warning).toMatch(/queues\.(producers|consumers)\[\d+\]/u);
+        expect(warning).toMatch(expectedFragment);
+      } finally {
+        spy.mockRestore();
+      }
+    },
+  );
+
+  it('fails closed when a d1_databases element is not an object (no opaque TypeError)', () => {
+    // OCR round-4 (F3): phần tử không phải object (null/number/...) trước
+    // đây ném TypeError opaque từ `.database_name`. Giờ fail-loud với message
+    // nêu index + typeof — cùng hình với các shape check khác của module.
+    const root = makeWorktreeFixture('d1-element-not-object');
+    const appDir = join(root, 'apps', 'd1-element-not-object');
+    mkdirSync(appDir, { recursive: true });
+    writeFileSync(
+      join(appDir, 'wrangler.jsonc'),
+      JSON.stringify({
+        name: 'ecoma-d1-element-bad',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        // `d1_databases` với phần tử null — JSON.parse cho null (object
+        // nhưng typeof null === 'object'), kiểm `=== null` bắt được.
+        d1_databases: [null],
+      }),
+      'utf8',
+    );
+    writeLocalWorkerMarker(root, 'd1-element-not-object', 'http-health');
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const names = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
+      expect(names).toEqual([]);
+      expect(spy).toHaveBeenCalledTimes(1);
+      const warning = String(spy.mock.calls[0]?.[0]);
+      expect(warning).toContain('d1-element-not-object');
+      expect(warning).toContain('d1_databases[0]');
+      expect(warning).toMatch(/không phải object/u);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it.each([
+    {
+      picture: 'a services element is null',
+      src: JSON.stringify({
+        name: 'ecoma-svc-element-null',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'db', database_name: 'svc-null-db' }],
+        services: [null],
+      }),
+    },
+    {
+      picture: 'a services element misses the service key',
+      src: JSON.stringify({
+        name: 'ecoma-svc-element-missing-key',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'db', database_name: 'svc-missing-db' }],
+        services: [{ binding: 'ecoma-typo' }],
+      }),
+    },
+  ])('fails closed when $picture (no opaque TypeError, no silent drop)', ({ src }) => {
+    // OCR round-4 (F4): phần tử services null ném TypeError opaque; phần tử
+    // primitive/lacking `service` bị LỌC NGẦM (deps cụt không báo). Giờ cả hai
+    // đều fail-loud với index + path.
+    const root = makeWorktreeFixture('services-item-bad-shape');
+    const appDir = join(root, 'apps', 'services-item-bad-shape');
+    mkdirSync(appDir, { recursive: true });
+    writeFileSync(join(appDir, 'wrangler.jsonc'), src, 'utf8');
+    writeLocalWorkerMarker(root, 'services-item-bad-shape', 'http-health');
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const names = MAIL_WORKER_ENTRIES(root).map((entry) => entry.entryName);
+      expect(names).toEqual([]);
+      expect(spy).toHaveBeenCalledTimes(1);
+      const warning = String(spy.mock.calls[0]?.[0]);
+      expect(warning).toContain('services-item-bad-shape');
+      expect(warning).toMatch(/services\[\d+\]/u);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('does not infer queue references from the non-standard `exchange` alias key', () => {
+    // OCR round-2 finding F5: `exchange` không phải key của wrangler config
+    // schema (concept AMQP) — chấp nhận nó như alias là no-inference violation
+    // và sai weight của graph. Chỉ đọc `queue`; app dùng key sai thì wrangler
+    // dev tự fail validation theo cách rõ.
+    const root = makeWorktreeFixture('entries-exchange-alias');
+    const producerDir = join(root, 'apps', 'exchange-producer');
+    mkdirSync(producerDir, { recursive: true });
+    writeFileSync(
+      join(producerDir, 'wrangler.jsonc'),
+      JSON.stringify({
+        name: 'ecoma-exchange-producer',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'db', database_name: 'exchange-db' }],
+        queues: { producers: [{ exchange: 'ecoma-never-used' }] },
+      }),
+      'utf8',
+    );
+    const consumerDir = join(root, 'apps', 'exchange-consumer');
+    mkdirSync(consumerDir, { recursive: true });
+    writeFileSync(
+      join(consumerDir, 'wrangler.jsonc'),
+      JSON.stringify({
+        name: 'ecoma-exchange-consumer',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'db', database_name: 'exchange-db2' }],
+        queues: { consumers: [{ queue: 'ecoma-real-queue' }] },
+      }),
+      'utf8',
+    );
+    writeLocalWorkerMarker(root, 'exchange-producer', 'http-health');
+    writeLocalWorkerMarker(root, 'exchange-consumer', 'log-banner');
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      // OCR round-4 (F2): entry khai queue nhưng thiếu key `queue` giờ
+      // FAIL-LOUD (stderr warn) thay vì bị lọc ngầm — app có marker chủ động
+      // opt-in nên lỗi shape khiến app ra khỏi discovery. Hệ quả đúng của
+      // việc không suy `exchange`: producer biến mất khỏi graph → consumer
+      // của `ecoma-real-queue` thành orphan, topo-sort fail-closed với
+      // message orphan-consumer (không bao giờ ăn `exchange` làm cạnh thật).
+      expect(() => MAIL_WORKER_ENTRIES(root)).toThrow(/queue consumer không có producer/u);
+      expect(spy).toHaveBeenCalledTimes(1);
+      const warning = String(spy.mock.calls[0]?.[0]);
+      expect(warning).toContain('exchange-producer');
+      expect(warning).toContain('queues.producers[0]');
+      expect(warning).toContain("'queue'");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('yields an empty runtime with no spawn when discovery finds zero entries', async () => {
+    // OCR round-2 finding F6: discovery 0 entry phải được nhìn thấy — cảnh
+    // báo thuộc command (`local-worker-up` console.warn), còn orchestration
+    // trả rows rỗng KHÔNG lỗi và KHÔNG spawn process nào ("không có gì sống"
+    // là trạng thái hợp lệ, exit 0).
+    const root = makeWorktreeFixture('entries-zero');
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const result = await startWorkerRuntime({
+        worktreeRoot: root,
+        // Không entry nào → không spawn: spawnImpl nếu được gọi là test fail.
+        spawnImpl: (() => {
+          throw new Error('unreachable — no entry means no spawn');
+        }) as unknown as typeof childSpawn,
+      });
+      expect(result.workers).toEqual([]);
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
 
@@ -245,8 +957,9 @@ describe('portCandidates', () => {
 describe('startWorkerRuntime', () => {
   it('happy path with fake spawnImpl + fake migrations bin: rows, argv, ports recorded', async () => {
     const root = makeWorktreeFixture('happy');
-    for (const entry of MAIL_WORKER_ENTRIES) {
-      writeCommittedConfig(root, entry.entryName);
+    for (const name of ['transactional-mail', 'transactional-mailer-job']) {
+      writeCommittedConfig(root, name);
+      writeLocalWorkerMarker(root, name, name.includes('job') ? 'log-banner' : 'http-health');
     }
     const migrationsBin = writeFakeMigrationsBin(root);
 
@@ -344,18 +1057,150 @@ describe('startWorkerRuntime', () => {
       // fetch được gọi cho control plane readiness.
       expect(fetchSpy).toHaveBeenCalled();
       // Fake children không phải process thật — dọn metadata để không rò.
-      for (const entry of MAIL_WORKER_ENTRIES) {
-        rmSync(metadataPathOf(join(root, '.worker-local-state'), entry.entryName), { force: true });
+      for (const name of ['transactional-mail', 'transactional-mailer-job']) {
+        rmSync(metadataPathOf(join(root, '.worker-local-state'), name), { force: true });
       }
     } finally {
       fetchSpy.mockRestore();
     }
   });
 
+  it('rejects up when ANY alive record sits in the stateDir, including one outside current discovery', async () => {
+    // OCR round-2 finding F1: discovery là động (marker bị xoá, app dir đổi
+    // tên) — runtime cũ sống có thể rơi ra ngoài tập discovered. Guard chỉ
+    // lọc theo discovery là mất chặn: HAI bộ `wrangler dev` cùng chạy trên
+    // một persist dir + migrants lại trên D1 đang có process mở. Chặn trên
+    // MỌI record alive của stateDir.
+    const root = makeWorktreeFixture('up-guard-orphan-alive');
+    writeCommittedConfig(root, 'transactional-mail');
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
+    // Metadata của entry KHÔNG còn trong discovery ("old-app" — marker đã
+    // bị xoá/app dir đổi tên), pid chết chắc chắn (DEAD_PID) nhưng state
+    // phải là 'alive' theo scan? — không: isPidAlive(DEAD_PID) fail → stale.
+    // Muốn 'alive' thật phải dùng PID SỐNG. Dùng PID của process hiện tại?
+    // Không — isPidAlive(process.pid) đúng luôn sống, nhưng pidCmdlineMatches
+    // pidTakenOver... trên Linux /proc/pid/cmdline của chính process vitest
+    // không khớp argv metadata → classify thành 'stale' (takeover).
+    // Giải pháp xác định: spawn một process ĐỒNG SANH giữ alive thật.
+    const stateDir = join(root, '.worker-local-state');
+    mkdirSync(stateDir, { recursive: true });
+    const keeper = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1 << 28);'], {
+      stdio: 'ignore',
+      detached: true,
+    });
+    keeper.unref();
+    try {
+      // Metadata argv không cần khớp thật — scan chỉ classify alive qua
+      // isPidAlive + pidTakenOver (cmdline khác → stale). Tránh takeover:
+      // argv[0] trỏ process.execPath (node) — rõ ra là node thật. Đúng shape
+      // để readMetadata pass và pidTakenOver match (basename argv[0] = node).
+      const argv = [process.execPath, '-e', 'keeper-with-persist'];
+      writeFileSync(
+        metadataPathOf(stateDir, 'old-app'),
+        JSON.stringify({
+          version: 1,
+          name: 'old-app',
+          pid: keeper.pid,
+          argv,
+          identityHash: identityHashOf(argv),
+          startedAt: Date.now(),
+        }),
+        'utf8',
+      );
+      // Ổn định liveness: scan classify 'alive' cho record này (cmdline base
+      // khớp node).
+      const aliveBefore = scanWorkerProcesses(stateDir).filter((e) => e.state === 'alive');
+      expect(aliveBefore.map((e) => e.name)).toEqual(['old-app']);
+      // 'old-app' KHÔNG nằm trong discovery (chỉ transactional-mail).
+      await expect(
+        startWorkerRuntime({
+          worktreeRoot: root,
+          spawnImpl: (() => {
+            throw new Error('unreachable — guard must throw before spawn');
+          }) as unknown as typeof childSpawn,
+        }),
+      ).rejects.toThrow(/local worker runtime đã chạy \(alive: old-app\)/u);
+    } finally {
+      if (keeper.pid !== undefined) {
+        try {
+          process.kill(keeper.pid, 'SIGTERM');
+        } catch {
+          // already gone — best-effort teardown
+        }
+      }
+    }
+  });
+
+  it('blocks up on a live runtime before discovery can fail (alive guard runs first)', async () => {
+    // OCR round-4 (F1): discovery có thể throw (topology/config sai shape).
+    // Nếu discovery chạy TRƯỚC alive-guard, người dùng không bao giờ thấy
+    // hướng dẫn dọn runtime cũ, dù một process còn sống đang giữ port +
+    // persist dir. Guard phải chặn TRƯỚC, và message phải trỏ đúng lệnh
+    // khắc phục (`local-worker-down`).
+    const root = makeWorktreeFixture('up-guard-before-discovery');
+    // Config SAI SHAPE (queues.producers là object, không phải array) ⇒
+    // discovery chắc chắn throw nếu được gọi trước guard.
+    const brokenDir = join(root, 'apps', 'broken-shape');
+    mkdirSync(brokenDir, { recursive: true });
+    writeFileSync(
+      join(brokenDir, 'wrangler.jsonc'),
+      JSON.stringify({
+        name: 'ecoma-broken-shape',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'db', database_name: 'broken-db' }],
+        queues: { producers: { queue: 'ecoma-some-queue' } },
+      }),
+      'utf8',
+    );
+    writeLocalWorkerMarker(root, 'broken-shape', 'http-health');
+    const stateDir = join(root, '.worker-local-state');
+    mkdirSync(stateDir, { recursive: true });
+    const keeper = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1 << 28);'], {
+      stdio: 'ignore',
+      detached: true,
+    });
+    keeper.unref();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const argv = [process.execPath, '-e', 'keeper-with-persist'];
+      writeFileSync(
+        metadataPathOf(stateDir, 'old-app'),
+        JSON.stringify({
+          version: 1,
+          name: 'old-app',
+          pid: keeper.pid,
+          argv,
+          identityHash: identityHashOf(argv),
+          startedAt: Date.now(),
+        }),
+        'utf8',
+      );
+      await expect(
+        startWorkerRuntime({
+          worktreeRoot: root,
+          spawnImpl: (() => {
+            throw new Error('unreachable — guard must throw before spawn');
+          }) as unknown as typeof childSpawn,
+        }),
+      ).rejects.toThrow(/local worker runtime đã chạy \(alive: old-app\)/u);
+    } finally {
+      warnSpy.mockRestore();
+      if (keeper.pid !== undefined) {
+        try {
+          process.kill(keeper.pid, 'SIGTERM');
+        } catch {
+          // already gone — best-effort teardown
+        }
+      }
+    }
+  });
+
   it('redistributes the port when a real server holds the desired port busy', async () => {
     const root = makeWorktreeFixture('port-busy');
-    for (const entry of MAIL_WORKER_ENTRIES) {
-      writeCommittedConfig(root, entry.entryName);
+    for (const name of ['transactional-mail', 'transactional-mailer-job']) {
+      writeCommittedConfig(root, name);
+      writeLocalWorkerMarker(root, name, name.includes('job') ? 'log-banner' : 'http-health');
     }
     const migrationsBin = writeFakeMigrationsBin(root);
 
@@ -392,8 +1237,8 @@ describe('startWorkerRuntime', () => {
       // Consumer dùng port hash riêng của nó — không đụng desired.
       const desiredJob = allocateWorkerPort(namespace, 'transactional-mailer-job');
       expect(result.workers[1].port).toBe(desiredJob);
-      for (const entry of MAIL_WORKER_ENTRIES) {
-        rmSync(metadataPathOf(join(root, '.worker-local-state'), entry.entryName), { force: true });
+      for (const name of ['transactional-mail', 'transactional-mailer-job']) {
+        rmSync(metadataPathOf(join(root, '.worker-local-state'), name), { force: true });
       }
     } finally {
       fetchSpy.mockRestore();
@@ -405,8 +1250,9 @@ describe('startWorkerRuntime', () => {
 
   it('migration errors propagate (fail-closed) without spawning anything', async () => {
     const root = makeWorktreeFixture('migration-fail');
-    for (const entry of MAIL_WORKER_ENTRIES) {
-      writeCommittedConfig(root, entry.entryName);
+    for (const name of ['transactional-mail', 'transactional-mailer-job']) {
+      writeCommittedConfig(root, name);
+      writeLocalWorkerMarker(root, name, name.includes('job') ? 'log-banner' : 'http-health');
     }
     // Fake bin exit 3 → runWrangler throw.
     const failingBin = join(root, 'failing-wrangler.sh');
@@ -425,8 +1271,9 @@ describe('startWorkerRuntime', () => {
 
   it('readiness timeout stops the child, removes metadata and throws with tail', async () => {
     const root = makeWorktreeFixture('readiness-timeout');
-    for (const entry of MAIL_WORKER_ENTRIES) {
-      writeCommittedConfig(root, entry.entryName);
+    for (const name of ['transactional-mail', 'transactional-mailer-job']) {
+      writeCommittedConfig(root, name);
+      writeLocalWorkerMarker(root, name, name.includes('job') ? 'log-banner' : 'http-health');
     }
     const migrationsBin = writeFakeMigrationsBin(root);
 
@@ -570,6 +1417,10 @@ describe('statusWorkerRuntime', () => {
     const root = makeWorktreeFixture('status-rows');
     const stateDir = join(root, '.worker-local-state');
     mkdirSync(stateDir, { recursive: true });
+    // `standard` của PR6 là "entry name nằm trong discovery của worktree" —
+    // fixture phải khai app đúng tên trong apps/ thì row mới chuẩn.
+    writeCommittedConfig(root, 'transactional-mail');
+    writeLocalWorkerMarker(root, 'transactional-mail', 'http-health');
     const args = [process.execPath, 'x.js'];
     writeFileSync(
       metadataPathOf(stateDir, 'transactional-mail'),
