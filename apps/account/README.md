@@ -159,17 +159,6 @@ Phần này liệt kê cái **không** tồn tại, để không ai đoán nhầ
 - **Password / passkey / OIDC UI chưa có.** Chỉ luồng email-OTP được nối server;
   các luồng còn lại trên `/login` vẫn dùng mock adapter (`isPreview: true`,
   banner Preview hiển thị).
-- **Ràng buộc `login_handoffs` (handle X ↔ session) chưa được nối vào luồng xác
-  thực.** Bảng và trigger guard đã tồn tại trong migration
-  (`0001_identity_core.sql`, FR-006c2/c3/c4) và được integration test riêng phủ,
-  nhưng **không có code nào của route hiện tại ghi/đọc nó**: `POST /api/auth/handoff`
-  đẩy `session_verified` về auth mà chưa bind/cross-check handle X với session
-  đã trình nó, và `challenge`/`verify` chưa tạo binding lúc cấp handle (§3.6 của
-  docs — lớp bảo vệ thứ nhất chống ghi đè binding). Lớp thứ hai chống pre-binding
-  (cookie `__Host-auth-browser` phía auth) đã có sẵn phía auth
-  (`POST /internal/session/verified` từ chối transaction chưa `browser_confirmed`).
-  Cho tới khi có, first-binding-wins vẫn là thuộc tính của bảng — chưa phải một
-  quy tắc đang chạy. Theo dõi ở workstream riêng.
 - **Data pages vẫn mock.** Profile, emails, sessions, applications, privacy… chưa
   có BFF; adapter thật vẫn là mock cho phần đó.
 - **Đường cấp emailAddresses chưa có.** Bảng `email_addresses` chỉ được test ghi trực

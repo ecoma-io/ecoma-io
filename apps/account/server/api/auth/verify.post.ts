@@ -160,6 +160,13 @@ export default defineEventHandler(async (event) => {
       // Rotate (FR-004a): session anonymous của browser (nếu có) bị thu hồi trong
       // cùng transaction với INSERT session mới. Đọc cookie cũ — giá trị, không
       // hash — để biết session_ref cần thu hồi.
+      //
+      // Cùng session_ref đó là mốc chuyển binding handoff (FR-006c4, §3.6.2):
+      // nếu trình duyệt trình X ở bước challenge, binding đang trỏ vào session
+      // (anonymous) cũ và PHẢI chuyển sang session mới trong đúng transaction
+      // rotate — tách ra là một khoảng chết sống sót giữa hai thao tác, đúng
+      // cái §3.6.2 gọi là login hỏng. Không có binding thì UPDATE khớp 0 hàng,
+      // rotate đi tiếp bình thường.
       const previousCookie = getCookie(event, '__Host-account-session');
       const previousHash =
         previousCookie === undefined ? null : await hashSessionIdentifier(previousCookie);
@@ -177,6 +184,9 @@ export default defineEventHandler(async (event) => {
         authnAt: new Date(now),
         expiresAt: new Date(now + SESSION_IDLE_SECONDS * 1000),
         revokeSessionRef: revokeRef,
+        // FR-006c4: chuyển binding trong cùng transaction rotate — session mới
+        // kế thừa binding, không có session thứ ba chiếm X giữa hai bước.
+        carryHandoffFromSessionRef: revokeRef,
       });
 
       const csrfToken = createCsrfToken();

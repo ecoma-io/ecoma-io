@@ -34,9 +34,38 @@
  * biệt với thành công. Challenge active còn cooldown: consume và cấp mã mới
  * **không** diễn ra — người dùng nhấn resend liên tục không được mail mới trước
  * 60 giây, nhưng không được biết là bị chặn.
+ *
+ * ## Binding handle X — first-binding-wins tại đây (FR-006c, FR-006c2)
+ *
+ * Khi body mang `handle` (opaque handle X do `auth` cấp trong `?handle=` của
+ * `/login`), route ghi binding đầu tiên vào `login_handoffs` **trước** khi cấp
+ * mã: handle X phải gắn với session đã trình nó (§3.6), không sau khi đăng nhập.
+ * FR-006c: nếu browser chưa có session nào, một **session anonymous** được tạo
+ * rồi handle bind vào đó — X không bao giờ được bind vào "không có session".
+ *
+ * Binding là một `INSERT ... ON CONFLICT DO NOTHING` duy nhất (first-binding-
+ * wins, AC-008b2): request này thắng khi chưa ai bind, và đi tiếp bình thường;
+ * khi session khác đã bind trước, request này chỉ **so khớp** và cũng đi tiếp
+ * bình thường — response vẫn 204, anti-enumeration không bị phá. Việc từ chối
+ * thật sự diễn ra ở `/api/auth/handoff` (so khớp trước push), không ở đây: một
+ * nhánh bị chặn ở challenge sẽ là một response phân biệt được cho kẻ dò, còn
+ * ở đây im lặng đúng nghĩa "route cấp mã không biết gì về tranh chấp binding".
+ *
+ * ⚠️ **Không log giá trị handle** — chỉ `handle_hash` (§3.6; X đi qua query
+ * string, lọt vào access log của tầng trung gian).
+ *
+ * ⚠️ `handle` sai hình dạng (không phải chuỗi 1–1000 ký tự) bị 400 trước khi
+ * chạm crypto/DB — cùng cách body sai hình dạng của `email` là 400.
  */
 
-import { createError, defineEventHandler, readValidatedBody, setResponseHeader } from 'h3';
+import {
+  createError,
+  defineEventHandler,
+  getCookie,
+  readValidatedBody,
+  setCookie,
+  setResponseHeader,
+} from 'h3';
 
 import { accountHyperdrive } from '../../utils/bindings';
 import { writeLog } from '../../utils/logger';
@@ -59,9 +88,23 @@ import {
   OTP_TTL_SECONDS,
   resolveOtpTarget,
 } from '../../lib/otp';
+import { LOGIN_HANDOFF_TTL_SECONDS, bindHandleFirst, hashHandle } from '../../lib/handoff';
+import {
+  SESSION_COOKIE_NAME,
+  SESSION_ABSOLUTE_SECONDS,
+  createSessionIdentifier,
+  hashSessionIdentifier,
+  insertAnonymousSession,
+} from '../../lib/session';
 
 /** Body hợp lệ: `email` là chuỗi có hình dạng địa chỉ, giới hạn độ dài để chống abuse. */
-function isChallengeBody(value: unknown): { email: string } | false {
+interface ChallengeBody {
+  email: string;
+  /** Handle X opaque — tùy chọn; chỉ luồng `/authorize` của `auth` mới mang. */
+  handle?: string;
+}
+
+function isChallengeBody(value: unknown): ChallengeBody | false {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
@@ -77,7 +120,17 @@ function isChallengeBody(value: unknown): { email: string } | false {
   ) {
     return false;
   }
-  return { email };
+  // Handle opaque — hình dạng tối thiểu, cận trên chặn abuse, cùng cận với
+  // `isHandoffBody` (`handoff.post.ts`): không parse, không kiểm định dạng
+  // khác. `undefined` = gọi từ `/login` thuần (không có luồng `/authorize`).
+  const handle = (value as { handle?: unknown }).handle;
+  if (
+    handle !== undefined &&
+    (typeof handle !== 'string' || handle.length === 0 || handle.length > 1_000)
+  ) {
+    return false;
+  }
+  return handle === undefined ? { email } : { email, handle };
 }
 
 export default defineEventHandler(async (event) => {
@@ -105,6 +158,94 @@ export default defineEventHandler(async (event) => {
   }
 
   const { hash } = await normalizeAndHashEmail(body.email);
+
+  // Binding handle X — TRƯỚC khi cấp mã (FR-006c: "ràng buộc ngay khi được
+  // trình"). Chỉ chạy khi body mang handle; `/login` thuần đi tiếp như cũ.
+  //
+  // ⚠️ Nhánh lỗi của phần này **không** bao giờ đổi response: binding thành
+  // công hay thua đều 204 — từ chối thật sự là việc của handoff route, một
+  // response khác nhau ở đây là oracle cho kẻ dò đúng như mọi nhánh khác trên.
+  if (body.handle !== undefined) {
+    const handleHash = await hashHandle(body.handle);
+    let handoffOutcome: 'bound_to_current' | 'bound_to_other' | 'failed';
+    try {
+      handoffOutcome = await withRequestPool(hyperdrive, async (handoffPool) => {
+        // Session trình X: cookie hiện có (nếu còn khớp một hàng) hoặc session
+        // anonymous được tạo ngay đây — FR-006c, X không bind vào "không có
+        // session".
+        const previousCookie = getCookie(event, SESSION_COOKIE_NAME);
+        let presentSessionRef: string | undefined;
+        if (previousCookie !== undefined) {
+          const idHash = await hashSessionIdentifier(previousCookie);
+          const existing = await handoffPool.query<{
+            session_ref: string;
+            revoked_at: Date | null;
+          }>(
+            `SELECT session_ref, revoked_at FROM account.account_sessions
+              WHERE id_hash = $1 LIMIT 1`,
+            [idHash],
+          );
+          const row = existing.rows[0];
+          if (row !== undefined && row.revoked_at === null) {
+            presentSessionRef = row.session_ref;
+          }
+        }
+        if (presentSessionRef === undefined) {
+          // Không cookie / cookie không khớp gì: cấp session anonymous mới.
+          // Rotate FR-004a lúc verify sẽ thu hồi nó trong cùng transaction —
+          // anonymous session chỉ là vật chứa của binding, không có quyền nào.
+          const identifier = createSessionIdentifier();
+          const anonymousRef = await hashSessionIdentifier(`${identifier}:ref:anonymous`);
+          await insertAnonymousSession(handoffPool, {
+            idHash: await hashSessionIdentifier(identifier),
+            sessionRef: anonymousRef,
+            expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+          });
+          // Cookie đi ra ngoài response ở cuối handler — cùng thuộc tính với
+          // cookie của verify (FR-004).
+          setCookie(event, SESSION_COOKIE_NAME, identifier, {
+            maxAge: SESSION_ABSOLUTE_SECONDS,
+            path: '/',
+            secure: true,
+            httpOnly: true,
+            sameSite: 'lax',
+          });
+          presentSessionRef = anonymousRef;
+        }
+
+        const binding = await bindHandleFirst(handoffPool, {
+          handleHash,
+          presentSessionRef,
+          expiresAt: new Date(Date.now() + LOGIN_HANDOFF_TTL_SECONDS * 1000),
+        });
+        // So khớp thôi — không ghi đè, không phân nhánh response. Binding của
+        // session khác được giữ nguyên vẹn (FR-006c3, lớp 1); handoff route
+        // là nơi fail `binding_mismatch` (§3.6: so khớp trước push).
+        writeLog({
+          event: 'otp_challenge.handoff_binding',
+          status: 204,
+          bound_to_current: binding.session_ref === presentSessionRef,
+        });
+        return binding.session_ref === presentSessionRef
+          ? ('bound_to_current' as const)
+          : ('bound_to_other' as const);
+      });
+    } catch {
+      // DB chết khi ghi binding: 503 chung như mọi lỗi DB của route. Không có
+      // đường nào "bỏ qua binding mà vẫn cấp mã" — X không bind nghĩa là
+      // `/login?handle=X` của trình duyệt này không thể hoàn tất handoff sau;
+      // đó là fail-closed đúng nghĩa, và 503 là response chung của mọi hỏng DB.
+      writeLog({
+        event: 'otp_challenge.failed',
+        status: 503,
+        reason: 'handoff_binding_unavailable',
+      });
+      throw createError({ statusCode: 503, statusMessage: 'Service Unavailable' });
+    }
+    // `handoffOutcome` chỉ là chi tiết quan sát; response được quyết định bởi
+    // phần cấp mã phía dưới — nhánh binding không đổi anti-enumeration của nó.
+    void handoffOutcome;
+  }
 
   let outcome: 'sent' | 'silently_rejected';
   try {

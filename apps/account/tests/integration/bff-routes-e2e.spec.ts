@@ -228,21 +228,28 @@ describe.skipIf(!dockerAvailable)('BFF handoff and consent routes end-to-end', (
   }> {
     const mail = installMailStub();
     let code: string;
+    let challengeCookies: string[] = [];
     try {
       const challengeResponse = await post('/api/auth/challenge', {
         email: EMAIL_MAIN,
+        handle: HANDLE,
       });
       expect(challengeResponse.status).toBe(204);
       expect(mail.sent).toHaveLength(1);
       const variables = mail.sent[0]?.body['variables'] as { code?: string } | undefined;
       code = variables?.code as string;
+      challengeCookies = setCookies(challengeResponse);
     } finally {
       mail.restore();
     }
-    const verifyResponse = await post('/api/auth/verify', {
-      email: EMAIL_MAIN,
-      code,
-    });
+    const challengeSessionCookie = cookieValue(challengeCookies, '__Host-account-session');
+    const verifyResponse = await post(
+      '/api/auth/verify',
+      { email: EMAIL_MAIN, code },
+      challengeSessionCookie === undefined
+        ? {}
+        : { cookie: `__Host-account-session=${challengeSessionCookie}` },
+    );
     expect(verifyResponse.status).toBe(200);
     const cookies = setCookies(verifyResponse);
     const sessionCookie = cookieValue(cookies, '__Host-account-session');
@@ -442,24 +449,19 @@ describe.skipIf(!dockerAvailable)('BFF handoff and consent routes end-to-end', (
       continueUrl: CONTINUE_URL,
     });
 
-    // Retry với cùng session: cùng event_id — auth phải nhìn thấy idempotency.
-    authStub.running = {
-      status: 200,
-      body: () => ({ outcome: 'already_processed' }),
-    };
+    // Sau push thành công đầu tiên, binding bị consume (FR-006d2): lần retry
+    // thứ hai không còn đi tới auth — account layer chặn trước, cùng reason
+    // ổn định `binding_mismatch`. Đây là hành vi mới của lớp bảo vệ thứ nhất;
+    // idempotency phía auth (`already_processed`) chỉ còn ý nghĩa cho các retry
+    // xảy ra **trước** khi push thành công (binding còn nguyên vẹn).
     const second = await post('/api/auth/handoff', { handle: HANDLE }, init);
-    expect(await second.json()).toEqual({
-      ok: true,
-      outcome: 'already_processed',
-    });
+    expect(await second.json()).toEqual({ ok: false, reason: 'binding_mismatch' });
 
-    expect(authStub.calls).toHaveLength(2);
-    const [firstCall, secondCall] = authStub.calls as [AuthCall, AuthCall];
-    expect(firstCall.body['event_id']).toBe(secondCall.body['event_id']);
-    expect(firstCall.body['account_session_ref']).toBe(secondCall.body['account_session_ref']);
-    // `already_processed` không bắt buộc `continue_url` — response relay đúng
-    // `undefined`, KHÔNG dùng URL cũ hay tự dựng URL thay auth.
-    expect(secondCall.body['event_id']).toBe(
+    expect(authStub.calls).toHaveLength(1);
+    const [firstCall] = authStub.calls as [AuthCall];
+    // `event_id` được dựng từ `session_ref` — bất biến cho session này, không
+    // phụ thuộc retry có đi tới auth hay không.
+    expect(firstCall.body['event_id']).toBe(
       `session_verified:${firstCall.body['account_session_ref']}`,
     );
   });
