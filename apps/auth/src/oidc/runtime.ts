@@ -41,11 +41,9 @@ import {
   createPostgresClient,
 } from '@ecoma-io/identity-auth-infrastructure';
 import { AccountClient } from '../account-client';
-import { checkRevocationAtIssuance, insertAuditEvent } from '../authorization-store';
-import { allowsIssuance } from '@ecoma-io/identity-auth-contracts';
 
 import { createProvider } from './provider';
-import type { IssuanceGate } from './adapter';
+import { createIssuanceGateFromDeps } from './issuance-gate';
 import type { Provider } from 'oidc-provider';
 
 import type { NodeStyleServer } from 'cloudflare:node';
@@ -66,8 +64,11 @@ export interface AuthRuntime {
 }
 
 /**
- * Gate cấp phát production (SR-015/FR-020): kiểm tra lại account + revocation
- * TẠI MỖI lần phát token, thay vì chỉ lúc push `session.verified`.
+ * Composition của gate cấp phát production (SR-015/FR-020): nối các phần phụ
+ * thuộc THẬT của isolate vào factory thuần `createIssuanceGateFromDeps` (toàn bộ
+ * logic kiểm — account status, revocation, grant status, audit — nằm ở
+ * `issuance-gate.ts`, một đường duy nhất dùng chung với testcontainers; bản
+ * inline cũ bị xoá để không còn dual path drift).
  *
  * Vị trí bám là `adapter.upsert` — `base_model.js:77-89` của oidc-provider 9.12.2
  * đưa MỌI issuance (authorization code lúc resume, refresh token lúc rotation)
@@ -78,91 +79,23 @@ export interface AuthRuntime {
  * và một lỗi infrastructure (Account unreachable, postgres chết) phải lan lên
  * thành lỗi 5xx của request đó — không được nuốt thành "cho phép".
  */
-function createIssuanceGate(
+export function createIssuanceGate(
   env: AuthEnv,
   config: AuthConfig,
   postgresClient: PostgresClientLike,
-): IssuanceGate {
+): ReturnType<typeof createIssuanceGateFromDeps> {
   const account = new AccountClient({
     binding: env.ACCOUNT_SERVICE as {
       fetch: (request: Request) => Promise<Response>;
     },
     secret: config.internalSecret,
   });
-  return {
-    assertIssuable: async ({ accountId, clientId, grantId }) => {
-      // ⚠️ Phân biệt CHÍNH XÁC hai nhóm lỗi: policy denial (audit
-      // `token_issue_denied`) khác hạ tầng chết (Account unreachable, DB
-      // chết) — nhãn `access_denied` cho một lỗi hạ tầng là sai dữ liệu audit
-      // và tạo ra cảnh báo giả cho người đọc audit. Hạ tầng NÉM nguyên trạng.
-      const status = await account.checkStatus({ accountId, nowMs: Date.now() });
-      if (!allowsIssuance(status)) {
-        await denyAudit(
-          postgresClient,
-          accountId,
-          clientId,
-          grantId ?? undefined,
-          'account_status',
-        );
-        throw new Error(`issuance gate: account status "${status}" khong cho phep cap token`);
-      }
-      const revocation = await checkRevocationAtIssuance(postgresClient, {
-        sub: accountId,
-        clientId,
-        grantId: grantId ?? undefined,
-      });
-      // ⚠️ `!== 'not_revoked'` chứ không phải `=== 'revoked'`: bất kỳ giá trị nào
-      // ngoài "không thu hồi" (kể cả một giá trị union tương lai) phải chặn —
-      // cùng quy ước fail-closed với session-verified-handler.ts.
-      if (revocation !== 'not_revoked') {
-        await denyAudit(postgresClient, accountId, clientId, grantId ?? undefined, 'revocation');
-        throw new Error('issuance gate: token da bi revoke (subject/client/grant)');
-      }
-      // Hàng "đã cấp" — fire-and-forget: mất hàng audit không được biến một
-      // issuance thành công thành 5xx (SR-010 là quan sát, không phải điều
-      // kiện cấp — AGENTS.md: observability không là dependency serving path).
-      try {
-        await insertAuditEvent(postgresClient, {
-          eventType: 'token_issued',
-          subjectRef: accountId,
-          clientId,
-          grantId: grantId ?? undefined,
-          outcome: 'success',
-        });
-      } catch (error: unknown) {
-        // oxlint-disable-next-line no-console
-        console.error('audit write failed', error);
-      }
-    },
-  };
-}
-
-/**
- * Audit hàng bị chặn cấp — cũng fire-and-forget (try/catch riêng): lỗi audit
- * KHÔNG được thay đổi lỗi nghiệp vụ đang lan (vẫn là chặn issuance,
- * fail-closed giữ nguyên).
- */
-async function denyAudit(
-  postgresClient: PostgresClientLike,
-  accountId: string,
-  clientId: string,
-  grantId: string | null | undefined,
-  reason: string,
-): Promise<void> {
-  try {
-    await insertAuditEvent(postgresClient, {
-      eventType: 'token_issue_denied',
-      subjectRef: accountId,
-      clientId,
-      grantId: grantId ?? undefined,
-      outcome: 'denied',
-      errorCode: 'access_denied',
-      details: { reason },
-    });
-  } catch (error: unknown) {
-    // oxlint-disable-next-line no-console
-    console.error('audit write failed', error);
-  }
+  return createIssuanceGateFromDeps({
+    postgresClient,
+    // `nowMs` được ghi ở runtime thật (mỗi lần hỏi là một mốc hiện hành), cùng
+    // cách wiring mà `main.ts` dùng cho đường session/verified.
+    checkStatus: (accountId) => account.checkStatus({ accountId, nowMs: Date.now() }),
+  });
 }
 
 let cachedRuntimePromise: Promise<AuthRuntime> | undefined;
@@ -184,10 +117,11 @@ async function buildRuntime(env: AuthEnv): Promise<AuthRuntime> {
     config,
     postgresClient,
     signingPem: config.signingKeyPem,
-    // SR-015/FR-020: gate cấp phát là BẮT BUỘC ở runtime production. Test tự
-    // dựng provider của nó (oidc-fullflow.spec) và cố ý không truyền gate —
-    // nghĩa là suite đó không cover đường này; acceptance của gate nằm ở
-    // kết hợp (a) adapter upsert-gate, (b) chính hàm này.
+    // SR-015/FR-020: gate cấp phát là BẮT BUỘC ở runtime production, và là
+    // CÙNG MỘT factory với đường testcontainers (`issuance-gate.ts`) — một
+    // đường logic duy nhất, không bản inline riêng để trôi lệch. Test không
+    // truyền gate là test trình duyệt protocol thuần; acceptance của gate nằm
+    // ở (a) adapter upsert-gate + (b) composition này + (c) runtime-gate.spec.
     issuanceGate: createIssuanceGate(env, config, postgresClient),
   });
 
