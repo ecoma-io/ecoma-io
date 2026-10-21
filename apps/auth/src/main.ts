@@ -18,6 +18,7 @@ import {
   INTERNAL_BODY_LIMIT_BYTES,
   type VerifyFailureReason,
 } from '@ecoma-io/identity-auth-contracts';
+import { createPostgresClient } from '@ecoma-io/identity-auth-infrastructure';
 import { createAuthorizationStore } from './authorization-store';
 import { AccountClient, isAuthenticatedInternalRequest } from './account-client';
 import { type AuthConfig, type AuthEnv, loadAuthConfig } from './config';
@@ -37,6 +38,23 @@ const app = new Hono();
  * hiển thị.
  */
 const INTERNAL_DB_UNAVAILABLE_RETRY_AFTER_SECONDS = '5';
+
+/**
+ * Khoảng chờ **mở connection** của pool probe readiness (giây) — cùng ngân sách
+ * với `NONCE_CLAIM_CONNECT_TIMEOUT_SECONDS` (2s) của replay guard.
+ *
+ * ⚠️ Đây là hằng của **một** probe, không phải tham số vận hành: một origin kết
+ * nối không được trong vài giây là origin không thể phục vụ **request thật** —
+ * readiness trả 200 thì request kế tiếp cũng chết sau đó. Giá trị ngắn làm lỗi
+ * hạ tầng hiện là `db_unreachable` ⇒ 503 nhanh, thay vì giữ request treo tới
+ * hết hạn Worker.
+ *
+ * ⚠️ Phạm vi giống `connect_timeout` của driver: chỉ pha mở connection. Một
+ * origin tiếp nhận TCP nhanh nhưng câu SELECT chậm là dữ liệu khác — probe vẫn
+ * có thể vượt 3s; nhánh đó là `db_unreachable` từ thời gian chạy, không phải
+ * từ giá trị hằng này.
+ */
+const READY_PROBE_CONNECT_TIMEOUT_SECONDS = 3;
 
 /**
  * Cấu hình đã nạp, cache theo isolate.
@@ -80,6 +98,100 @@ app.get('/health', (c) =>
     time: new Date().toISOString(),
   }),
 );
+
+/**
+ * `GET /ready` — readiness, **có** kiểm phụ thuộc. Mirror của
+ * `apps/account/server/routes/ready.get.ts` (cùng bảng phân biệt `/health` vs
+ * `/ready`), đọc bằng đại diện của `auth`:
+ *
+ * | Route     | Hỏi gì                                        | Hỏi DB không | Khi hỏng thì ai hành xử    |
+ * | --------- | --------------------------------------------- | ------------ | -------------------------- |
+ * | `/health` | Worker có sống không                           | **Không**    | Orchestrator restart Worker |
+ * | `/ready`  | Worker có phục vụ **request thật** được không   | **Có**       | Orchestrator ngừng traffic  |
+ *
+ * ⚠️ **Vì sao `/health` không query DB** — restart-loop vô ích: DB chết ⇒
+ * `/health` lỗi ⇒ restart ⇒ isolate mới lại hỏi DB vẫn chết, tăng tải lên
+ * database đang chết và che mất nguyên nhân thật (`db-auth` hỏng, không phải
+ * Worker hỏng). `/health` chỉ chứng minh isolate sống.
+ *
+ * ⚠️ **Vì sao `/ready` fail closed.** Thiếu `HYPERDRIVE` hay `ACCOUNT_SERVICE`
+ * (cùng một nguyên nhân mà `loadAuthConfig` ném ở request đầu) hoặc `db-auth`
+ * không trả lời được thì **không phát hành** token nào — hợp đồng của `auth`
+ * không có degraded path (control point fail-closed lúc phát hành,
+ * `docs/overview/01-architecture.md` §6.0). Một readiness trả 200 trong khi
+ * dependency chết là đẩy failure xuống thành lỗi 503 rải rác ở từng request
+ * thật. Readiness **không** log chi tiết lỗi DB vào response: response đi qua
+ * mạng công cộng; nguyên nhân nằm ở log với mã ổn định — như `ready.get.ts`
+ * của account, chỉ `reason` trong log, không message của driver.
+ */
+app.get('/ready', async (c) => {
+  const env = c.env as AuthEnv;
+
+  // Hai binding bắt buộc của `auth` (config.ts ném khi thiếu). Kiểm cả hai ở đây
+  // để readiness nói đúng điều nó kiểm: thiếu MỘT trong hai là app không phục vụ
+  // được request nào, chứ không phải "chạy được một phần".
+  //
+  // ⚠️ KHÔNG nêu tên binding thiếu trong response: response công khai; tên binding
+  // là thông tin cấu hình. Mã ổn định đủ để truy nguồn từ log.
+  if (env.HYPERDRIVE === undefined || typeof env.HYPERDRIVE.connectionString !== 'string') {
+    // oxlint-disable-next-line no-console
+    console.log(JSON.stringify({ event: 'ready.failed', status: 503, reason: 'binding_missing' }));
+    return c.json({ error: 'service_unavailable' }, 503, {
+      'Retry-After': INTERNAL_DB_UNAVAILABLE_RETRY_AFTER_SECONDS,
+    });
+  }
+  if (env.ACCOUNT_SERVICE === undefined) {
+    // oxlint-disable-next-line no-console
+    console.log(JSON.stringify({ event: 'ready.failed', status: 503, reason: 'binding_missing' }));
+    return c.json({ error: 'service_unavailable' }, 503, {
+      'Retry-After': INTERNAL_DB_UNAVAILABLE_RETRY_AFTER_SECONDS,
+    });
+  }
+
+  try {
+    await probeDatabase(env.HYPERDRIVE);
+  } catch {
+    // KHÔNG nối `error` vào log: message của driver có thể chứa connection string.
+    // Chỉ ghi mã ổn định, đủ để phân loại sự cố.
+    // oxlint-disable-next-line no-console
+    console.log(JSON.stringify({ event: 'ready.failed', status: 503, reason: 'db_unreachable' }));
+    return c.json({ error: 'service_unavailable' }, 503, {
+      'Retry-After': INTERNAL_DB_UNAVAILABLE_RETRY_AFTER_SECONDS,
+    });
+  }
+
+  // oxlint-disable-next-line no-console
+  console.log(JSON.stringify({ event: 'ready.ok', status: 200 }));
+  return c.json({ service: 'auth', status: 'ready' });
+});
+
+/**
+ * Pool dùng cho **một** lần kiểm readiness — không giữ state module-scope
+ * (`runtime:edge` cấm node-local state), không giữ pool qua request.
+ *
+ * Truy vấn rẻ nhất vẫn phải chạm DB: probe chỉ cần chứng minh schema tồn tại và
+ * đọc được bằng credential runtime. `auth.oauth_clients` chọn vì: `SELECT
+ * client_id` đọc một cột nhỏ của bảng cấu hình, không chạm dòng dữ liệu người
+ * dùng, và bảng nằm trong `0001` — bảng đầu tiên của schema, nên một database
+ * chưa migrate đủ **phải** làm probe thất bại (database nửa schema không phải
+ * "sẵn sàng"). Giá trị kết nối ngắn để một origin không kết nối được hoá thành
+ * lỗi nhanh ⇒ `db_unreachable`, thay vì giữ request tới hết thời hạn Worker.
+ *
+ * ⚠️ Probe **qua credential runtime** — cùng pool shape mà mọi đường serving
+ * dùng (`max: 3`, `prepare: false` từ `createPostgresClient`), nên readiness
+ * kiểm không chỉ "DB sống" mà "DB sống với đúng credential mà serving path
+ * dùng".
+ */
+async function probeDatabase(hyperdrive: { connectionString: string }): Promise<void> {
+  const client = createPostgresClient(hyperdrive, {
+    connectTimeoutSeconds: READY_PROBE_CONNECT_TIMEOUT_SECONDS,
+  });
+  try {
+    await client.unsafe('SELECT client_id FROM auth.oauth_clients LIMIT 1');
+  } finally {
+    await client.end({ timeout: 1 });
+  }
+}
 
 /**
  * Discovery — SHADOW cả hai well-known của OIDC Core §4 và OAuth 2.0 AF §5.

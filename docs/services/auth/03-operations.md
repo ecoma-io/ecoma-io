@@ -32,7 +32,32 @@ Kiểm sau deploy:
 
 ```text
 GET /health → 200 { service: 'auth', status: 'ok' }
+GET /ready  → 200 { service: 'auth', status: 'ready' }        # khi cả hai kiểm dưới đây đi qua
+GET /ready  → 503 { error: 'service_unavailable' } + Retry-After   # khi một trong hai kiểm thất bại
 ```
+
+⚠️ **`/ready` là readiness có kiểm phụ thuộc; `/health` là liveness không chạm DB.**
+Cùng một hợp đồng với `account` ([../account/03-operations.md](../account/03-operations.md) §2,
+nơi cài đặt bên kia là `apps/account/server/routes/ready.get.ts`, bên này là
+`apps/auth/src/main.ts`). Route kiểm đúng **hai** điều, không hứa hơn:
+
+- **Binding tồn tại** — `HYPERDRIVE` và `ACCOUNT_SERVICE` đều được gắn. Chỉ kiểm
+  sự có mặt; ⚠️ **không probe service `account` qua binding**: binding có gắn
+  mà bên kia chết thì `/ready` **không** phát hiện — mọi đường gọi thật của
+  `auth` qua binding nằm trên route nội bộ/flow, không phải readiness. Sự cố
+  `account` hiện qua trực tiếp các route thật; đừng đọc `/ready` 200 như một
+  cam kết liveness hai chiều.
+- **`db-auth` reachable** — một `SELECT` trên `auth.oauth_clients` qua
+  `createPostgresClient` (`apps/auth/src/main.ts`), tức bảng gốc đầu tiên của
+  schema (`0001`) với credential `ecoma_auth_runtime`: database nửa schema hay
+  grant sai đều làm probe thất bại, không chỉ database chết.
+
+Hành vi fail-closed: thiếu binding ⇒ `503` + `Retry-After` (mã ổn định
+`binding_missing` trong log); DB không kết nối được ⇒ `503` + `Retry-After`
+(`db_unreachable`). Response **không** nêu tên binding thiếu, **không** message
+của driver (có thể rò connection string) — nguyên nhân nằm ở log cùng mã ổn định.
+`/ready` trả `503` khi một dependency chết không phải là báo động giả: đây là
+tín hiệu cho orchestrator ngừng traffic mới, đúng chỗ nó thuộc về.
 
 Rollback theo Worker version đã publish, **không** rollback database ([`02` §8](../../overview/02-delivery.md)).
 
@@ -125,7 +150,7 @@ SELECT count(*) FROM deleted;
 
 ⚠️ **Chạy lặp, không chạy một câu lớn.** Hai câu trên là **một lô**: lặp lại cho tới khi `count(*)` về `0` hoặc dưới `LIMIT`. Một câu `DELETE … WHERE expires_at < now()` trần giữ một transaction cho tới khi chạy hết — backlog lớn thì transaction lớn, giữ khóa lâu và có thể bị kill rồi rollback toàn bộ, không xóa được hàng nào. Predicate `expires_at < now()` giữ nguyên ở mọi lô, nên chạy lại sau khi đứt giữa chừng vẫn an toàn. `count(*)` thay cho `RETURNING nonce` để giá trị nonce không rơi vào terminal hay buffer của client.
 
-**Prune định kỳ (lịch chạy)** — ~~`.github/workflows/identity-nonce-prune.yaml`, job `prune-auth`~~ ⚠️ **workflow này KHÔNG còn tồn tại nữa:** toàn bộ file CD — trong đó có `identity-nonce-prune.yaml` — đã bị xoá khỏi nhánh phát triển `johnitvn/numbfish` ở commit `f68105b6` ("fix: remove all CD", 2026-10-16) và **không bao giờ vào `main`** (trên `main` chỉ còn `ci.yaml`, `code-analysis.yml`, `code-review.yml`). Mô tả bên dưới được **giữ nguyên làm đặc tả cơ chế cần hiện thực lại**, không phải mô tả một job đang chạy: prune nonce **chưa có hiện thực nào cả** (việc hiện thực lại thuộc Workstream E/delivery theo plan Identity BC hardening, không phải cho PR #47 này).
+**Prune định kỳ (lịch chạy)** — `.github/workflows/identity-nonce-prune.yaml`, job `prune-auth`. Workflow đã được **khôi phục trên `main`** (hai job `prune-auth`/`prune-account`, cron `17 3 * * *` — PR #49; đặc tả bên dưới khớp nguyên văn nội dung file). Việc khôi phục **không** tự tạo Environments/branch policy: ⚠️ **Trạng thái sau khôi phục: đã cấu hình, CHƯA xác minh runtime** (chi tiết ở phần trạng thái bên dưới).
 
 - **Cơ chế:** CI runner kết nối thẳng tới database bằng PostgreSQL client, tức đúng đường admin path đã dùng cho migration ([`../../overview/02-delivery.md`](../../overview/02-delivery.md) §3.1) — không phải `scheduled()` handler trong Worker. Lý do là quyền hạn: runtime của `auth` **không có** `DELETE` trên `auth.internal_nonces` (khối grant ở `apps/auth/migrations/0010_internal_nonces.sql`), và credential `_migrator_` không bao giờ là Worker secret ([`02`](../../overview/02-delivery.md) §6). Job chạy bằng `ecoma_auth_migrator`.
 - **Một script dùng chung, schema do job truyền vào.** Script prune nằm ở một chỗ duy nhất trong workflow (`PRUNE_SCRIPT` ở cấp workflow) và nhận `SERVICE` / `TARGET_SCHEMA` / `EXPECTED_IDENTITY` từ `env:` của từng job, nên hai job không thể lệch nhau về mặt câu lệnh. Script kiểm `to_regclass` + `has_table_privilege` của chính role nó đang kết nối **trước** khi xoá và so với `EXPECTED_IDENTITY`; sai role, sai bảng hay thiếu quyền thì dừng ở `outcome=identity_mismatch` trước khi chạm dữ liệu. Không chỗ nào hard-code `auth.…` hay `account.…` trong script chung.
@@ -144,12 +169,12 @@ SELECT count(*) FROM deleted;
 - **Khi hỏng:** fail closed. Chỉ lỗi transport mới được thử lại — mã thoát `2` của `psql` (mất kết nối, bao gồm **sai password**) và `125` của `docker` (không chạy được container) — tối đa `MAX_ATTEMPTS=3` lần với backoff; mọi mã thoát khác dừng ngay ở `outcome=statement_failed`. Kết quả rỗng ở bước kiểm identity cũng là lỗi. Câu lệnh idempotent và mỗi lô là một transaction riêng, nên một run đứt giữa đường chạy lại vẫn an toàn: không có trạng thái dở dang phải sửa, chỉ còn backlog nhỏ hơn.
 - **Chạy tay có kiểm soát:** `workflow_dispatch`. Guard của workflow chỉ chấp nhận ref `main`, nhưng **lớp bảo vệ thật** là deployment branch policy của Environment `nonce-prune-auth`: một dispatch từ ref khác chạy **bản workflow trên chính ref đó**, nên guard trong file không tự bảo vệ chính nó ([`02`](../../overview/02-delivery.md) §6.13, [`04`](../../overview/04-platform-facts.md) §2.17 GH6–GH8).
 
-⚠️ **Trạng thái: workflow đã bị xoá — CHƯA có hiện thực nào.** Đặc tả dưới đây (lịch, batch, cap, outcome, runbook) là bản thiết kế đã rà kỹ, giữ lại làm **baseline tái hiện thực** cho Workstream E/delivery; hiện thực cũ (file workflow ở commit `f68105b6`) đã bị gỡ và chưa bao giờ vào `main`. Ba điều kiện dưới đây vẫn áp dụng nguyên vẹn khi tái hiện thực — db-auth chưa được provision:
+⚠️ **Trạng thái: đã khôi phục trên `main`, CHƯA xác minh runtime.** File workflow `identity-nonce-prune.yaml` hiện diện trên `main` và đặc tả (lịch, batch, cap, outcome, runbook) khớp nguyên văn nội dung file; nhưng job **chưa chạy lần nào** và chỉ được tin sau khi ba điều kiện dưới đây được xác minh bằng một lần chạy thật — db-auth chưa được provision:
 
 1. **Branch policy của Environment — và thứ tự đặt nó TRƯỚC secret.** Khai `environment:` trong workflow khiến GitHub **tự tạo** Environment ở lần chạy đầu tiên nếu nó chưa tồn tại: không branch policy, không protection rule ([`02`](../../overview/02-delivery.md) §6.13). Nên đây **không** thể là một điều kiện "đã có sẵn trước khi workflow tồn tại". Thứ tự đúng: (a) workflow vào `main`; (b) lần chạy đầu tiên — theo lịch hoặc `workflow_dispatch` thủ công — tạo Environment ngầm và job đỏ ở `outcome=not_configured`; (c) đặt deployment branch policy **giới hạn đúng `main`** ("Protected branches", hoặc custom policy chỉ khớp `main`; **không** để mặc định "All branches"); (d) **sau cùng** mới đặt secret `DB_AUTH_MIGRATOR_URL` / `DB_ACCOUNT_MIGRATOR_URL`. Đặt secret trước branch policy là để credential `_migrator_` nằm trong một Environment mà mọi ref đều dispatch được — và ở trạng thái đó **không còn lớp fail-closed nào trong repo**.
    Branch policy này là lớp bảo vệ **duy nhất** cho credential `_migrator_`: một tài khoản ghi được vào repo có thể push một nhánh sửa workflow (kể cả xoá bước guard) rồi dispatch chính nhánh đó, nên guard trong file **không** tự bảo vệ chính nó ([`02`](../../overview/02-delivery.md) §6.13; [`04`](../../overview/04-platform-facts.md) §2.17 GH6–GH7). Không có gì trong repo kiểm được lớp này — nó phải được xác minh ngoài luồng trước khi job theo lịch được tin.
 2. Secret `DB_AUTH_MIGRATOR_URL` (và `DB_ACCOUNT_MIGRATOR_URL`) trong đúng Environment đó.
-3. Đường kết nối từ CI runner tới PostgreSQL của từng database, **không** mở public PostgreSQL và **không** nới firewall/network policy ([`03`](../../overview/03-operations.md) §2.1). DSN trong `DB_*_MIGRATOR_URL` **phải** ghi `sslmode` tường minh: job đặt sàn `PGSSLMODE=require`, nhưng libpq cho conninfo **thắng** environment nên DSN là nguồn quyết định — và một DSN ghi `sslmode=prefer`/`disable` sẽ hạ sàn đó xuống đúng giá trị nó ghi. Vì vậy script tự kiểm `sslmode` trong DSN và dừng ở `outcome=insecure_dsn` trước khi kết nối, thay vì tin vào sàn environment. `require` chỉ bảo đảm **có mã hoá**, không xác minh cert; posture đầy đủ (`verify-ca`/`verify-full`) vẫn **chưa chốt** theo spike S1 ([`03`](../../overview/03-operations.md) §2.1), nên đây là sàn tối thiểu chứ không phải quyết định thay S1.
+3. Đường kết nối từ CI runner tới PostgreSQL của từng database, **không** mở public PostgreSQL và **không** nới firewall/network policy ([`03`](../../overview/03-operations.md) §2.1). DSN trong `DB_*_MIGRATOR_URL` **phải** ghi `sslmode` tường minh: job đặt sàn `PGSSLMODE=require`, nhưng libpq cho conninfo **thắng** environment nên DSN là nguồn quyết định — và một DSN ghi `sslmode=prefer`/`disable` sẽ hạ sàn đó xuống đúng giá trị nó ghi. Vì vậy script tự kiểm `sslmode` trong DSN và dừng ở `outcome=invalid_dsn` (biến `reason=sslmode_weak` cùng dòng lỗi) trước khi kết nối, thay vì tin vào sàn environment. `require` chỉ bảo đảm **có mã hoá**, không xác minh cert; posture đầy đủ (`verify-ca`/`verify-full`) vẫn **chưa chốt** theo spike S1 ([`03`](../../overview/03-operations.md) §2.1), nên đây là sàn tối thiểu chứ không phải quyết định thay S1.
 
 ⚠️ **Không đặt `required reviewers` hay wait timer trên hai Environment này.** Job chạy theo lịch không có người bấm duyệt: một required-reviewer rule sẽ làm run **treo ở trạng thái chờ** (không phải đỏ), và một job dọn dữ liệu treo mỗi ngày thì không dọn gì cả — trái với hợp đồng fail-closed ở trên, vốn chỉ đúng khi job **đỏ**. Cần kiểm soát thêm thì dùng branch policy, không dùng approval gate ([`04`](../../overview/04-platform-facts.md) §2.17 GH8).
 
