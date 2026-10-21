@@ -33,10 +33,12 @@ describe('execution lease vs provider timeout cross-check', () => {
   });
 
   it('rejects an execution lease equal to the provider timeout', () => {
-    // Lease bằng trần chờ một request provider là cấu hình vô nghĩa: mơ hồ persist-denied
-    // chỉ phát hiện được sau ít nhất một full request — tới lúc đó lease đã hết hạn, nên
-    // lời đánh giá cửa sổ ở làn persist-denied luôn quá muộn và đường "còn trong cửa sổ ⇒
-    // auto-resend" chết âm thầm. Bắt ở loader, message chỉ nêu tên env var.
+    // Ghim bất đẳng thức gia hạn §9.2.1 ở loader: `mail-provider-port` dựng deadline của
+    // một request provider bằng `min(now + providerTimeoutMs, lease_expires_at)` (protected
+    // overlap giữa các generation). Lease == trần chờ sập deadline về lease expiry — không
+    // còn chỗ cho một lời gọi trọn vẹn: mọi request bị cắt ngắn ở lease expiry, theo
+    // contract adapter (`deadlineMs <= now`) trả `rejected`/`retryable` ⇒ RETRY, chưa bao
+    // giờ tới làn ambiguity. Chặn ở boot, message chỉ nêu tên env var.
     expect(() =>
       loadMailerJobConfig({
         ...baseEnv(),
@@ -47,6 +49,8 @@ describe('execution lease vs provider timeout cross-check', () => {
   });
 
   it('rejects an execution lease smaller than the provider timeout', () => {
+    // Cùng bất đẳng thức gia hạn §9.2.1 — lease nhỏ hơn trần chờ thì mọi request provider
+    // bị cắt với `rejected`/`retryable` ⇒ RETRY; cấu hình vô nghĩa phải chết ở boot.
     expect(() =>
       loadMailerJobConfig({
         ...baseEnv(),

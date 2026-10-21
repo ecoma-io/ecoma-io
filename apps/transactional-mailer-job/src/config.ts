@@ -130,18 +130,19 @@ export function loadMailerJobConfig(env: MailerJobEnv): LoadedMailerJobConfig {
     );
   }
 
-  // Kiểm chéo của lease execution: nó phải vượt trần chờ của MỘT request provider. Ranh
-  // giới bất biến về thời điểm: mơ hồ ở `resolveAmbiguityAfterLostClaim` (persist-denied)
-  // chỉ có thể phát hiện được sau ít nhất `providerTimeoutMs` kể từ `provider_call_at` —
-  // lease ngắn hơn hoặc bằng trần đó làm lời đánh giá của marker luôn quá muộn so với
-  // `leaseExpiresAt`, nên đường "còn trong cửa sổ ⇒ auto-resend" chết âm thầm và mọi mơ
-  // hồ của trường hợp persist-denied chốt `provider-ambiguous-outcome` (đỏi operator) chỉ
-  // vì cấu hình vô nghĩa. Bắt ở loader — cùng tinh thần với
-  // `MAIL_JOB_MAX_EXECUTION_ATTEMPTS >= 4`, không để operator tự phát hiện qua alert
-  // blocked backlog.
+  // Kiểm chéo của lease execution: ghim bất đẳng thức gia hạn §9.2.1 — "leaseMs phải lớn
+  // hơn runtime resolution + provider timeout + ghi D1 + margin" — thành điều kiện loader,
+  // vì `mail-provider-port` dựng deadline của một request provider bằng
+  // `min(now + providerTimeoutMs, lease_expires_at)` (chống overlap với generation kế sau
+  // khi lease được renew). Với `executionLeaseMs <= providerTimeoutMs`, deadline sập về
+  // lease expiry: không còn chỗ cho một lần gọi provider trọn vẹn nào trong lease, mọi
+  // request bị cắt ngắn ở lease expiry — theo contract adapter, request gặp
+  // `deadlineMs <= now` trả ngay `rejected`/`retryable` ⇒ RETRY, không bao giờ tới làn
+  // ambiguity. Bắt ở loader — cùng tinh thần với `MAIL_JOB_MAX_EXECUTION_ATTEMPTS >= 4`,
+  // không để operator tự phát hiện qua alert blocked backlog.
   if (executionLeaseMs <= providerTimeoutMs) {
     throw new MailerJobConfigError(
-      `${EXECUTION_LEASE_ENV} phai > ${PROVIDER_TIMEOUT_ENV} (lease ngan hon mot full request provider thi mo ho persist-denied luon qua muon so voi window)`,
+      `${EXECUTION_LEASE_ENV} phai > ${PROVIDER_TIMEOUT_ENV} (mot request provider tron ven phai vua trong lease - bat dang thuc gia han §9.2.1)`,
     );
   }
 
