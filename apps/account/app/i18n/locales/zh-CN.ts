@@ -21,6 +21,7 @@ const messages: AccountMessages = {
     optional: '可选',
     simulated: '模拟',
     unavailable: '不可用',
+    continue: '继续',
   },
 
   shell: {

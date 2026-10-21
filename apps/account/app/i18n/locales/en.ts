@@ -25,6 +25,7 @@ export default {
     optional: 'optional',
     simulated: 'Simulated',
     unavailable: 'Not available',
+    continue: 'Continue',
   },
 
   shell: {

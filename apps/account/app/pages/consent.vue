@@ -17,8 +17,9 @@
  * ⚠️ Sau khi quyết định, trang **không** điều hướng và **không** `reload()`:
  * handle đã bị tiêu thụ sau quyết định, nên nạp lại sẽ trả `undefined` → nhánh
  * `empty` với câu "yêu cầu không còn hợp lệ" phủ lên chính thông báo vừa thành
- * công. Việc tiếp tục redirect thuộc về `continue_url` do `auth` dựng; ở đây
- * chỉ có một nút quay lại `/login`, không có đường nào tự chọn đích.
+ * công. Việc tiếp tục là một **nút relay**: URL do `auth` dựng trong kết quả
+ * (`decideConsent` trả `continueUrl`), nút bấm điều hướng browser tới đó —
+ * trang không tự ghép chuỗi, không thêm tham số, và không tự điều hướng.
  */
 definePageMeta({ layout: 'auth' });
 
@@ -57,6 +58,13 @@ const context = computed(() => (state.value.kind === 'ready' ? state.value.value
 const deciding = ref(false);
 const decided = ref<{ tone: 'success' | 'danger'; message: string } | undefined>(undefined);
 /**
+ * URL tiếp theo do `auth` cấp khi quyết định thành công.
+ *
+ * ⚠️ Có mặt **chỉ** khi kết quả thành công; điều hướng bằng nút relay bên
+ * dưới (`continueToAuth`) — không tự động, không dựng URL khác.
+ */
+const continueUrlAfterDecision = ref<string | undefined>(undefined);
+/**
  * Quyết định đã thành công — handle đã bị tiêu thụ, không thử lại được.
  *
  * ⚠️ Tách khỏi `decided`: lưu hỏng thì handle chưa bị tiêu thụ và người dùng
@@ -71,6 +79,7 @@ async function decide(decision: 'approve' | 'deny'): Promise<void> {
   }
   deciding.value = true;
   decided.value = undefined;
+  continueUrlAfterDecision.value = undefined;
   try {
     const result = await adapter.decideConsent(handle, decision);
     decided.value = result.ok
@@ -78,15 +87,36 @@ async function decide(decision: 'approve' | 'deny'): Promise<void> {
           tone: 'success',
           message: i18n.t(decision === 'approve' ? 'consent.approve' : 'consent.deny'),
         }
-      : { tone: 'danger', message: `${i18n.t('states.saveFailed')}: ${result.reason}` };
+      : {
+          tone: 'danger',
+          message: `${i18n.t('states.saveFailed')}: ${result.reason}`,
+        };
     completed.value = result.ok;
+    continueUrlAfterDecision.value = result.ok ? result.value.continueUrl : undefined;
     // Không `reload()` sau quyết định: handle đã bị tiêu thụ, context cũ không còn
     // giá trị hiển thị và nhánh `empty` sẽ phủ đè lên thông báo kết quả. Nút bị
     // khoá sau khi thành công (`completed`) để không gửi lại một handle đã dùng —
     // `deciding` chỉ chặn được trong lúc promise còn chạy.
+  } catch {
+    // `decideConsent` có thể ném (fetch thô trong adapter thật) — lỗi ném cũng
+    // là quyết định thất bại; handle chưa bị tiêu thụ nên vẫn retry được.
+    decided.value = {
+      tone: 'danger',
+      message: `${i18n.t('states.saveFailed')}: network error`,
+    };
+    completed.value = false;
   } finally {
     deciding.value = false;
   }
+}
+
+/** relay `continueUrl` do `auth` cấp — điều hướng browser, không tự dựng URL. */
+function continueToAuth(): void {
+  const url = continueUrlAfterDecision.value;
+  if (typeof url !== 'string') {
+    return;
+  }
+  window.location.assign(url);
 }
 
 /**
@@ -102,6 +132,7 @@ watch(consentHandle, () => {
   decided.value = undefined;
   completed.value = false;
   deciding.value = false;
+  continueUrlAfterDecision.value = undefined;
   void reload();
 });
 </script>
@@ -141,7 +172,9 @@ watch(consentHandle, () => {
         <h1 class="text-xl font-semibold tracking-tight text-foam">
           {{ i18n.t('consent.title', { client: context.clientName }) }}
         </h1>
-        <p class="mt-2 text-sm text-muted">{{ i18n.t('consent.description') }}</p>
+        <p class="mt-2 text-sm text-muted">
+          {{ i18n.t('consent.description') }}
+        </p>
       </div>
 
       <div
@@ -150,12 +183,16 @@ watch(consentHandle, () => {
         role="note"
         data-testid="consent-high-risk"
       >
-        <p class="text-sm font-semibold text-danger">{{ i18n.t('consent.riskTitle') }}</p>
+        <p class="text-sm font-semibold text-danger">
+          {{ i18n.t('consent.riskTitle') }}
+        </p>
         <p class="mt-1 text-sm text-foam">{{ i18n.t('consent.risk') }}</p>
       </div>
 
       <div>
-        <h2 class="text-sm font-semibold text-foam">{{ i18n.t('consent.requests') }}</h2>
+        <h2 class="text-sm font-semibold text-foam">
+          {{ i18n.t('consent.requests') }}
+        </h2>
         <ul class="mt-2 divide-y divide-line" data-testid="consent-permissions">
           <li v-for="permission in context.permissions" :key="permission.label" class="py-2">
             <p class="text-sm font-medium text-foam">{{ permission.label }}</p>
@@ -193,5 +230,21 @@ watch(consentHandle, () => {
       đúng lúc người dùng cần thấy nhất.
     -->
     <AccountStatusMessage v-if="decided" :tone="decided.tone" :message="decided.message" />
+
+    <!--
+      Nút relay xuất hiện dưới thông báo quyết định, chỉ khi `auth` cấp URL.
+      Nút cũng nằm NGOÀI nhánh `context` — cùng lý do như `AccountStatusMessage`.
+      Trong preview (mock), `continueUrl` cố ý vắng mặt: nút không render và
+      không có redirect nào được dựng từ mock.
+    -->
+    <button
+      v-if="continueUrlAfterDecision !== undefined"
+      type="button"
+      class="account-button-primary"
+      data-testid="consent-continue"
+      @click="continueToAuth"
+    >
+      {{ i18n.t('common.continue') }}
+    </button>
   </section>
 </template>

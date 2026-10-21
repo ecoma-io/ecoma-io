@@ -2,6 +2,9 @@
   "files": [],
   "references": [
     {
+      "path": "../../libs/identity-auth-contracts"
+    },
+    {
       "path": "./.nuxt/tsconfig.app.json"
     },
     {

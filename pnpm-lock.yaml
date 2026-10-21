@@ -400,6 +400,9 @@ importers:
 
   apps/account:
     dependencies:
+      '@ecoma-io/identity-auth-contracts':
+        specifier: workspace:*
+        version: link:../../libs/identity-auth-contracts
       '@ecoma-io/identity-contracts':
         specifier: workspace:*
         version: link:../../libs/identity-contracts

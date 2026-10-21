@@ -17,12 +17,17 @@
  *
  * ⚠️ **Continuation handle không bị đụng.** `?handle=X` do `auth` đưa tới và được
  * chuyển tiếp nguyên vẹn trong `continue_handoff`, không đọc, không diễn giải, không
- * log, không đưa vào storage, không dán vào link khác. Adapter thật sẽ nhận nó ở
- * lúc bàn giao; bản mock không có BFF nên chỉ giữ nó cho tới bước tiếp theo.
+ * log, không đưa vào storage, không dán vào link khác. Adapter thật nhận nó ở
+ * lúc bàn giao qua `POST /api/auth/handoff` (server push
+ * `/internal/session/verified` về `auth`); bản mock không có BFF nên bàn giao
+ * giả lập chỉ giữ nguyên trạng thái.
  *
- * ⚠️ Không có chuyển hướng sau khi bấm nút. Đích đến là `/login/continue`, và việc
- * hoàn tất bàn giao là việc của BFF — không phải của một `navigateTo` bấm chuột
- * ở đây.
+ * ⚠️ **Bàn giao sau khi mã được chấp nhận.** Khi `continuationHandle` tồn tại,
+ * trang gọi `adapter.completeHandoff(handle)` ngay sau verify thành công và
+ * relay `continueUrl` bằng điều hướng browser (`window.location.assign`) — URL
+ * do `auth` dựng, trang KHÔNG tự ghép chuỗi hay thêm tham số. Khi handoff thất
+ * bại, người dùng thấy thông báo retry (mã OTP đã dùng; BFF push idempotent ⇒
+ * thử lại an toàn). Không handle ⇒ đăng nhập account thuần, giữ nguyên accepted.
  */
 import type { LoginChallenge } from '../../account-data/types';
 
@@ -38,6 +43,15 @@ const requestFailed = ref(false);
 const challenge = ref<LoginChallenge | undefined>(undefined);
 const code = ref('');
 const codeFailed = ref(false);
+
+/**
+ * Trạng thái bàn giao (handoff) sau khi mã được chấp nhận.
+ *
+ * `handoffFailed` cho phép retry; `handoffUnavailable` (mock) hiển thị dòng
+ * giải thích mà không hứa một URL tiếp theo nào — mock KHÔNG báo thành công.
+ */
+const handoffFailed = ref(false);
+const handoffUnavailable = ref(false);
 
 /**
  * Mã đã được chấp nhận hay chưa.
@@ -106,6 +120,10 @@ async function requestChallenge(): Promise<void> {
     } else {
       requestFailed.value = true;
     }
+  } catch {
+    // `postJson` dùng fetch thô — lỗi mạng/DNS ném thay vì trả `Result`; bỏ
+    // catch là một vòng retry im lặng (unhandled rejection, không trạng thái).
+    requestFailed.value = true;
   } finally {
     submitting.value = false;
   }
@@ -115,13 +133,70 @@ async function submitCode(): Promise<void> {
   submitting.value = true;
   codeFailed.value = false;
   codeAccepted.value = false;
+  handoffFailed.value = false;
+  handoffUnavailable.value = false;
   try {
     const verified = await adapter.verifyLoginCode(code.value.trim());
     codeFailed.value = !verified.ok;
     codeAccepted.value = verified.ok;
+  } catch {
+    // Lỗi ném (network/transport) cũng là verify thất bại — không để unhandled
+    // rejection; người dùng phải thấy trạng thái lỗi để có thể retry.
+    codeFailed.value = true;
+    codeAccepted.value = false;
   } finally {
     submitting.value = false;
   }
+
+  // Bàn giao chạy SAU khi `submitting` đã về `false`: màn hình phản hồi verify
+  // không được chờ handoff (đó là một lần gọi server khác; nếu auth chết thì
+  // response verify vẫn phải đến). Handle tiếp tục được dùng đúng một lần trong
+  // luồng này.
+  if (codeAccepted.value && continuationHandle.value !== undefined) {
+    await runHandoff(continuationHandle.value);
+  }
+}
+
+/**
+ * Đang bàn giao — cho phép hiện trạng retry sau khi thống nhất xong.
+ */
+const handingOff = ref(false);
+
+async function runHandoff(handle: string): Promise<void> {
+  handingOff.value = true;
+  handoffFailed.value = false;
+  handoffUnavailable.value = false;
+  try {
+    const result = await adapter.completeHandoff(handle);
+    if (result.ok && typeof result.value.continueUrl === 'string') {
+      // Đích do `auth` quyết định: relay nguyên vẹn — không tự ghép chuỗi, không
+      // thêm tham số. Điều hướng client-side SPA không dùng được vì URL có thể
+      // origin của app khác (RP); `window.location.assign` là trung thực nhất.
+      window.location.assign(result.value.continueUrl);
+      return;
+    }
+    if (result.ok) {
+      // `already_processed`: hợp đồng KHÔNG cấp URL ở outcome này. Hiện trạng
+      // "đang hoàn tất" thay vì lỗi — không hứa một đích mà hợp đồng không có.
+      handoffUnavailable.value = true;
+      return;
+    }
+    handoffFailed.value = true;
+  } catch {
+    // `completeHandoff` có thể ném (fetch thô trong adapter thật) — lỗi ném
+    // cũng là handoff thất bại; nuốt nó là trạng thái "im lặng" không có retry.
+    handoffFailed.value = true;
+  } finally {
+    handingOff.value = false;
+  }
+}
+
+/** Retry bàn giao sau khi fail — handle không đổi, vì push idempotent. */
+async function retryHandoff(): Promise<void> {
+  if (handingOff.value || continuationHandle.value === undefined) {
+    return;
+  }
+  await runHandoff(continuationHandle.value);
 }
 
 function startOver(): void {
@@ -131,13 +206,17 @@ function startOver(): void {
   codeAccepted.value = false;
   requestFailed.value = false;
   resendSent.value = false;
+  handoffFailed.value = false;
+  handoffUnavailable.value = false;
 }
 </script>
 
 <template>
   <section class="account-card space-y-5 p-6" data-testid="login-card">
     <div>
-      <h1 class="text-xl font-semibold tracking-tight text-foam">{{ i18n.t('login.title') }}</h1>
+      <h1 class="text-xl font-semibold tracking-tight text-foam">
+        {{ i18n.t('login.title') }}
+      </h1>
       <p class="mt-2 text-sm text-muted">{{ i18n.t('login.description') }}</p>
     </div>
 
@@ -171,7 +250,9 @@ function startOver(): void {
 
     <div v-else class="space-y-4" data-testid="login-challenge">
       <div>
-        <h2 class="text-base font-semibold text-foam">{{ i18n.t('login.checkTitle') }}</h2>
+        <h2 class="text-base font-semibold text-foam">
+          {{ i18n.t('login.checkTitle') }}
+        </h2>
         <p class="mt-1 text-sm text-muted">
           {{ i18n.t('login.checkBody', { email: challenge.email }) }}
         </p>
@@ -195,7 +276,9 @@ function startOver(): void {
             required
             data-testid="login-code"
           />
-          <p class="account-hint">{{ i18n.t('login.codeBody', { email: challenge.email }) }}</p>
+          <p class="account-hint">
+            {{ i18n.t('login.codeBody', { email: challenge.email }) }}
+          </p>
         </div>
         <button
           type="submit"
@@ -222,6 +305,36 @@ function startOver(): void {
           {{ i18n.t('login.codeAccepted') }}
         </p>
       </form>
+
+      <!--
+        Trạng thái bàn giao nằm NGOÀI form nhập mã: nó là kết quả của lần gọi
+        server thứ hai (handoff), không thuộc về vòng đời của form. Retry chỉ
+        có khi handoff thất bại — mock/preview không có server để bàn giao và
+        hiển thị `handoffUnavailable` thay vì một retry vô nghĩa hiển thị như thành công.
+      -->
+      <div v-if="handoffFailed" class="space-y-3" data-testid="login-handoff-retry">
+        <p class="text-sm text-danger" role="alert">
+          {{ i18n.t('loginContinue.errorTitle') }} —
+          {{ i18n.t('loginContinue.errorBody') }}
+        </p>
+        <button
+          type="button"
+          class="account-button-secondary"
+          :disabled="handingOff"
+          data-testid="login-handoff-retry-button"
+          @click="retryHandoff"
+        >
+          {{ i18n.t('common.retry') }}
+        </button>
+      </div>
+      <p
+        v-else-if="handoffUnavailable"
+        class="text-sm text-muted"
+        role="status"
+        data-testid="login-handoff-unavailable"
+      >
+        {{ i18n.t('loginContinue.body') }}
+      </p>
 
       <div class="flex flex-wrap gap-2">
         <button

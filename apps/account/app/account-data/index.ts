@@ -1,4 +1,9 @@
-export { createMockAccountAdapter, MOCK_CONSENT_HANDLE } from './mock-adapter';
+export {
+  createMockAccountAdapter,
+  MOCK_CONSENT_HANDLE,
+  type MockAdapterOptions,
+} from './mock-adapter';
+export { createServerAccountAdapter } from './real-adapter';
 export type {
   AccountAdapter,
   AccountEmail,

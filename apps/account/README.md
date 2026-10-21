@@ -9,18 +9,21 @@ Reference: `docs/overview/01-architecture.md` §2.
 
 ## Phạm vi app
 
-| Phần                                      | Trạng thái                                                    |
-| ----------------------------------------- | ------------------------------------------------------------- |
-| `GET /health`                             | có — protocol-only, không query DB                            |
-| `GET /ready`                              | có — kiểm `db-account`, fail closed                           |
-| `GET /internal/account/status`            | có — contract HMAC, `auth` là consumer                        |
-| `POST /api/auth/challenge`                | có — cấp OTP đăng nhập email, 204 anti-enumeration            |
-| `POST /api/auth/verify`                   | có — xác minh OTP, phát hành session cookie                   |
-| `GET /api/auth/session`                   | có — đọc session hiện tại (sliding idle)                      |
-| `POST /api/auth/logout`                   | có — thu hồi session + xoá cookie                             |
-| BFF cho browser (cookie session)          | **chỉ luồng email-OTP** — password/OIDC và consent UI chưa có |
-| Login / consent UI                        | **chưa có** (luồng OTP là API thuần)                          |
-| Back-channel contract mà `account` đẩy đi | **chưa có**                                                   |
+| Phần                                   | Trạng thái                                                                              |
+| -------------------------------------- | --------------------------------------------------------------------------------------- |
+| `GET /health`                          | có — protocol-only, không query DB                                                      |
+| `GET /ready`                           | có — kiểm `db-account`, fail closed                                                     |
+| `GET /internal/account/status`         | có — contract HMAC, `auth` là consumer                                                  |
+| `POST /api/auth/challenge`             | có — cấp OTP đăng nhập email, 204 anti-enumeration                                      |
+| `POST /api/auth/verify`                | có — xác minh OTP, phát hành session cookie                                             |
+| `GET /api/auth/session`                | có — đọc session hiện tại (sliding idle)                                                |
+| `POST /api/auth/logout`                | có — thu hồi session + xoá cookie                                                       |
+| `POST /api/auth/handoff`               | có — push `/internal/session/verified` về `auth` (BFF, kết quả nhánh fail trả HTTP 200) |
+| `POST /api/consent/context`            | có — proxy consent context từ `auth` cho UI consent                                     |
+| `POST /api/consent/decide`             | có — proxy quyết định consent (approve/deny) tới `auth`                                 |
+| Login UI (`/login`, `/login/continue`) | có — email-OTP qua server adapter; password/passkey vẫn mock (`isPreview`)              |
+| Consent UI (`/consent`)                | có — render context từ `auth`, relay `continueUrl` do auth cấp                          |
+| Data pages (`/emails`, `/security`, …) | **mock** — các thao tác dữ liệu tài khoản chưa có BFF thật, banner Preview vẫn hiển thị |
 
 ## Chạy
 
@@ -82,6 +85,45 @@ Xác thực bằng **envelope HMAC** qua ba header `x-ecoma-internal-timestamp`,
 vì Cloudflare không document bất kỳ tín hiệu nào cho Worker phân biệt request qua
 binding với request từ internet.
 
+### Back-channel `account → auth` (`auth-client.ts`)
+
+Hướng ngược lại: sau khi OTP được chấp nhận, `account` **đẩy** kết quả về `auth` qua
+cùng bộ header HMAC đó (`server/lib/auth-client.ts` — mirror của
+`apps/auth/src/account-client.ts`):
+
+- `POST /internal/session/verified` — sửa lỗi "login account xong nhưng transaction
+  của auth đứng yên". `event_id` = `session_verified:<session_ref>` nên retry của
+  BFF là idempotent (`already_processed`), không kích hoạt lại transaction.
+- `POST /internal/consent/context` / `POST /internal/consent/decide` consent cho
+  transaction `consent_pending`.
+
+Transport là Service Binding `AUTH_SERVICE` (`runtimeConfig.cloudflare.env.AUTH_SERVICE`)
+— khai trong `wrangler.jsonc` bên hạ tầng; **chưa có binding ⇒ fail-closed**
+(`binding_missing`), không có đường fetch public-origin thay thế. Secret ký là
+cùng `NUXT_INTERNAL_HMAC_SECRET` — hai đường auth-account dùng chung một dòng secret.
+
+## BFF routes cho browser
+
+Ba route `POST /api/auth/handoff`, `POST /api/consent/context`, `POST /api/consent/decide`
+dùng session cookie của app (không envelope HMAC — đường đó là của server):
+
+- Yêu cầu session **sống** với ACR thuộc `ACR_URN_VALUES` (`server/lib/bff-session.ts`);
+  thiếu session ⇒ `401`, CSRF double-submit sai (`x-ecoma-csrf` vs
+  `__Host-account-csrf`) ⇒ `403`.
+- Không có binding `AUTH_SERVICE` hay secret ⇒ chết rõ (`503`/`ok:false
+  binding_missing`), không có đường "coi như xong".
+- Lỗi từ phía auth (4xx/503/unreachable) trả `ok:false` với mã lý do ổn định ở
+  HTTP 200 — session không bị hủy, UI cho retry; các response không bao giờ tự
+  dựng `continueUrl`. (HTTP status của BFF cố định; mã lý do trong body mới là
+  chi tiết upstream — `rejected` = auth trả 4xx, `auth_unavailable` = auth trả
+  503, `unreachable` = không tới được auth.)
+- Kết quả relay bị kiểm shape trước khi coi là thành công: `granted`/
+  `consent_required` phải mang `continue_url` tuyệt đối, `already_processed`
+  không được mang `continue_url` (chỉ `transaction_state`) — lệch shape xếp
+  `invalid_response`, không relay tùy ý.
+- `handle`, `outcome`, `continue_url` đều được relay nguyên vẹn từ `auth`; BFF chỉ
+  map scope thành nhãn hiển thị (`mapScopes`) và flag `highRisk`.
+
 ## Vì sao `/health` không query DB
 
 `/health` chỉ chứng minh Worker đã khởi động. Nếu liveness phụ thuộc DB thì DB chết ⇒
@@ -110,11 +152,26 @@ Phần này liệt kê cái **không** tồn tại, để không ai đoán nhầ
   placeholder (`000…0`) cho tới khi config thật tồn tại; deploy sẽ fail tới lúc đó.
   Điền id giả vào production để "cho deploy chạy" là đổi một lỗi lộ ra sớm lấy một
   lỗi im lặng lúc chạy thật.
-- **Login / Consent UI chưa có.** Bảng `users`, `account_sessions`, `login_handoffs`,
-  `security_events`, `internal_nonces`, `email_addresses` và `otp_challenges` đã có
-  migration (`db/migrations/`) và được integration test phủ; các route BFF
-  `/api/auth/{challenge,verify,session,logout}` dùng `account_sessions` cho luồng
-  email-OTP — nhưng chưa có trang UI nào gọi chúng, và chưa có luồng password/OIDC.
+- **Service Binding `AUTH_SERVICE` chưa được khai báo.** `server/lib/auth-client.ts`
+  chỉ chứa **tên** binding (invariant 4); `wrangler.jsonc` chưa có mục khai
+  `AUTH_SERVICE` — do hạ tầng (Workstream E) provision. Chưa có binding thì ba
+  route BFF trên fail-closed như đã mô tả; không có URL dự phòng.
+- **Password / passkey / OIDC UI chưa có.** Chỉ luồng email-OTP được nối server;
+  các luồng còn lại trên `/login` vẫn dùng mock adapter (`isPreview: true`,
+  banner Preview hiển thị).
+- **Ràng buộc `login_handoffs` (handle X ↔ session) chưa được nối vào luồng xác
+  thực.** Bảng và trigger guard đã tồn tại trong migration
+  (`0001_identity_core.sql`, FR-006c2/c3/c4) và được integration test riêng phủ,
+  nhưng **không có code nào của route hiện tại ghi/đọc nó**: `POST /api/auth/handoff`
+  đẩy `session_verified` về auth mà chưa bind/cross-check handle X với session
+  đã trình nó, và `challenge`/`verify` chưa tạo binding lúc cấp handle (§3.6 của
+  docs — lớp bảo vệ thứ nhất chống ghi đè binding). Lớp thứ hai chống pre-binding
+  (cookie `__Host-auth-browser` phía auth) đã có sẵn phía auth
+  (`POST /internal/session/verified` từ chối transaction chưa `browser_confirmed`).
+  Cho tới khi có, first-binding-wins vẫn là thuộc tính của bảng — chưa phải một
+  quy tắc đang chạy. Theo dõi ở workstream riêng.
+- **Data pages vẫn mock.** Profile, emails, sessions, applications, privacy… chưa
+  có BFF; adapter thật vẫn là mock cho phần đó.
 - **Đường cấp emailAddresses chưa có.** Bảng `email_addresses` chỉ được test ghi trực
   tiếp bằng SQL; chưa có route/API nào cho user thêm/verify email của mình — cho tới
   khi đó, luồng OTP chỉ đăng nhập được địa chỉ được seed thủ công.
@@ -128,19 +185,9 @@ Phần này liệt kê cái **không** tồn tại, để không ai đoán nhầ
   PostgreSQL; hành vi Hyperdrive thật (transaction-mode pooling, query cache OFF)
   chỉ có ở môi trường deploy.
 - **transactional-mail thật chưa được đo.** Adapter gửi mail được test với fetch stub;
-  hợp đồng `POST /v1/messages` neo bằng validator của `transactional-mail-contracts`,
-  nhưng service thật (hiện là scaffold) chưa nhận mail nào từ đường này.
-
-### Test còn thiếu (sau khi integration suite chạy thật)
-
-Đây là phần còn lại của "chưa có test", viết sau khi suite tích hợp với
-PostgreSQL 17 thật (testcontainers) đã có; không liệt kê những gì suite đã phủ:
-
-- **`GET /ready`.** Chưa có test nào — kể cả nhánh fail-closed khi DB không trả
-  lời.
-- **Đường gọi qua Service Binding thật** (`auth → account`): test đi qua h3 app
-  trong cùng process, không qua Worker-to-Worker binding; hợp đồng chữ ký đã có
-  test, còn hạ tầng binding thì chưa.
+  hợp đồng `POST /v1/messages` neo bằng validator của `transactional-mail-contracts`
+  (gồm cả `Idempotency-Key` bắt buộc — replay trả 200, 409 là lỗi hợp đồng), nhưng
+  service thật (hiện là scaffold) chưa nhận mail nào từ đường này.
 - **Chạy trên Cloudflare Workers thật** (`wrangler dev` / Preview): không có
   smoke test nào sau deploy.
 
