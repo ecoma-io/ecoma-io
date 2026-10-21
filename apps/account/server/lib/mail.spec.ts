@@ -9,7 +9,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { buildOtpMailRequest, OTP_LOGIN_TEMPLATE, sendMail } from './mail';
+import { buildOtpMailRequest, OTP_LOGIN_TEMPLATE, otpMailIdempotencyKey, sendMail } from './mail';
 
 /** Response shape hợp lệ theo `isPostMessagesResponse`. */
 function validMailResponse(): Record<string, unknown> {
@@ -102,17 +102,23 @@ describe('sendMail', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('posts the validated payload to /v1/messages with json content-type', async () => {
+  it('posts the validated payload to /v1/messages with json content-type and the required Idempotency-Key', async () => {
+    // Contract receiver (`transactional-mail` FR-001 bước 3) bắt buộc
+    // `Idempotency-Key`: thiếu ⇒ `400 invalid_request` và mail không bao giờ tới
+    // hàng SEND. Assertion khớp ĐỦ headers thực tế — không `objectContaining` một
+    // shape thiếu header (chi tiết `mail.ts` `sendMail`).
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValue(new Response(JSON.stringify(validMailResponse()), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
     const result = await sendMail('https://mail.example.com', VALID_REQUEST);
     expect(result).toEqual({ ok: true });
-    expect(fetchMock).toHaveBeenCalledWith(
-      'https://mail.example.com/v1/messages',
-      expect.objectContaining({ method: 'POST', headers: { 'content-type': 'application/json' } }),
-    );
+    const init = fetchMock.mock.calls[0]?.[1];
+    expect(init?.method).toBe('POST');
+    expect(init?.headers).toEqual({
+      'content-type': 'application/json',
+      'idempotency-key': otpMailIdempotencyKey(VALID_REQUEST.correlation_id),
+    });
   });
 
   it('strips a trailing slash from the configured URL', async () => {
@@ -148,6 +154,35 @@ describe('sendMail', () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new TypeError('fetch failed')));
     const result = await sendMail('https://mail.example.com', VALID_REQUEST);
     expect(result).toEqual({ ok: false, reason: 'unreachable' });
+  });
+
+  describe('idempotency key semantics (FR-002 at the receiver)', () => {
+    it('derives a unique key per attempt and a stable key for the same attempt', () => {
+      // Two different attempts (different digests ⇒ different correlation ids) must
+      // never collide: a shared key would make the receiver answer `409
+      // idempotency_key_conflict` for the second, legitimate attempt — silent
+      // non-delivery at the OTP resend path.
+      const first = otpMailIdempotencyKey('abcdef1234567890');
+      const second = otpMailIdempotencyKey('fedcba0987654321');
+      expect(first).not.toBe(second);
+
+      // A retry of the SAME attempt (same correlation id) must reuse the same key:
+      // the receiver then answers `200` replay instead of double-sending.
+      expect(otpMailIdempotencyKey('abcdef1234567890')).toBe(first);
+    });
+
+    it('keeps the derived key inside the 128-character ceiling of the receiver', () => {
+      // FR-001 bước 3: `Idempotency-Key` > 128 ký tự ⇒ `400 invalid_request`.
+      const longestCorrelationId = '0'.repeat(16);
+      expect(otpMailIdempotencyKey(longestCorrelationId).length).toBeLessThanOrEqual(128);
+    });
+
+    it('falls back to a defined key when the request carries no correlation_id', () => {
+      // `correlation_id` là optional trong `PostMessagesRequest`; adapter không bao
+      // giờ tự thêm field vào body, nhưng header thì luôn phải có — không value
+      // undefined len vào header.
+      expect(otpMailIdempotencyKey(undefined)).toMatch(/^account-otp-corr-/u);
+    });
   });
 
   it('classifies a timeout as unreachable', async () => {
