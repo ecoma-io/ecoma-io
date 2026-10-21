@@ -8,7 +8,7 @@
     "prepare": "pnpm dx repo-prepare"
   },
   "dependencies": {
-    "jose": "6.2.12",
+    "jose": "6.2.13",
     "postgres": "3.4.9"
   },
   "devDependencies": {
