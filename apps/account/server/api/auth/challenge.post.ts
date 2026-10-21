@@ -90,6 +90,7 @@ import {
 } from '../../lib/otp';
 import { LOGIN_HANDOFF_TTL_SECONDS, bindHandleFirst, hashHandle } from '../../lib/handoff';
 import {
+  ANONYMOUS_SESSION_TTL_SECONDS,
   SESSION_COOKIE_NAME,
   SESSION_ABSOLUTE_SECONDS,
   createSessionIdentifier,
@@ -167,12 +168,18 @@ export default defineEventHandler(async (event) => {
   // response khác nhau ở đây là oracle cho kẻ dò đúng như mọi nhánh khác trên.
   if (body.handle !== undefined) {
     const handleHash = await hashHandle(body.handle);
-    let handoffOutcome: 'bound_to_current' | 'bound_to_other' | 'failed';
     try {
-      handoffOutcome = await withRequestPool(hyperdrive, async (handoffPool) => {
-        // Session trình X: cookie hiện có (nếu còn khớp một hàng) hoặc session
-        // anonymous được tạo ngay đây — FR-006c, X không bind vào "không có
-        // session".
+      await withRequestPool(hyperdrive, async (handoffPool) => {
+        // Session trình X: cookie hiện có (nếu còn khớp một hàng còn sống)
+        // hoặc session anonymous được tạo ngay đây — FR-006c, X không bind vào
+        // "không có session".
+        //
+        // L3: `expires_at` được kiểm ở đây chứ không chỉ `revoked_at` — một
+        // session đã quá idle-expiry nhưng chưa bị thu hồi không được chọn làm
+        // session trình X (nó sẽ bị `isSessionLive` của handoff route từ chối
+        // sau này, để lại binding orphan + một log `binding_mismatch` sai nhánh).
+        // Điều kiện `expires_at > now()` là chính phép kiểm của `isSessionLive`
+        // đẩy xuống SQL, đáng tin hơn đồng hồ Worker so với hàng.
         const previousCookie = getCookie(event, SESSION_COOKIE_NAME);
         let presentSessionRef: string | undefined;
         if (previousCookie !== undefined) {
@@ -182,34 +189,61 @@ export default defineEventHandler(async (event) => {
             revoked_at: Date | null;
           }>(
             `SELECT session_ref, revoked_at FROM account.account_sessions
-              WHERE id_hash = $1 LIMIT 1`,
+              WHERE id_hash = $1 AND revoked_at IS NULL AND expires_at > now()
+              LIMIT 1`,
             [idHash],
           );
           const row = existing.rows[0];
-          if (row !== undefined && row.revoked_at === null) {
+          if (row !== undefined) {
             presentSessionRef = row.session_ref;
           }
         }
         if (presentSessionRef === undefined) {
-          // Không cookie / cookie không khớp gì: cấp session anonymous mới.
-          // Rotate FR-004a lúc verify sẽ thu hồi nó trong cùng transaction —
-          // anonymous session chỉ là vật chứa của binding, không có quyền nào.
+          // Không cookie / cookie không khớp gì (hoặc đã chết): cấp session
+          // anonymous mới. Rotate FR-004a lúc verify sẽ thu hồi nó trong cùng
+          // transaction — anonymous session chỉ là vật chứa của binding,
+          // không có quyền nào.
+          //
+          // L2: hai Statement (session anonymous + binding) chạy trong **một**
+          // transaction `PoolClient` — cùng hình thức `insertAuthenticatedSession`
+          // (§3.6.2). Nếu binding fail sau khi session đã ghi trên `Pool` thuần,
+          // một hàng anonymous orphan không có đường dọn nào sẽ nằm lại; quấn
+          // transaction khiến hai bước cùng thành công hay cùng không có gì —
+          // đúng nghĩa "X không bind vào một session không tồn tại được phép
+          // sinh ra".
           const identifier = createSessionIdentifier();
+          const idHash = await hashSessionIdentifier(identifier);
           const anonymousRef = await hashSessionIdentifier(`${identifier}:ref:anonymous`);
-          await insertAnonymousSession(handoffPool, {
-            idHash: await hashSessionIdentifier(identifier),
-            sessionRef: anonymousRef,
-            expiresAt: new Date(Date.now() + 10 * 60 * 1000),
-          });
-          // Cookie đi ra ngoài response ở cuối handler — cùng thuộc tính với
-          // cookie của verify (FR-004).
-          setCookie(event, SESSION_COOKIE_NAME, identifier, {
-            maxAge: SESSION_ABSOLUTE_SECONDS,
-            path: '/',
-            secure: true,
-            httpOnly: true,
-            sameSite: 'lax',
-          });
+          const client = await handoffPool.connect();
+          try {
+            await client.query('BEGIN');
+            await insertAnonymousSession(client, {
+              idHash,
+              sessionRef: anonymousRef,
+              expiresAt: new Date(Date.now() + ANONYMOUS_SESSION_TTL_SECONDS * 1000),
+            });
+            // Cookie đi ra ngoài response ở cuối handler — cùng thuộc tính với
+            // cookie của verify (FR-004). Cookie chỉ được cấp sau khi ghi DB của nhánh
+            // này thành công — một session đã rollback không rò cookie ra browser.
+            setCookie(event, SESSION_COOKIE_NAME, identifier, {
+              maxAge: SESSION_ABSOLUTE_SECONDS,
+              path: '/',
+              secure: true,
+              httpOnly: true,
+              sameSite: 'lax',
+            });
+            await bindHandleFirst(client, {
+              handleHash,
+              presentSessionRef: anonymousRef,
+              expiresAt: new Date(Date.now() + LOGIN_HANDOFF_TTL_SECONDS * 1000),
+            });
+            await client.query('COMMIT');
+          } catch (error) {
+            await client.query('ROLLBACK').catch(() => undefined);
+            throw error;
+          } finally {
+            client.release();
+          }
           presentSessionRef = anonymousRef;
         }
 
@@ -226,9 +260,7 @@ export default defineEventHandler(async (event) => {
           status: 204,
           bound_to_current: binding.session_ref === presentSessionRef,
         });
-        return binding.session_ref === presentSessionRef
-          ? ('bound_to_current' as const)
-          : ('bound_to_other' as const);
+        return undefined;
       });
     } catch {
       // DB chết khi ghi binding: 503 chung như mọi lỗi DB của route. Không có
@@ -242,9 +274,6 @@ export default defineEventHandler(async (event) => {
       });
       throw createError({ statusCode: 503, statusMessage: 'Service Unavailable' });
     }
-    // `handoffOutcome` chỉ là chi tiết quan sát; response được quyết định bởi
-    // phần cấp mã phía dưới — nhánh binding không đổi anti-enumeration của nó.
-    void handoffOutcome;
   }
 
   let outcome: 'sent' | 'silently_rejected';

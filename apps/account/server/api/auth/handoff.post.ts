@@ -216,7 +216,12 @@ export default defineEventHandler(async (event): Promise<HandoffResponse> => {
       }),
     );
   } catch {
-    // Chi tiết vòng đời — không đổi kết quả push đã thành công.
+    // Chi tiết vòng đời — không đổi kết quả push đã thành công. Nhưng
+    // im lặng hoàn toàn là mất vết: một DB hiccup tại nhánh này là nhánh duy
+    // nhất dẫn tới handoff có thể được dùng lần thứ hai (binding vẫn `bound`/
+    // `session_rotated` sau khi push đã ok). Log hash — không giá trị handle
+    // rõ, không session_ref (§3.6, SR-001) — để nhánh hỏng này triage được.
+    writeLog({ event: 'handoff.consume_failed', status: 200, handle_hash: handleHash });
   }
 
   writeLog({

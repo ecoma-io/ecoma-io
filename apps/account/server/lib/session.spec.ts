@@ -11,7 +11,10 @@ import { describe, expect, it } from 'vitest';
 
 import { ACR } from '@ecoma-io/identity-domain';
 
+import { LOGIN_HANDOFF_TTL_SECONDS } from './handoff';
+
 import {
+  ANONYMOUS_SESSION_TTL_SECONDS,
   createCsrfToken,
   createSessionIdentifier,
   csrfCookie,
@@ -45,6 +48,15 @@ describe('session policy constants', () => {
     // nếu lib đổi cách biểu diễn, test này bắt ngay.
     expect(OTP_ACR).toBe(ACR.EmailOtp);
     expect(OTP_ACR).toBe('urn:ecoma:acr:email-otp');
+  });
+
+  it('pins the anonymous session TTL to the same 10-minute mark as the handoff binding', () => {
+    // Session anonymous chỉ là vật chứa của binding handoff (FR-006c): TTL của
+    // nó cùng mốc 10 phút với `LOGIN_HANDOFF_TTL_SECONDS` — binding không sống
+    // sót quá container session trình nó. Đổi một trong hai mốc mà không đổi
+    // mốc kia là hỏng cặp bất biến này; test này buộc hai bên cùng biết.
+    expect(ANONYMOUS_SESSION_TTL_SECONDS).toBe(600);
+    expect(ANONYMOUS_SESSION_TTL_SECONDS).toBe(LOGIN_HANDOFF_TTL_SECONDS);
   });
 });
 

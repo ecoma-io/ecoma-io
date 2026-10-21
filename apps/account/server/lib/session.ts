@@ -40,6 +40,21 @@ export const SESSION_IDLE_SECONDS = 12 * 3600;
 /** Absolute lifetime của session (giây) — 7 ngày. */
 export const SESSION_ABSOLUTE_SECONDS = 7 * 24 * 3600;
 
+/**
+ * TTL của session anonymous (giây) — 10 phút, **cùng mốc** với
+ * `LOGIN_HANDOFF_TTL_SECONDS` của `server/lib/handoff.ts` (bằng TTL transaction
+ * phía auth).
+ *
+ * ⚠️ Đây là TTL **chỉ áp lên hàng DB** (`expires_at` của `account_sessions`
+ * anonymous), không áp lên cookie: cookie được cấp với `Max-Age`
+ * `SESSION_ABSOLUTE_SECONDS` như mọi session. Session anonymous chỉ là vật
+ * chứa của binding handoff (FR-006c) — rotate FR-004a lúc verify thu hồi nó
+ * trong cùng transaction; nếu luồng dừng giữa chừng, hàng tự hết IDC sau 10
+ * phút và không sống sót quá TTL của chính binding nó chứa. Đổi một trong hai
+ * mốc phải qua test pin ở `session.spec.ts` / `handoff.spec.ts`.
+ */
+export const ANONYMOUS_SESSION_TTL_SECONDS = 600;
+
 /** Độ dài byte của session identifier — 256 bit entropy, FR-004. */
 export const SESSION_ID_BYTES = 32;
 
@@ -287,7 +302,7 @@ async function carryHandoffInsideRotation(
  * ({@link insertAuthenticatedSession}).
  */
 export async function insertAnonymousSession(
-  pool: import('pg').Pool,
+  pool: import('pg').Pool | import('pg').PoolClient,
   params: {
     idHash: string;
     sessionRef: string;

@@ -83,7 +83,7 @@ export async function hashHandle(handle: string): Promise<string> {
  * @returns Binding hiện tại của handle sau lệnh INSERT.
  */
 export async function bindHandleFirst(
-  pool: import('pg').Pool,
+  pool: import('pg').Pool | import('pg').PoolClient,
   params: {
     /** Hash của handle X — không truyền handle rõ. */
     handleHash: string;
@@ -259,6 +259,17 @@ export async function consumeHandoff(
 
 /**
  * Đánh dấu `expired` các binding quá TTL — hygiene vòng đời, FR-006g.
+ *
+ * ⚠️ Hàm này **không** phải prune job: nó mark đúng **một** handle mà route
+ * đang chạm, không quét theo mốc thời gian. Index
+ * `login_handoffs_expires_at_idx (expires_at)` của `0001` được tạo cho một câu
+ * `DELETE` theo TTL **chưa tồn tại** ở bất kỳ đâu trong repo — cùng hình thức
+ * gap đã ghi cho `otp_challenges` (`docs/services/account/03-operations.md`
+ * §3.3: "grant DELETE đã có, nhưng chưa có job nào dùng nó"). Follow-up prune
+ * nên gộp hai bảng này vào cùng một job. growth tại đây không thiếu an toàn:
+ * TTL 600s chặn cứng tuổi hàng, và một hàng chỉ sinh mỗi lần `/login?handle=`
+ * được gọi — nhưng comment của index (0001) mô tả một query thực tế chưa có
+ * caller; đừng đọc comment đó mà tưởng job đã tồn tại.
  *
  * Quyết định fail-closed **không** phụ thuộc việc hàng đã được mark hay chưa:
  * `checkHandoffBinding` so `expires_at` trực tiếp với mốc thời gian, mark chỉ
