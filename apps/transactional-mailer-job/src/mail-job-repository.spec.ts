@@ -993,6 +993,126 @@ describe('markProviderAmbiguityBlocked — statement (g)', () => {
   });
 });
 
+describe('redrive of a provider-ambiguous-outcome job re-blocks on a stale marker', () => {
+  it('re-blocks immediately on the first post-redrive attempt and never opens a second provider window', async () => {
+    // Trạng thái đầu vào: job đã `blocked` (`provider-ambiguous-outcome`) với marker ngoài
+    // cửa sổ từ trước khi block (đúng tình huống §9.4 bước 0 + `03-operations.md` §3.1
+    // hàng 8a). Operator redrive có authorize ⇒ statement (b) claim sang generation mới.
+    // Kỳ vọng: attempt đầu của generation mới KHÔNG mở lại cửa sổ gọi provider —
+    // statement (e) trả `already-marked` với marker cũ (per-delivery, không reset), và
+    // statement (g) chốt `blocked` lại ngay. Marker giữ nguyên mốc gốc xuyên generation.
+    const newGen = 2;
+    await insertRawRow('delivery-redrive-reblock', {
+      status: 'blocked',
+      last_error_class: 'provider-ambiguous-outcome',
+      outcome_report_state: 'pending',
+      provider_call_at: T0 - 25 * 60 * 60 * 1000, // marker stale: ngoài cửa sổ 24h từ T0
+      blocked_at: T0 - 1_000,
+    });
+
+    // Redrive: statement (b) đưa row sang generation mới, nhận lease, trong khi marker
+    // vẫn là mốc cũ của generation trước (SET clause của (b) không đụng cột này).
+    const advanced = await repo.claimGenerationAdvance({
+      deliveryId: 'delivery-redrive-reblock',
+      newDispatchGeneration: 2,
+      owner: 'owner-redrive',
+      nowMs: T0,
+      leaseMs: LEASE_MS,
+    });
+    expect(advanced.kind).toBe('claimed');
+    expect((await loadOrThrow('delivery-redrive-reblock')).dispatchGeneration).toBe(newGen);
+
+    // Attempt đầu của generation mới chạm ranh giới gọi provider: statement (e) trả
+    // `already-marked` kèm marker cũ — KHÔNG phải `applied`, tức không mở cửa sổ mới.
+    const marked = await repo.markProviderCallBoundary({
+      deliveryId: 'delivery-redrive-reblock',
+      owner: 'owner-redrive',
+      executionGeneration: 1,
+      dispatchGeneration: newGen,
+      nowMs: T0 + 1,
+    });
+    if (marked.kind !== 'denied' || marked.reason !== 'already-marked') {
+      throw new Error(`expected already-marked denial, got ${JSON.stringify(marked)}`);
+    }
+    // Denial kèm `record`: record này là nguồn executor dùng để đo tuổi marker —
+    // marker trong record phải là mốc gốc của generation trước, không mốc mới.
+    expect(marked.record?.providerCallAt ?? null).toBe(T0 - 25 * 60 * 60 * 1000);
+    expect((await loadOrThrow('delivery-redrive-reblock')).providerCallAt).toBe(
+      T0 - 25 * 60 * 60 * 1000,
+    );
+
+    // executor đánh giá tuổi marker (`isWithinProviderSafeWindow`): 25h > 24h ⇒ false,
+    // release lease không-kết-quả rồi statement (g) chốt `blocked` lại ngay attempt đầu.
+    const released = await repo.releaseExecutionLease({
+      deliveryId: 'delivery-redrive-reblock',
+      owner: 'owner-redrive',
+      executionGeneration: 1,
+      dispatchGeneration: newGen,
+      nowMs: T0 + 2,
+      lastError: undefined,
+      lastErrorClass: 'provider-ambiguous-outcome',
+    });
+    expect(released.kind).toBe('applied');
+
+    const reblocked = await repo.markProviderAmbiguityBlocked({
+      deliveryId: 'delivery-redrive-reblock',
+      dispatchGeneration: newGen,
+      nowMs: T0 + 3,
+    });
+    expect(reblocked.kind).toBe('applied');
+
+    const record = await loadOrThrow('delivery-redrive-reblock');
+    expect(record.status).toBe('blocked');
+    expect(record.lastErrorClass).toBe('provider-ambiguous-outcome');
+    expect(record.blockedAt).toBe(T0 + 3);
+    expect(record.outcomeReportState).toBe('pending');
+    expect(record.leaseOwner).toBeNull();
+    // Marker KHÔNG bị reset bởi bất kỳ statement nào — mốc gốc của provider attempt
+    // đầu tiên vẫn là "sự thật về thế giới", đo cửa sổ xuyên generation.
+    expect(record.providerCallAt).toBe(T0 - 25 * 60 * 60 * 1000);
+  });
+
+  it('does not open a provider window on the first attempt when the redrive lands within the old marker window', async () => {
+    // Đối chiếu biên: marker chỉ 1h tuổi ⇒ `already-marked` NHƯNG vẫn trong cửa sổ ⇒
+    // executor vẫn được gọi lại (provider còn giữ key) — hành vi in-window là đường bình
+    // thường, khác hẳn ca stale-marker ở trên. Test này khoá biên còn lại của cùng cơ chế.
+    await insertRawRow('delivery-redrive-inwindow', {
+      status: 'blocked',
+      last_error_class: 'provider-ambiguous-outcome',
+      outcome_report_state: 'pending',
+      provider_call_at: T0 - 1 * 60 * 60 * 1000,
+      blocked_at: T0 - 1_000,
+    });
+
+    const advanced = await repo.claimGenerationAdvance({
+      deliveryId: 'delivery-redrive-inwindow',
+      newDispatchGeneration: 2,
+      owner: 'owner-redrive',
+      nowMs: T0,
+      leaseMs: LEASE_MS,
+    });
+    expect(advanced.kind).toBe('claimed');
+
+    const marked = await repo.markProviderCallBoundary({
+      deliveryId: 'delivery-redrive-inwindow',
+      owner: 'owner-redrive',
+      executionGeneration: 1,
+      dispatchGeneration: 2,
+      nowMs: T0 + 1,
+    });
+    if (marked.kind !== 'denied' || marked.reason !== 'already-marked') {
+      throw new Error(`expected already-marked denial, got ${JSON.stringify(marked)}`);
+    }
+    // Contract của (e): denial `already-marked` luôn kèm `record` — executor quyết bằng
+    // record này, không read-back riêng.
+    expect(marked.record?.providerCallAt ?? null).toBe(T0 - 1 * 60 * 60 * 1000);
+    // In-window: neo cửa sổ vẫn là marker gốc — KHÔNG mở lại từ thời điểm redrive.
+    expect((await loadOrThrow('delivery-redrive-inwindow')).providerCallAt).toBe(
+      T0 - 1 * 60 * 60 * 1000,
+    );
+  });
+});
+
 describe('renewExecutionLease', () => {
   it('extends the lease only for the current owner token', async () => {
     await seedPending('delivery-renew');
