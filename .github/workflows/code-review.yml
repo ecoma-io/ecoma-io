@@ -168,11 +168,34 @@ jobs:
           # đề môi trường của action mà không có lý do.
           rm -rf "$GITHUB_WORKSPACE/ocr-probe"
 
+      - name: Generate app token
+        if: steps.pr.outputs.skip_review != 'true'
+        id: app-token
+        # Pin như mọi third-party action trong repo; v3.3.0 của
+        # actions/create-github-app-token. Token minted chỉ cho repo hiện tại,
+        # với đúng quyền mà action OCR cần: pull_requests: write để đọc/đăng
+        # review comment, contents: write vì `resolve_outdated: 'true'` gate
+        # mutation resolve trên quyền repo-write chứ không phải scope
+        # pull-requests (action tự tài liệu hoá yêu cầu này). Hạn mức API của
+        # token này là 5,000 requests/hour per installation của App
+        # (scale +50 rph/repo trên 20 repos, +50 rph/user trên 20 users, trần
+        # 12,500 rph) — cao hơn 1,000 rph/repo của `github.token` và không dùng
+        # chung băng với các workflow khác.
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.ECOMA_APP_ID }}
+          private-key: ${{ secrets.ECOMA_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-pull-requests: write
+          permission-contents: write
+
       - name: Review the pull request
         id: ocr
         if: steps.pr.outputs.skip_review != 'true'
         uses: alibaba/open-code-review@55450a95e5999dfd00ec2d582c23d76e269922fb # v1.13.2
         with:
+          github_token: ${{ steps.app-token.outputs.token }}
           base_ref: ${{ steps.pr.outputs.base_ref }}
           head_sha: ${{ steps.pr.outputs.head_sha }}
           # pr_number/full_review chỉ có giá trị trên dispatch; trên trigger
