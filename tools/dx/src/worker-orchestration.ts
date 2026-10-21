@@ -1,8 +1,13 @@
 /**
- * PR4 — orchestration local Worker runtime: bring up / status / bring down
- * runtime hai process của mail bounded context cho MỘT worktree.
+ * PR6 — orchestration local Worker runtime: bring up / status / bring down
+ * runtime Worker của MỌI app ecoma cho MỘT worktree, theo DISCOVERY: scan
+ * `apps/<dir>/wrangler.jsonc` committed → suy topology (service binding +
+ * queue producer/consumer) → boot topological (worker-orchestration.ts chỉ
+ * giữ phần cơ chế; danh sách app KHÔNG hardcode ở đây nữa — PR4 từng ghim
+ * hai entry mail, PR6 mở thành registry tự động).
  *
- * Topology (đo thật trong PR1 — docs/services/local-platform/04-worker-runtime-spike.md):
+ * Boot order tiêu biểu của hai bound context (đo thật trong PR1 —
+ * docs/services/local-platform/04-worker-runtime-spike.md):
  *
  * - control plane `ecoma-transactional-mail` — process `wrangler dev` đầu
  *   tiên, để service binding peer có mặt khi consumer boot (trạng thái
@@ -29,9 +34,9 @@ import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 
-import { ROOT_DIR } from './utils.js';
 import { normalizeWorktreeRoot, worktreeNamespace } from './deploy-namespace.js';
 import { safeUnlinkIfSame } from './local-lock.js';
+import { discoverWorkerEntries, type DiscoveredWorkerEntry } from './worker-discovery.js';
 import {
   allocateWorkerPort,
   applyLocalD1Migrations,
@@ -57,7 +62,7 @@ import {
 } from './worker-process.js';
 
 // -------------------------------------------------------------------
-// Bản đồ Worker chuẩn của PR4
+// Discovery → WorkerEntry bridge (PR6)
 // -------------------------------------------------------------------
 
 /** Probe readiness kiểu HTTP — poll một đường GET tới khi 2xx. */
@@ -69,10 +74,9 @@ export interface HttpHealthReadiness {
 /**
  * Probe readiness kiểu log-banner — chờ boot banner trên stdout/stderr.
  *
- * Dùng cho worker KHÔNG expose HTTP. Pattern là một regex tùy entry; pattern
- * mặc định `/ready|listening|http/iu` là PHỎNG ĐOÁN về chuỗi wrangler 4.151
- * in khi dev server sẵn sàng (không chạy được wrangler thật trong unit test
- * để đo chuỗi chính xác — cần verify bằng tay, ghi ở báo cáo PR).
+ * Dùng cho worker KHÔNG expose HTTP. Pattern cố định
+ * `/Ready on http/u` — banner wrangler 4.x case-sensitive (xem
+ * `WRANGLER_READY_BANNER` bên dưới, lý do chi tiết ở đó).
  */
 export interface LogBannerReadiness {
   kind: 'log-banner';
@@ -81,11 +85,15 @@ export interface LogBannerReadiness {
 
 export type WorkerReadiness = HttpHealthReadiness | LogBannerReadiness;
 
-/** Bản mô tả một lệnh của mail graph local thuộc một worktree. */
+/**
+ * Bản mô tả một Worker app trong local runtime của một worktree (PR6):
+ * mỗi trường đến từ discovery trên committed `apps/<dir>/wrangler.jsonc`,
+ * cộng seed files tùy chọn do caller truyền.
+ */
 export interface MailWorkerEntry {
   /** Tên của file metadata trong stateDir — phải pass `isValidEntryName`. */
   entryName: string;
-  /** Đường committed wrangler config tuyệt đối (relative với ROOT_DIR). */
+  /** Đường committed wrangler config tuyệt đối (dẫn xuất từ ROOT_DIR). */
   committedConfigPath: string;
   /** `database_name` của D1 — dùng cho `wrangler d1 migrations apply`. */
   databaseName: string;
@@ -98,20 +106,56 @@ export interface MailWorkerEntry {
   label: string;
 }
 
-/** Control plane — D1 `mail`, expose `/health` (200 không chạm D1/Queue, PR1). */
-const TRANSACTIONAL_MAIL_ENTRY: MailWorkerEntry = {
-  entryName: 'transactional-mail',
-  committedConfigPath: join(ROOT_DIR, 'apps', 'transactional-mail', 'wrangler.jsonc'),
-  databaseName: 'mail',
-  appDir: join(ROOT_DIR, 'apps', 'transactional-mail'),
-  seedFiles: [],
-  readiness: { kind: 'http-health', path: '/health' },
-  label: 'mail control plane',
-};
+/**
+ * Bridge PR6: entry list static của PR4 (mảng `MAIL_WORKER_ENTRIES` ghim hai
+ * entry mail) thay bằng discovery động — scan `<rootDir>/apps/<dir>/wrangler.jsonc`
+ * (source of truth), suy topology → boot topological. `rootDir` là worktree
+ * root của runtime đang điều khiển (không phải checkout hiện hành):
+ * worktree nào có apps đó local runtime đó chạy — test dùng fixture được và
+ * hai worktree không đụng apps của nhau. Function giữ tên cũ cho caller.
+ */
+export function MAIL_WORKER_ENTRIES(worktreeRoot?: string): readonly MailWorkerEntry[] {
+  return discoverWorkerEntries(worktreeRoot).map(discoveryToWorkerEntry);
+}
+
+/**
+ * Chuyển DiscoveredWorkerEntry → MailWorkerEntry của orchestration: readiness
+ * `log-banner` lấy pattern chuẩn `WRANGLER_READY_BANNER`, HTTP thì đường
+ * `/health` chung.
+ */
+export function discoveryToWorkerEntry(discovered: DiscoveredWorkerEntry): MailWorkerEntry {
+  // Bridge chỉ mang MỘT database (contract hiện tại của MailWorkerEntry).
+  // App khai ≥2 `d1_databases` sẽ boot bình thường mà database thứ hai không
+  // bao giờ được migrate (`no such table` lúc runtime, khó chẩn đoán) —
+  // fail-loud ngay từ composition, đúng principle no-inference: mở rộng sang
+  // multi-DB là thay đổi hợp đồng interface, làm tường minh.
+  if (discovered.databaseNames.length > 1) {
+    throw new Error(
+      `app '${discovered.entryName}' khai ${discovered.databaseNames.length} D1 database ` +
+        `(${discovered.databaseNames.join(', ')}) — bridge MailWorkerEntry chỉ hỗ trợ ` +
+        'một database; mở rộng sang databaseNames[] trên MailWorkerEntry trước khi khai thêm D1',
+    );
+  }
+  // Default `''` trong destructuring đã bảo đảm chuỗi — `?? ''` là biểu thức
+  // chết và eslint không báo; giữ destructuring only.
+  const [primaryDatabase = ''] = discovered.databaseNames;
+  return {
+    entryName: discovered.entryName,
+    committedConfigPath: discovered.committedConfigPath,
+    databaseName: primaryDatabase,
+    appDir: discovered.appDir,
+    seedFiles: [],
+    readiness:
+      discovered.readiness === 'http-health'
+        ? { kind: 'http-health', path: '/health' }
+        : { kind: 'log-banner', pattern: WRANGLER_READY_BANNER },
+    label: discovered.label,
+  };
+}
 
 /**
  * Boot banner chuẩn của Wrangler 4.x khi dev server SẴN SÀNG: dòng
- * `Ready on http://...`. Video banner của failed bind/đang-đ连线 cũng chứa
+ * `Ready on http://...`. Banner của failed bind/đang kết nối cũng chứa
  * "http", nhưng KHÔNG chứa cụm "Ready on" — pattern này phân biệt được
  * ready-thật khỏi output khởi động sớm (OCR PR #36 medium: pattern
  * `/ready|listening|http/iu` quá rộng, match "http://..." ở bất kỳ dòng
@@ -122,27 +166,6 @@ const TRANSACTIONAL_MAIL_ENTRY: MailWorkerEntry = {
  * banner ở version sau, đây là chỗ duy nhất phải sửa.
  */
 const WRANGLER_READY_BANNER = /Ready on http/u;
-
-/** Consumer — D1 `mail-job`, không expose HTTP; readiness qua boot banner. */
-const TRANSACTIONAL_MAILER_JOB_ENTRY: MailWorkerEntry = {
-  entryName: 'transactional-mailer-job',
-  committedConfigPath: join(ROOT_DIR, 'apps', 'transactional-mailer-job', 'wrangler.jsonc'),
-  databaseName: 'mail-job',
-  appDir: join(ROOT_DIR, 'apps', 'transactional-mailer-job'),
-  seedFiles: [],
-  readiness: { kind: 'log-banner', pattern: WRANGLER_READY_BANNER },
-  label: 'mail delivery worker',
-};
-
-/**
- * Thứ tự boot cố định: control plane TRƯỚC consumer (service binding peer
- * phải có mặt khi consumer boot — evidence PR1). Cùng thứ tự này áp cho
- * `stop` (teardown theo thứ tự boot ngược — consumer trước).
- */
-export const MAIL_WORKER_ENTRIES: readonly MailWorkerEntry[] = [
-  TRANSACTIONAL_MAIL_ENTRY,
-  TRANSACTIONAL_MAILER_JOB_ENTRY,
-];
 
 // -------------------------------------------------------------------
 // Port probe + allocation
@@ -479,10 +502,22 @@ export async function startWorkerRuntime(
   // runtime sống (port shifted), chạy migrations lại trên persist dir chia
   // sẻ, rồi mới bị startWorkerProcess từ chối với message mơ hồ. Scan một
   // lần trước mọi tác động là đủ, và message chỉ thẳng cách khắc phục.
+  // PR6 + OCR round-2 (F1): guard chặn trên MỌI record alive của stateDir,
+  // KHÔNG lọc theo tập entry của discovery hiện tại. Invariant được bảo vệ
+  // là tính độc quyền của stateDir/persist dir theo worktree: mọi record
+  // alive là process CLI này spawn và đang giữ cùng persist dir (D1/Queue
+  // local chia sẻ) — discovery là động (marker bị xoá, app dir đổi tên) nên
+  // runtime cũ sống có thể rơi ra ngoài tập discovered; lọc theo discovery
+  // làm mất chặn và cho phép HAI bộ `wrangler dev` cùng chạy trên một persist
+  // dir. Record không alive (stale/unspawned/invalid) không phải process sống
+  // — không thuộc guard này; `-down` dọn chúng.
+  // OCR round-4 (F1): alive-guard chạy TRƯỚC discovery. Lý do: discovery có
+  // thể throw (topology lỗi, config sai shape) — nếu throw trước, người dùng
+  // không bao giờ thấy hướng dẫn dọn runtime cũ, dù một process stale còn
+  // sống đang giữ port + persist dir. Scan alive là thao tác rẻ và không
+  // throw; discovery (lỗi hình thức của config) đứng sau guard này.
   const aliveEntries = scanWorkerProcesses(stateDir).filter(
-    (candidate) =>
-      candidate.state === 'alive' &&
-      MAIL_WORKER_ENTRIES.some((standard) => standard.entryName === candidate.name),
+    (candidate) => candidate.state === 'alive',
   );
   if (aliveEntries.length > 0) {
     throw new Error(
@@ -490,16 +525,20 @@ export async function startWorkerRuntime(
         'dùng `pnpm dx local-worker-status` để xem, hoặc `pnpm dx local-worker-down` trước khi up lại',
     );
   }
+  const entries = MAIL_WORKER_ENTRIES(worktreeRoot);
 
   const rows: WorkerRuntimeRow[] = [];
-  for (const entry of MAIL_WORKER_ENTRIES) {
+  for (const entry of entries) {
     if (!isValidEntryName(entry.entryName)) {
       throw new Error(`invalid entry name ${entry.entryName} — tightening stateDir entry`);
     }
 
     // 1. Probe port mong muốn trước khi sinh config; nếu bận thì thử offset
     //    tăng dần (tối đa MAX_PORT_CANDIDATES), rồi sinh config với port
-    //    DÙNG CUỐI — chính là port được ghi vào row kết quả.
+    //    DÙNG CUỐI — chính là port được ghi vào row kết quả. PR6: committed
+    //    `dev.port` của app (ví dụ backoffice 4201) bị OVERRIDE — port chạy
+    //    theo namespace hash của worktree, để hai worktree trên cùng một host
+    //    không bao giờ tranh cùng một port tĩnh.
     const desiredPort = allocateWorkerPortFor(worktreeRoot, entry.entryName);
     let generated: GeneratedWorkerConfigResult | undefined;
     let finalPort: number | undefined;
@@ -522,25 +561,29 @@ export async function startWorkerRuntime(
       );
     }
 
-    // 2. Migration local (fail-closed remote).
-    applyLocalD1Migrations({
-      configPath: generated.configPath,
-      databaseName: entry.databaseName,
-      persistTo: generated.persistTo,
-      wranglerBin: options.wranglerBin,
-      cwd: entry.appDir,
-    });
-
-    // 3. Seeds — CHỈ khi caller truyền list khác rỗng.
-    if (entry.seedFiles.length > 0) {
-      applyLocalD1Seeds({
+    // 2. Migration local (fail-closed remote) — CHỈ khi app khai D1. App
+    //    không D1 (auth, backoffice, home, pact-broker) không có gì migrate;
+    //    gọi với tên rỗng là lỗi identifier (`validateDatabaseIdentifier`).
+    if (entry.databaseName) {
+      applyLocalD1Migrations({
         configPath: generated.configPath,
         databaseName: entry.databaseName,
         persistTo: generated.persistTo,
-        seedFiles: entry.seedFiles,
         wranglerBin: options.wranglerBin,
         cwd: entry.appDir,
       });
+
+      // 3. Seeds — CHỈ khi caller truyền list khác rỗng (và app có D1).
+      if (entry.seedFiles.length > 0) {
+        applyLocalD1Seeds({
+          configPath: generated.configPath,
+          databaseName: entry.databaseName,
+          persistTo: generated.persistTo,
+          seedFiles: entry.seedFiles,
+          wranglerBin: options.wranglerBin,
+          cwd: entry.appDir,
+        });
+      }
     }
 
     const devVars = devVarsArgv(entry.appDir);
@@ -670,7 +713,7 @@ async function teardownFailedWorker(handle: WorkerProcessHandle): Promise<void> 
 export type StopAction = 'terminated' | 'cleaned-metadata' | 'kept-evidence';
 
 export interface StopWorkerRuntimeRow {
-  /** Tên metadata entry — có thể là tên ngoài `MAIL_WORKER_ENTRIES`. */
+  /** Tên metadata entry — có thể là tên ngoài danh sách discovery hiện tại. */
   name: string;
   /** Trạng thái ngay trước khi xử lý entry (lúc scan đầu run). */
   before: WorkerProcessState;
@@ -826,7 +869,7 @@ export interface WorkerStatusRow {
  * Snapshot read-only của runtime: scan stateDir, thêm trạng thái của
  * generated config (PR3). KHÔNG đụng process/file nào — CLI quyết định render.
  *
- * Tên file generated config được đoán THẬTrees như `generateWorkerConfig` ghi:
+ * Tên file generated config được đoán THẬT như `generateWorkerConfig` ghi:
  * `sanitizeFileName(generated.name).wrangler.jsonc` — entry name
  * (`transactional-mail`) khác worker name thật (`ecoma-transactional-mail`),
  * đoán theo entry name là luôn sai (OCR PR #36 medium). Đây vẫn là heuristic
@@ -837,11 +880,25 @@ export function statusWorkerRuntime(options: { worktreeRoot: string }): WorkerSt
   const worktreeRoot = normalizeWorktreeRoot(options.worktreeRoot);
   const stateDir = workerProcessStateDir(worktreeRoot);
   const generatedDir = generatedConfigDir(worktreeRoot);
-  const standardNames = new Set(MAIL_WORKER_ENTRIES.map((e) => e.entryName));
+  // PR6: entry chuẩn = discovery (app có marker + config parse được).
+  // Discovery có thể fail (topology lỗi: orphan queue, service binding ngoài
+  // tập opt-in, cycle) — status là snapshot read-only, "an toàn để chạy bất
+  // cứ lúc nào", nên KHÔNG được chết theo config; degrade về standard=false
+  // cho mọi row kèm stderr warn (không đụng stdout).
+  let discovered: readonly MailWorkerEntry[] = [];
+  try {
+    discovered = MAIL_WORKER_ENTRIES(worktreeRoot);
+  } catch (error) {
+    console.warn(
+      `[local-worker-status] discovery fail — mọi entry coi như non-standard: ` +
+        `${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const standardNames = new Set(discovered.map((e) => e.entryName));
   // Committed config load để lấy `name` thật của worker chuẩn — entry name
   // và worker name khác nhau, đoán file theo entry name luôn sai.
   const workerNamesByEntry = new Map<string, string>();
-  for (const standard of MAIL_WORKER_ENTRIES) {
+  for (const standard of discovered) {
     try {
       // loadCommittedWranglerConfig fail-closed — file thiếu thì entry chuẩn
       // không được coi là "đã viết generated config".
