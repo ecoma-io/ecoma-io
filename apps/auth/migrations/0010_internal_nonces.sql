@@ -64,16 +64,20 @@ COMMENT ON COLUMN auth.internal_nonces.expires_at IS
 -- Đúng một truy vấn đọc bảng này: dọn nonce hết hạn theo lô. Không truy vấn nào khác lọc theo
 -- `expires_at`, nên index phục vụ riêng câu đó.
 --
--- Lịch chạy của câu prune: job `prune-auth` trong
--- `.github/workflows/identity-nonce-prune.yaml` (một lần mỗi ngày) — chạy đúng câu lệnh dưới đây
--- bằng credential `ecoma_auth_migrator`, tức đúng principal sở hữu bảng này, cùng học thuyết với
--- khối grant ở cuối file. Trước khi có job đó, bảng chỉ được dọn khi người vận hành chạy tay
--- theo runbook `03-operations.md` §3.3.
+-- Lịch chạy của câu prune: cron Worker `apps/auth-nonce-prune-job` (một lần mỗi ngày,
+-- nhịp `17 3 * * *`) — chạy đúng câu lệnh dưới đây qua Hyperdrive binding `DB_AUTH`,
+-- dùng credential `ecoma_auth_nonce_pruner` (role tạo ở `0014`). Trước đây job này là
+-- GitHub Action `.github/workflows/identity-nonce-prune.yaml` chạy bằng credential
+-- `ecoma_auth_migrator`; workflow đã bị thay và xoá (issue #82). Trước khi Worker có
+-- Hyperdrive thật, bảng chỉ được dọn khi người vận hành chạy tay theo runbook
+-- `03-operations.md` §3.3.
 --
--- ⚠️ Trạng thái là **đã cấu hình, chưa xác minh runtime**: job cần Environment `nonce-prune-auth`
--- cùng secret `DB_AUTH_MIGRATOR_URL` và một đường kết nối tới `db-auth` từ CI runner — cả ba đều
--- chưa tồn tại (db-auth chưa được provision). Cho tới khi đó workflow đỏ mỗi lần chạy theo lịch,
--- và điều đó là cố ý: một job dọn dữ liệu không chạy được là một lỗi, không phải một lần bỏ qua.
+-- ⚠️ Trạng thái là **đã cấu hình, chưa xác minh runtime**: job cần Hyperdrive config của
+-- `db-auth` (binding `DB_AUTH` trong `apps/auth-nonce-prune-job/wrangler.jsonc` vẫn mang id
+-- placeholder) và credential `ecoma_auth_nonce_pruner` trên Hyperdrive đó — cả hai chưa tồn
+-- tại (db-auth chưa được provision). Cho tới khi đó cron invocation đỏ mỗi lần chạy theo
+-- lịch (Past events của Cron dashboard), và điều đó là cố ý: một job dọn dữ liệu không chạy
+-- được là một lỗi, không phải một lần bỏ qua.
 --
 -- Chưa dọn thì bảng phình ra theo lưu lượng — phiền về vận hành, KHÔNG yếu đi về bảo mật: một
 -- nonce cũ nằm lại vẫn là một nonce đã bị chiếm. Vì vậy câu prune này không được nới thành

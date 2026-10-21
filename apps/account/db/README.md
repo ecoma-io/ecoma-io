@@ -103,6 +103,7 @@ từ superuser sẽ giấu hết chúng.
 -- Chạy bằng owner/admin, một lần, theo `03-operations.md` §3.2 bước 1
 CREATE ROLE ecoma_account_migrator LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
 CREATE ROLE ecoma_account_runtime  LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+CREATE ROLE ecoma_account_nonce_pruner LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
 GRANT CONNECT, CREATE, TEMPORARY ON DATABASE db-account TO ecoma_account_migrator;
 REVOKE CONNECT ON DATABASE db-auth FROM PUBLIC;
 REVOKE CONNECT ON DATABASE db-auth FROM ecoma_account_runtime;
@@ -222,5 +223,9 @@ apps/account/db/
 └── migrations/
     ├── 0001_identity_core.sql      # users, sessions, handoffs, audit, outbox
     ├── 0002_roles_and_grants.sql   # hai role + grant + chặn chéo
-    └── 0003_internal_nonces.sql    # kho nonce cho replay guard
+    ├── 0003_internal_nonces.sql    # kho nonce cho replay guard
+    ├── 0004_rename_authn_level_to_acr.sql
+    ├── 0005_email_addresses.sql
+    ├── 0006_otp_challenges.sql
+    └── 0007_nonce_pruner_role.sql  # role pruner của cron Worker auth-nonce-prune-job
 ```

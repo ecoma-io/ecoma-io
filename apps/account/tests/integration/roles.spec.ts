@@ -328,4 +328,36 @@ describe.skipIf(!dockerAvailable)('roles and grants on db-account', () => {
       }
     }
   });
+
+  it('0007: the DO-block fallback creates the pruner role shaped like provisioning, with LOGIN', () => {
+    // Lưới an toàn của `0007` phải tạo đúng khuôn với các đường provisioning:
+    // runbook (`apps/account/db/README.md` §"Provisioning") và harness integration
+    // đều tạo pruner bằng `CREATE ROLE … LOGIN …`. Thiếu `LOGIN` thì trên một
+    // cluster sạch role rơi ra `NOLOGIN` — Hyperdrive không xác thực được bằng
+    // credential của nó, job đo `db_unreachable` vĩnh viễn trong khi migrations
+    // vẫn trông xanh; chạy lại migration không cứu được vì guard `pg_roles` bỏ
+    // qua role đã tồn tại.
+    //
+    // ⚠️ Assert trên FILE, không trên catalog: database test được provisioning
+    // tạo role TRƯỚC khi migration chạy (harness `tests/integration/harness.ts`),
+    // nên guard của `0007` đi theo nhánh "đã tồn tại" và một mutation trong câu
+    // `CREATE ROLE` không bao giờ lộ ra ở database đang chạy — chỉ mỗi file là
+    // thứ sẽ lên production.
+    const migration0007 = listMigrations().find(
+      (file) => file.name === '0007_nonce_pruner_role.sql',
+    );
+    expect(migration0007).toBeDefined();
+    const fallback = /CREATE ROLE\s+ecoma_account_nonce_pruner\s+(?<flags>[\S\s]*?)\s*END;/u.exec(
+      executableSql(migration0007?.sql ?? ''),
+    );
+    const flags = fallback?.groups?.['flags'] ?? '';
+    expect(flags).toMatch(/\bLOGIN\b/u);
+    // Các cờ hạn chế còn lại phải giữ nguyên — `LOGIN` không được mua bằng cách
+    // bỏ một cờ `NO*` nào, tức role fallback không được nới đặc quyền theo hướng khác.
+    expect(flags).toMatch(/\bNOSUPERUSER\b/u);
+    expect(flags).toMatch(/\bNOCREATEDB\b/u);
+    expect(flags).toMatch(/\bNOCREATEROLE\b/u);
+    expect(flags).toMatch(/\bNOINHERIT\b/u);
+    expect(flags).toMatch(/\bNOBYPASSRLS\b/u);
+  });
 });

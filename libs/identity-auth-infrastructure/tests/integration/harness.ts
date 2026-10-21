@@ -256,6 +256,13 @@ async function provision(superuser: Sql): Promise<void> {
   await superuser.unsafe(`GRANT CONNECT ON DATABASE "${AUTH_DATABASE}" TO ecoma_auth_runtime`);
   // Runtime không cần `CREATE` trên bất kỳ schema nào (NFR-002a).
   await superuser.unsafe(`REVOKE CONNECT ON DATABASE "${AUTH_DATABASE}" FROM PUBLIC`);
+  // Role pruner của cron Worker `apps/auth-nonce-prune-job` (`0014`): cùng lí do
+  // hai role trên — migrator `NOCREATEROLE` không tự tạo được, guard của `0014`
+  // chỉ là lưới an toàn nên role phải do admin tạo trước khi migration chạy.
+  await superuser.unsafe(
+    `CREATE ROLE ecoma_auth_nonce_pruner LOGIN PASSWORD '${ROLE_PASSWORD}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`,
+  );
+  await superuser.unsafe(`GRANT CONNECT ON DATABASE "${AUTH_DATABASE}" TO ecoma_auth_nonce_pruner`);
 }
 
 /**

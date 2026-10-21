@@ -1,0 +1,129 @@
+{
+  "name": "@ecoma-io/auth-nonce-prune-job",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1"
+  },
+  "//": "Không dependency workspace lib nào: logic prune là một hàm riêng của app này (src/prune.ts), và driver `pg` là một dependency runtime duy nhất. Job không chia code với serving path của auth/account — chia code là chia ranh giới app→app mà tag Nx cấm.",
+  "nx": {
+    "tags": [
+      "type:composition",
+      "scope:identity",
+      "runtime:edge"
+    ],
+    "targets": {
+      "build": {
+        "executor": "@nx/esbuild:esbuild",
+        "outputs": [
+          "{options.outputPath}"
+        ],
+        "defaultConfiguration": "production",
+        "options": {
+          "platform": "neutral",
+          "outputPath": "apps/auth-nonce-prune-job/dist",
+          "format": [
+            "esm"
+          ],
+          "bundle": true,
+          "main": "apps/auth-nonce-prune-job/src/main.ts",
+          "tsConfig": "apps/auth-nonce-prune-job/tsconfig.app.json",
+          "assets": [
+            "apps/auth-nonce-prune-job/src/assets"
+          ],
+          "esbuildOptions": {
+            "sourcemap": true,
+            "outExtension": {
+              ".js": ".js"
+            },
+            "conditions": [
+              "workerd",
+              "worker",
+              "browser"
+            ]
+          },
+          "skipTypeCheck": true,
+          "declaration": false
+        },
+        "configurations": {
+          "development": {},
+          "production": {
+            "esbuildOptions": {
+              "sourcemap": false,
+              "outExtension": {
+                ".js": ".js"
+              },
+              "conditions": [
+                "workerd",
+                "worker",
+                "browser"
+              ]
+            }
+          }
+        }
+      },
+      "prune-lockfile": {
+        "dependsOn": [
+          "build"
+        ],
+        "cache": true,
+        "executor": "@nx/js:prune-lockfile",
+        "inputs": [
+          "default",
+          "^default",
+          "{workspaceRoot}/pnpm-workspace.yaml",
+          "{workspaceRoot}/package.json",
+          {
+            "runtime": "node -e \"try{console.log('pnpm major '+require('child_process').execSync('pnpm --version',{stdio:['ignore','pipe','ignore']}).toString().trim().split('.')[0])}catch{console.log('pnpm major unavailable')}\""
+          }
+        ],
+        "outputs": [
+          "{workspaceRoot}/apps/auth-nonce-prune-job/dist/package.json",
+          "{workspaceRoot}/apps/auth-nonce-prune-job/dist/pnpm-lock.yaml",
+          "{workspaceRoot}/apps/auth-nonce-prune-job/dist/pnpm-workspace.yaml",
+          "{workspaceRoot}/apps/auth-nonce-prune-job/dist/patches",
+          "{workspaceRoot}/apps/auth-nonce-prune-job/dist/local_path_modules"
+        ],
+        "options": {
+          "buildTarget": "build"
+        }
+      },
+      "copy-workspace-modules": {
+        "dependsOn": [
+          "build"
+        ],
+        "cache": true,
+        "outputs": [
+          "{workspaceRoot}/apps/auth-nonce-prune-job/dist/workspace_modules"
+        ],
+        "executor": "@nx/js:copy-workspace-modules",
+        "options": {
+          "buildTarget": "build"
+        }
+      },
+      "prune": {
+        "dependsOn": [
+          "prune-lockfile",
+          "copy-workspace-modules"
+        ],
+        "executor": "nx:noop"
+      },
+      "serve": {
+        "continuous": true,
+        "executor": "nx:run-commands",
+        "defaultConfiguration": "development",
+        "dependsOn": [
+          "build"
+        ],
+        "options": {
+          "cwd": "apps/auth-nonce-prune-job",
+          "command": "npx wrangler dev --config wrangler.jsonc"
+        },
+        "configurations": {}
+      }
+    }
+  }
+}
