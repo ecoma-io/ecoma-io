@@ -15,10 +15,11 @@ chép mù.
 
 ## Thứ tự migration hiện tại
 
-| File                         | Nội dung                                                                                                  |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `0001_backoffice_domain.sql` | `backoffice.staff`, `permissions`, `roles`, `role_permissions`, `role_assignments`, `authorization_audit` |
-| `0002_roles_and_grants.sql`  | hai role + grant từng bảng + guard CONNECT + REVOKE `public`                                              |
+| File                               | Nội dung                                                                                                                       |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `0001_backoffice_domain.sql`       | `backoffice.staff`, `permissions`, `roles`, `role_permissions`, `role_assignments`, `authorization_audit`                      |
+| `0002_roles_and_grants.sql`        | hai role + grant từng bảng + guard CONNECT + REVOKE `public`                                                                   |
+| `0003_permission_catalog_seed.sql` | seed 3 permission read `staff.read`, `role.read`, `permission.read` (status `active`), idempotent; không role/assignment/staff |
 
 ## Vì sao issue này tạo schema cho staff/RBAC
 
