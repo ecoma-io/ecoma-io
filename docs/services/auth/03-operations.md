@@ -32,22 +32,25 @@ Kiểm sau deploy:
 
 ```text
 GET /health → 200 { service: 'auth', status: 'ok' }
-GET /ready  → 200 { service: 'auth', status: 'ready' }        # khi mọi dependency sống
-GET /ready  → 503 { error: 'service_unavailable' } + Retry-After   # khi có dependency chết
+GET /ready  → 200 { service: 'auth', status: 'ready' }        # khi cả hai kiểm dưới đây đi qua
+GET /ready  → 503 { error: 'service_unavailable' } + Retry-After   # khi một trong hai kiểm thất bại
 ```
 
 ⚠️ **`/ready` là readiness có kiểm phụ thuộc; `/health` là liveness không chạm DB.**
 Cùng một hợp đồng với `account` ([../account/03-operations.md](../account/03-operations.md) §2,
 nơi cài đặt bên kia là `apps/account/server/routes/ready.get.ts`, bên này là
-`apps/auth/src/main.ts`). Riêng `auth` có hai dependency bắt buộc và route kiểm
-**cả hai**:
+`apps/auth/src/main.ts`). Route kiểm đúng **hai** điều, không hứa hơn:
 
-- `HYPERDRIVE` tới `db-auth` — probe là một `SELECT` trên `auth.oauth_clients` qua
-  `createPostgresClient` (`apps/auth/src/main.ts`), tức record gốc đầu tiên của
+- **Binding tồn tại** — `HYPERDRIVE` và `ACCOUNT_SERVICE` đều được gắn. Chỉ kiểm
+  sự có mặt; ⚠️ **không probe service `account` qua binding**: binding có gắn
+  mà bên kia chết thì `/ready` **không** phát hiện — mọi đường gọi thật của
+  `auth` qua binding nằm trên route nội bộ/flow, không phải readiness. Sự cố
+  `account` hiện qua trực tiếp các route thật; đừng đọc `/ready` 200 như một
+  cam kết liveness hai chiều.
+- **`db-auth` reachable** — một `SELECT` trên `auth.oauth_clients` qua
+  `createPostgresClient` (`apps/auth/src/main.ts`), tức bảng gốc đầu tiên của
   schema (`0001`) với credential `ecoma_auth_runtime`: database nửa schema hay
   grant sai đều làm probe thất bại, không chỉ database chết.
-- `ACCOUNT_SERVICE` — binding tới `account`, thiếu nó thì không hỏi được trạng
-  thái account (control point fail-closed lúc phát hành).
 
 Hành vi fail-closed: thiếu binding ⇒ `503` + `Retry-After` (mã ổn định
 `binding_missing` trong log); DB không kết nối được ⇒ `503` + `Retry-After`
@@ -171,7 +174,7 @@ SELECT count(*) FROM deleted;
 1. **Branch policy của Environment — và thứ tự đặt nó TRƯỚC secret.** Khai `environment:` trong workflow khiến GitHub **tự tạo** Environment ở lần chạy đầu tiên nếu nó chưa tồn tại: không branch policy, không protection rule ([`02`](../../overview/02-delivery.md) §6.13). Nên đây **không** thể là một điều kiện "đã có sẵn trước khi workflow tồn tại". Thứ tự đúng: (a) workflow vào `main`; (b) lần chạy đầu tiên — theo lịch hoặc `workflow_dispatch` thủ công — tạo Environment ngầm và job đỏ ở `outcome=not_configured`; (c) đặt deployment branch policy **giới hạn đúng `main`** ("Protected branches", hoặc custom policy chỉ khớp `main`; **không** để mặc định "All branches"); (d) **sau cùng** mới đặt secret `DB_AUTH_MIGRATOR_URL` / `DB_ACCOUNT_MIGRATOR_URL`. Đặt secret trước branch policy là để credential `_migrator_` nằm trong một Environment mà mọi ref đều dispatch được — và ở trạng thái đó **không còn lớp fail-closed nào trong repo**.
    Branch policy này là lớp bảo vệ **duy nhất** cho credential `_migrator_`: một tài khoản ghi được vào repo có thể push một nhánh sửa workflow (kể cả xoá bước guard) rồi dispatch chính nhánh đó, nên guard trong file **không** tự bảo vệ chính nó ([`02`](../../overview/02-delivery.md) §6.13; [`04`](../../overview/04-platform-facts.md) §2.17 GH6–GH7). Không có gì trong repo kiểm được lớp này — nó phải được xác minh ngoài luồng trước khi job theo lịch được tin.
 2. Secret `DB_AUTH_MIGRATOR_URL` (và `DB_ACCOUNT_MIGRATOR_URL`) trong đúng Environment đó.
-3. Đường kết nối từ CI runner tới PostgreSQL của từng database, **không** mở public PostgreSQL và **không** nới firewall/network policy ([`03`](../../overview/03-operations.md) §2.1). DSN trong `DB_*_MIGRATOR_URL` **phải** ghi `sslmode` tường minh: job đặt sàn `PGSSLMODE=require`, nhưng libpq cho conninfo **thắng** environment nên DSN là nguồn quyết định — và một DSN ghi `sslmode=prefer`/`disable` sẽ hạ sàn đó xuống đúng giá trị nó ghi. Vì vậy script tự kiểm `sslmode` trong DSN và dừng ở `outcome=insecure_dsn` trước khi kết nối, thay vì tin vào sàn environment. `require` chỉ bảo đảm **có mã hoá**, không xác minh cert; posture đầy đủ (`verify-ca`/`verify-full`) vẫn **chưa chốt** theo spike S1 ([`03`](../../overview/03-operations.md) §2.1), nên đây là sàn tối thiểu chứ không phải quyết định thay S1.
+3. Đường kết nối từ CI runner tới PostgreSQL của từng database, **không** mở public PostgreSQL và **không** nới firewall/network policy ([`03`](../../overview/03-operations.md) §2.1). DSN trong `DB_*_MIGRATOR_URL` **phải** ghi `sslmode` tường minh: job đặt sàn `PGSSLMODE=require`, nhưng libpq cho conninfo **thắng** environment nên DSN là nguồn quyết định — và một DSN ghi `sslmode=prefer`/`disable` sẽ hạ sàn đó xuống đúng giá trị nó ghi. Vì vậy script tự kiểm `sslmode` trong DSN và dừng ở `outcome=invalid_dsn` (biến `reason=sslmode_weak` cùng dòng lỗi) trước khi kết nối, thay vì tin vào sàn environment. `require` chỉ bảo đảm **có mã hoá**, không xác minh cert; posture đầy đủ (`verify-ca`/`verify-full`) vẫn **chưa chốt** theo spike S1 ([`03`](../../overview/03-operations.md) §2.1), nên đây là sàn tối thiểu chứ không phải quyết định thay S1.
 
 ⚠️ **Không đặt `required reviewers` hay wait timer trên hai Environment này.** Job chạy theo lịch không có người bấm duyệt: một required-reviewer rule sẽ làm run **treo ở trạng thái chờ** (không phải đỏ), và một job dọn dữ liệu treo mỗi ngày thì không dọn gì cả — trái với hợp đồng fail-closed ở trên, vốn chỉ đúng khi job **đỏ**. Cần kiểm soát thêm thì dùng branch policy, không dùng approval gate ([`04`](../../overview/04-platform-facts.md) §2.17 GH8).
 
