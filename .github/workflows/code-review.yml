@@ -117,6 +117,28 @@ jobs:
           fi
           echo "OpenCodeReview preflight OK: v${OCR_VERSION_PIN}."
 
+      - name: Generate app token
+        if: steps.pr.outputs.skip_review != 'true'
+        id: app-token
+        # Pin như mọi third-party action trong repo; v3.3.0 của
+        # actions/create-github-app-token. Token minted chỉ cho repo hiện tại,
+        # với đúng quyền mà action OCR cần: pull_requests: write để đọc/đăng
+        # review comment, contents: write vì `resolve_outdated: 'true'` gate
+        # mutation resolve trên quyền repo-write chứ không phải scope
+        # pull-requests (action tự tài liệu hoá yêu cầu này). Hạn mức API của
+        # token này là 5,000 requests/hour per installation của App
+        # (scale +50 rph/repo trên 20 repos, +50 rph/user trên 20 users, trần
+        # 12,500 rph) — cao hơn 1,000 rph/repo của `github.token` và không dùng
+        # chung băng với các workflow khác.
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.ECOMA_APP_ID }}
+          private-key: ${{ secrets.ECOMA_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-pull-requests: write
+          permission-contents: write
+
       # Job này chưa có checkout nào khi bước probe chạy, và không được giả định
       # hành vi nội bộ của action bên thứ ba để lấy ref tin cậy từ đó. Checkout
       # tường minh vào một thư mục riêng: trên `pull_request_target` là **base**
@@ -167,28 +189,6 @@ jobs:
           # vào workspace root, nên để lại một repo lồng nhau ở đó là thay đổi tiền
           # đề môi trường của action mà không có lý do.
           rm -rf "$GITHUB_WORKSPACE/ocr-probe"
-
-      - name: Generate app token
-        if: steps.pr.outputs.skip_review != 'true'
-        id: app-token
-        # Pin như mọi third-party action trong repo; v3.3.0 của
-        # actions/create-github-app-token. Token minted chỉ cho repo hiện tại,
-        # với đúng quyền mà action OCR cần: pull_requests: write để đọc/đăng
-        # review comment, contents: write vì `resolve_outdated: 'true'` gate
-        # mutation resolve trên quyền repo-write chứ không phải scope
-        # pull-requests (action tự tài liệu hoá yêu cầu này). Hạn mức API của
-        # token này là 5,000 requests/hour per installation của App
-        # (scale +50 rph/repo trên 20 repos, +50 rph/user trên 20 users, trần
-        # 12,500 rph) — cao hơn 1,000 rph/repo của `github.token` và không dùng
-        # chung băng với các workflow khác.
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          app-id: ${{ secrets.ECOMA_APP_ID }}
-          private-key: ${{ secrets.ECOMA_APP_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: ${{ github.event.repository.name }}
-          permission-pull-requests: write
-          permission-contents: write
 
       - name: Review the pull request
         id: ocr
