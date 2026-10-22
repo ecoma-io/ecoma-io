@@ -94,13 +94,13 @@ PG=${postgresContainerName}
 # 1. Tạo database nếu chưa có (idempotent qua shell guard).
 if ! docker exec "$PG" psql -U ecoma_local -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='db-backoffice'" | grep -q 1; then docker exec "$PG" psql -U ecoma_local -d postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE "db-backoffice"'; fi
 # 2. Tạo hai role nếu chưa có.
-docker exec "$PG" psql -U ecoma_local -d postgres -v ON_ERROR_STOP=1 -c "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='ecoma_backoffice_migrator') THEN CREATE ROLE ecoma_backoffice_migrator LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS; END IF; END $$;"
-docker exec "$PG" psql -U ecoma_local -d postgres -v ON_ERROR_STOP=1 -c "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='ecoma_backoffice_runtime') THEN CREATE ROLE ecoma_backoffice_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS; END IF; END $$;"
+if ! docker exec "$PG" psql -U ecoma_local -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='ecoma_backoffice_migrator'" | grep -q 1; then docker exec "$PG" psql -U ecoma_local -d postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE ecoma_backoffice_migrator LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;"; fi
+if ! docker exec "$PG" psql -U ecoma_local -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='ecoma_backoffice_runtime'" | grep -q 1; then docker exec "$PG" psql -U ecoma_local -d postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE ecoma_backoffice_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;"; fi
 # 3. Mật khẩu role.
 docker exec "$PG" psql -U ecoma_local -d postgres -v ON_ERROR_STOP=1 -c "ALTER ROLE ecoma_backoffice_migrator WITH PASSWORD '${migratorPassword}';"
 docker exec "$PG" psql -U ecoma_local -d postgres -v ON_ERROR_STOP=1 -c "ALTER ROLE ecoma_backoffice_runtime WITH PASSWORD '${runtimePassword}';"
 # 4. Grant migrator.
-docker exec "$PG" psql -U ecoma_local -d postgres -v ON_ERROR_STOP=1 -c "GRANT CONNECT, CREATE, TEMPORARY ON DATABASE \"db-backoffice\" TO ecoma_backoffice_migrator;"
+docker exec "$PG" psql -U ecoma_local -d postgres -v ON_ERROR_STOP=1 -c 'GRANT CONNECT, CREATE, TEMPORARY ON DATABASE "db-backoffice" TO ecoma_backoffice_migrator;'
 # 5. Migration qua socket trong container (trust local) — dùng runner SQL thật.
 { echo "SELECT pg_advisory_lock(hashtext('db-backoffice'));"; cat ${worktreeRoot}/apps/backoffice/db/migrations/*.sql; echo "SELECT pg_advisory_unlock(hashtext('db-backoffice'));"; } | docker exec -i "$PG" psql -U ecoma_backoffice_migrator -d db-backoffice -v ON_ERROR_STOP=1
 `;
