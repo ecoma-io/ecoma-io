@@ -266,7 +266,7 @@ export class D1JobStateRepository implements JobStatePort {
     const budgetClause =
       maxAttempts === undefined
         ? ''
-        : 'AND consume_count < ? AND NOT EXISTS (SELECT 1 FROM push_job_attempts a WHERE a.delivery_id = push_jobs.delivery_id AND a.attempt >= ?)';
+        : 'AND consume_count < ? AND NOT EXISTS (SELECT 1 FROM push_job_attempts a WHERE a.delivery_id = push_jobs.delivery_id AND a.attempt = (SELECT MAX(b.attempt) FROM push_job_attempts b WHERE b.delivery_id = push_jobs.delivery_id) AND a.attempt >= ?)';
     const sql = `SELECT ${JOB_COLUMNS} FROM push_jobs
           WHERE processed = 0 AND last_consumed_at <= ?
           ${budgetClause}

@@ -82,6 +82,8 @@ export interface JobReconciliationReport {
   readonly failed: number;
   /** Số job bị bỏ qua vì đã processed trong lúc sweep chạy (race với consumer). */
   readonly skippedProcessed: number;
+  /** Số job bị bỏ qua vì đã kiệt ngân sách attempt (consume_count hoặc attempt cuối >= maxAttempts). */
+  readonly skippedExhausted: number;
 }
 
 /**
@@ -193,5 +195,5 @@ export async function runJobReconciliation(
     skipped_exhausted: skippedExhausted,
   });
 
-  return { stuckFound: stuck.length, redelivered, failed, skippedProcessed };
+  return { stuckFound: stuck.length, redelivered, failed, skippedProcessed, skippedExhausted };
 }
