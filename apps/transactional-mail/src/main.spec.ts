@@ -388,6 +388,80 @@ describe('POST /v1/messages (FR-001 end to end on real D1)', () => {
     expect(rows).toEqual([{ n: 0 }]);
   });
 
+  it('rejects a request signed with an unknown secret with the unified 401', async () => {
+    const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
+    const encoded = new TextEncoder().encode(TEMPLATE_BODY);
+    const headers = await signRequest({
+      method: 'POST',
+      path: '/v1/messages',
+      body: encoded,
+      secret: 'not-a-registered-credential',
+      timestamp: String(Math.floor(Date.now() / 1000)),
+    });
+    const request = new Request('https://mail.internal/v1/messages', {
+      method: 'POST',
+      headers: new Headers({ ...headers, 'Idempotency-Key': 'bad-sig-key' }),
+      body: encoded as BodyInit,
+    });
+    const response = await worker.fetch(request, env, executionContext);
+    expect(response.status).toBe(401);
+    const body = (await response.json()) as { readonly error: { readonly code: string } };
+    expect(body.error.code).toBe('unauthorized');
+  });
+
+  it('rejects a replayed nonce with the unified 401 and creates no second row', async () => {
+    const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
+    const nonce = '11111111-2222-4333-8444-555555555555';
+    const ts = String(Math.floor(Date.now() / 1000));
+    const encoded = new TextEncoder().encode(TEMPLATE_BODY);
+
+    const firstHeaders = await signRequest({
+      method: 'POST',
+      path: '/v1/messages',
+      body: encoded,
+      secret: SECRET_ACCOUNT,
+      timestamp: ts,
+      nonce,
+    });
+    const first = await worker.fetch(
+      new Request('https://mail.internal/v1/messages', {
+        method: 'POST',
+        headers: new Headers({ ...firstHeaders, 'Idempotency-Key': 'nonce-replay-first' }),
+        body: encoded as BodyInit,
+      }),
+      env,
+      executionContext,
+    );
+    expect(first.status).toBe(201);
+
+    const secondHeaders = await signRequest({
+      method: 'POST',
+      path: '/v1/messages',
+      body: encoded,
+      secret: SECRET_ACCOUNT,
+      timestamp: ts,
+      nonce,
+    });
+    const second = await worker.fetch(
+      new Request('https://mail.internal/v1/messages', {
+        method: 'POST',
+        headers: new Headers({ ...secondHeaders, 'Idempotency-Key': 'nonce-replay-second' }),
+        body: encoded as BodyInit,
+      }),
+      env,
+      executionContext,
+    );
+    expect(second.status).toBe(401);
+    const body = (await second.json()) as { readonly error: { readonly code: string } };
+    expect(body.error.code).toBe('unauthorized');
+
+    const rows = await rawRows<{ n: number }>(
+      env,
+      "SELECT COUNT(*) AS n FROM mail_messages WHERE idempotency_key = 'nonce-replay-second'",
+    );
+    expect(rows).toEqual([{ n: 0 }]);
+  });
+
   it('rejects a request with a query string before any use-case work, with the unified 401', async () => {
     const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
     const encoded = new TextEncoder().encode(TEMPLATE_BODY);
@@ -463,6 +537,26 @@ describe('POST /v1/messages (FR-001 end to end on real D1)', () => {
     expect(response.status).toBe(404);
     const body = (await response.json()) as { readonly error: { readonly code: string } };
     expect(body.error.code).toBe('template_not_found');
+  });
+
+  it('creates a message for the seeded account.login-otp template (issue #132)', async () => {
+    const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
+    const body = JSON.stringify({
+      template: 'account.login-otp',
+      recipient: 'user@example.test',
+      locale: 'en',
+      variables: { code: '12345678' },
+    });
+    const response = await accountPost(env, body, 'seeded-otp-key');
+    expect(response.status).toBe(201);
+    const json = (await response.json()) as {
+      readonly template: string;
+      readonly template_version: number;
+      readonly app: string;
+    };
+    expect(json.template).toBe('account.login-otp');
+    expect(json.template_version).toBe(1);
+    expect(json.app).toBe('account');
   });
 
   it('rejects a payload beyond the declared render bound as payload_too_large', async () => {

@@ -469,6 +469,7 @@ describe('mail D1 migrations (applied by the real wrangler runner)', () => {
         '0005_mail_rate_limits.sql',
         '0007_mail_content_redaction.sql',
         '0008_mail_rate_limits_key_scope.sql',
+        '0009_mail_templates_seed.sql',
       ]);
 
       const ledger = cliQuery(
