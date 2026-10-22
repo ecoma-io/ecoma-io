@@ -266,8 +266,8 @@ importers:
         specifier: 0.0.22
         version: 0.0.22(supports-color@10.2.2)(typescript@6.0.3)
       '@pulumi/pulumi':
-        specifier: 3.270.0
-        version: 3.270.0(supports-color@10.2.2)(typescript@6.0.3)
+        specifier: 3.271.0
+        version: 3.271.0(supports-color@10.2.2)(typescript@6.0.3)
       '@swc/helpers':
         specifier: ~0.5.18
         version: 0.5.23
@@ -341,8 +341,8 @@ importers:
         specifier: ^1.87.0
         version: 1.88.0
       pulumi:
-        specifier: 3.270.0
-        version: 3.270.0
+        specifier: 3.271.0
+        version: 3.271.0
       rehype-katex:
         specifier: ^7.0.1
         version: 7.0.1
@@ -3517,12 +3517,14 @@ packages:
   '@opentelemetry/sdk-trace-base@2.12.0':
     resolution: {integrity: sha512-JOERgZCxRM06FEJ5kEWxlSRChah6MmXDx3KwCruqEv/iEyLkTokCSemf2y1w8oIHtfrr8EVTpzebq/31vn2Cpg==}
     engines: {node: ^18.19.0 || >=20.6.0}
+    deprecated: Use @opentelemetry/sdk-trace package
     peerDependencies:
       '@opentelemetry/api': '>=1.3.0 <1.10.0'
 
   '@opentelemetry/sdk-trace-node@2.12.0':
     resolution: {integrity: sha512-9DufH1IlmQMoKAfot5y/FhTP1RnmhLb5K6eKmJO/bvzPjYwPAazoiAUbTZFdPbqxOXN0FEbhZx/e6SB1Og4jmg==}
     engines: {node: ^18.19.0 || >=20.6.0}
+    deprecated: Use @opentelemetry/sdk-trace package
     peerDependencies:
       '@opentelemetry/api': '>=1.0.0 <1.10.0'
 
@@ -4484,8 +4486,8 @@ packages:
   '@pulumi/docker@5.2.0':
     resolution: {integrity: sha512-1H0UGH6TN16jzq8tjwxCLwytXvnTXmxLW27EiGuaP+aueXk+AgswTBCKFERMhhJYkc4EQxTyzJo37tLDIxf0wA==}
 
-  '@pulumi/pulumi@3.270.0':
-    resolution: {integrity: sha512-k2GSGtoP2yrkIe4r+1YvyKL6k7mM6SYnySv6tSzGrv/oTY7WemEmvNEvn7Qd/JbkCMmYeBhWULDS5qB9qpvgkg==}
+  '@pulumi/pulumi@3.271.0':
+    resolution: {integrity: sha512-5Ol0JIf0vCbiFj1j3r0hvdaCSCbCURhfOxpNvTsE1qhjJS3m665UG1qO3HKrB6T9mD7OzgcD1y4PbL6EGl0gjg==}
     engines: {node: '>=22'}
     peerDependencies:
       ts-node: '>= 7.0.1 < 12'
@@ -9344,8 +9346,8 @@ packages:
     resolution: {integrity: sha512-cJ+oHTW1VAEa8cJslgmUZrc+sjRKgAKl3Zyse6+PV38hZe/V6Z14TbCuXcan9F9ghlz4QrFr2c92TNF82UkYHA==}
     engines: {node: '>=10'}
 
-  pulumi@3.270.0:
-    resolution: {integrity: sha512-Oc/M/xiZaDlt12iYPRgqT1aGyfSH6M5yI7VCjgpInbonv+3kMJVcHNsBTum42h9ywEitmKVmKpMMDZ1UwPQ7dw==}
+  pulumi@3.271.0:
+    resolution: {integrity: sha512-bT2eRNuhdZ8zuJsrR8P/Z+oSU4GGTALXkYXyW4vDZSijWLc68khCGh6bheJV+kDxLR3hU7682Sa186JYTrGTWQ==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -15425,7 +15427,7 @@ snapshots:
 
   '@pulumi/cloudflare@6.22.1(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
-      '@pulumi/pulumi': 3.270.0(supports-color@10.2.2)(typescript@6.0.3)
+      '@pulumi/pulumi': 3.271.0(supports-color@10.2.2)(typescript@6.0.3)
     transitivePeerDependencies:
       - supports-color
       - ts-node
@@ -15433,7 +15435,7 @@ snapshots:
 
   '@pulumi/command@1.2.1(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
-      '@pulumi/pulumi': 3.270.0(supports-color@10.2.2)(typescript@6.0.3)
+      '@pulumi/pulumi': 3.271.0(supports-color@10.2.2)(typescript@6.0.3)
     transitivePeerDependencies:
       - supports-color
       - ts-node
@@ -15441,7 +15443,7 @@ snapshots:
 
   '@pulumi/docker-build@0.0.22(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
-      '@pulumi/pulumi': 3.270.0(supports-color@10.2.2)(typescript@6.0.3)
+      '@pulumi/pulumi': 3.271.0(supports-color@10.2.2)(typescript@6.0.3)
     transitivePeerDependencies:
       - supports-color
       - ts-node
@@ -15449,14 +15451,14 @@ snapshots:
 
   '@pulumi/docker@5.2.0(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
-      '@pulumi/pulumi': 3.270.0(supports-color@10.2.2)(typescript@6.0.3)
+      '@pulumi/pulumi': 3.271.0(supports-color@10.2.2)(typescript@6.0.3)
       semver: 7.8.5
     transitivePeerDependencies:
       - supports-color
       - ts-node
       - typescript
 
-  '@pulumi/pulumi@3.270.0(supports-color@10.2.2)(typescript@6.0.3)':
+  '@pulumi/pulumi@3.271.0(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
       '@grpc/grpc-js': 1.14.6
       '@logdna/tail-file': 2.2.0
@@ -21429,7 +21431,7 @@ snapshots:
 
   proxy-from-env@2.1.0: {}
 
-  pulumi@3.270.0: {}
+  pulumi@3.271.0: {}
 
   pump@3.0.4:
     dependencies:
