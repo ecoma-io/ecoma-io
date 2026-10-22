@@ -124,6 +124,7 @@ export function requireMachineToken(
     c.set('tenantId', lookup.tenantId);
     c.set('tenantName', lookup.tenantName);
     c.set('scopes', lookup.scopes);
+    c.set('tokenId', lookup.tokenId);
     await next();
     return undefined;
   };

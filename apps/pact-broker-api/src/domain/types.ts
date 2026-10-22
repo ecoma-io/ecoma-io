@@ -18,6 +18,8 @@ export interface AppVariables {
   tenantName?: string;
   /** Scopes của machine token (khi dùng token). */
   scopes?: string[];
+  /** ID của machine token đang gọi (auth middleware gắn vào). */
+  tokenId?: string;
   /** Pool mỗi isolate — middleware config gắn vào. */
   pool: import('pg').Pool;
   /** Config đã kiểm — middleware config gắn vào. */

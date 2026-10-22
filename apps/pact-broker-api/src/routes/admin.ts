@@ -71,6 +71,7 @@ export function adminRoutes(adminAuth: () => MiddlewareHandler<AppEnv>): Hono<Ap
     }
 
     const tenantId = currentTenantId(c);
+    const callerTokenId = c.get('tokenId') ?? null;
     const repo = new PgTenantRepo(c.get('pool'));
     const { token, record } = await repo.createMachineToken(
       tenantId,
@@ -79,31 +80,24 @@ export function adminRoutes(adminAuth: () => MiddlewareHandler<AppEnv>): Hono<Ap
       parsed.data.scopes,
     );
 
-    // Audit fire-and-forget: lỗi audit không fail request (bất biến
-    // observability), nhưng cố ghi.
+    // Audit trong cùng transaction với action: fail-closed — lỗi audit propagate.
+    const client = await c.get('pool').connect();
     try {
-      const client = await c.get('pool').connect();
-      try {
-        await insertAuditEvent(client, {
-          tenantId,
-          actorSub: null,
-          actorTokenId: record.id,
-          action: 'machine_token.create',
-          outcome: 'success',
-          detail: { tokenId: record.id, scopes: parsed.data.scopes },
-        });
-      } finally {
-        client.release();
-      }
+      await client.query('BEGIN');
+      await insertAuditEvent(client, {
+        tenantId,
+        actorSub: null,
+        actorTokenId: callerTokenId,
+        action: 'machine_token.create',
+        outcome: 'success',
+        detail: { tokenId: record.id, scopes: parsed.data.scopes },
+      });
+      await client.query('COMMIT');
     } catch (error) {
-      // oxlint-disable-next-line no-console
-      console.error(
-        JSON.stringify({
-          level: 'error',
-          msg: 'audit write failed for machine_token.create',
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
     }
 
     return c.json(
@@ -128,10 +122,31 @@ export function adminRoutes(adminAuth: () => MiddlewareHandler<AppEnv>): Hono<Ap
     if (!UUID_RE.test(id)) {
       return c.json({ error: 'Not Found', message: 'Token not found' }, 404);
     }
+    const tenantId = currentTenantId(c);
+    const callerTokenId = c.get('tokenId') ?? null;
     const repo = new PgTenantRepo(c.get('pool'));
-    const ok = await repo.revokeMachineToken(currentTenantId(c), id);
+    const ok = await repo.revokeMachineToken(tenantId, id);
     if (!ok) {
       return c.json({ error: 'Not Found', message: 'Token not found (or already revoked)' }, 404);
+    }
+
+    const client = await c.get('pool').connect();
+    try {
+      await client.query('BEGIN');
+      await insertAuditEvent(client, {
+        tenantId,
+        actorSub: null,
+        actorTokenId: callerTokenId,
+        action: 'machine_token.revoke',
+        outcome: 'success',
+        detail: { tokenId: id },
+      });
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
     }
     return c.body(null, 204);
   });
