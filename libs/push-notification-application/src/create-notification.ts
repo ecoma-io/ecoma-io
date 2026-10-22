@@ -390,8 +390,25 @@ export async function createNotification(
   } catch {
     // ⚠️ Không ném chi tiết lỗi ra ngoài: thông điệp của D1 có thể chứa giá trị bind (payload,
     // endpoint) và đi vào log của Worker. Lỗi unique constraint của idempotency là **kết
-    // quả bình thường** của đua đồng thời (FR-008) — request thua sẽ đọc lại record ở lần
-    // gọi sau và nhận kết quả idempotent, nên nó không phải lỗi cần alert.
+    // quả bình thường** của đua đồng thời (FR-008) — request thua sẽ đọc lại record ở đây
+    // và nhận kết quả idempotent, nên nó không phải lỗi cần alert. Chỉ coi là StorageFailure
+    // khi không có record nào được ghi (lỗi storage thật sự).
+    const raced = await ports.idempotency.find(
+      command.authenticatedApp,
+      command.principalId,
+      command.idempotencyKey,
+    );
+    if (raced !== null) {
+      if (raced.requestHash === requestHash) {
+        // FR-008: đua đồng thời thua — trả cùng shape replay thành công.
+        return { ok: true, replayed: true, notificationId: raced.notificationId };
+      }
+      return {
+        ok: false,
+        reason: CREATE_NOTIFICATION_REJECTION.IdempotencyKeyConflict,
+        detail: 'Idempotency-Key đã dùng cho một request khác.',
+      };
+    }
     return {
       ok: false,
       reason: CREATE_NOTIFICATION_REJECTION.StorageFailure,

@@ -1126,6 +1126,19 @@ worker.post('/admin/v1/providers', async (context) => {
       'Cần `app`, `name`, `configuration` (object), `transport` và `type` hợp lệ.',
     );
   }
+  // ⚠️ WB-5: `make_primary` **không** được chấp nhận ở create. Bản đầu forward nó xuống
+  // use case, và use case tạo provider **trước** rồi mới tuyên bố primary — nên một
+  // `make_primary:true` bị từ chối vẫn để lại một provider row **và** một audit
+  // `provider_created`, tức hai bằng chứng của hai thao tác trong khi chỉ một cái được
+  // chấp nhận. Tuyên bố primary là operation riêng (`POST /admin/v1/providers/:id/primary`)
+  // và nó có guard riêng (§6.1) — nên ở đây ta từ chối **trước khi** insert.
+  if (body.value.make_primary === true) {
+    return problem(
+      400,
+      'invalid_payload',
+      '`make_primary` không được dùng khi tạo provider — tạo provider trước, rồi tuyên bố primary bằng `POST /admin/v1/providers/:id/primary`.',
+    );
+  }
   const result = await createProvider(adminDeps(deps), {
     app,
     providerId: deps.ids.next(),
@@ -1135,7 +1148,7 @@ worker.post('/admin/v1/providers', async (context) => {
     configuration,
     // `make_primary` là tuỳ chọn: scope chưa có primary là một trạng thái hợp lệ (routing
     // fail-safe), nên default `false` — tuyên bố primary là một quyết định có chủ ý (§6.1).
-    makePrimary: body.value.make_primary === true,
+    makePrimary: false,
     actor: deps.config.controlPlaneAuth.adminPrincipal,
   });
   return adminResultResponse(result, 201);

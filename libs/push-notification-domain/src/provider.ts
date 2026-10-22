@@ -59,11 +59,31 @@ export function isProviderType(value: unknown): value is ProviderType {
 
 /**
  * Provider type và transport chạy được trong v1 (NFR-010: `fcm`/`apns` được khai báo
- * upfront nhưng v1 chưa triển khai). Dùng cho test/validation, không phải cửa chặn
- * routing — routing chỉ quan tâm `status` + scope + hold.
+ * upfront nhưng v1 chưa triển khai).
+ *
+ * ⚠️ **Đây là cửa chặn control-plane create/enable/make-primary + phòng thủ worker.**
+ * Routing delivery mới **không** dùng hai hằng số này: routing chỉ quan tâm `status` +
+ * scope + hold. Cổng chặn thật nằm ở `createProvider`/`setProviderStatus`/
+ * `claimProviderPrimary` — một provider `fcm`/`apns` không được tạo, không được enable
+ * và không được tuyên bố primary trong v1; worker vẫn giữ lớp phòng thủ thứ hai
+ * (`validateV1ExecutionMaterialScope`) cho material đến từ nguồn khác.
  */
 export const V1_EXECUTABLE_PROVIDER_TYPE: ProviderType = PROVIDER_TYPE.WebPush;
 export const V1_EXECUTABLE_TRANSPORT: Transport = TRANSPORT.Web;
+
+/**
+ * Một provider có nằm trong scope thực thi của v1 không.
+ *
+ * ⚠️ Fail-closed: giá trị nào không nhận diện được (`isProviderType`/`isTransport` trả
+ * `false`) thì **không** nằm trong scope v1. Lý do: một provider type lạ đọc từ DB là dữ liệu
+ * ngoài vocabulary, và "cho qua rồi để worker chặn" là một lỗi hở ở tầng control plane.
+ */
+export function isV1ExecutableProviderScope(input: {
+  readonly type: unknown;
+  readonly transport: unknown;
+}): boolean {
+  return input.type === V1_EXECUTABLE_PROVIDER_TYPE && input.transport === V1_EXECUTABLE_TRANSPORT;
+}
 
 /**
  * Lifecycle status của provider (FR-005).

@@ -60,7 +60,12 @@ import {
 // domain, không phải của use case. `type:infrastructure` được phép phụ thuộc `type:domain`, và
 // import thẳng giữ một nguồn duy nhất cho chúng — dùng bản re-export sẽ là một bản khai thứ hai
 // phải giữ đồng bộ mà không có gì bắt.
-import { TRANSPORT, type ProviderType } from '@ecoma-io/push-notification-domain';
+import {
+  isProviderType,
+  TRANSPORT,
+  V1_EXECUTABLE_PROVIDER_TYPE,
+  type ProviderType,
+} from '@ecoma-io/push-notification-domain';
 
 import type { D1DatabaseLike } from './d1-surface';
 
@@ -1041,11 +1046,18 @@ function toProviderStatus(value: string): ProviderStatus {
 }
 
 function toProviderType(value: string): ProviderType {
-  // V1 chỉ có **một** provider type thực thi (`V1_EXECUTABLE_PROVIDER_TYPE`) — `web-push`.
-  // Giá trị lạ fallback về nó thay vì ném: provider type là dữ liệu cấu hình, và một hàng hỏng
-  // phải **vẫn** hiển thị được trong Admin list để operator sửa. Việc chặn provider type sai
-  // là CHECK của schema, không phải một `throw` trên đường đọc.
-  return value === 'web-push' ? 'web-push' : 'web-push';
+  // ⚠️ **Trả đúng giá trị đã lưu** — không ép về `web-push`. Bản đầu viết
+  // `return value === 'web-push' ? 'web-push' : 'web-push'`, tức mọi provider type khác
+  // đều bị đọc lại thành `web-push`. Hậu quả đo được: một provider `fcm`/`apns` hiện
+  // trong Admin list là `web-push`, nên operator **không thấy** được rằng scope đó đang
+  // có một provider ngoài scope v1 — và cổng chặn scope (control plane create/enable/
+  // make-primary) trông như không có tác dụng vì read-model không còn phân biệt được.
+  // Giá trị lạ fallback về `web-push` **chỉ** khi hàng hỏng nằm ngoài vocabulary: đó là
+  // CHECK của schema, và một hàng hỏng phải **vẫn** hiển thị được để operator sửa.
+  if (isProviderType(value)) {
+    return value;
+  }
+  return V1_EXECUTABLE_PROVIDER_TYPE;
 }
 
 function toCredentialStatus(value: string): 'active' | 'retired' | 'compromised' {

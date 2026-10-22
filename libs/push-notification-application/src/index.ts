@@ -230,6 +230,9 @@ export {
   runProviderTest,
   setProviderStatus,
   updateProvider,
+  validateConfigurationForProviderType,
+  validateWebPushConfiguration,
+  verifyVapidKeyPair,
 } from './admin-provider';
 export type {
   AdminDeps,
@@ -241,6 +244,7 @@ export type {
   ProviderTestOutcome,
   RotateCredentialCommand,
   VapidPublicKeyView,
+  ValidateConfigurationResult,
 } from './admin-provider';
 
 export {

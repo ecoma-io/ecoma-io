@@ -67,6 +67,7 @@ const PUBLIC_EXPORT_NAMES = [
   'isTerminalDeliveryStatus',
   'isTerminalOutboxStatus',
   'isTransport',
+  'isV1ExecutableProviderScope',
   'measurePayloadPlaintextBytes',
   'planAdministrativeRetry',
   'planDeliveryRepublish',

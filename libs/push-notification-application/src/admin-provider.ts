@@ -22,7 +22,10 @@
 
 import {
   canRetireEncryptionKey,
+  isV1ExecutableProviderScope,
   selectPrimaryProvider,
+  V1_EXECUTABLE_PROVIDER_TYPE,
+  V1_EXECUTABLE_TRANSPORT,
   type ProviderRoutingFact,
 } from '@ecoma-io/push-notification-domain';
 import type { PushNotificationConfig } from './config-port';
@@ -77,6 +80,43 @@ export const ADMIN_REJECTION = {
   DeliveryNotFound: 'delivery_not_found',
   /** Ghi audit/D1 thất bại — thao tác chưa xảy ra nên không trả `200`. */
   StorageFailure: 'storage_failure',
+  /**
+   * Provider nằm ngoài scope thực thi của v1 (`transport`/`type` khác `web`/`web-push`).
+   *
+   * ⚠️ Reason này **đã có** trong vocabulary của contract (`02-requirements.md` §2.1 chốt
+   * `fcm`/`apns` là ngoài scope v1) — nó cùng nghĩa với `unsupported_transport` /
+   * `unsupported_provider_type` của delivery-plane guard, chỉ khác tầng kiểm. Vì vậy
+   * `wire.ts` **không** cần thêm nhánh mới: reason không có trong `switch` rơi vào
+   * `default` → `400`, đúng như một lỗi payload.
+   */
+  UnsupportedProviderScope: 'unsupported_provider_scope',
+  /**
+   * `configuration` của provider không khớp schema của provider type — thiếu field bắt
+   * buộc, field rỗng, hoặc chứa khoá mang dấu secret.
+   *
+   * ⚠️ Tách khỏi `state_mismatch` vì hai lỗi này có **hai remediation khác nhau**: một
+   * provider có configuration hỏng thì sửa `configuration`, còn `state_mismatch` là
+   * tranh chấp trạng thái giữa hai admin. Gộp chúng khiến operator phải đoán.
+   */
+  ConfigurationInvalid: 'configuration_invalid',
+  /**
+   * Provider **không** có credential `active` nào để ký — thiếu hẳn, hoặc credential đã
+   * `retired`/`compromised`.
+   */
+  CredentialMissing: 'credential_missing',
+  /**
+   * Credential có mặt nhưng **không giải mã được** (sai root key version, ciphertext hỏng).
+   *
+   * ⚠️ Tách riêng `credential_missing` vì đây là lỗi **vận hành** (keyring lệch) chứ không
+   * phải cấu hình thiếu: một provider có credential nhưng giải mã hỏng thì operator phải
+   * sửa keyring, không phải tạo credential mới.
+   */
+  CredentialDecryptionFailed: 'credential_decryption_failed',
+  /**
+   * Cặp khoá VAPID không khớp: public key không phải là public key **derive** được từ
+   * private key đã cho.
+   */
+  VapidKeyPairMismatch: 'vapid_key_pair_mismatch',
 } as const;
 
 export type AdminRejection = (typeof ADMIN_REJECTION)[keyof typeof ADMIN_REJECTION];
@@ -85,6 +125,114 @@ export type AdminRejection = (typeof ADMIN_REJECTION)[keyof typeof ADMIN_REJECTI
 export type AdminResult<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly reason: AdminRejection; readonly detail: string };
+
+/* -------------------------------------------------------------------------------------- */
+/* Configuration schema theo provider type (WB-2 — worker Runtime §7)                          */
+/* -------------------------------------------------------------------------------------- */
+
+/**
+ * Tên khoá configuration mà worker **thật sự đọc** khi gửi.
+ *
+ * Nguồn: `delivery-pipeline.ts` (`buildSendRequest`):
+ * - `credential.privateKey`/`publicKey` đến từ bảng credential, **không** phải
+ *   configuration — vì vậy hai khoá dưới đây chỉ là `subject`.
+ * - `configuration.vapidSubject` / `vapid_subject` / `subject` — claim `sub` của JWT
+ *   VAPID (RFC 8292 §2.1, OPTIONAL).
+ *
+ * ⚠️ Danh sách này đi kèm danh sách **khoá bắt buộc không rỗng** và danh sách **khoá
+ * secret-cấm** ở bên dưới; giữ cả ba trong cùng một comment để ai thêm khoá mới phải đọc cả
+ * một khối deciding, không thể thêm một chiều mà quên chiều kia.
+ */
+
+/** khoá bắt buộc phải là string không rỗng khi create/PATCH (worker đọc để ký JWT VAPID). */
+const WEBSUB_CONFIGURATION_REQUIRED_KEYS: readonly string[] = [
+  'vapidSubject',
+  'vapid_subject',
+  'subject',
+];
+
+/**
+ * Khoá **không được phép** xuất hiện trong `configuration` — dấu secret phải nằm ở bảng
+ * credential (`push_provider_credentials`), không phải ở đây.
+ *
+ * Tài liệu: `03-operations.md` §7.1. Private key/p256dh/auth là 2 loại secret khác nhau;
+ * để chúng vào `configuration` là một lỗi mô hình hoá data, và một admin "dò cấu hình" có
+ * thể không nhận ra chúng đáng bị mã hoá.
+ */
+const WEBSUB_CONFIGURATION_FORBIDDEN_KEYS: readonly string[] = [
+  'private_key',
+  'privateKey',
+  'secret',
+  'auth',
+  'p256dh',
+];
+
+/** Trạng thái validation của configuration — chi tiết không rỗng, không nối giá trị đầu vào. */
+export type ValidateConfigurationResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: AdminRejection; readonly detail: string };
+
+/**
+ * Kiểm `configuration` của provider type `web-push` (WB-2):
+ * - Required key phải là string không rỗng (worker `readCredentialString` sẽ trả `null`
+ *   nếu mọi tên khả dụng đều vắng/rỗng → provider sẽ không ký được — chặn sớm).
+ * - Khoá secret-cấm tuyệt đối không được vào `configuration` — ngay cả với value rỗng,
+ *   vì chỉ riêng **tên khoá** đã là bằng chứng về mô hình hoá data sai.
+ *
+ * ⚠️ Driver là worker, không phải schema tự phát minh: 3 tên `subject` ở trên chính là 3
+ * tên `buildSendRequest` thử (`vapidSubject`, `vapid_subject`, `subject`). Add thêm tên
+ * worker tương lai chỉ khi `buildSendRequest` đổi.
+ */
+export function validateWebPushConfiguration(
+  configuration: Readonly<Record<string, unknown>>,
+): ValidateConfigurationResult {
+  for (const forbidden of WEBSUB_CONFIGURATION_FORBIDDEN_KEYS) {
+    if (forbidden in configuration) {
+      return {
+        ok: false,
+        reason: ADMIN_REJECTION.ConfigurationInvalid,
+        detail: `configuration không được chứa khoá secret \`${forbidden}\` — đó là phần của credential, không phải configuration.`,
+      };
+    }
+  }
+  for (const required of WEBSUB_CONFIGURATION_REQUIRED_KEYS) {
+    if (!(required in configuration)) {
+      continue;
+    }
+    const value = configuration[required];
+    if (typeof value === 'string' && value.length > 0) {
+      // Tìm thấy một required key hợp lệ — đủ.
+      return { ok: true };
+    }
+  }
+  return {
+    ok: false,
+    reason: ADMIN_REJECTION.ConfigurationInvalid,
+    detail:
+      'configuration phải chứa một trong `vapidSubject`/`vapid_subject`/`subject` là string không rỗng (claim `sub` của JWT VAPID).',
+  };
+}
+
+/**
+ * Dispatch theo provider type — mọi provider type ngoài `web-push` đều đã bị chặn ở WB-1
+ * (chỉ `web-push` là provider có schema được định nghĩa ở v1).
+ */
+export function validateConfigurationForProviderType(
+  type: ProviderRecord['type'],
+  configuration: Readonly<Record<string, unknown>>,
+): ValidateConfigurationResult {
+  if (type === V1_EXECUTABLE_PROVIDER_TYPE) {
+    return validateWebPushConfiguration(configuration);
+  }
+  // Thực tế không thể tới đây qua API (WB-1 chặn ở create), nhưng function này trả về
+  // fail-closed vì `updateProvider` có thể nhận một provider **đã có sẵn trong DB** với
+  // type lạ — record đó không được phép cập nhật configuration hợp lệ.
+  return {
+    ok: false,
+    reason: ADMIN_REJECTION.ConfigurationInvalid,
+    detail: 'configuration được định nghĩa schema chỉ cho provider type `web-push` ở v1.',
+  };
+}
 
 /* -------------------------------------------------------------------------------------- */
 /* create                                                                                     */
@@ -119,6 +267,40 @@ export async function createProvider(
 ): Promise<AdminResult<ProviderRecord>> {
   const { ports } = deps;
   const now = nowOverride ?? ports.clock.now();
+
+  // ⚠️ WB-5: `makePrimary` **không** được dùng ở create. Bản đầu tạo provider rồi mới
+  // tuyên bố primary, nên một `make_primary:true` bị từ chối vẫn để lại một provider row
+  // **và** một audit `provider_created` — tức bằng chứng của hai thao tác trong khi chỉ một
+  // cái được chấp nhận. Tuyên bố primary là operation riêng
+  // (`POST /admin/v1/providers/:id/primary`) với guard riêng (§6.1), nên ở đây ta từ chối
+  // **trước khi** insert. Route cũng chặn (lớp trên) — cả hai để bất biến không phụ thuộc
+  // đường gọi.
+  if (command.makePrimary) {
+    return {
+      ok: false,
+      reason: ADMIN_REJECTION.StateMismatch,
+      detail: 'Tuyên bố primary là operation riêng — tạo provider trước, rồi tuyên bố primary sau.',
+    };
+  }
+
+  // ⚠️ **Cổng chặn scope v1 nằm ở use-case, không ở route.** Route chỉ kiểm "type có nằm
+  // trong vocabulary không" (`web-push`/`fcm`/`apns` — cả ba đều hợp lệ về hình thức);
+  // nếu chỉ chặn ở route thì một provider `fcm` nhét thẳng vào D1 (migrate, seed, script
+  // vận hành) vẫn enable được và tuyên bố primary được — một cổng chặn bị bỏ qua chỉ cần
+  // một đường ghi khác.
+  const scope = checkProviderScopeSupport(command.type, command.transport);
+  if (scope !== null) {
+    return scope;
+  }
+
+  const configuration = validateConfigurationForProviderType(command.type, command.configuration);
+  if (!configuration.ok) {
+    return {
+      ok: false,
+      reason: configuration.reason,
+      detail: configuration.detail,
+    };
+  }
 
   const created = await ports.providers.insert({
     providerId: command.providerId,
@@ -291,6 +473,20 @@ export async function setProviderStatus(
     };
   }
 
+  // WB-1: cửa chặn enable cho scope v1 — dùng **record đã đọc để quyết** (và statement ghi
+  // `expected` ở dưới vẫn là guarded conditional write).
+  if (input.status === 'enabled') {
+    const target = current as ProviderRecord;
+    const scope = checkProviderScopeSupport(target.type, target.transport);
+    if (scope !== null) {
+      return scope;
+    }
+    const precondition = await checkEnablePreconditions(deps, target);
+    if (precondition !== null) {
+      return precondition;
+    }
+  }
+
   const updated = await ports.providers.setStatus({
     app: input.app,
     providerId: input.providerId,
@@ -439,6 +635,12 @@ export async function claimProviderPrimary(
   }
   // Narrow: `checkProviderScope` trả `null` **chỉ** khi record khác `null` **và** `app` khớp.
   const target = provider as ProviderRecord;
+  // WB-1: cổng chặn scope v1 cho claim-primary — một provider `fcm`/`apns` không được
+  // tuyên bố primary trong v1, kể cả khi nó được tạo bằng một đường ghi khác.
+  const scope = checkProviderScopeSupport(target.type, target.transport);
+  if (scope !== null) {
+    return scope;
+  }
   if (target.emergencyHold || target.status === 'disabled') {
     // Tuyên bố một provider không eligible làm primary là cách **duy nhất** để scope rơi
     // vào trạng thái mà routing vẫn fail-safe (`ambiguous`/`no_provider`) sau khi mapping cũ
@@ -574,6 +776,19 @@ export async function rotateCredential(
     return mismatch;
   }
 
+  // WB-6: **Verify cặp khoá VAPID trước khi mã hoá/ghi** — chỉ so trực tiếp 2 string là
+  // không đủ, vì một "public key" nhầm (khớp là do sao chép sai) sẽ ký được JWT nhưng
+  // push service sẽ từ chối 401, nghĩa là mọi delivery sẽ hỏng nhưng rotate vẫn 200.
+  const pairMatches = await verifyVapidKeyPair(command.privateKey, command.publicKey);
+  if (!pairMatches) {
+    return {
+      ok: false,
+      reason: ADMIN_REJECTION.VapidKeyPairMismatch,
+      detail:
+        'public_key không khớp cặp khoá mà private_key ký được — dùng đúng cặp VAPID của `vapid_key_id` mới.',
+    };
+  }
+
   // Mã hoá **trước** khi ghi bất kỳ thứ gì: một lỗi ở `encrypt` khiến rotation dừng lại mà
   // không để lại một credential `active` mà không có ciphertext.
   const encrypted = await ports.credentialCipher.encrypt(command.privateKey);
@@ -653,6 +868,98 @@ export async function checkEncryptionKeyRetirement(
 ): Promise<{ readonly canRetire: boolean; readonly versionsInUse: readonly string[] }> {
   const versionsInUse = await deps.ports.providerCredentials.listEncryptionVersionsInUse();
   return { canRetire: canRetireEncryptionKey(keyId, versionsInUse), versionsInUse };
+}
+
+/* -------------------------------------------------------------------------------------- */
+/* VAPID key-pair correspondence (WB-6)                                                       */
+/* -------------------------------------------------------------------------------------- */
+
+/**
+ * Kiểm một cặp VAPID có khớp nhau không: sign bằng private key, verify bằng public key.
+ *
+ * ⚠️ **Vì sao verify chứ không phải "derive rồi so chuỗi".** WebCrypto **không** cho
+ * `exportKey('raw', privateKey)` — chỉ `exportKey('jwk', …)` (mà `d` là secret) hoặc
+ * `'pkcs8'`. Nên "derive public key từ private key" theo nghĩa đó không tồn tại ở tầng
+ * WebCrypto. Cách kiểm đúng và **cũng mạnh hơn**: ký một message bằng private key rồi
+ * verify bằng public key — `verify` chỉ thành công khi public key **chính là** public key
+ * của private key đó. Cùng thuật toán và cùng định dạng material với worker
+ * (`importKey('pkcs8', …, ECDSA P-256)` trong `vapid.ts`), nên một cặp mà ta chấp nhận
+ * thì worker **chắc chắn** ký được.
+ *
+ * ⚠️ Verify **không** chứng minh ngược lại (một cặp khác vẫn có thể verify hỏng) — đó là
+ * đúng: đây là kiểm *tương ứng*, và một public key sai bị loại.
+ *
+ * ⚠️ `privateKey` **không bao giờ** vào message/detail — hàm trả boolean, caller map
+ * thành reason đóng.
+ *
+ * @param privateKeyBase64Url DER PKCS#8 của private key VAPID (base64url, không padding).
+ * @param publicKeyBase64Url Điểm EC P-256 uncompressed 65 octet (base64url, không padding).
+ * @returns `true` khi cặp khớp; `false` khi lệch, hoặc khi material không import được.
+ */
+export async function verifyVapidKeyPair(
+  privateKeyBase64Url: string,
+  publicKeyBase64Url: string,
+): Promise<boolean> {
+  const der = decodeBase64Url(privateKeyBase64Url);
+  const point = decodeBase64Url(publicKeyBase64Url);
+  if (der === null || point === null || point.length === 0) {
+    return false;
+  }
+  let privateKey: CryptoKey;
+  let publicKey: CryptoKey;
+  try {
+    privateKey = await crypto.subtle.importKey(
+      'pkcs8',
+      der,
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['sign'],
+    );
+    publicKey = await crypto.subtle.importKey(
+      'raw',
+      point,
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['verify'],
+    );
+  } catch {
+    // Material không import được (định dạng sai, không phải P-256, point không hợp lệ) —
+    // fail-closed: coi như cặp không khớp.
+    return false;
+  }
+  try {
+    const message = new TextEncoder().encode('ecoma.io:vapid-key-pair-check');
+    const signature = await crypto.subtle.sign(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      privateKey,
+      message,
+    );
+    return await crypto.subtle.verify(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      publicKey,
+      signature,
+      message,
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Decode base64url — `null` khi sai định dạng. Bổ sung cho hằng Ø của webcrypto lib. */
+function decodeBase64Url(value: string): Uint8Array | null {
+  if (value.length === 0) {
+    return null;
+  }
+  try {
+    const binary = atob(value.replaceAll('-', '+').replaceAll('_', '/'));
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  } catch {
+    return null;
+  }
 }
 
 /* -------------------------------------------------------------------------------------- */
@@ -890,6 +1197,95 @@ function checkProviderScope(
       ok: false,
       reason: ADMIN_REJECTION.AppMismatch,
       detail: 'Provider thuộc app khác — FR-007 cấm dùng chéo app.',
+    };
+  }
+  return null;
+}
+
+/**
+ * Cổng chặn scope thực thi của v1 cho `create`/`enable`/`make-primary` (WB-1).
+ *
+ * ⚠️ Đặt tên `checkProviderScopeSupport` để phân biệt với `checkProviderScope` (`app`
+ * mismatch): đây là phạm vi **thực thi của phiên bản**, không phải phạm vi app.
+ *
+ * ⚠️ Lỗi là **đóng** và detail **không nối giá trị đầu vào** — cùng chính sách với mọi
+ * reason khác ở đây (log injection). Giá trị `type`/`transport` thật sự không có trong
+ * detail, vì thế một reason chỉ có thể đại diện cho một nhóm.
+ */
+function checkProviderScopeSupport(
+  type: ProviderRecord['type'],
+  transport: ProviderRecord['transport'],
+): { readonly ok: false; readonly reason: AdminRejection; readonly detail: string } | null {
+  if (isV1ExecutableProviderScope({ type, transport })) {
+    return null;
+  }
+  return {
+    ok: false,
+    reason: ADMIN_REJECTION.UnsupportedProviderScope,
+    detail:
+      `Provider nằm ngoài scope thực thi v1 — control plane chỉ thực thi ` +
+      `type "${V1_EXECUTABLE_PROVIDER_TYPE}" với transport "${V1_EXECUTABLE_TRANSPORT}".`,
+  };
+}
+
+/**
+ * Precondition deterministic cho `disabled → enabled` (§6.1 — WB-3):
+ *
+ * 1. **Configuration schema hợp lệ** — cấu hình đúng schema của provider type.
+ * 2. **Có credential `active`** — không có thì JWT VAPID không ký được.
+ * 3. **Credential giải mã được** — sai root key version/ciphertext hỏng sẽ fail ở runtime.
+ *
+ * ⚠️ Ba kiểm này **deterministic**: cùng input → cùng kết quả, không phụ thuộc mạng, thời
+ * gian, hay trạng thái của push service. "Connectivity + test delivery" (§6.1) là **runbook
+ * vận hành §6.4**, không phải gate API: chặn enable bằng "test đã pass" nghĩa là một
+ * provider chưa bao giờ được test thì không bao giờ enable được, và provider đã test một
+ * lần hôm qua sẽ pass gate hôm nay dù push service đã đổi.
+ *
+ * ⚠️ Fail-closed cho mọi lỗi bất ngờ: `decrypt` throw → `credential_decryption_failed`
+ * (không bao giờ để một lỗi exception chạy qua và trả 500 thay vì một reason đóng).
+ */
+async function checkEnablePreconditions(
+  deps: AdminDeps,
+  provider: ProviderRecord,
+): Promise<{
+  readonly ok: false;
+  readonly reason: AdminRejection;
+  readonly detail: string;
+} | null> {
+  const configuration = validateConfigurationForProviderType(provider.type, provider.configuration);
+  if (!configuration.ok) {
+    return {
+      ok: false,
+      reason: configuration.reason,
+      detail: configuration.detail,
+    };
+  }
+
+  const credentials = await deps.ports.providerCredentials.listByProvider(
+    provider.app,
+    provider.providerId,
+  );
+  const active = credentials.find((credential) => credential.status === 'active');
+  if (active === undefined) {
+    return {
+      ok: false,
+      reason: ADMIN_REJECTION.CredentialMissing,
+      detail: 'Provider chưa có credential `active` — không thể ký JWT VAPID cho subscription.',
+    };
+  }
+
+  try {
+    await deps.ports.credentialCipher.decrypt(
+      active.credentialCiphertext,
+      active.credentialEncryptionVersion,
+    );
+  } catch {
+    // ⚠️ Không nối error message — nó có thể chứa ciphertext/keys metadata (FR-006).
+    return {
+      ok: false,
+      reason: ADMIN_REJECTION.CredentialDecryptionFailed,
+      detail:
+        'Credential `active` không giải mã được bằng root key version hiện tại — kiểm tra keyring.',
     };
   }
   return null;
