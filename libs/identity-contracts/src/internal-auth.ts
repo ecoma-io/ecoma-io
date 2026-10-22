@@ -435,6 +435,37 @@ export const INTERNAL_NONCE_HEADER = 'x-ecoma-internal-nonce';
 /** Header mang chữ ký, định dạng `v1=<hex>`. */
 export const INTERNAL_SIGNATURE_HEADER = 'x-ecoma-internal-signature';
 
+/**
+ * Header mang `kid` — định danh khoá HMAC của bên ký, tuỳ chọn.
+ *
+ * ⚠️ `kid` **KHÔNG nằm trong canonical string** — quyết định gần nhất của issue #64.
+ * Thêm dòng `<len(kid)>:<kid>` vào canonical là một thay đổi giao thức: nó phá mọi golden
+ * vector đang có và buộc dual-accept hai canonical cùng lúc — đúng vòng xoáy mà damas
+ * muốn xoá. Khi `kid` chỉ là một header, người nhận kiểm nó như **một chỉ dẫn chọn khoá**
+ * trước khi tính HMAC, và một envelope không `kid` vẫn verify được bằng secret hiện hành
+ * (phase transition).
+ *
+ * ⚠️ `kid` tự nó **không được tin như một claim**: nó là dữ liệu đầu vào do bên gọi kiểm
+ * soát, không có chữ ký phủ nó khi xét riêng. Sự thật bảo mật tạo từ tổ hợp: chữ ký phải
+ * khớp với HMAC của **khoá** mà `kid` đã chọn — chọn một `kid` ngoài registry là không có
+ * khoá để khớp, tức `bad_signature` (fail-closed, xem {@link verifyRequest}).
+ */
+export const INTERNAL_KID_HEADER = 'x-ecoma-internal-kid';
+
+/**
+ * Định dạng `kid` — 8–16 hex chữ thường (`/^[0-9a-f]{8,16}$/u`).
+ *
+ * Biên 8 chữ dưới = 32 bit entropy: đủ để regulator chọn không va chạm trong scope mỗi
+ * service, và không quan trọng hơn chữ ký HMAC — `kid` chỉ cần chọn khoá, không tự nó là
+ * bảo mật. Biên 16 trần để giữ header nhỏ) và **khoanh vùng lỗi cấu hình sai**: nếu cho
+ * phép một chuỗi tự do dài, một người vận hành có thể dán nhầm giá trị secret vào `KID`
+ * và nó rơi về lỗi `wrong key` khó tìm thay vì một lỗi hình dạng rõ ràng.
+ *
+ * Ký tự in hoa bị từ chối cùng với phân biệt chữ hoa/thường của hex là do cấu hình sai:
+ * ở mỗi quota một format duy nhất. Xem {@link assertKid}.
+ */
+const KID_PATTERN = /^[0-9a-f]{8,16}$/u;
+
 /** Giới hạn kích thước thân tối đa (byte) cho envelope nội bộ (đồng thuận giữa auth–account). */
 export const INTERNAL_BODY_LIMIT_BYTES = 64 * 1024;
 
@@ -453,6 +484,38 @@ export const INTERNAL_BODY_LIMIT_BYTES = 64 * 1024;
  * (`docs/services/auth/03-operations.md`) ghi rõ xoay secret phải deploy đồng thời.
  */
 const SIGNATURE_PREFIX = 'v1=';
+
+/**
+ * Kiểm `kid` có đúng định dạng {@link KID_PATTERN} không.
+ *
+ * Ném {@link InvalidKidError} thay vì trả `boolean`: đáy của hợp đồng là lỗi cấu hình sai
+ * ở tầng **gửi** phải nổ ngay (tai nơi sinh giá trị), còn trên đường **nhận** nó được dịch
+ * thành `invalid_field`. Service nhật ký phía nhận sẽ không thấy ngoại lệ nào — chỉ một
+ * `401` và một `reason` trong log.
+ */
+export function assertKid(
+  value: string | null | undefined,
+): asserts value is string | null | undefined {
+  if (value !== null && value !== undefined && !KID_PATTERN.test(value)) {
+    throw new InvalidKidError('kid');
+  }
+}
+
+/**
+ * Lỗi hình dạng của `kid` — dùng ở tầng nhận dịch thành mã `invalid_field`.
+ *
+ * `field` chỉ là **tên** (`'kid'`), không bao giờ là giá trị: cấu hình sai của đầu vào
+ * `kid` đọc được ở nhiều nơi, và một giá trị có thể là nhầm dán secret.
+ */
+export class InvalidKidError extends Error {
+  readonly field: string;
+
+  constructor(field: string) {
+    super(`internal-auth: kid field "${field}" must be 8-16 lowercase hex characters`);
+    this.name = 'InvalidKidError';
+    this.field = field;
+  }
+}
 
 /** Cửa sổ skew mặc định (giây) khi người gọi không nêu. */
 export const DEFAULT_SKEW_SECONDS = 300;
@@ -525,6 +588,17 @@ export interface SignRequestInput {
    */
   readonly body?: Uint8Array | null;
   readonly secret: string;
+  /**
+   * `kid` của khoá dùng ký — tuỳ chọn.
+   *
+   * Có ⇒ gắn {@link INTERNAL_KID_HEADER} vào bộ header trả về; bỏ trống ⇒ không gắn
+   * (sender trong transition chưa bật `kid`, và phía nhận vẫn verify được bằng secret
+   * hiện hành). Không bao giờ nằm trong canonical string → không đổi gì chữ ký.
+   *
+   * Sai định dạng (không phải 8–16 hex chữ thường) ⇒ ném {@link InvalidKidError} ngay
+   * ở đây: một cấu hình sai lộ ra ở request đầu thay vì ở phía nhận.
+   */
+  readonly kid?: string;
   /** Epoch giây. Truyền vào để lib không tự đọc đồng hồ. */
   readonly timestamp: string;
   /** Nonce; tự sinh khi bỏ trống. */
@@ -543,10 +617,21 @@ export interface InternalAuthHeaders extends Readonly<Record<string, string>> {
   readonly [INTERNAL_TIMESTAMP_HEADER]: string;
   readonly [INTERNAL_NONCE_HEADER]: string;
   readonly [INTERNAL_SIGNATURE_HEADER]: string;
+  // ⚠️ `INTERNAL_KID_HEADER` **không** được khai báo ở đây, chủ ý: index signature của
+  // interface này là `string` (xem JSDoc của nó — tồn tại để truyền thẳng vào `headers` của
+  // `verifyRequest`), và một property tùy chọn `string | undefined` không gán được vào
+  // `Record<string, string>`. Header `kid` đi qua cùng đường: khi có, nó là một entry của
+  // record; khi không, nó vắng mặt. Không có cách type nào để biểu diễn "optional specific
+  // key" trên một record bắt buộc mà không phá chính index signature đó.
 }
 
 /** Sinh bộ header đã ký cho một request nội bộ. */
 export async function signRequest(input: SignRequestInput): Promise<InternalAuthHeaders> {
+  // `kid` sai định dạng chết ngay nơi sinh giá trị — trước mọi phép HMAC: một cấu hình
+  // sai lộ ra ở request đầu, đúng nguyên tắc fail-closed của file này.
+  if (input.kid !== undefined) {
+    assertKid(input.kid);
+  }
   const nonce = input.nonce ?? createNonce();
   const hash = await hashBody(input.body);
   const canonical = canonicalString(input.method, input.path, input.timestamp, nonce, hash);
@@ -555,6 +640,7 @@ export async function signRequest(input: SignRequestInput): Promise<InternalAuth
     [INTERNAL_TIMESTAMP_HEADER]: input.timestamp,
     [INTERNAL_NONCE_HEADER]: nonce,
     [INTERNAL_SIGNATURE_HEADER]: `${SIGNATURE_PREFIX}${signature}`,
+    ...(input.kid !== undefined ? { [INTERNAL_KID_HEADER]: input.kid } : {}),
   };
 }
 
@@ -589,6 +675,30 @@ export interface VerifyRequestInput {
    */
   readonly headers: InternalAuthHeaderSource;
   readonly secret: string;
+  /**
+   * Resolver secret theo `kid` của header `x-ecoma-internal-kid` — tuỳ chọn, cho phase
+   * transition khi xoay secret.
+   *
+   * Chủ ý: một **callback** chứ không phải một map. Thiếu `kid` trên wire là trạng thái
+   * bình thường trong transition (sender chưa bật `kid`), và một số receiver (medium: một
+   * secret duy nhất) không muốn khai báo một map chỉ để chạy một khoá. Callback là hình
+   * dạng tối thiểu, để hai bên đặt trên cùng một hợp đồng mà không cần loại nào đi trước.
+   *
+   * Nhận `string | null`: `null` khi header không có mặt (`kid` trống/missing). Trả
+   * **secret** hay ném là do người cài resolver; một resolver trả `null`/biến thể khác
+   * tuỳ ý làm có chữ ký sai sẽ bị phát hiện ở bên dưới, nhưng kể rõ tại sao trong
+   * JSDoc của từng service.
+   *
+   * ⚠️ **Resolver chạy TRƯỚC verify tổng thể, nhưng sau kiểm hình dạng của `kid`**: sai
+   * hình dạng của `kid` giữ nguyên là `invalid_field`, không kích resolver (một `kid`
+   * rác có thể là đầu vào do người gọi kiểm soát, không có lý do gì đi vào lệnh tra
+   * registry).
+   *
+   * ⚠️ **Resolver từ chối (ném) ⇔ `bad_signature`** — fail-closed. Không có `kid`-chưa-biết
+   * ngày nào được nhận bằng secret fallback: đó là kết trở thành một nhánh "học từ
+   * response" từ góc độ bảo mật.
+   */
+  readonly secretByKid?: (kid: string) => Promise<string>;
   /** Epoch giây hiện tại, do người gọi truyền vào. */
   readonly now: string;
   /**
@@ -684,8 +794,15 @@ export function resolveSkewSeconds(value: number | undefined): number {
  * ⚠️ **Fail closed**: mọi sai lệch trả `{ ok: false }` — không có nhánh nào coi header
  * thiếu là "chấp nhận được".
  *
- * Thứ tự kiểm: thiếu header -> timestamp (định dạng và skew) -> độ mạnh nonce -> **dựng
- * canonical** -> **chứng minh chữ ký** -> **chiếm nonce**.
+ * Thứ tự kiểm: thiếu header -> **hình dạng `kid`** -> **chọn khoá theo `kid`** -> timestamp
+ * (định dạng và skew) -> độ mạnh nonce -> **dựng canonical** -> **chứng minh chữ ký** ->
+ * **chiếm nonce**.
+ *
+ * ⚠️ **`kid` được kiểm TRƯỚC timestamp và trước chữ ký** — cố ý. `kid` là **chỉ dẫn chọn
+ * khoá**, không phải một trường đã ký: không có khoá thì không có HMAC nào để tính, nên
+ * hỏi "khoá nào?" phải đứng trước mọi phép băm. Hình dạng sai của `kid` là lỗi đầu vào
+ * (`invalid_field`), không phải chữ ký sai — phân biệt hai thứ đó giữ được khi `kid` rác
+ * không đi xây dựng lệnh tra registry.
  *
  * `body` được băm **ngay khi cần**, trên đúng mảng byte người gọi đưa vào, và người gọi phải
  * đọc byte đó từ dây **trước** khi decode/parse — xem {@link hashBody}. Xác thực không bao
@@ -725,6 +842,39 @@ export async function verifyRequest(input: VerifyRequestInput): Promise<VerifyRe
     return { ok: false, reason: 'missing_header' };
   }
 
+  // `kid` đọc trước mọi phép tính HMAC: nó là **chỉ dẫn chọn khoá**, không phải một trường
+  // đã ký. Sai hình dạng ⇒ `invalid_field` (giống `canonicalString` bắt surrogate lẻ) —
+  // một `kid` rác không đi xây dựng lệnh tra registry, cũng không phải đủ để classify như
+  // `bad_signature` (đó là lỗi hình dạng đầu vào, không phải chữ ký).
+  const kidHeader = readHeader(input.headers, INTERNAL_KID_HEADER);
+  try {
+    if (kidHeader !== null) {
+      assertKid(kidHeader);
+    }
+  } catch (error) {
+    if (error instanceof InvalidKidError) {
+      return { ok: false, reason: 'invalid_field' };
+    }
+    throw error;
+  }
+
+  // Resolver được gọi **riêng** khi có `kid`: không có nó, secret dùng là `input.secret`
+  // (phase transition — sender chưa bật `kid`). Resolve sai/nhận ném ⇒ `bad_signature`,
+  // fail-closed: không có nhánh nào "chấp nhận với secret mặc định" một envelope mà
+  // resolver không biết chọn khoá.
+  let secret = input.secret;
+  if (kidHeader !== null && input.secretByKid !== undefined) {
+    try {
+      const resolved = await input.secretByKid(kidHeader);
+      if (typeof resolved !== 'string' || resolved.length === 0) {
+        return { ok: false, reason: 'bad_signature' };
+      }
+      secret = resolved;
+    } catch {
+      return { ok: false, reason: 'bad_signature' };
+    }
+  }
+
   if (!isEpochSeconds(timestamp)) {
     return { ok: false, reason: 'bad_timestamp' };
   }
@@ -757,7 +907,7 @@ export async function verifyRequest(input: VerifyRequestInput): Promise<VerifyRe
   try {
     const hash = await hashBody(input.body);
     const canonical = canonicalString(input.method, input.path, timestamp, nonce, hash);
-    expected = await signCanonical(canonical, input.secret);
+    expected = await signCanonical(canonical, secret);
   } catch (error) {
     if (error instanceof InvalidCanonicalFieldError) {
       return { ok: false, reason: 'invalid_field' };

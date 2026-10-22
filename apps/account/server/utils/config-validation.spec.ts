@@ -254,3 +254,117 @@ describe('lazyConfigValidator', () => {
     expect(() => ensure({})).not.toThrow();
   });
 });
+
+/**
+ * Cấu hình `kid` của internal HMAC (issue #64).
+ *
+ * ⚠️ Mỗi test ở đây là một CÁCH CẤU HÌNH SAI mà nếu lọt qua sẽ thành lỗ hổng:
+ * hai `kid` chia một secret làm mất ý nghĩa của selector, và một `kid` sai hình dạng
+ * là header rác đi ra ngoài.
+ */
+describe('validateAccountConfig — the kid of the internal HMAC', () => {
+  it('accepts a config without a kid, because that is the transition state', () => {
+    expect(() => validateAccountConfig(validConfig())).not.toThrow();
+  });
+
+  it('accepts a valid kid', () => {
+    expect(() => validateAccountConfig(validConfig({ internalHmacKid: '0123abcd' }))).not.toThrow();
+  });
+
+  it('rejects a malformed kid', () => {
+    expect(() => validateAccountConfig(validConfig({ internalHmacKid: 'not-hex' }))).toThrow(
+      /NUXT_INTERNAL_HMAC_KID/u,
+    );
+  });
+
+  it('rejects a kid that is not a string', () => {
+    expect(() => validateAccountConfig(validConfig({ internalHmacKid: 12345 }))).toThrow(
+      /NUXT_INTERNAL_HMAC_KID/u,
+    );
+  });
+
+  it('never states the kid value in the error message', () => {
+    // `kid` sai có thể là nhầm dán secret, và message này đọc được trong log platform.
+    let message = '';
+    try {
+      validateAccountConfig(validConfig({ internalHmacKid: 'sup3rs3cret' }));
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain('NUXT_INTERNAL_HMAC_KID');
+    expect(message).not.toContain('sup3rs3cret');
+  });
+
+  it('accepts a complete previous pair', () => {
+    expect(() =>
+      validateAccountConfig(
+        validConfig({
+          internalHmacKid: '0123abcd',
+          internalHmacPreviousKid: 'abcd0123',
+          internalHmacPreviousSecret: 'p'.repeat(32),
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('rejects a previous secret without a previous kid', () => {
+    expect(() =>
+      validateAccountConfig(
+        validConfig({
+          internalHmacKid: '0123abcd',
+          internalHmacPreviousSecret: 'p'.repeat(32),
+        }),
+      ),
+    ).toThrow(/NUXT_INTERNAL_HMAC_PREVIOUS_KID/u);
+  });
+
+  it('rejects a previous kid without a previous secret', () => {
+    expect(() =>
+      validateAccountConfig(
+        validConfig({
+          internalHmacKid: '0123abcd',
+          internalHmacPreviousKid: 'abcd0123',
+        }),
+      ),
+    ).toThrow(/NUXT_INTERNAL_HMAC_PREVIOUS_SECRET/u);
+  });
+
+  it('rejects a current kid equal to the previous kid', () => {
+    // Hai khoá khác nhau không được chia một `kid` — nếu chung thì `kid` không còn
+    // chọn được khoá nào.
+    expect(() =>
+      validateAccountConfig(
+        validConfig({
+          internalHmacKid: '0123abcd',
+          internalHmacPreviousKid: '0123abcd',
+          internalHmacPreviousSecret: 'p'.repeat(32),
+        }),
+      ),
+    ).toThrow(/NUXT_INTERNAL_HMAC_KID/u);
+  });
+
+  it('rejects two different kids sharing one secret', () => {
+    // Cùng giá trị secret ⇒ "kid nào cũng đúng" — xoá chủ ý của selector.
+    expect(() =>
+      validateAccountConfig(
+        validConfig({
+          internalHmacKid: '0123abcd',
+          internalHmacPreviousKid: 'abcd0123',
+          internalHmacPreviousSecret: VALID_SECRET,
+        }),
+      ),
+    ).toThrow(/NUXT_INTERNAL_HMAC_SECRET/u);
+  });
+
+  it('rejects a previous secret with surrounding whitespace instead of trimming it silently', () => {
+    expect(() =>
+      validateAccountConfig(
+        validConfig({
+          internalHmacKid: '0123abcd',
+          internalHmacPreviousKid: 'abcd0123',
+          internalHmacPreviousSecret: ` ${'p'.repeat(32)}`,
+        }),
+      ),
+    ).toThrow(/NUXT_INTERNAL_HMAC_PREVIOUS_SECRET/u);
+  });
+});

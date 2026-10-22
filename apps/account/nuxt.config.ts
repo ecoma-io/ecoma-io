@@ -109,6 +109,19 @@ export default defineNuxtConfig({
     // mọi chữ ký**. `server/plugins/config.ts` kiểm lúc khởi động và `throw` — đó mới
     // là fail closed.
     internalHmacSecret: '',
+    // `kid` của `internalHmacSecret` — rỗng ⇒ chưa bật `kid` (transition). Có ⇒ mọi
+    // envelope đi ra gắn `x-ecoma-internal-kid` (hướng `account → auth`) và mọi envelope
+    // đi vào có `kid` được tra qua registry (xem `config-validation.ts`). Cùng luật
+    // `NUXT_*` ở trên; không default, sai hình dạng thì validate throw lúc request đầu.
+    internalHmacKid: '',
+    // Cặp **verify-only** — tuỳ chọn, cả hai cùng được đặt hoặc cùng vắng mặt: chỉ dùng
+    // để **verify** envelope có `kid` = `internalHmacPreviousKid`, không bao giờ để ký.
+    //
+    // ⚠️ Đây là slot "verify-only", KHÔNG phải slot "khoá cũ": khi xoay secret nó chứa
+    // khoá **mới** trong pha nạp trước, rồi khoá **cũ** trong pha overlap — cùng một cặp
+    // biến, hai ý nghĩa khác nhau theo giai đoạn. Runbook: `docs/services/auth/03-operations.md` §3.3.
+    internalHmacPreviousSecret: '',
+    internalHmacPreviousKid: '',
     // Secret HMAC cho digest mã OTP (`server/lib/otp.ts`). Cùng luật với
     // `internalHmacSecret`: không default, thiếu/qua ngắn thì validate throw —
     // một digest OTP với key rỗng hay key ngắn không còn là keyed digest.

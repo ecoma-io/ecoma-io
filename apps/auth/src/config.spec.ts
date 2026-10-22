@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { AuthConfigurationError, SigningKeyProvider } from '@ecoma-io/identity-auth-domain';
 import { DEFAULT_SKEW_SECONDS } from '@ecoma-io/identity-auth-contracts';
 
-import { type AuthEnv, loadAuthConfig } from './config';
+import { type AuthEnv, loadAuthConfig, resolveInternalSecret } from './config';
 
 /**
  * Nạp cấu hình là nơi quyết định Worker có phát hành token được hay không.
@@ -276,5 +276,193 @@ describe('JWKS — publishes only the public key', () => {
     const config = await loadAuthConfig(makeEnv());
     const direct = await SigningKeyProvider.fromPem({ pem, kid: 'kid-2026-01' });
     expect(await config.signingKeyProvider.publicJwk()).toEqual(await direct.publicJwk());
+  });
+});
+
+/**
+ * Cấu hình `kid` của envelope internal (issue #64).
+ *
+ * ⚠️ Mỗi test ở đây là một CÁCH CẤU HÌNH SAI. Suite xanh có giá trị; suite đỏ nghĩa
+ * là có một đường mà lỗi đi vào. Đặc biệt: mọi lỗi ở đây phải nổ **lúc boot**, không
+ * phải lúc có request — một cặp `kid`/secret lệch là cấu hình sai của toàn bộ kênh
+ * internal, và lỗi lúc runtime biểu hiện thành `401` mà không nói vì sao.
+ */
+describe('loadAuthConfig — the kid of the internal envelope', () => {
+  it('loads with an empty map when no kid is set (transition)', async () => {
+    const config = await loadAuthConfig(makeEnv());
+    expect(config.internalKid).toBeUndefined();
+    expect(config.internalSecretsByKid.size).toBe(0);
+  });
+
+  it('maps exactly one entry to the current secret for a valid kid', async () => {
+    const config = await loadAuthConfig(makeEnv({ AUTH_INTERNAL_KID: '0123abcd' }));
+    expect(config.internalKid).toBe('0123abcd');
+    expect(config.internalSecretsByKid.get('0123abcd')).toBe('internal-secret-test');
+  });
+
+  it('maps two entries for a complete previous pair', async () => {
+    const config = await loadAuthConfig(
+      makeEnv({
+        AUTH_INTERNAL_KID: '0123abcd',
+        AUTH_INTERNAL_PREVIOUS_KID: 'abcd0123',
+        AUTH_INTERNAL_PREVIOUS_SECRET: 'the-previous-internal-secret',
+      }),
+    );
+    expect(config.internalSecretsByKid.size).toBe(2);
+    expect(config.internalSecretsByKid.get('0123abcd')).toBe('internal-secret-test');
+    expect(config.internalSecretsByKid.get('abcd0123')).toBe('the-previous-internal-secret');
+  });
+
+  it('throws at boot for a malformed kid, never silently sending a garbage header', async () => {
+    await expect(loadAuthConfig(makeEnv({ AUTH_INTERNAL_KID: 'not-hex' }))).rejects.toThrow(
+      AuthConfigurationError,
+    );
+  });
+
+  it('throws at boot for a kid that is too short', async () => {
+    await expect(loadAuthConfig(makeEnv({ AUTH_INTERNAL_KID: '0123abc' }))).rejects.toThrow(
+      AuthConfigurationError,
+    );
+  });
+
+  it('rejects a kid with surrounding whitespace instead of trimming it silently', async () => {
+    await expect(loadAuthConfig(makeEnv({ AUTH_INTERNAL_KID: ' 0123abcd ' }))).rejects.toThrow(
+      AuthConfigurationError,
+    );
+  });
+
+  it('throws at boot when a previous secret is set without a previous kid', async () => {
+    await expect(
+      loadAuthConfig(
+        makeEnv({
+          AUTH_INTERNAL_KID: '0123abcd',
+          AUTH_INTERNAL_PREVIOUS_SECRET: 'the-previous-internal-secret',
+        }),
+      ),
+    ).rejects.toThrow(AuthConfigurationError);
+  });
+
+  it('throws at boot when a previous kid is set without a previous secret', async () => {
+    await expect(
+      loadAuthConfig(
+        makeEnv({
+          AUTH_INTERNAL_KID: '0123abcd',
+          AUTH_INTERNAL_PREVIOUS_KID: 'abcd0123',
+        }),
+      ),
+    ).rejects.toThrow(AuthConfigurationError);
+  });
+
+  it('throws at boot when the current kid equals the previous kid', async () => {
+    // Hai khoá khác nhau không được chia một `kid`: nếu chung, `kid` không còn chọn
+    // được khoá nào.
+    await expect(
+      loadAuthConfig(
+        makeEnv({
+          AUTH_INTERNAL_KID: '0123abcd',
+          AUTH_INTERNAL_PREVIOUS_KID: '0123abcd',
+          AUTH_INTERNAL_PREVIOUS_SECRET: 'the-previous-internal-secret',
+        }),
+      ),
+    ).rejects.toThrow(AuthConfigurationError);
+  });
+
+  it('throws at boot when two secrets share the same value', async () => {
+    // Cùng giá trị nhưng hai `kid` khác nhau ⇒ "kid nào cũng đúng" — xoá chủ ý của
+    // selector.
+    await expect(
+      loadAuthConfig(
+        makeEnv({
+          AUTH_INTERNAL_KID: '0123abcd',
+          AUTH_INTERNAL_PREVIOUS_KID: 'abcd0123',
+          AUTH_INTERNAL_PREVIOUS_SECRET: 'internal-secret-test',
+        }),
+      ),
+    ).rejects.toThrow(AuthConfigurationError);
+  });
+
+  it('never puts the kid or secret value in the error message', async () => {
+    // Một operator có thể dán nhầm secret vào ô `kid`. Nếu message nêu giá trị, nó
+    // lọt ra error log của Worker (F-07).
+    const error = await loadAuthConfig(makeEnv({ AUTH_INTERNAL_KID: 'sup3rs3cret' })).catch(
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(AuthConfigurationError);
+    expect((error as Error).message).not.toContain('sup3rs3cret');
+  });
+});
+
+describe('resolveInternalSecret — the resolver of the internal envelope', () => {
+  it('resolves the secret of the current kid', async () => {
+    const config = await loadAuthConfig(makeEnv({ AUTH_INTERNAL_KID: '0123abcd' }));
+    const resolve = resolveInternalSecret(config);
+    await expect(resolve('0123abcd')).resolves.toBe('internal-secret-test');
+  });
+
+  it('resolves the secret of the previous kid — the overlap window of a rotation', async () => {
+    const config = await loadAuthConfig(
+      makeEnv({
+        AUTH_INTERNAL_KID: '0123abcd',
+        AUTH_INTERNAL_PREVIOUS_KID: 'abcd0123',
+        AUTH_INTERNAL_PREVIOUS_SECRET: 'the-previous-internal-secret',
+      }),
+    );
+    const resolve = resolveInternalSecret(config);
+    await expect(resolve('abcd0123')).resolves.toBe('the-previous-internal-secret');
+  });
+
+  it('throws for an unknown kid, so the lib turns it into bad_signature (fail-closed)', async () => {
+    const config = await loadAuthConfig(makeEnv({ AUTH_INTERNAL_KID: '0123abcd' }));
+    const resolve = resolveInternalSecret(config);
+    await expect(resolve('ffffffff')).rejects.toThrow(/khong co trong registry/u);
+  });
+
+  it('treats every kid as unknown when no kid is configured, so a kid-carrying envelope is bad_signature', async () => {
+    // Không có `kid` nào trong registry ⇒ không có khoá nào để khớp. Đây là hành vi
+    // fail-closed, KHÔNG phải "chấp nhận bằng secret mặc định".
+    const config = await loadAuthConfig(makeEnv());
+    const resolve = resolveInternalSecret(config);
+    await expect(resolve('0123abcd')).rejects.toThrow(/khong co trong registry/u);
+  });
+
+  /**
+   * Pha **nạp trước** của runbook xoay secret — bước 2 trong
+   * `docs/services/auth/03-operations.md` §3.3.
+   *
+   * ⚠️ Ở pha này slot `previous` chứa khoá **MỚI** (chưa dùng để ký), và entry
+   * `current` — vốn **chính là** secret đang ký — vẫn là khoá cũ. Test này khóa đúng
+   * cái hành vi đó, vì nhầm hai nghĩa của slot `previous` là lỗi khiến runbook hướng
+   * dẫn người vận hành làm sai.
+   */
+  it('preload phase: the previous slot holds the NEW key while current stays the signing key', async () => {
+    const config = await loadAuthConfig(
+      makeEnv({
+        AUTH_INTERNAL_KID: '0123abcd',
+        AUTH_INTERNAL_PREVIOUS_KID: 'abcd0123',
+        AUTH_INTERNAL_PREVIOUS_SECRET: 'the-preloaded-internal-secret',
+      }),
+    );
+    const resolve = resolveInternalSecret(config);
+
+    // Khoá mới đã nạp trước ⇒ verify được (đối tác sắp ký bằng nó).
+    await expect(resolve('abcd0123')).resolves.toBe('the-preloaded-internal-secret');
+    // Nhưng Worker vẫn **ký** bằng khoá cũ: `internalSecret` không đổi khi nạp trước.
+    expect(config.internalSecret).toBe('internal-secret-test');
+    expect(config.internalKid).toBe('0123abcd');
+  });
+
+  it('preload phase: the Worker still verifies both keys', async () => {
+    // Điều kiện cho phép hai Worker đi qua bước 2 ở hai thời điểm khác nhau mà không
+    // gián đoạn: trong lúc nạp trước, mỗi Worker verify được cả khoá cũ lẫn khoá mới.
+    const config = await loadAuthConfig(
+      makeEnv({
+        AUTH_INTERNAL_KID: '0123abcd',
+        AUTH_INTERNAL_PREVIOUS_KID: 'abcd0123',
+        AUTH_INTERNAL_PREVIOUS_SECRET: 'the-preloaded-internal-secret',
+      }),
+    );
+    const resolve = resolveInternalSecret(config);
+    await expect(resolve('0123abcd')).resolves.toBe('internal-secret-test');
+    await expect(resolve('abcd0123')).resolves.toBe('the-preloaded-internal-secret');
   });
 });

@@ -12,6 +12,7 @@
  */
 
 export {
+  assertKid,
   assertNonceExpirySeconds,
   INTERNAL_BODY_LIMIT_BYTES,
   hashBody,
@@ -19,6 +20,8 @@ export {
   createNonce,
   DEFAULT_SKEW_SECONDS,
   InvalidCanonicalFieldError,
+  InvalidKidError,
+  INTERNAL_KID_HEADER,
   isValidNonceExpirySeconds,
   MAX_NONCE_CHARS,
   MAX_NONCE_EXPIRY_EPOCH_SECONDS,

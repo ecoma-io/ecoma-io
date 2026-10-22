@@ -74,6 +74,12 @@ export default defineEventHandler(async (event): Promise<ConsentDecideBody> => {
     writeLog({ event: 'consent_decide.failed', status: 503, reason: 'config_missing' });
     throw createError({ statusCode: 503, statusMessage: 'Service Unavailable' });
   }
+  // `kid` của khoá đang ký — rỗng nghĩa là transition chưa bật `kid`; chỉ forward
+  // khi nó là chuỗi không rỗng.
+  const signingKid =
+    typeof config.internalHmacKid === 'string' && config.internalHmacKid.length > 0
+      ? config.internalHmacKid
+      : undefined;
 
   const request: ConsentDecideRequest = {
     handle: body.handle,
@@ -84,6 +90,7 @@ export default defineEventHandler(async (event): Promise<ConsentDecideBody> => {
   const result = await submitConsentDecision({
     binding: authServiceBinding(config),
     signingKey,
+    signingKid,
     request,
     nowMs: Date.now(),
   });

@@ -126,6 +126,12 @@ export default defineEventHandler(async (event): Promise<HandoffResponse> => {
       statusMessage: 'Service Unavailable',
     });
   }
+  // `kid` của khoá đang ký — rỗng nghĩa là transition chưa bật `kid`; chỉ forward
+  // khi nó là chuỗi không rỗng.
+  const signingKid =
+    typeof config.internalHmacKid === 'string' && config.internalHmacKid.length > 0
+      ? config.internalHmacKid
+      : undefined;
 
   // ── Ràng buộc handle X ↔ session trình nó (§3.6, FR-006c) ──────────────────
   //
@@ -189,6 +195,7 @@ export default defineEventHandler(async (event): Promise<HandoffResponse> => {
   const result = await announceSessionVerified({
     binding: authServiceBinding(config),
     signingKey,
+    signingKid,
     request: pushRequest,
     nowMs: Date.now(),
   });

@@ -29,7 +29,7 @@
  * trực tiếp, không cần stub) và giữ plugin làm lớp glue.
  */
 
-import { MAX_SKEW_SECONDS, MIN_SKEW_SECONDS } from '@ecoma-io/identity-contracts';
+import { assertKid, MAX_SKEW_SECONDS, MIN_SKEW_SECONDS } from '@ecoma-io/identity-contracts';
 
 import { MIN_OTP_HMAC_SECRET_LENGTH } from '../lib/otp';
 
@@ -39,6 +39,9 @@ const MIN_INTERNAL_HMAC_SECRET_LENGTH = 32;
 /** Phần `runtimeConfig` mà app đọc (không kể `public`). */
 export interface AccountRuntimeConfig {
   internalHmacSecret?: unknown;
+  internalHmacKid?: unknown;
+  internalHmacPreviousSecret?: unknown;
+  internalHmacPreviousKid?: unknown;
   internalAuthSkewSeconds?: unknown;
   /** Secret HMAC của OTP — digest mã 8 chữ số trước khi ghi DB. */
   otpHmacSecret?: unknown;
@@ -107,6 +110,46 @@ export function validateAccountConfig(config: AccountRuntimeConfig): void {
     throw new Error(`NUXT_OTP_HMAC_SECRET phải dài ít nhất ${MIN_OTP_HMAC_SECRET_LENGTH} ký tự.`);
   }
 
+  // `kid` của internal HMAC — bộ luật hình dạng **cùng hằng** của lib (`assertKid`):
+  // 8–16 hex chữ thường. Rỗng ⇒ transition (kid chưa bật), hợp lệ. Sai hình dạng khi
+  // được đặt là cấu hình sai rõ ràng, fail closed ở request đầu.
+  validateOptionalKid(config.internalHmacKid, 'NUXT_INTERNAL_HMAC_KID');
+  validateOptionalKid(config.internalHmacPreviousKid, 'NUXT_INTERNAL_HMAC_PREVIOUS_KID');
+
+  // Cặp previous: cả hai cùng được đặt hoặc cùng vắng mặt — một mình một cái là cấu hình
+  // sai rõ ràng (envelope có `kid` previous không tra được, hoặc `kid` cũ không có khoá
+  // theo sau). Trùng `kid` hai dòng là mơ hồ theo đúng nghĩa, chặn luôn; trùng **giá trị
+  // secret** cho hai `kid` khác nhau cũng chặn — hai `kid` chia một secret làm selector
+  // 'kid nào cũng đúng'.
+  const prevSecret = config.internalHmacPreviousSecret;
+  const prevKid = config.internalHmacPreviousKid;
+  validateSecretValue(prevSecret, 'NUXT_INTERNAL_HMAC_PREVIOUS_SECRET');
+  const hasPrevSecret = typeof prevSecret === 'string' && prevSecret.length > 0;
+  const hasPrevKid = typeof prevKid === 'string' && prevKid.length > 0;
+  if (hasPrevSecret !== hasPrevKid) {
+    throw new Error(
+      hasPrevSecret
+        ? 'NUXT_INTERNAL_HMAC_PREVIOUS_SECRET được đặt nhưng thiếu NUXT_INTERNAL_HMAC_PREVIOUS_KID.'
+        : 'NUXT_INTERNAL_HMAC_PREVIOUS_KID được đặt nhưng thiếu NUXT_INTERNAL_HMAC_PREVIOUS_SECRET.',
+    );
+  }
+  if (
+    hasPrevKid &&
+    typeof config.internalHmacKid === 'string' &&
+    config.internalHmacKid.length > 0
+  ) {
+    if (config.internalHmacKid === prevKid) {
+      throw new Error(
+        'NUXT_INTERNAL_HMAC_KID trùng NUXT_INTERNAL_HMAC_PREVIOUS_KID — hai khoá không thể chia một `kid`.',
+      );
+    }
+  }
+  if (hasPrevSecret && typeof secret === 'string' && secret === prevSecret) {
+    throw new Error(
+      'NUXT_INTERNAL_HMAC_SECRET trùng NUXT_INTERNAL_HMAC_PREVIOUS_SECRET — hai `kid` không thể chia một secret.',
+    );
+  }
+
   // Mail service URL — để trống là "chưa cấu hình", và luồng OTP cần gửi mail nên
   // phải fail closed ở request chứ không gửi được với URL rỗng. Chỉ kiểm hình dạng
   // http(s):// origin: URL sai host là lỗi cấu hình lộ ở lần gửi thật, còn một
@@ -116,6 +159,47 @@ export function validateAccountConfig(config: AccountRuntimeConfig): void {
     if (typeof mailUrl !== 'string' || !/^https?:\/\//u.test(mailUrl)) {
       throw new Error('NUXT_MAIL_SERVICE_URL phải là origin http(s) của transactional-mail.');
     }
+  }
+}
+
+/**
+ * Validate một `kid` tuỳ chọn — rỗng/`undefined` ⇒ hợp lệ (transition, `kid` chưa bật).
+ *
+ * Hình dạng lấy từ **chính lib** (`assertKid`) chứ không chép lại regex ở đây: một
+ * hằng giao thức có hai nơi định nghĩa là chỗ hai bên lệch nhau trong im lặng.
+ */
+function validateOptionalKid(value: unknown, name: string): void {
+  if (value === undefined || value === null || value === '') {
+    return;
+  }
+  if (typeof value !== 'string') {
+    throw new Error(`${name} phải là chuỗi.`);
+  }
+  try {
+    assertKid(value);
+  } catch {
+    // ⚠️ Không nêu giá trị — `kid` sai có thể là nhầm dán secret, và message này đọc
+    // được trong log của platform.
+    throw new Error(`${name} phải là 8-16 ký tự hex chữ thường.`);
+  }
+}
+
+/**
+ * Validate một secret tuỳ chọn — rỗng/`undefined` ⇒ vắng mặt (hợp lệ); có thì phải là
+ * chuỗi **không** rỗng và **không** có khoảng trắng đầu/cuối.
+ *
+ * Cùng luật với `internalHmacSecret`: trim âm thầm đổi giá trị bí mật, và hai bên
+ * dùng hai giá trị khác nhau là hỏng đóng — nên từ chối thay vì sửa.
+ */
+function validateSecretValue(value: unknown, name: string): void {
+  if (value === undefined || value === null || value === '') {
+    return;
+  }
+  if (typeof value !== 'string') {
+    throw new Error(`${name} phải là chuỗi.`);
+  }
+  if (value !== value.trim()) {
+    throw new Error(`${name} không được có khoảng trắng đầu hoặc cuối.`);
   }
 }
 
