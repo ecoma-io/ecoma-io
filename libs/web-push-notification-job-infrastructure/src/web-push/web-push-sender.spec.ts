@@ -473,7 +473,7 @@ describe('createWebPushSender response classification', () => {
     });
   });
 
-  it('aborts at timeoutMs and returns transient before_send', async () => {
+  it('aborts at timeoutMs and returns transient after_send', async () => {
     // Fake chỉ settle khi thấy `signal.aborted` — tức là **chính** AbortController của
     // adapter đang làm việc, chứ không phải một rejection giả lập sẵn.
     let sawAbort = false;
@@ -492,7 +492,7 @@ describe('createWebPushSender response classification', () => {
     expect(sawAbort).toBe(true);
     expect(result).toEqual({
       outcome: 'transient',
-      phase: 'before_send',
+      phase: 'after_send',
       retryAfterMs: null,
       httpStatus: null,
     });

@@ -50,7 +50,12 @@ import {
   type DeliveryRuntimePort,
 } from './runtime-control-plane-port';
 import { WEB_PUSH_REQUEST_TIMEOUT_MS, computeTtlSeconds, queueRetryDelaySeconds } from './timing';
-import type { WebPushSendRequest, WebPushSendResult, WebPushSender } from './web-push-sender';
+import type {
+  WebPushSendRequest,
+  WebPushSendResult,
+  WebPushSender,
+  WebPushTransientPhase,
+} from './web-push-sender';
 
 /** Dependency của {@link processDeliveryMessage} — toàn bộ I/O, inject được. */
 export interface DeliveryPipelineDeps {
@@ -384,14 +389,22 @@ async function processClaimedDelivery(
 
   const startedAt = clock.now();
   let sendResult: WebPushSendResult | undefined;
-  let sendThrew = false;
+  // Phase suy ra khi adapter **throw** (lỗi contract của adapter): không có kết quả adapter
+  // để đọc phase, nên suy từ lỗi. AbortError ⇒ request có thể đã rời worker ⇒ `after_send`
+  // (nguồn duplicate tiềm năng, §12 nhóm iii); mọi lỗi khác ⇒ `before_send`.
+  // ⚠️ Adapter hiện đã phân loại timeout nội bộ và **trả** kết quả thay vì throw, nên nhánh
+  // throw chỉ còn cho lỗi contract thật sự — nhưng vẫn phải đọc phase từ "kết quả adapter"
+  // (ở đây là kết quả tổng hợp) thay vì hard-code, để test AbortError từ adapter đi đúng nhánh.
+  let threwPhase: WebPushTransientPhase | null = null;
   try {
     sendResult = await deps.sender.send(sendRequest);
-  } catch {
-    // Adapter throw = lỗi contract của adapter. Đường an toàn duy nhất là coi như
-    // transient **trước khi gửi xác định được** — không có kết quả nào để chứng minh provider
-    // đã nhận, nên phải release trước retry để retry thực sự có hiệu lực.
-    sendThrew = true;
+  } catch (error) {
+    // Adapter throw = lỗi contract của adapter. Đường an toàn: coi như transient. Phase lấy
+    // từ lỗi thay vì hard-code 'before_send' (B-2): AbortError ⇒ after_send.
+    threwPhase =
+      (error as { readonly name?: unknown } | null)?.name === 'AbortError'
+        ? 'after_send'
+        : 'before_send';
   }
   const durationMs = Math.max(0, clock.now() - startedAt);
   metrics.observe('provider_request_latency_ms', durationMs, {
@@ -403,11 +416,18 @@ async function processClaimedDelivery(
     transport: envelope.transport,
   });
 
-  const action: ProviderAction = sendThrew
-    ? { kind: 'release_then_retry', phase: 'before_send', retryAfterMs: null }
-    : classifySendResult(sendResult);
+  // Nếu adapter throw, dựng một kết quả transient từ phase suy ra rồi đi qua cùng
+  // `classifySendResult` — "đọc phase từ kết quả adapter" thay vì hard-code action.
+  const effectiveResult: WebPushSendResult | undefined =
+    sendResult === undefined && threwPhase !== null
+      ? { outcome: 'transient', phase: threwPhase, retryAfterMs: null, httpStatus: null }
+      : sendResult;
+  const action: ProviderAction =
+    effectiveResult === undefined
+      ? { kind: 'release_then_retry', phase: 'before_send', retryAfterMs: null }
+      : classifySendResult(effectiveResult);
   const projection = projectAttempt(action);
-  const httpStatus = sendThrew || sendResult === undefined ? null : readHttpStatus(sendResult);
+  const httpStatus = effectiveResult === undefined ? null : readHttpStatus(effectiveResult);
   const retryAfterMs = readRetryAfterMs(action);
 
   return applyProviderAction(
