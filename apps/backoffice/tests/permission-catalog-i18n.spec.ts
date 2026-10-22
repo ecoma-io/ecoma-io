@@ -65,10 +65,13 @@ type SeededPermission = {
  * vào danh sách tuple.
  */
 const PERMISSION_INSERT_RE =
-  /INSERT\s+INTO\s+backoffice\.permissions\s*\(([^)]*)\)\s*VALUES([\s\S]*?)(?=ON\s+CONFLICT|;|RETURNING)/giu;
+  /INSERT\s+INTO\s+backoffice\.permissions\s*\(([^)]*)\)([\s\S]*?)(?=ON\s+CONFLICT|;|RETURNING)/giu;
 
-/** Một tuple giá trị của câu `INSERT` — `(id, domain, action, status)`. */
-const VALUE_TUPLE_RE = /\(([^()]*)\)/gu;
+/** Một tuple giá trị của câu `INSERT` — `(id, domain, action, status)`.
+ *  Chỉ khớp tuple bắt đầu bằng một chuỗi trích dẫn, để bỏ qua các cặp ngoặc
+ *  không phải giá trị (ví dụ `(id, domain, action, status)` trong `AS v(...)`).
+ */
+const VALUE_TUPLE_RE = /\(\s*'[^']*'[^)]*\)/gu;
 
 /**
  * Parse permission đã seed từ nội dung một file migration.
@@ -90,9 +93,8 @@ function parseSeededPermissions(sql: string, fileName: string): SeededPermission
 
     let rowsInStatement = 0;
     for (const tuple of (statement[2] ?? '').matchAll(VALUE_TUPLE_RE)) {
-      const values = (tuple[1] ?? '')
-        .split(',')
-        .map((value) => value.trim().replace(/^'(.*)'$/u, '$1'));
+      const inner = tuple[0].slice(1, -1);
+      const values = inner.split(',').map((value) => value.trim().replace(/^'(.*)'$/u, '$1'));
       const row = new Map<string, string>();
       columns.forEach((column, index) => {
         row.set(column, values[index] ?? '');

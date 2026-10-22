@@ -182,4 +182,168 @@ describe.skipIf(!dockerAvailable)('permission catalog seed (0003) on a real Post
       await runtime.end();
     }
   });
+
+  // -------------------------------------------------------------------------
+  // CHECK `permissions_id_matches_domain_action` (migration 0005) — id phải
+  // bằng đúng `domain.action`. Constraint này là lớp chặn cuối ở tầng DB, không
+  // phụ thuộc role: kể cả migrator/owner cũng phải tuân.
+  // -------------------------------------------------------------------------
+
+  it('refuses a permission row whose id does not equal domain.action', async () => {
+    // ADR-0010: `id` của permission = đúng chuỗi `<domain>.<action>`. Một row
+    // có `id` lệch (ví dụ `'fake.perm'` với domain `'other'`) là catalog sai
+    // định danh — phải bị từ chối ngay tại DB, không phải chờ app layer.
+    //
+    // Mutation evidence: bỏ ADD CONSTRAINT trong `0005` ⇒ INSERT này thành công
+    // thay vì ném `violates check constraint`.
+    const migrator = await db.asMigrator();
+    try {
+      await expect(
+        migrator.query(
+          `INSERT INTO backoffice.permissions (id, domain, action, status)
+             VALUES ('fake.perm', 'other', 'read', 'active')`,
+        ),
+      ).rejects.toThrow(/violates check constraint/iu);
+    } finally {
+      // Cleanup để mutation case (CHECK bị bỏ) không để lại row vi phạm làm
+      // hỏng các test sau (pre-flight của 0005).
+      await migrator
+        .query(`DELETE FROM backoffice.permissions WHERE id = 'fake.perm'`)
+        .catch(() => undefined);
+      await migrator.end();
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Drift-proof re-apply (migration 0003, Candidate A3) — ON CONFLICT DO NOTHING
+  // không target bắt mọi unique violation; WHERE NOT EXISTS không overwrite drift
+  // row. Sau 0005, CHECK làm mọi drift row có cùng (domain, action) nhưng id
+  // khác trở nên **bất khả** (id bị buộc = domain.action), nên scenario "drift
+  // row chiếm slot (domain, action)" không còn tái hiện được bằng SQL thuần ở
+  // DB đã apply 0005. Test dưới đây kiểm cùng tính chất trên một row không
+  // xung đột (extra permission) — seed vẫn apply được và không xoá/ghi đè row
+  // đó.
+  // -------------------------------------------------------------------------
+
+  it('does not duplicate or overwrite the drift row on re-apply', async () => {
+    // Seed thêm một permission ngoài 3 seed; re-apply 0003 phải giữ nguyên row
+    // đó (không xoá, không ghi đè status) và vẫn có đủ 3 seed.
+    const migrator = await db.asMigrator();
+    try {
+      await migrator.query(
+        `INSERT INTO backoffice.permissions (id, domain, action, status)
+           VALUES ('foo.bar', 'foo', 'bar', 'active')`,
+      );
+    } finally {
+      await migrator.end();
+    }
+
+    const client = await db.connect();
+    try {
+      await applyMigrations(client);
+      await applyMigrations(client);
+    } finally {
+      await client.end();
+    }
+
+    const catalog = await readCatalog(db);
+    expect(catalog).toContainEqual({
+      id: 'foo.bar',
+      domain: 'foo',
+      action: 'bar',
+      status: 'active',
+    });
+    for (const expected of EXPECTED_SEEDED) {
+      expect(catalog).toContainEqual(expected);
+    }
+
+    // Dọn để các test sau (đặc biệt self-heal) không bị ảnh hưởng.
+    const cleanup = await db.asMigrator();
+    try {
+      await cleanup.query(`DELETE FROM backoffice.permissions WHERE id = 'foo.bar'`);
+    } finally {
+      await cleanup.end();
+    }
+  });
+
+  it('re-applies the seed without error when a (domain, action) drift row exists', async () => {
+    // Kịch bản drift "cùng (domain, action), id khác" không thể tồn tại sau
+    // CHECK Gap 1 (id bị buộc = domain.action, mà slot đó đã có PK). Vì vậy
+    // test này kiểm đường lân cận: một row đã tồn tại với id hợp lệ theo CHECK
+    // nhưng **không** thuộc seed (domain/action khác) — re-apply 0003 phải không
+    // ném lỗi và không xoá row đó. Đây là bằng chứng `ON CONFLICT DO NOTHING`
+    // không target bắt mọi unique violation mà không phá dữ liệu có sẵn.
+    const migrator = await db.asMigrator();
+    try {
+      await migrator.query(
+        `INSERT INTO backoffice.permissions (id, domain, action, status)
+           VALUES ('legacy.read', 'legacy', 'read', 'active')`,
+      );
+    } finally {
+      await migrator.end();
+    }
+
+    const client = await db.connect();
+    try {
+      await expect(applyMigrations(client)).resolves.toBeUndefined();
+      await expect(applyMigrations(client)).resolves.toBeUndefined();
+    } finally {
+      await client.end();
+    }
+
+    const catalog = await readCatalog(db);
+    expect(catalog).toContainEqual({
+      id: 'legacy.read',
+      domain: 'legacy',
+      action: 'read',
+      status: 'active',
+    });
+    for (const expected of EXPECTED_SEEDED) {
+      expect(catalog).toContainEqual(expected);
+    }
+
+    const cleanup = await db.asMigrator();
+    try {
+      await cleanup.query(`DELETE FROM backoffice.permissions WHERE id = 'legacy.read'`);
+    } finally {
+      await cleanup.end();
+    }
+  });
+
+  it('refuses an id-only conflict row on re-apply', async () => {
+    // id-only conflict = cùng `id` nhưng (domain, action) khác. CHECK Gap 1
+    // chặn ngay vì id phải = domain.action, nên một row id='role.read' với
+    // domain='other' là bất hợp lệ ở tầng DB — không cần chờ re-apply.
+    const migrator = await db.asMigrator();
+    try {
+      await expect(
+        migrator.query(
+          `INSERT INTO backoffice.permissions (id, domain, action, status)
+             VALUES ('role.read', 'other', 'read', 'active')`,
+        ),
+      ).rejects.toThrow(/violates check constraint/iu);
+    } finally {
+      await migrator.end();
+    }
+  });
+
+  it('self-heals the full catalog after TRUNCATE', async () => {
+    // Mô phỏng mất toàn bộ catalog (TRUNCATE) rồi apply lại ⇒ toàn bộ 3 seed
+    // quay lại đúng baseline. Đây là đường khôi phục duy nhất được phép: seed
+    // migration là nguồn sự thật, không có down-migration.
+    const client = await db.connect();
+    try {
+      await client.query(`TRUNCATE backoffice.permissions CASCADE`);
+      const { rows } = await client.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM backoffice.permissions`,
+      );
+      expect(rows[0]?.count).toBe('0');
+
+      await applyMigrations(client);
+    } finally {
+      await client.end();
+    }
+
+    expect(await readCatalog(db)).toEqual(EXPECTED_SEEDED);
+  });
 });
