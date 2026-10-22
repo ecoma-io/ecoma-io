@@ -9,6 +9,8 @@
 import type { Pool } from 'pg';
 
 export interface EnvironmentRecord {
+  /** UUID của environment (PK `pact.environments.id`) — Pact CLI dùng làm handle. */
+  uuid: string;
   name: string;
   displayName: string | null;
   production: boolean;
@@ -16,6 +18,7 @@ export interface EnvironmentRecord {
 }
 
 interface EnvRow {
+  id: string;
   name: string;
   display_name: string | null;
   production: boolean;
@@ -27,7 +30,7 @@ export class PgEnvironmentRepo {
 
   async getAllEnvironments(tenantId: string): Promise<EnvironmentRecord[]> {
     const { rows } = await this.pool.query<EnvRow>(
-      `SELECT name, display_name, production, created_at
+      `SELECT id, name, display_name, production, created_at
          FROM pact.environments
         WHERE tenant_id = $1
         ORDER BY created_at ASC, name ASC`,
@@ -38,12 +41,30 @@ export class PgEnvironmentRepo {
 
   async getEnvironment(tenantId: string, name: string): Promise<EnvironmentRecord | null> {
     const { rows } = await this.pool.query<EnvRow>(
-      `SELECT name, display_name, production, created_at
+      `SELECT id, name, display_name, production, created_at
          FROM pact.environments
         WHERE tenant_id = $1 AND name = $2`,
       [tenantId, name],
     );
     return rows[0] ? toRecord(rows[0]) : null;
+  }
+
+  async getEnvironmentByUuid(tenantId: string, uuid: string): Promise<EnvironmentRecord | null> {
+    const { rows } = await this.pool.query<EnvRow>(
+      `SELECT id, name, display_name, production, created_at
+         FROM pact.environments
+        WHERE tenant_id = $1 AND id = $2::uuid`,
+      [tenantId, uuid],
+    );
+    return rows[0] ? toRecord(rows[0]) : null;
+  }
+
+  async deleteEnvironment(tenantId: string, idOrName: string, byUuid: boolean): Promise<boolean> {
+    const sql = byUuid
+      ? `DELETE FROM pact.environments WHERE tenant_id = $1 AND id = $2::uuid`
+      : `DELETE FROM pact.environments WHERE tenant_id = $1 AND name = $2`;
+    const { rowCount } = await this.pool.query(sql, [tenantId, idOrName]);
+    return (rowCount ?? 0) > 0;
   }
 
   /**
@@ -61,7 +82,7 @@ export class PgEnvironmentRepo {
       `INSERT INTO pact.environments (tenant_id, name, display_name, production)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (tenant_id, name) DO NOTHING
-       RETURNING name, display_name, production, created_at`,
+       RETURNING id, name, display_name, production, created_at`,
       [tenantId, name, displayName ?? null, production ?? false],
     );
     if (inserted.rows[0]) {
@@ -93,6 +114,7 @@ export class PgEnvironmentRepo {
 
 function toRecord(row: EnvRow): EnvironmentRecord {
   return {
+    uuid: row.id,
     name: row.name,
     displayName: row.display_name,
     production: row.production,

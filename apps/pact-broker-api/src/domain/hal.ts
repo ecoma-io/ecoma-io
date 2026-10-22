@@ -40,6 +40,7 @@ export class HalBuilder {
         true,
       ),
       'pb:environments': this.link('/environments', 'Environments'),
+      'pb:environment': this.link('/environments/{uuid}', 'Environment', true),
       'pb:publish-contracts': this.link('/contracts/publish', 'Publish contracts'),
       // pact-broker-client điều hướng các link này từ index, không từ
       // pacticipant. `pb:pacticipant-branch-version` đặc biệt gates toàn bộ
