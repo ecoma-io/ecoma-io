@@ -539,6 +539,26 @@ describe('POST /v1/messages (FR-001 end to end on real D1)', () => {
     expect(body.error.code).toBe('template_not_found');
   });
 
+  it('creates a message for the seeded account.login-otp template (issue #132)', async () => {
+    const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
+    const body = JSON.stringify({
+      template: 'account.login-otp',
+      recipient: 'user@example.test',
+      locale: 'en',
+      variables: { code: '12345678' },
+    });
+    const response = await accountPost(env, body, 'seeded-otp-key');
+    expect(response.status).toBe(201);
+    const json = (await response.json()) as {
+      readonly template: string;
+      readonly template_version: number;
+      readonly app: string;
+    };
+    expect(json.template).toBe('account.login-otp');
+    expect(json.template_version).toBe(1);
+    expect(json.app).toBe('account');
+  });
+
   it('rejects a payload beyond the declared render bound as payload_too_large', async () => {
     const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
     // 64 KiB là trần render (`MAIL_RENDER_MAX_BYTES`); body 70 KiB vượt trước khi chạm use case.
