@@ -128,6 +128,8 @@ const vi: BackofficeMessages = {
     },
     empty: 'Chưa định nghĩa quyền nào.',
     noResults: 'Không có quyền nào khớp tìm kiếm.',
+    // Nhóm `items` có hai nguồn: catalog thật (`0003_permission_catalog_seed.sql`)
+    // và fixture prototype — lý do và ranh giới ở `en.ts`.
     items: {
       delivery: {
         redrive: 'Xếp lại một delivery đã chạy.',
@@ -136,14 +138,24 @@ const vi: BackofficeMessages = {
         read: 'Đọc template và lịch sử giao transactional mail.',
         send: 'Gửi một transactional mail.',
       },
+      // `staff.read` — catalog thật (`0003`).
       staff: {
         read: 'Đọc danh bạ nhân sự.',
       },
       role: {
         assign: 'Gán một vai trò cho một nhân viên.',
+        // `role.read` — catalog thật (`0003`). Phạm vi đọc đúng `listRoles`:
+        // catalog role với `id` + `isSystem`, không gồm grant hay assignment.
+        read: 'Đọc danh mục vai trò và biết vai trò nào là do hệ thống định nghĩa.',
       },
       audit: {
         read: 'Đọc bản ghi authorization audit.',
+      },
+      // `permission.read` — catalog thật (`0003`). Phạm vi đọc đúng
+      // `listPermissions`: gồm cả row `retired`, vì catalog là lịch sử sealed
+      // và việc lọc `retired` là quyết định hiển thị của UI.
+      permission: {
+        read: 'Đọc danh mục quyền, gồm cả các mục đã retired.',
       },
     },
   },
