@@ -54,6 +54,22 @@ export interface JobReconciliationOptions {
   readonly stuckAfterMs: number;
   /** Trần số job re-deliver trong một sweep — giữ một lần sweep có thời gian hữu hạn. */
   readonly limit: number;
+  /**
+   * Trần attempt cho attempt budget của job reconciliation — job đã bị consume quá số lần
+   * này thì bị coi là **đã kiệt** và không được re-deliver nữa (chống hồi sinh việc đã vào
+   * DLQ / đã kiệt).
+   *
+   * ⚠️ **Giá trị placeholder/gate, chưa phải quyết định vận hành** — đúng văn phong của
+   * `RECONCILE_STUCK_AFTER_MS`: `docs/overview/03-operations.md` §10 liệt kê retry policy là
+   * operational item chưa chốt, và `max_retries` của Cloudflare Queues còn mâu thuẫn nội bộ
+   * (QU2). Vì vậy đây là hằng **đặt tên rõ** ở composition root, không phải con số "đúng"
+   * của vận hành; khi operator chốt chỉ có hằng đó phải sửa. Ngân sách được áp **trong SQL
+   * predicate** của `listStuck` (không lọc sau `LIMIT`) để không bỏ sót job kẹt thật.
+   *
+   * Tuỳ chọn: khi vắng mặt, không áp ngân sách (giữ tương thích với caller cũ) — nhưng job
+   * reconciliation **bắt buộc** truyền giá trị này.
+   */
+  readonly maxAttempts?: number;
 }
 
 /** Kết quả một lần sweep — số đếm quan sát được từ D1 và producer. */
@@ -85,12 +101,14 @@ export async function runJobReconciliation(
   const stuck = await deps.jobs.listStuck({
     stuckAfterMs: options.stuckAfterMs,
     nowMs,
+    maxAttempts: options.maxAttempts,
     limit: options.limit,
   });
 
   let redelivered = 0;
   let failed = 0;
   let skippedProcessed = 0;
+  let skippedExhausted = 0;
 
   for (const job of stuck) {
     // Chống race: consumer có thể vừa đặt processed marker trong lúc sweep đọc danh sách.
@@ -99,6 +117,31 @@ export async function runJobReconciliation(
     const current = await deps.jobs.findByDeliveryId(job.deliveryId);
     if (current !== null && current.processed) {
       skippedProcessed += 1;
+      continue;
+    }
+
+    // Attempt budget: job đã bị consume quá số lần cho phép thì **không** re-deliver —
+    // đó là việc đã kiệt (đã vào DLQ hoặc đã retry hết), hồi sinh nó là đúng cái mà
+    // reconciliation vs DLQ resurrection cấm. Job bị bỏ qua **không** được đánh dấu
+    // `processed` (đó là state của control plane / processed marker của worker): đánh
+    // dấu processed ở đây sẽ biến "bỏ qua vì hết ngân sách" thành một ACK mù của việc
+    // chưa xong, và reconciliation sau này không còn cơ hội quan sát nó. Chỉ đếm + log
+    // + metric để operator thấy, và để lại `processed = 0` cho control plane xử lý.
+    const target = current ?? job;
+    if (
+      options.maxAttempts !== undefined &&
+      (target.consumeCount >= options.maxAttempts ||
+        (target.lastAttempt !== null && target.lastAttempt.attempt >= options.maxAttempts))
+    ) {
+      skippedExhausted += 1;
+      deps.metrics.increment('deliveries_skipped', { reason: 'attempt_budget_exhausted' });
+      deps.logger.log('warn', 'reconcile.attempt_budget_exhausted', {
+        delivery_id: job.deliveryId,
+        consume_count: target.consumeCount,
+        last_attempt: target.lastAttempt === null ? 0 : target.lastAttempt.attempt,
+        has_last_attempt: target.lastAttempt !== null,
+        max_attempts: options.maxAttempts,
+      });
       continue;
     }
 
@@ -147,6 +190,7 @@ export async function runJobReconciliation(
     redelivered,
     failed,
     skipped_processed: skippedProcessed,
+    skipped_exhausted: skippedExhausted,
   });
 
   return { stuckFound: stuck.length, redelivered, failed, skippedProcessed };
