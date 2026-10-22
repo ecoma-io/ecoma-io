@@ -102,6 +102,71 @@ describe('assignment time window (read-time filter)', () => {
     expect(can(PERM, [assignment({ validUntil: oneMsAfter })], NOW).allowed).toBe(true);
   });
 
+  it('does not let an unrelated revoked assignment mask an expired denial (S3)', () => {
+    // S3 (issue #102): assignment của permission KHÁC bị revoke không phải là
+    // bằng chứng về permission đang hỏi. Trước fix, `can()` quét
+    // `assignments.some(a => a.revokedAt !== null)` trên TOÀN tập nên denial
+    // `assignment_expired` của permission này bị ghi nhầm thành
+    // `assignment_revoked` — hai sự kiện khác nhau bị trộn làm một, và cơ chế
+    // điều tra đọc sai nguyên nhân.
+    const decision = can(
+      PERM,
+      [
+        assignment({
+          permissions: ['other.action'],
+          revokedAt: new Date('2026-10-30T00:00:00.000Z'),
+        }),
+        assignment({ validUntil: new Date('2026-10-31T00:00:00.000Z') }),
+      ],
+      NOW,
+    );
+    expect(decision).toMatchObject({ allowed: false, denial: 'assignment_expired' });
+  });
+
+  it('still reports a revoked denial when the revoked assignment carries the permission', () => {
+    // Đối chiếu trực diện với case trên: cùng tập đó, nhưng assignment bị
+    // revoke BÂY GIỜ mang đúng permission → lý do phải là revoke, không phải
+    // expiry. Bỏ lọc theo permission thì test này vẫn xanh, nên cả hai phải
+    // đứng cạnh nhau.
+    const decision = can(
+      PERM,
+      [
+        assignment({
+          permissions: ['other.action'],
+          revokedAt: new Date('2026-10-30T00:00:00.000Z'),
+        }),
+        assignment({ revokedAt: new Date('2026-10-30T00:00:00.000Z') }),
+      ],
+      NOW,
+    );
+    expect(decision).toMatchObject({ allowed: false, denial: 'assignment_revoked' });
+  });
+
+  it('treats a future-dated revocation as not yet revoked when the window has expired', () => {
+    // `revoked_at` lập trình cho tương lai chưa có hiệu lực: lý do thực sự của
+    // denial lúc này là **hết hạn tự nhiên**, không phải thu hồi. Điều kiện
+    // cũ (`revokedAt !== null`) gọi một lần thu hồi tương lai là "đã bị thu
+    // hồi" — audit ghi sai nguyên nhân cho một sự kiện chưa xảy ra.
+    const decision = can(
+      PERM,
+      [
+        assignment({
+          validUntil: new Date('2026-10-31T00:00:00.000Z'),
+          revokedAt: new Date(NOW.getTime() + 60_000),
+        }),
+      ],
+      NOW,
+    );
+    expect(decision).toMatchObject({ allowed: false, denial: 'assignment_expired' });
+  });
+
+  it('allows a permission whose only revocation is dated in the future', () => {
+    // Nửa đối chiếu: một lần thu hồi lập trình cho tương lai chưa có hiệu lực
+    // thì assignment VẪN sống — bộ lọc `live` giữ nó, policy không deny.
+    const decision = can(PERM, [assignment({ revokedAt: new Date(NOW.getTime() + 60_000) })], NOW);
+    expect(decision.allowed).toBe(true);
+  });
+
   it('allows when at least one live assignment carries the permission (AC-003)', () => {
     // Hai role, một có permission một không — chỉ live có permission quyết định.
     const decision = can(PERM, [assignment({ permissions: ['other.action'] }), assignment()], NOW);

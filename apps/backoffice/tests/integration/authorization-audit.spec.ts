@@ -17,8 +17,8 @@ import { recordDecision } from '../../server/authorization-audit';
 
 const dockerAvailable = await probeDocker();
 
-const ACTOR = 'sub_' + 'a'.repeat(52);
-const TARGET = 'sub_' + 'c'.repeat(52);
+const ACTOR = 'sub_' + 'a'.repeat(32);
+const TARGET = 'sub_' + 'c'.repeat(32);
 const DENIED_DECISION = {
   allowed: false,
   denial: 'permission_not_granted',
@@ -75,7 +75,8 @@ describe.skipIf(!dockerAvailable)('authorization audit through the runtime role'
     expect(row.request_id).toBe('req-it-1');
     expect(row.correlation_id).toBe('corr-it-1');
     // SR-014: context không mang key nào trong danh sách secret.
-    expect(Object.keys(row.context).toSorted()).toEqual(['riskClass', 'stale']);
+    expect(Object.keys(row.context).toSorted()).toEqual(['mode', 'riskClass', 'stale']);
+    expect(row.context['mode']).toBe('read');
   });
 
   it('SR-014: rejects an audit context carrying a secret-looking key (DB CHECK)', async () => {

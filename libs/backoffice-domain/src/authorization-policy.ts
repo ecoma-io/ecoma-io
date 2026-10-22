@@ -59,6 +59,24 @@ export const REVOCATION_FRESHNESS_TTL_SECONDS: Record<AuthorizationRiskClass, nu
 export type CatalogPermission = string;
 
 /**
+ * Đường thao tác mà một lần kiểm tra authorization phục vụ — **đọc** hay
+ * **ghi** (SR-008: re-check authorization at write time).
+ *
+ * ⚠️ Phân biệt này là của **tầng enforcement**, không phải của policy thuần:
+ * {@link can} không dùng `mode` (nó không I/O, không biết caller đang đọc hay
+ * ghi). Lib khai ở đây vì đây là **vocabulary của operation** — cùng loại với
+ * {@link AuthorizationRiskClass} — và tầng application + tầng audit cùng cần nó
+ * mà không tạo cạnh import vòng.
+ *
+ * - `'read'` — thao tác đọc: cửa sổ stale chấp nhận được trong ngưỡng ADR-0002
+ *   của risk class.
+ * - `'write'` — thao tác ghi: kết quả đã cache trước đó **không** được dùng
+ *   (SR-008, chống TOCTOU), nên ảnh authorization quá TTL không đủ tươi cho
+ *   đường này.
+ */
+export type AuthorizationMode = 'read' | 'write';
+
+/**
  * Một assignment principal đang giữ — ảnh đã đồng bộ của hàng
  * `backoffice.role_assignments` + permission của role + staff status cùng
  * lượt đọc (schema là của workstream A, migration 0001/0002).
@@ -145,10 +163,11 @@ export type AuthorizationDecision =
  *    (`validUntil === null || validUntil > now`) — cùng read-time filter mà
  *    schema của A nhắc (row giữ lại để audit, không xoá).
  * 4. Còn assignment sau lọc ⇒ allow, kèm `stale` theo TTL của risk class.
- *    Không còn ⇒ phân rộng lý do: chưa từng giữ permission
- *    (`permission_not_granted`) → đã bị revoke (`assignment_revoked`) →
- *    đã tự hết hạn (`assignment_expired`) — revoke có chủ đích được audit
- *    nhìn thấy trước expiry tự nhiên (T-05/T-06).
+ *    Không còn ⇒ phân rộng lý do **chỉ trên các assignment cung cấp
+ *    permission này** (S3): chưa từng giữ permission (`permission_not_granted`)
+ *    → đã bị revoke (`assignment_revoked`) → đã tự hết hạn
+ *    (`assignment_expired`) — revoke có chủ đích được audit nhìn thấy trước
+ *    expiry tự nhiên (T-05/T-06).
  *
  * @param permission Định danh `domain.action` đọc từ catalog. Việc chặn
  *   permission ngoài catalog (invariant 10/AC-019) nằm ở tầng application
@@ -197,7 +216,20 @@ export function can(
   if (!assignments.some((assignment) => assignment.permissions.includes(permission))) {
     return { allowed: false, denial: 'permission_not_granted', stale, riskClass };
   }
-  if (assignments.some((assignment) => assignment.revokedAt !== null)) {
+  // ⚠️ Chỉ các assignment CUNG CẤP permission này mới tham gia phân loại
+  // (S3, issue #102): một assignment của permission khác bị revoke KHÔNG là
+  // bằng chứng về permission đang hỏi — treating nó thành `assignment_revoked`
+  // là chéo-sự-kiện denial. Mốc `revokedAt <= now` khớp đúng điều kiện của bộ
+  // lọc `live` ở trên: một lần thu hồi lập trình cho tương lai chưa có hiệu lực
+  // thì không phải revoke (nó là expiry tự nhiên). Thứ tự ưu tiên giữ nguyên:
+  // revoked trước expired (T-05 — thu hồi có chủ đích được audit nhìn thấy
+  // trước expiry tự nhiên).
+  const candidates = assignments.filter((assignment) =>
+    assignment.permissions.includes(permission),
+  );
+  if (
+    candidates.some((assignment) => assignment.revokedAt !== null && assignment.revokedAt <= now)
+  ) {
     return { allowed: false, denial: 'assignment_revoked', stale, riskClass };
   }
   return { allowed: false, denial: 'assignment_expired', stale, riskClass };

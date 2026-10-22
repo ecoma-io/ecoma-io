@@ -72,6 +72,35 @@ describe.skipIf(!dockerAvailable)('db-backoffice migrations on a real PostgreSQL
     expect(await tableNames(db)).toEqual(EXPECTED_TABLES);
   });
 
+  it('refuses to migrate a foreign database before taking the advisory lock (F3)', async () => {
+    // Mutation evidence: bỏ assert `current_database()` trong `apply.mts` là
+    // test này đỏ — `DATABASE_URL` trỏ nhầm database (vd `db-account` trên cùng
+    // cluster) vẫn migrate thành công, schema `backoffice` rơi vào database sai
+    // mà không có tín hiệu nào. Assert phải chết TRƯỚC advisory lock: nếu nó
+    // nằm sau, runner đã giữ khóa rồi migrate trước trên database sai.
+    const { Client: PgClient } = await import('pg');
+    // Connect tới database `postgres` — database mặc định mà runner không
+    // được phép migrate thay cho `db-backoffice`. Superuser của harness được
+    // dùng ở đây vì `DATABASE_URL` sai database là lỗi cấu hình vận hành, không phải
+    // lỗi quyền: runner thật trỏ nhầm thì cũng connect được (PUBLIC có CONNECT
+    // theo mặc định) — và đó chính là đường lỗi mà assert phải bắt.
+    const wrongClient = new PgClient({
+      host: db.host,
+      port: db.port,
+      user: 'ecoma_test_superuser',
+      password: db.superuserPassword,
+      database: 'postgres',
+    });
+    await wrongClient.connect();
+    try {
+      await expect(applyMigrations(wrongClient)).rejects.toThrow(
+        /is connected to "postgres", expected "db-backoffice"/u,
+      );
+    } finally {
+      await wrongClient.end();
+    }
+  });
+
   it('takes the pg advisory lock before applying, so a concurrent runner blocks', async () => {
     // Khóa là `hashtext(BACKOFFICE_DATABASE)` phía server (xem `apply.mts`) —
     // một số được chọn theo tên database để hai service chung instance không
