@@ -2,7 +2,7 @@
 
 > Phạm vi: vận hành `account` — deployment, binding, role & migration, monitoring, alerting, failure modes, restore và runbook.
 > Thiết kế → [`01-architecture.md`](./01-architecture.md) · yêu cầu → [`02-requirements.md`](./02-requirements.md) · system-level backup/DR → [`docs/overview/03-operations.md`](../../overview/03-operations.md) · delivery → [`docs/overview/02-delivery.md`](../../overview/02-delivery.md).
-> **Hiện trạng:** migrations `db-account` (0001–0006) và luồng email-OTP đã có trong code; **`db-account` chưa provision** và Hyperdrive id trong `wrangler.jsonc` còn là placeholder — các phần deployment/provisioning/restore dưới đây là kế hoạch cho khi provision.
+> **Hiện trạng:** migrations `db-account` (0001–0007) và luồng email-OTP đã có trong code; **`db-account` chưa provision** và Hyperdrive id trong `wrangler.jsonc` còn là placeholder — các phần deployment/provisioning/restore dưới đây là kế hoạch cho khi provision.
 
 ---
 
@@ -40,11 +40,12 @@ Rollback theo Worker version đã publish, **không** rollback database ([`02` �
 | ------------ | --------- | ----------------------- | ------------------------ |
 | `db-account` | `account` | `ecoma_account_runtime` | `ecoma_account_migrator` |
 
-Ba tầng role, mỗi tầng một việc:
+Ba tầng role, mỗi tầng một việc, cộng một role pruner riêng:
 
 - **Owner/admin** — `ecoma_owner`, sở hữu database và object, **không** chạy trong Worker. Cầm ngoài VPS cho disaster recovery ([`03` §3.5](../../overview/03-operations.md)).
 - **Migrator** — quyền DDL, chạy **chỉ** trong CI runner ([`02` §3.1](../../overview/02-delivery.md)). **Không bao giờ** là Worker secret ([`02` §6 rule 11](../../overview/02-delivery.md)).
 - **Runtime** — chỉ `SELECT`/`INSERT`/`UPDATE`/`DELETE` trên schema ứng dụng. Không DDL, không `CREATE`.
+- **Pruner** — `ecoma_account_nonce_pruner`, chỉ `SELECT, DELETE` trên `account.internal_nonces` (tạo ở `0007_nonce_pruner_role.sql`); là principal của cron Worker `apps/auth-nonce-prune-job`. Vì không phải role DDL, nó không cần — và không được — cầm credential migrator.
 
 ### 3.1 Chặn chéo — điều kiện bắt buộc
 
@@ -62,7 +63,7 @@ SELECT has_database_privilege('ecoma_account_runtime', 'db-auth', 'CONNECT');  -
 
 ### 3.2 Migration
 
-- **Greenfield provisioning, không phải data migration.** Không có `db-identity` nào tồn tại để kế thừa. Danh sách migration đã có trong repo tại `apps/account/db/migrations/`: `0001` identity core (`users`, `account_sessions`, `login_handoffs`, `security_events`, `account_outbox_events`), `0002` roles và grants, `0003` `internal_nonces`, `0004` đổi tên `account_sessions.authn_level` → `acr` (đồng bộ với `0012` của `db-auth`), `0005` `email_addresses`, `0006` `otp_challenges`. Mọi file idempotent (runner chạy lại toàn bộ mỗi lần apply) và forward-only; integration test áp mọi file hai lần (`tests/integration/migrations.spec.ts`).
+- **Greenfield provisioning, không phải data migration.** Không có `db-identity` nào tồn tại để kế thừa. Danh sách migration đã có trong repo tại `apps/account/db/migrations/`: `0001` identity core (`users`, `account_sessions`, `login_handoffs`, `security_events`, `account_outbox_events`), `0002` roles và grants, `0003` `internal_nonces`, `0004` đổi tên `account_sessions.authn_level` → `acr` (đồng bộ với `0012` của `db-auth`), `0005` `email_addresses`, `0006` `otp_challenges`, `0007` role pruner riêng cho kho nonce (`ecoma_account_nonce_pruner`, song sinh với `0014` của `db-auth`). Mọi file idempotent (runner chạy lại toàn bộ mỗi lần apply) và forward-only; integration test áp mọi file hai lần (`tests/integration/migrations.spec.ts`).
 - Migration chạy từ **CI runner** bằng PostgreSQL client kết nối thẳng, dùng role `_migrator_`, giữ advisory lock ([`02` §3.1](../../overview/02-delivery.md)). Hyperdrive không hỗ trợ advisory lock (`04` HD6) nên không thể chạy migration từ trong Worker. Runner đã có: `pnpm nx run @ecoma-io/account:db:migrate` với `DATABASE_URL` (bắt buộc) và `ECOMA_AUTH_DATABASE` (tuỳ chọn) — thiếu `DATABASE_URL` thì exit code khác 0 chứ không im lặng coi như đã apply.
 - **Migration history độc lập** với `db-auth` — hai deploy unit rollout độc lập ([`01` invariant 18](../../overview/01-architecture.md)). Dùng chung bảng migration là cách buộc hai service vào một release, đúng thứ tách deploy unit sinh ra để tránh.
 - Expand → compatible rollout → contract; không down-migration, **forward-fix** ([`01` invariant 10](../../overview/01-architecture.md)).
@@ -71,7 +72,7 @@ SELECT has_database_privilege('ecoma_account_runtime', 'db-auth', 'CONNECT');  -
 
 | Việc                                                              | Vì sao migration không tự làm                                   |
 | ----------------------------------------------------------------- | --------------------------------------------------------------- |
-| `CREATE ROLE … LOGIN` (cả hai role)                               | Cần `CREATEROLE`                                                |
+| `CREATE ROLE … LOGIN` (migrator, runtime, pruner)                 | Cần `CREATEROLE`                                                |
 | `GRANT CONNECT, CREATE, TEMPORARY` trên `db-account` cho migrator | `CREATE SCHEMA` cần `CREATE` ở tầng database, `PUBLIC` không có |
 | `REVOKE CONNECT` trên `db-auth`                                   | Cần quyền sở hữu `db-auth`                                      |
 | `COMMENT ON ROLE` / `COMMENT ON DATABASE`                         | Cần `CREATEROLE` / database owner                               |
@@ -82,7 +83,7 @@ SELECT has_database_privilege('ecoma_account_runtime', 'db-auth', 'CONNECT');  -
 
 Thứ tự provisioning, mỗi bước dừng an toàn:
 
-1. **Infrastructure** — tạo database, ba role, `REVOKE CONNECT` chéo (kể cả `PUBLIC`). Verifiable ngay bằng `has_database_privilege`.
+1. **Infrastructure** — tạo database, bốn role (owner/admin, migrator, runtime, pruner), `REVOKE CONNECT` chéo (kể cả `PUBLIC`). Verifiable ngay bằng `has_database_privilege`.
 2. **Expand** — schema vào, chưa Worker nào gọi tới.
 3. **Binding** — Hyperdrive config theo môi trường.
 4. **Compatible rollout** — deploy Worker mới đọc schema mới.
@@ -90,15 +91,15 @@ Thứ tự provisioning, mỗi bước dừng an toàn:
 
 ### 3.3 Dọn nonce hết hạn
 
-`account.internal_nonces` cũng phình theo lưu lượng của đường nội bộ. Việc dọn nó là job `prune-account` của `.github/workflows/identity-nonce-prune.yaml` — workflow đã được **khôi phục trên `main`** (PR #49; hai job `prune-auth`/`prune-account`, một lần mỗi ngày bằng `ecoma_account_migrator` trên `db-account`, predicate `expires_at < now()`, xoá theo lô có giới hạn), nhưng **chưa xác minh runtime**: job chỉ được tin sau khi ba điều kiện ở [`docs/services/auth/03-operations.md`](../auth/03-operations.md) §3.3 (branch policy `main`-only đặt trước secret, secret `DB_ACCOUNT_MIGRATOR_URL`, đường kết nối CI→PostgreSQL) được xác minh bằng một lần chạy thật.
+`account.internal_nonces` cũng phình theo lưu lượng của đường nội bộ. Việc dọn nó **không** còn là job `prune-account` của GitHub Actions: workflow `.github/workflows/identity-nonce-prune.yaml` đã bị **xoá** khỏi `main` (issue #82, PR #89) và thay bằng cron Worker `apps/auth-nonce-prune-job` — nhịp `17 3 * * *`, một lần mỗi ngày, chạy **hai lane song song**; lane `DB_ACCOUNT` xoá `account.internal_nonces` (predicate `expires_at < now()`, xoá theo lô có giới hạn) bằng role riêng `ecoma_account_nonce_pruner` (tạo ở `0007_nonce_pruner_role.sql`), **không** phải `ecoma_account_migrator` — Worker không được cầm credential DDL ([`02` §6 rule 11](../../overview/02-delivery.md)). Job **chưa chạy thật lần nào**: nó chưa có target `deploy`, chưa nằm trong release matrix, và binding Hyperdrive `DB_ACCOUNT` của nó còn là placeholder — nên kho nonce bên này chưa từng được prune.
 
-Cố ý **không** dùng `ecoma_account_runtime` cho job định kỳ, dù runtime bên này có `DELETE` trên bảng đó (khối giải thích grant của `internal_nonces` ở cuối `0002_roles_and_grants.sql`, và grant thật ở `0003_internal_nonces.sql`): hai job giữ cùng một hình dạng quyền hạn, và một job định kỳ không nên phụ thuộc vào một ngoại lệ chỉ tồn tại ở một bên. Credential của `auth` không bao giờ được dùng ở đây và ngược lại.
+Cố ý **không** dùng `ecoma_account_runtime` cho job định kỳ, dù runtime bên này có `DELETE` trên bảng đó (khối giải thích grant của `internal_nonces` ở cuối `0002_roles_and_grants.sql`, và grant thật ở `0003_internal_nonces.sql`): một job định kỳ không nên phụ thuộc vào một ngoại lệ chỉ tồn tại ở một bên — nên cron Worker cầm principal riêng của từng kho (`ecoma_account_nonce_pruner` / `ecoma_auth_nonce_pruner`), hai role **dứt khoái**, không chia credential. Credential của `auth` không bao giờ được dùng ở đây và ngược lại.
 
 Cơ chế, tần suất, hợp đồng log, hành vi khi hỏng và đường chạy tay nằm ở [`docs/services/auth/03-operations.md`](../auth/03-operations.md) §3.3; đó là chỗ duy nhất mô tả cơ chế dùng chung cho cả hai job, nên không chép lại ở đây.
 
-⚠️ **Prune `otp_challenges` chưa hiện thực: grant `DELETE` đã có, nhưng chưa có job nào dùng nó.** Migration `0006_otp_challenges.sql` ghi rõ `DELETE` là "prune theo TTL, thao tác của bảng", song mọi hàng đã consume hoặc đã hết hạn của `otp_challenges` nằm lại database vô hạn — không job nào dọn nó (`internal_nonces` bên cạnh giờ đã có workflow khôi phục ở trên, nhưng `otp_challenges` vẫn "grant có, job chưa"; một job tương tự theo hình dạng §3.3 là follow-up riêng). Không khẩn cấp vì throttle resend 60 giây và rate limit 3/15 phút + 10/giờ chặn được phần lớn volume. Việc này **không cần cấp thêm quyền** — `ecoma_account_runtime` đã có `DELETE`; và cũng không chạy bằng role khác, vì hai lý do trong đoạn trên.
+⚠️ **Prune `otp_challenges` chưa hiện thực: grant `DELETE` đã có, nhưng chưa có job nào dùng nó.** Migration `0006_otp_challenges.sql` ghi rõ `DELETE` là "prune theo TTL, thao tác của bảng", song mọi hàng đã consume hoặc đã hết hạn của `otp_challenges` nằm lại database vô hạn — không job nào dọn nó (`internal_nonces` bên cạnh giờ đã có cron Worker dọn ở trên, nhưng `otp_challenges` vẫn "grant có, job chưa"; một job tương tự theo hình dạng §3.3 là follow-up riêng). Không khẩn cấp vì throttle resend 60 giây và rate limit 3/15 phút + 10/giờ chặn được phần lớn volume. Việc này **không cần cấp thêm quyền** — `ecoma_account_runtime` đã có `DELETE`; và cũng không chạy bằng role khác, vì hai lý do trong đoạn trên.
 
-Điều kiện an toàn cho prune này đã có sẵn trong thiết kế: rate limit đếm các hàng `otp_challenges` trong cửa sổ 15 phút và 1 giờ, nên bất kỳ job dọn nào chỉ xoá hàng **quá TTL** (600 giây) thì không và không thể làm sai một phép đếm rate limit đang hiệu lực. Ràng buộc duy nhất cần giữ khi hiện thực: predicate prune phải dựa trên `consumed_at`/`expires_at` (vòng đời của bảng). Workflow `identity-nonce-prune.yaml` dùng chung cho hai bên không còn ở `main` — đã bị xoá trong cùng commit `f68105b6` (tại thời điểm loại bỏ nó chỉ còn trên nhánh phát triển); trên `main` chỉ còn lại `ci.yaml`, `code-analysis.yml`, `code-review.yml`. Việc hiện thực lại prune cho hai bảng này (nonce và `otp_challenges`) do phần delivery đảm nhiệm và phải dựa trên đặc tả baseline ở `docs/services/auth/03-operations.md` §3.3, không dừng ở trạng thái tài liệu đã drift.
+Điều kiện an toàn cho prune này đã có sẵn trong thiết kế: rate limit đếm các hàng `otp_challenges` trong cửa sổ 15 phút và 1 giờ, nên bất kỳ job dọn nào chỉ xoá hàng **quá TTL** (600 giây) thì không và không thể làm sai một phép đếm rate limit đang hiệu lực. Ràng buộc duy nhất cần giữ khi hiện thực: predicate prune phải dựa trên `consumed_at`/`expires_at` (vòng đời của bảng). Workflow `identity-nonce-prune.yaml` dùng chung cho hai bên không còn ở `main` — đã bị xoá trong PR #89 (commit `bf920d3c`), khi nó được thay bằng cron Worker `apps/auth-nonce-prune-job`; trên `main` chỉ còn lại `ci.yaml`, `code-analysis.yml`, `code-review.yml`. Việc hiện thực lại prune cho hai bảng này (nonce và `otp_challenges`) do phần delivery đảm nhiệm và phải dựa trên đặc tả baseline ở `docs/services/auth/03-operations.md` §3.3, không dừng ở trạng thái tài liệu đã drift.
 
 ## 4. Environment isolation
 
