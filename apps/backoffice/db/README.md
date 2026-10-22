@@ -15,11 +15,12 @@ chép mù.
 
 ## Thứ tự migration hiện tại
 
-| File                               | Nội dung                                                                                                                       |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `0001_backoffice_domain.sql`       | `backoffice.staff`, `permissions`, `roles`, `role_permissions`, `role_assignments`, `authorization_audit`                      |
-| `0002_roles_and_grants.sql`        | hai role + grant từng bảng + guard CONNECT + REVOKE `public`                                                                   |
-| `0003_permission_catalog_seed.sql` | seed 3 permission read `staff.read`, `role.read`, `permission.read` (status `active`), idempotent; không role/assignment/staff |
+| File                               | Nội dung                                                                                                                                                                                                                                         |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `0001_backoffice_domain.sql`       | `backoffice.staff`, `permissions`, `roles`, `role_permissions`, `role_assignments`, `authorization_audit`                                                                                                                                        |
+| `0002_roles_and_grants.sql`        | hai role + grant từng bảng + guard CONNECT + REVOKE `public`                                                                                                                                                                                     |
+| `0003_permission_catalog_seed.sql` | seed 3 permission read `staff.read`, `role.read`, `permission.read` (status `active`), idempotent; không role/assignment/staff                                                                                                                   |
+| `0004_self_elevation_guard.sql`    | guard tầng DB chống tự nâng quyền của runtime: CHECK định dạng Account ID + độ dài id audit, trigger chặn runtime tự gán role / gán system role / gán permission không active / un-revoke hoặc kéo dài hạn assignment / xoá permission khỏi role |
 
 ## Vì sao issue này tạo schema cho staff/RBAC
 
@@ -54,6 +55,41 @@ Grant hạn chế theo từng bảng (không "cấp chung rồi thu", cùng lý 
 role) nhưng **không** `DELETE` trên `staff`/`role_assignments` (lịch sử giữ để
 audit), `SELECT`-only trên `permissions` (sealed catalog, invariant 10) và trên
 `roles`, `SELECT`+`INSERT`-only trên `authorization_audit` (SR-015).
+
+## Guard tự nâng quyền (`0004`)
+
+`0004` là **lớp phòng thủ thứ hai**, không thay thế `requirePermission` ở tầng
+app. Nó chỉ ràng buộc **runtime role**; `ecoma_backoffice_migrator` và
+`ecoma_owner` đi qua được (bootstrap/seed path), vì trigger phân biệt bằng
+`current_user`.
+
+| Guard                                                   | Chặn cái gì                                                                                                                                                                                                                         |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CHECK `staff_sub_account_id_format_check`               | `staff.sub` không phải Account ID (`sub_` + 32 ký tự base32 `a`–`z`,`2`–`7`)                                                                                                                                                        |
+| Trigger `role_assignments_no_self_elevation`            | runtime tự gán role cho chính mình; runtime gán system-defined role (`roles.is_system`); runtime không khai báo actor; runtime không đúng định dạng actor; runtime thay đổi `revoked_at`/`valid_until` (un-revoke hoặc kéo dài hạn) |
+| Trigger `role_permissions_governed_write`               | runtime gán permission không `status = 'active'`; runtime gán vào system-defined role; runtime không khai báo actor; runtime không đúng định dạng actor                                                                             |
+| Trigger `role_permissions_no_system_delete`             | runtime xoá permission khỏi role (system-defined lẫn custom) — nội dung role là governance action (ADR-0004)                                                                                                                        |
+| CHECK `authorization_audit_request_id_length_check`     | `request_id` dài quá 128 ký tự (`AUTHORIZATION_AUDIT_ID_MAX_LENGTH`)                                                                                                                                                                |
+| CHECK `authorization_audit_correlation_id_length_check` | `correlation_id` dài quá 128 ký tự                                                                                                                                                                                                  |
+| CHECK `authorization_audit_target_sub_format_check`     | `target_sub` không phải Account ID                                                                                                                                                                                                  |
+
+⚠️ `0004` **không cấp thêm quyền nào cho runtime**. Trigger đọc catalog bằng
+chính quyền của caller (`SECURITY INVOKER`, runtime đã có `SELECT` trên
+`permissions`/`roles`) — `SECURITY DEFINER` sẽ đổi `current_user` thành owner
+của function và vô hiệu hóa guard.
+
+⚠️ **Apply theo hướng fail-closed**: nếu môi trường thật đang có dữ liệu vi
+phạm CHECK mới thì migration **dừng** với `violates check constraint`, không
+dùng `NOT VALID` và không tự sửa dữ liệu. Truy vấn kiểm tra trước khi apply:
+
+```sql
+SELECT count(*) FROM backoffice.staff WHERE sub !~ '^sub_[a-z2-7]{32}$';
+```
+
+⚠️ Cột `role_permissions.created_by_sub` được thêm ở `0004` là **expand**
+(nullable, không contract): đường governance (migrator/owner) không bị chặn,
+chỉ runtime bị chặn bởi trigger — cùng cách `role_assignments.created_by_sub`
+đã nullable sẵn từ `0001`.
 
 ## Chạy migration
 
@@ -157,10 +193,11 @@ mock:
 pnpm nx run @ecoma-io/backoffice:test-integration
 ```
 
-| File                 | Phủ cách                                                                                                    |
-| -------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `migrations.spec.ts` | apply từ rỗng, chạy lại là no-op, advisory lock, runtime-role DML smoke                                     |
-| `grants.spec.ts`     | AC-012 (`has_table_privilege` sweep tuỳ bảng), SR-015 audit append-only, runtime không DDL / không `public` |
+| File                           | Phủ cách                                                                                                                                                                 |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `migrations.spec.ts`           | apply từ rỗng, chạy lại là no-op, advisory lock, runtime-role DML smoke                                                                                                  |
+| `grants.spec.ts`               | AC-012 (`has_table_privilege` sweep tuỳ bảng), SR-015 audit append-only, runtime không DDL / không `public`                                                              |
+| `self-elevation-guard.spec.ts` | guard của `0004`: runtime không tự gán role / không gán system role / không gán permission không active, định dạng `sub` và độ dài id audit, và migrator vẫn đi qua được |
 
 Nếu **không có Docker**, toàn bộ suite **skip** chứ không fail — `probeDocker()`
 thử khởi động một container thật trước, thất bại thì `describe.skipIf`. Đọc
@@ -179,6 +216,8 @@ apps/backoffice/db/
 ├── migrate.mts           # hằng số + helper dùng chung
 ├── apply.mts             # CLI runner cho CI
 └── migrations/
-    ├── 0001_backoffice_domain.sql   # staff, permissions, roles, assignments, audit
-    └── 0002_roles_and_grants.sql    # hai role + grant từng bảng + guard CONNECT
+    ├── 0001_backoffice_domain.sql        # staff, permissions, roles, assignments, audit
+    ├── 0002_roles_and_grants.sql         # hai role + grant từng bảng + guard CONNECT
+    ├── 0003_permission_catalog_seed.sql  # seed permission catalog read
+    └── 0004_self_elevation_guard.sql     # guard tầng DB chống tự nâng quyền của runtime
 ```
