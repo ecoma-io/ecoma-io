@@ -59,7 +59,7 @@ function serialiseWebhook(
     id: w.id,
     events: w.events,
     url: w.url,
-    headers: w.headers,
+    headersSet: Object.keys(w.headers ?? {}).toSorted(),
     consumer: w.consumerName,
     provider: w.providerName,
     enabled: w.enabled,
