@@ -79,6 +79,14 @@ export interface JobWorkerEnv extends JobStateEnv {
  */
 const RECONCILE_STUCK_AFTER_MS = 15 * 60_000;
 const RECONCILE_LIMIT = 100;
+/**
+ * Trần attempt cho attempt budget của job reconciliation — placeholder/gate, **chưa phải
+ * quyết định vận hành** (xem JSDoc của `JobReconciliationOptions.maxAttempts`). Giá trị 3
+ * khớp `max_retries` mặc định của Queue trong `wrangler.jsonc` (QU2), nhưng hai con số
+ * này là **hai cơ chế khác nhau** và operator có thể chốt riêng; khi chốt chỉ có hằng này
+ * phải sửa.
+ */
+const RECONCILE_MAX_ATTEMPTS = 3;
 
 /** Clock của isolate — epoch millis. */
 const clock: PipelineClock = {
@@ -212,7 +220,11 @@ export async function handleReconcileRequest(
           level: resolveLogLevel(env),
         }),
       },
-      { stuckAfterMs: RECONCILE_STUCK_AFTER_MS, limit: RECONCILE_LIMIT },
+      {
+        stuckAfterMs: RECONCILE_STUCK_AFTER_MS,
+        limit: RECONCILE_LIMIT,
+        maxAttempts: RECONCILE_MAX_ATTEMPTS,
+      },
     );
     return new Response(JSON.stringify(report), {
       status: 200,

@@ -251,16 +251,35 @@ export class D1JobStateRepository implements JobStatePort {
     readonly stuckAfterMs: number;
     readonly nowMs: number;
     readonly limit: number;
+    readonly maxAttempts?: number;
   }): Promise<readonly JobRecord[]> {
     const threshold = input.nowMs - input.stuckAfterMs;
-    const result = await this.#db
-      .prepare(
-        `SELECT ${JOB_COLUMNS} FROM push_jobs
+    // Ngân sách attempt: job đã bị consume quá `maxAttempts` lần thì **không** nằm trong danh
+    // sách kẹt — đó là việc đã kiệt, không được reconciliation hồi sinh. Lọc **trong SQL**
+    // (không phải sau `LIMIT`) để không bỏ sót job kẹt thật: nếu áp `LIMIT` trước khi lọc
+    // thì `limit` job đầu tiên có thể toàn là job kiệt và job kẹt thật bị cắt mất.
+    //
+    // ⚠️ Điều kiện kiệt: `consume_count >= maxAttempts` (số lần consume) **hoặc** tồn tại
+    // attempt row có `attempt >= maxAttempts` (số lần Queue redeliver). Hai con số khác nhau
+    // (`consume_count` là consume, `attempt` là attempt), nên cả hai đều phải kiểm.
+    const maxAttempts = input.maxAttempts;
+    const budgetClause =
+      maxAttempts === undefined
+        ? ''
+        : 'AND consume_count < ? AND NOT EXISTS (SELECT 1 FROM push_job_attempts a WHERE a.delivery_id = push_jobs.delivery_id AND a.attempt >= ?)';
+    const sql = `SELECT ${JOB_COLUMNS} FROM push_jobs
           WHERE processed = 0 AND last_consumed_at <= ?
+          ${budgetClause}
           ORDER BY last_consumed_at ASC
-          LIMIT ?`,
-      )
-      .bind(threshold, input.limit)
+          LIMIT ?`;
+    const bindings: unknown[] = [threshold];
+    if (maxAttempts !== undefined) {
+      bindings.push(maxAttempts, maxAttempts);
+    }
+    bindings.push(input.limit);
+    const result = await this.#db
+      .prepare(sql)
+      .bind(...bindings)
       .all<JobRow>();
     const rows = result.results;
     const records: JobRecord[] = [];

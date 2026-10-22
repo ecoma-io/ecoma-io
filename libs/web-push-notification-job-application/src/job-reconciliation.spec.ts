@@ -105,7 +105,11 @@ interface Scenario {
   readonly producer: FakeProducer;
   readonly observability: FakeObservability;
   readonly deps: JobReconciliationDeps;
-  readonly sweep: (options?: { stuckAfterMs?: number; limit?: number }) => Promise<{
+  readonly sweep: (options?: {
+    stuckAfterMs?: number;
+    limit?: number;
+    maxAttempts?: number;
+  }) => Promise<{
     stuckFound: number;
     redelivered: number;
     failed: number;
@@ -135,6 +139,7 @@ function scenario(options: { stuck?: JobRecord[]; producer?: FakeProducer } = {}
       runJobReconciliation(deps, {
         stuckAfterMs: sweepOptions?.stuckAfterMs ?? STUCK_AFTER_MS,
         limit: sweepOptions?.limit ?? 100,
+        maxAttempts: sweepOptions?.maxAttempts,
       }),
   };
 }
@@ -583,5 +588,106 @@ describe('runJobReconciliation observability', () => {
     await s.sweep();
 
     expect(s.observability.allLoggedFieldValues().join('|')).not.toContain('push.example');
+  });
+});
+
+/* -------------------------------------------------------------------------------------- */
+/* Attempt budget (DC-5)                                                                      */
+/* -------------------------------------------------------------------------------------- */
+
+describe('runJobReconciliation attempt budget', () => {
+  it('does not re-deliver a job whose consume_count has reached the budget', async () => {
+    const s = scenario({
+      stuck: [stuckJob({ deliveryId: 'del_exhausted_cc', consumeCount: 3 })],
+    });
+
+    const report = await s.sweep({ maxAttempts: 3 });
+
+    expect(report).toMatchObject({ stuckFound: 1, redelivered: 0, failed: 0, skippedProcessed: 0 });
+    expect(s.producer.sent).toEqual([]);
+    expect(s.observability.countOf('deliveries_skipped')).toBe(1);
+    const log = s.observability.logNamed('reconcile.attempt_budget_exhausted');
+    expect(log).toHaveLength(1);
+    expect(log[0]?.fields).toMatchObject({
+      delivery_id: 'del_exhausted_cc',
+      consume_count: 3,
+      max_attempts: 3,
+    });
+  });
+
+  it('does not re-deliver a job whose lastAttempt.attempt has reached the budget', async () => {
+    const base = stuckJob({ deliveryId: 'del_exhausted_la', consumeCount: 1 });
+    const exhausted: JobRecord = {
+      ...base,
+      lastAttempt: {
+        deliveryId: 'del_exhausted_la',
+        attempt: 5,
+        outcome: 'retrying',
+        phase: 'after_send',
+        httpStatus: 503,
+        retryAfterMs: null,
+        startedAt: T0 - 1_000,
+        updatedAt: T0 - 1_000,
+      },
+    };
+    const s = scenario({ stuck: [exhausted] });
+
+    const report = await s.sweep({ maxAttempts: 3 });
+
+    expect(report).toMatchObject({ stuckFound: 1, redelivered: 0, failed: 0, skippedProcessed: 0 });
+    expect(s.producer.sent).toEqual([]);
+    expect(s.observability.logNamed('reconcile.attempt_budget_exhausted')).toHaveLength(1);
+  });
+
+  it('does not resurrect an exhausted (DLQ-bound) job', async () => {
+    // Kịch bản mission: job đã kiệt ngân sách ⇒ reconciliation không re-deliver, dù
+    // processed vẫn false (đúng như DLQ resurrection scenario).
+    const s = scenario({
+      stuck: [stuckJob({ deliveryId: 'del_dlq', consumeCount: 10, processed: false })],
+    });
+
+    const report = await s.sweep({ maxAttempts: 3 });
+
+    expect(report.redelivered).toBe(0);
+    expect(s.producer.sent).toEqual([]);
+  });
+
+  it('still re-delivers a job under the budget', async () => {
+    const s = scenario({ stuck: [stuckJob({ deliveryId: 'del_ok', consumeCount: 1 })] });
+
+    const report = await s.sweep({ maxAttempts: 3 });
+
+    expect(report).toMatchObject({ stuckFound: 1, redelivered: 1, failed: 0, skippedProcessed: 0 });
+    expect(s.producer.sent).toHaveLength(1);
+  });
+
+  it('still skips a job marked processed as before', async () => {
+    const jobs = new FakeJobScan([stuckJob({ deliveryId: 'del_proc' })]);
+    const producer = new FakeProducer();
+    const observability = new FakeObservability();
+    const deps: JobReconciliationDeps = {
+      jobs: {
+        ...unwritableJobState,
+        listStuck: (input: { stuckAfterMs: number; nowMs: number; limit: number }) =>
+          jobs.listStuck(input),
+        findByDeliveryId: async (deliveryId: string) => {
+          jobs.markProcessedMidSweep(deliveryId);
+          return jobs.findByDeliveryId(deliveryId);
+        },
+      } as unknown as JobStatePortLike,
+      queue: producer,
+      clock: { now: () => T0 },
+      metrics: observability.port,
+      logger: observability.port,
+    };
+
+    const report = await runJobReconciliation(deps, {
+      stuckAfterMs: STUCK_AFTER_MS,
+      limit: 100,
+      maxAttempts: 3,
+    });
+
+    expect(report).toMatchObject({ skippedProcessed: 1, redelivered: 0 });
+    expect(producer.sent).toEqual([]);
   });
 });
