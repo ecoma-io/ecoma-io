@@ -18,7 +18,17 @@
  * Namespace prefix của label — dùng `io.ecoma` (reverse-DNS) để không đụng
  * label namespace chính thức của Docker (`io.docker.*`, compose, OCI...).
  */
-import { namespaceFromCanonicalPath } from './deploy-namespace.js';
+import { xxh64 } from '@node-rs/xxhash';
+
+// Bản sao nội tuyến của `namespaceFromCanonicalPath` từ `deploy-namespace.ts`,
+// để deploy unit (Pulumi runtime nodejs chạy thẳng `index.ts` qua ts-node 7)
+// không phải import xuyên file với specifier `.js` mà runtime không resolve được.
+// Logic hash giữ nguyên — phải khớp byte-for-byte với nguồn.
+const NAMESPACE_LENGTH = 12;
+function namespaceFromCanonicalPath(canonicalPath: string): string {
+  const digest = xxh64(Buffer.from(canonicalPath, 'utf8'));
+  return `w${digest.toString(16).padStart(16, '0').slice(0, NAMESPACE_LENGTH)}`;
+}
 
 export const LABEL_PREFIX = 'io.ecoma';
 

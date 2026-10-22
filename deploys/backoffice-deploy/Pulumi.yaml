@@ -1,5 +1,5 @@
 name: backoffice-deploy
-description: A minimal TypeScript Pulumi program
+description: Backoffice local deployment
 runtime: nodejs
 config:
   pulumi:tags:

@@ -34,6 +34,9 @@ export default defineNuxtConfig({
   // `public` được đọc ở phía app: cùng nguồn với payload `runtimeConfig.public`
   // mà client hydrate, nên SSR và client không thể lệch nhau.
   runtimeConfig: {
+    // Connection string PostgreSQL local (Node container) — **private**, không vào
+    // `public`/client bundle/log. Workers dùng Hyperdrive binding, không dùng key này.
+    backofficeDatabaseUrl: '',
     public: {
       backofficeDataMode: BACKOFFICE_DATA_MODE_DISABLED,
     },

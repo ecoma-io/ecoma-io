@@ -10,6 +10,11 @@ paths = [
   '''^*/.output/''',
   '''.*/.nuxt/.*''',
   'deploys/platform-deploy/local-certs',
+  # Stack Pulumi local theo namespace — chứa passphrase/secret của stack local,
+  # nằm trong .gitignore (Pulumi.local-*.yaml), không bao giờ vào Git/PR.
+  # `gitleaks dir` quét cả file gitignored trên máy developer nên cần allowlist
+  # tường minh để không chặn push từ worktree đã dựng local stack.
+  '''^deploys/[^/]+/Pulumi\.local-[^/]+\.yaml$''',
   # Log wrangler dev của local worker stack: output wrangler nhét cả request
   # headers vào log, trong đó có shared secret cục bộ của worktree (mục đích
   # mỗi worktree tự xoay, không dùng chung). Thư mục nằm trong .gitignore

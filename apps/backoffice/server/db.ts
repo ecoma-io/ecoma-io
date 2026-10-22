@@ -175,3 +175,44 @@ export async function withBackofficePool<T>(
     await pool.end();
   }
 }
+
+/**
+ * Nguồn kết nối PostgreSQL cho container Node local (`node-server` preset) —
+ * song song với Hyperdrive binding `DB_BACKOFFICE` của Workers.
+ *
+ * ## Vì sao có đường thứ hai
+ *
+ * Workers đọc connection string từ binding Hyperdrive (invariant 4: application
+ * code chỉ chứa **tên** binding). Container Docker local không có Hyperdrive:
+ * nó nối thẳng tới PostgreSQL của platform qua network nội bộ, và connection
+ * string nằm ở `runtimeConfig` **private** (`backofficeDatabaseUrl`), được phủ
+ * từ biến môi trường `NITRO_BACKOFFICE_DATABASE_URL` qua `applyEnv` của Nitro.
+ *
+ * ⚠️ Connection string **không** được vào `runtimeConfig.public` hay client
+ * bundle hay log: key nằm ở nhánh private của `nuxt.config.ts` (không có
+ * tiền tố `public`), nên Nitro không serialize nó vào payload hydrate.
+ */
+export function backofficeNodeDatabaseUrl(runtimeConfig: unknown): string | null {
+  if (typeof runtimeConfig !== 'object' || runtimeConfig === null) {
+    return null;
+  }
+  const value = (runtimeConfig as { backofficeDatabaseUrl?: unknown }).backofficeDatabaseUrl;
+  if (typeof value !== 'string' || value.length === 0) {
+    return null;
+  }
+  return value;
+}
+
+/**
+ * Dựng pool cho một connection string PostgreSQL trực tiếp (container Node local).
+ *
+ * Dùng chung {@link buildPoolOptions} và {@link attachPoolErrorHandler} với
+ * đường Hyperdrive — cùng giới hạn pool và cùng listener `error` cho idle client.
+ * `ssl` không đặt: kết nối trong network nội bộ của platform là plaintext
+ * (TLS do Hyperdrive quản lý chỉ ở Workers).
+ */
+export function createNodePool(connectionString: string): Pool {
+  const pool = new Pool(buildPoolOptions({ connectionString }));
+  attachPoolErrorHandler(pool);
+  return pool;
+}

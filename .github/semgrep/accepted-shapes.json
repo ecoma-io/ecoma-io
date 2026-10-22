@@ -75,21 +75,21 @@
   {
     "rule": "security-sensitive-value-in-http-response",
     "path": "tools/dx/src/local-deploy.ts",
-    "start": 372,
-    "end": 372,
+    "start": 374,
+    "end": 374,
     "reason": "Helper noi bo cua CLI tooling (tools/dx) tra mat khau PostgreSQL cho orchestrator - KHONG phai HTTP response: tools/ khong co HTTP handler, gia tri chi dung noi bo de ghi stack config/.env va truyen vao container qua pulumi.secret (redact). Khong ro ra browser/bundle/URL/public output.",
     "lines": {
-      "372": "^    return \\{ ok: true, password: lookup\\.password, generated: false \\};$"
+      "374": "^    return \\{ ok: true, password: lookup\\.password, generated: false \\};$"
     }
   },
   {
     "rule": "security-sensitive-value-in-http-response",
     "path": "tools/dx/src/local-deploy.ts",
-    "start": 444,
-    "end": 444,
+    "start": 446,
+    "end": 446,
     "reason": "Helper noi bo cua CLI tooling (tools/dx) tra mat khau PostgreSQL cho orchestrator - KHONG phai HTTP response: tools/ khong co HTTP handler, gia tri chi dung noi bo de ghi stack config/.env va truyen vao container qua pulumi.secret (redact). Khong ro ra browser/bundle/URL/public output.",
     "lines": {
-      "444": "^  return \\{ ok: true, password, generated: true \\};$"
+      "446": "^  return \\{ ok: true, password, generated: true \\};$"
     }
   },
   {
