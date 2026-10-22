@@ -1117,4 +1117,3 @@ export function localStatus(options: { worktreeRoot?: string }): number {
 
 /** Keys mà luồng này sở hữu — export để test và để review chặn đè key lạ. */
 export const OWNED_ENV_KEYS: readonly string[] = LOCAL_ENV_OWNED_KEYS;
-// trigger
