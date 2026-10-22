@@ -161,48 +161,61 @@ export function contractsRoutes(writeAuth: () => MiddlewareHandler<AppEnv>): Hon
     }
 
     const tenantId = currentTenantId(c);
-    const pactRepo = new PgPactRepo(c.get('pool'));
-    const versionRepo = new PgVersionRepo(c.get('pool'));
+    const pool = c.get('pool');
+    const client = await pool.connect();
     const notices: Array<{ type: string; text: string }> = [];
 
-    for (const { providerName, content } of decoded) {
-      await pactRepo.publishPact(
-        tenantId,
-        pacticipantName,
-        versionNumber,
-        providerName,
-        content,
-        branch,
-      );
+    try {
+      await client.query('BEGIN');
+      const pactRepo = new PgPactRepo(client);
+      const versionRepo = new PgVersionRepo(client);
 
-      // Webhook outbound TẮT (SR-006) — không dispatch.
+      for (const { providerName, content } of decoded) {
+        await pactRepo.publishPact(
+          tenantId,
+          pacticipantName,
+          versionNumber,
+          providerName,
+          content,
+          branch,
+        );
 
-      notices.push({
-        type: 'success',
-        text: `Successfully published pact for ${pacticipantName} version ${versionNumber} and provider ${providerName}`,
-      });
-    }
+        // Webhook outbound TẮT (SR-006) — không dispatch.
 
-    // publishPact chỉ backfill branch và không thấy build URL. Cả hai được
-    // nêu tường minh đây, nên ghi thẳng lên version.
-    if (branch !== undefined) {
-      await versionRepo.recordVersionBranch(tenantId, pacticipantName, versionNumber, branch);
-      notices.push({
-        type: 'debug',
-        text: `Version ${versionNumber} of ${pacticipantName} is on branch ${branch}`,
-      });
-    }
-    if (buildUrl !== undefined) {
-      await versionRepo.recordVersionBuildUrl(tenantId, pacticipantName, versionNumber, buildUrl);
-    }
+        notices.push({
+          type: 'success',
+          text: `Successfully published pact for ${pacticipantName} version ${versionNumber} and provider ${providerName}`,
+        });
+      }
 
-    for (const tag of tags) {
-      await versionRepo.addTag(tenantId, pacticipantName, versionNumber, tag);
-      notices.push({
-        type: 'debug',
-        text: `Tagged version ${versionNumber} of ${pacticipantName} as "${tag}"`,
-      });
+      // publishPact chỉ backfill branch và không thấy build URL. Cả hai được
+      // nêu tường minh đây, nên ghi thẳng lên version.
+      if (branch !== undefined) {
+        await versionRepo.recordVersionBranch(tenantId, pacticipantName, versionNumber, branch);
+        notices.push({
+          type: 'debug',
+          text: `Version ${versionNumber} of ${pacticipantName} is on branch ${branch}`,
+        });
+      }
+      if (buildUrl !== undefined) {
+        await versionRepo.recordVersionBuildUrl(tenantId, pacticipantName, versionNumber, buildUrl);
+      }
+
+      for (const tag of tags) {
+        await versionRepo.addTag(tenantId, pacticipantName, versionNumber, tag);
+        notices.push({
+          type: 'debug',
+          text: `Tagged version ${versionNumber} of ${pacticipantName} as "${tag}"`,
+        });
+      }
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      client.release();
+      throw error;
     }
+    client.release();
 
     const hal = new HalBuilder(getBaseUrl(c.req.raw));
     return c.json(

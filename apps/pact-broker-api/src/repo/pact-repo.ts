@@ -18,7 +18,7 @@
  *    nhất còn khớp per consumer.
  */
 import { sha256Hex } from '../auth/hashing';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { PgVersionRepo, type PacticipantRecord, type VersionRecord } from './version-repo';
 
 export interface PactContent {
@@ -63,15 +63,24 @@ interface PactRow {
 }
 
 export class PgPactRepo {
-  private readonly versions: PgVersionRepo;
+  private readonly db: Pool | PoolClient;
 
-  constructor(private readonly pool: Pool) {
-    this.versions = new PgVersionRepo(pool);
+  constructor(db: Pool | PoolClient) {
+    this.db = db;
   }
 
   /**
    * Publish một pact. Trả (pact, created). Tenant ghim mọi bước qua
    * `getOrCreateVersion`/`getOrCreatePacticipant`.
+   */
+  /**
+   * Publish một pact. Trả (pact, created). Tenant ghim mọi bước qua
+   * `getOrCreateVersion`/`getOrCreatePacticipant`.
+   *
+   * Transaction-aware: nếu repo được khởi tạo với PoolClient (đang trong
+   * transaction của caller), method KHÔNG tự BEGIN/COMMIT/ROLLBACK/release —
+   * nó tham gia transaction hiện có. Nếu khởi tạo với Pool, method tự mở
+   * transaction riêng (hành vi cũ, giữ backward-compat cho các route đơn lẻ).
    */
   async publishPact(
     tenantId: string,
@@ -81,118 +90,152 @@ export class PgPactRepo {
     content: PactContent,
     branch?: string,
   ): Promise<{ pact: PactRecord; created: boolean }> {
-    return this.pool.connect().then(async (client) => {
-      try {
-        await client.query('BEGIN');
+    const db = this.db;
+    const isClient = typeof (db as { release?: unknown }).release === 'function';
+    if (isClient) {
+      return this.publishPactOnClient(
+        db as PoolClient,
+        tenantId,
+        consumerName,
+        consumerVersion,
+        providerName,
+        content,
+        branch,
+      );
+    }
+    const client = await (db as Pool).connect();
+    try {
+      await client.query('BEGIN');
+      const result = await this.publishPactOnClient(
+        client,
+        tenantId,
+        consumerName,
+        consumerVersion,
+        providerName,
+        content,
+        branch,
+      );
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
 
-        // Consumer version (tự tạo pacticipant + version — backfill branch).
-        await this.versions.getOrCreateVersion(tenantId, consumerName, consumerVersion, branch);
-        await this.versions.getOrCreatePacticipant(tenantId, providerName);
+  /** Core publish logic chạy trên một client đã có transaction (hoặc không). */
+  private async publishPactOnClient(
+    client: PoolClient,
+    tenantId: string,
+    consumerName: string,
+    consumerVersion: string,
+    providerName: string,
+    content: PactContent,
+    branch?: string,
+  ): Promise<{ pact: PactRecord; created: boolean }> {
+    const versions = new PgVersionRepo(client);
 
-        const contentStr = JSON.stringify(content);
-        const contentSha = await sha256Hex(contentStr);
+    // Consumer version (tự tạo pacticipant + version — backfill branch).
+    await versions.getOrCreateVersion(tenantId, consumerName, consumerVersion, branch);
+    await versions.getOrCreatePacticipant(tenantId, providerName);
 
-        const existing = await client.query<PactRow & { id: string }>(
-          `SELECT p.id, p.content, p.content_sha, p.created_at
-             FROM pact.pacts p
-            WHERE p.tenant_id = $1
-              AND p.consumer_version_id = (SELECT v.id FROM pact.versions v
-                                             JOIN pact.pacticipants pc
-                                               ON pc.tenant_id = v.tenant_id
-                                              AND pc.id = v.pacticipant_id
-                                            WHERE v.tenant_id = $1
-                                              AND pc.name = $2 AND v.number = $3)
-              AND p.provider_id = (SELECT id FROM pact.pacticipants
-                                   WHERE tenant_id = $1 AND name = $4)`,
-          [tenantId, consumerName, consumerVersion, providerName],
-        );
+    const contentStr = JSON.stringify(content);
+    const contentSha = await sha256Hex(contentStr);
 
-        const row = existing.rows[0];
-        if (row !== undefined) {
-          if (row.content_sha !== contentSha) {
-            // Content đổi → UPDATE. Verifications cũ vẫn treo ở pact (FK),
-            // đúng semantics upstream: verification gắn pact theo id.
-            await client.query(
-              `UPDATE pact.pacts SET content = $2, content_sha = $3 WHERE id = $1`,
-              [row.id, contentStr, contentSha],
-            );
-          }
-          await client.query('COMMIT');
-          return {
-            pact: {
-              content: row.content_sha === contentSha ? contentStr : contentStr,
-              contentSha,
-              createdAt: row.created_at.toISOString(),
-            },
-            created: false,
-          };
-        }
+    const existing = await client.query<PactRow & { id: string }>(
+      `SELECT p.id, p.content, p.content_sha, p.created_at
+         FROM pact.pacts p
+        WHERE p.tenant_id = $1
+          AND p.consumer_version_id = (SELECT v.id FROM pact.versions v
+                                         JOIN pact.pacticipants pc
+                                           ON pc.tenant_id = v.tenant_id
+                                          AND pc.id = v.pacticipant_id
+                                       WHERE v.tenant_id = $1
+                                         AND pc.name = $2 AND v.number = $3)
+          AND p.provider_id = (SELECT id FROM pact.pacticipants
+                               WHERE tenant_id = $1 AND name = $4)`,
+      [tenantId, consumerName, consumerVersion, providerName],
+    );
 
-        const inserted = await client.query<PactRow & { id: string }>(
-          `INSERT INTO pact.pacts
-             (tenant_id, consumer_version_id, provider_id, consumer_id, content, content_sha)
-           VALUES ($1,
-                   (SELECT v.id FROM pact.versions v
-                      JOIN pact.pacticipants pc
-                        ON pc.tenant_id = v.tenant_id AND pc.id = v.pacticipant_id
-                     WHERE v.tenant_id = $1 AND pc.name = $2 AND v.number = $3),
-                   (SELECT id FROM pact.pacticipants WHERE tenant_id = $1 AND name = $4),
-                   (SELECT pc.id FROM pact.pacticipants pc
-                      JOIN pact.versions v
-                        ON v.tenant_id = pc.tenant_id AND v.pacticipant_id = pc.id
-                     WHERE v.tenant_id = $1 AND pc.name = $2 AND v.number = $3),
-                   $5, $6)
-           ON CONFLICT (tenant_id, consumer_version_id, provider_id) DO NOTHING
-           RETURNING id, content, content_sha, created_at`,
-          [tenantId, consumerName, consumerVersion, providerName, contentStr, contentSha],
-        );
-
-        if (inserted.rows[0]) {
-          await client.query('COMMIT');
-          return {
-            pact: {
-              content: contentStr,
-              contentSha: inserted.rows[0].content_sha,
-              createdAt: inserted.rows[0].created_at.toISOString(),
-            },
-            created: true,
-          };
-        }
-
-        // Race: bên khác INSERT trước — đọc lại, cùng created=false.
-        const raced = await client.query<PactRow>(
-          `SELECT p.content, p.content_sha, p.created_at
-             FROM pact.pacts p
-            WHERE p.tenant_id = $1
-              AND p.consumer_version_id = (SELECT v.id FROM pact.versions v
-                                             JOIN pact.pacticipants pc
-                                               ON pc.tenant_id = v.tenant_id
-                                              AND pc.id = v.pacticipant_id
-                                            WHERE v.tenant_id = $1
-                                              AND pc.name = $2 AND v.number = $3)
-              AND p.provider_id = (SELECT id FROM pact.pacticipants
-                                   WHERE tenant_id = $1 AND name = $4)`,
-          [tenantId, consumerName, consumerVersion, providerName],
-        );
-        await client.query('COMMIT');
-        if (raced.rows[0] === undefined) {
-          throw new Error('pact disappeared between upsert steps');
-        }
-        return {
-          pact: {
-            content: raced.rows[0].content,
-            contentSha: raced.rows[0].content_sha,
-            createdAt: raced.rows[0].created_at.toISOString(),
-          },
-          created: false,
-        };
-      } catch (error) {
-        await client.query('ROLLBACK').catch(() => undefined);
-        throw error;
-      } finally {
-        client.release();
+    const row = existing.rows[0];
+    if (row !== undefined) {
+      if (row.content_sha !== contentSha) {
+        // Content đổi → UPDATE. Verifications cũ vẫn treo ở pact (FK),
+        // đúng semantics upstream: verification gắn pact theo id.
+        await client.query(`UPDATE pact.pacts SET content = $2, content_sha = $3 WHERE id = $1`, [
+          row.id,
+          contentStr,
+          contentSha,
+        ]);
       }
-    });
+      return {
+        pact: {
+          content: contentStr,
+          contentSha,
+          createdAt: row.created_at.toISOString(),
+        },
+        created: false,
+      };
+    }
+
+    const inserted = await client.query<PactRow & { id: string }>(
+      `INSERT INTO pact.pacts
+         (tenant_id, consumer_version_id, provider_id, consumer_id, content, content_sha)
+       VALUES ($1,
+               (SELECT v.id FROM pact.versions v
+                  JOIN pact.pacticipants pc
+                    ON pc.tenant_id = v.tenant_id AND pc.id = v.pacticipant_id
+                 WHERE v.tenant_id = $1 AND pc.name = $2 AND v.number = $3),
+               (SELECT id FROM pact.pacticipants WHERE tenant_id = $1 AND name = $4),
+               (SELECT pc.id FROM pact.pacticipants pc
+                  JOIN pact.versions v
+                    ON v.tenant_id = pc.tenant_id AND v.pacticipant_id = pc.id
+                 WHERE v.tenant_id = $1 AND pc.name = $2 AND v.number = $3),
+               $5, $6)
+       ON CONFLICT (tenant_id, consumer_version_id, provider_id) DO NOTHING
+       RETURNING id, content, content_sha, created_at`,
+      [tenantId, consumerName, consumerVersion, providerName, contentStr, contentSha],
+    );
+
+    if (inserted.rows[0]) {
+      return {
+        pact: {
+          content: contentStr,
+          contentSha: inserted.rows[0].content_sha,
+          createdAt: inserted.rows[0].created_at.toISOString(),
+        },
+        created: true,
+      };
+    }
+
+    // Race: bên khác INSERT trước — đọc lại, cùng created=false.
+    const raced = await client.query<PactRow>(
+      `SELECT p.content, p.content_sha, p.created_at
+         FROM pact.pacts p
+        WHERE p.tenant_id = $1
+          AND p.consumer_version_id = (SELECT v.id FROM pact.versions v
+                                         JOIN pact.pacticipants pc
+                                           ON pc.tenant_id = v.tenant_id
+                                          AND pc.id = v.pacticipant_id
+                                       WHERE v.tenant_id = $1
+                                         AND pc.name = $2 AND v.number = $3)
+          AND p.provider_id = (SELECT id FROM pact.pacticipants
+                               WHERE tenant_id = $1 AND name = $4)`,
+      [tenantId, consumerName, consumerVersion, providerName],
+    );
+    if (raced.rows[0] === undefined) {
+      throw new Error('pact disappeared between upsert steps');
+    }
+    return {
+      pact: {
+        content: raced.rows[0].content,
+        contentSha: raced.rows[0].content_sha,
+        createdAt: raced.rows[0].created_at.toISOString(),
+      },
+      created: false,
+    };
   }
 
   async getPact(
@@ -201,7 +244,7 @@ export class PgPactRepo {
     consumerName: string,
     consumerVersion: string,
   ): Promise<PactFull | null> {
-    const { rows } = await this.pool.query<
+    const { rows } = await this.db.query<
       PactRow & { consumer_name: string; consumer_created: Date; provider_created: Date }
     >(
       `SELECT p.content, p.content_sha, p.created_at,
@@ -246,7 +289,7 @@ export class PgPactRepo {
     consumerName: string,
     sha: string,
   ): Promise<PactFull | null> {
-    const { rows } = await this.pool.query<
+    const { rows } = await this.db.query<
       PactRow & {
         consumer_name: string;
         consumer_created: Date;
@@ -296,7 +339,7 @@ export class PgPactRepo {
   ): Promise<PactFull | null> {
     if (tag !== undefined) {
       // Latest version của consumer gắn tag mà có pact với provider.
-      const { rows } = await this.pool.query<
+      const { rows } = await this.db.query<
         PactRow & {
           consumer_created: Date;
           provider_created: Date;
@@ -336,7 +379,7 @@ export class PgPactRepo {
     }
 
     // Không tag: latest version CÓ pact với provider.
-    const { rows } = await this.pool.query<
+    const { rows } = await this.db.query<
       PactRow & {
         consumer_created: Date;
         provider_created: Date;
@@ -379,7 +422,7 @@ export class PgPactRepo {
    * (consumer, provider) + ORDER created_at DESC, id DESC — tie-break giữ.
    */
   async getLatestPactsForProvider(tenantId: string, providerName: string): Promise<PactFull[]> {
-    const { rows } = await this.pool.query<
+    const { rows } = await this.db.query<
       PactRow & {
         consumer_name: string;
         consumer_created: Date;
@@ -418,7 +461,7 @@ export class PgPactRepo {
 
   /** Mọi pact của provider, mới nhất trước — getAllPactsForProvider upstream. */
   async getAllPactsForProvider(tenantId: string, providerName: string): Promise<PactFull[]> {
-    const { rows } = await this.pool.query<
+    const { rows } = await this.db.query<
       PactRow & {
         consumer_name: string;
         consumer_created: Date;
@@ -490,7 +533,7 @@ export class PgPactRepo {
 
     const versionIdByKey = new Map<string, string>();
     if (consumerNames.length > 0) {
-      const { rows } = await this.pool.query<{ id: string; name: string; number: string }>(
+      const { rows } = await this.db.query<{ id: string; name: string; number: string }>(
         `SELECT v.id, p.name, v.number
            FROM pact.versions v
            JOIN pact.pacticipants p ON p.tenant_id = v.tenant_id AND p.id = v.pacticipant_id
@@ -506,7 +549,7 @@ export class PgPactRepo {
 
     const tagsByVersionId = new Map<string, string[]>();
     if (versionIds.length > 0) {
-      const { rows } = await this.pool.query<{ version_id: string; name: string }>(
+      const { rows } = await this.db.query<{ version_id: string; name: string }>(
         `SELECT version_id, name
            FROM pact.tags
           WHERE tenant_id = $1 AND version_id = ANY($2::uuid[])`,
@@ -521,7 +564,7 @@ export class PgPactRepo {
 
     const deployedByVersionId = new Map<string, Set<string | null>>();
     if (versionIds.length > 0) {
-      const { rows } = await this.pool.query<{ version_id: string; environment: string | null }>(
+      const { rows } = await this.db.query<{ version_id: string; environment: string | null }>(
         `SELECT v.id AS version_id, e.name AS environment
            FROM pact.deployed_versions dv
            JOIN pact.versions v ON v.tenant_id = dv.tenant_id AND v.id = dv.version_id
@@ -641,7 +684,7 @@ export class PgPactRepo {
     versionNumber: string,
     environmentName?: string,
   ): Promise<boolean> {
-    const { rows } = await this.pool.query<{ ok: boolean }>(
+    const { rows } = await this.db.query<{ ok: boolean }>(
       `SELECT true AS ok
          FROM pact.deployed_versions dv
          JOIN pact.versions v ON v.tenant_id = dv.tenant_id AND v.id = dv.version_id

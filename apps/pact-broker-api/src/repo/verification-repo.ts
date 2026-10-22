@@ -12,7 +12,7 @@
  *
  * Verifications append-only: không UPDATE nào ở đây — mọi publish INSERT.
  */
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { PgVersionRepo } from './version-repo';
 
 export interface VerificationRecord {
@@ -30,10 +30,10 @@ interface VerificationInsertRow {
 }
 
 export class PgVerificationRepo {
-  private readonly versions: PgVersionRepo;
+  constructor(private readonly pool: Pool) {}
 
-  constructor(private readonly pool: Pool) {
-    this.versions = new PgVersionRepo(pool);
+  private versionsFor(db: Pool | PoolClient): PgVersionRepo {
+    return new PgVersionRepo(db);
   }
 
   /**
@@ -74,7 +74,7 @@ export class PgVerificationRepo {
         }
 
         // Get or create provider version (cùng tenant).
-        await this.versions.getOrCreateVersion(tenantId, providerName, providerVersion);
+        await this.versionsFor(client).getOrCreateVersion(tenantId, providerName, providerVersion);
         const providerVersionId = await client.query<{ id: string }>(
           `SELECT v.id FROM pact.versions v
              JOIN pact.pacticipants p ON p.tenant_id = v.tenant_id AND p.id = v.pacticipant_id
