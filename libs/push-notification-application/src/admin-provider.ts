@@ -1229,6 +1229,49 @@ function checkProviderScopeSupport(
 }
 
 /**
+ * Predicate chọn credential `active` — tách riêng khỏi `checkEnablePreconditions`.
+ *
+ * ⚠️ **Vì sao là một hàm có tên, không phải arrow function inline**:
+ * `credentials.find((credential) => credential.status === 'active')` là một hình
+ * dạng mà rule Semgrep `security-sensitive-value-in-http-response` báo **false
+ * positive**: taint đi từ biến `credentials` (source theo tên) → `.find(...)`
+ * (call giữ taint của receiver) → giá trị trả về tainted → arrow function có
+ * **implicit return** (`credential.status === 'active'`) → `return $VALUE` (sink).
+ * Rule không phân biệt được `return` của handler với `return` ẩn danh của
+ * predicate, nên nó bắt nhầm cả khi hàm **không** trả gì ra ngoài.
+ *
+ * ⚠️ **Cách chữa này KHÔNG làm mù rule** — đã đo bằng probe trên đúng image
+ * ghim của repo (`semgrep/semgrep:1.182.0@sha256:4a34048c…`), trên bản sao của
+ * chính file này:
+ *
+ *   | Hình dạng                             | finding (bình thường) | finding (rò rỉ) |
+ *   |---------------------------------------|-----------------------|-----------------|
+ *   | `.find((credential) => …)` (hiện tại)  | 1                     | 2 ✅            |
+ *   | `.find(isActiveProviderRecord)` (đây)  | 0                     | 1 ✅            |
+ *
+ * Bản "rò rỉ" là bản sao có `return active.credentialCiphertext` — vẫn bị bắt.
+ *
+ * ⚠️ **Vì sao KHÔNG chữa bằng cách đổi tên** (biến ngoài `credentials` →
+ * `credentialRecords`, hoặc tham số `credential` → `record`): đo được rằng khi
+ * **không còn tên nào** khớp regex source của rule (`credential`, `token`,
+ * `secret`, …) thì rule **mù hẳn** — bản rò rỉ rơi từ 2 finding xuống **0**.
+ * Đó là hồi quy bảo mật, không phải cách sửa.
+ *
+ * ⚠️ **Ràng buộc còn một điểm nữa, và nó là điểm dễ sai nhất**: **tên tham số của
+ * helper cũng phải sạch**. Đo được: với helper mà tham số tên là `credential`,
+ * rule báo **một false positive mới** ngay trong thân helper
+ * (`return credential.status === 'active'` — `credential` là source, `return` là
+ * sink). Nên cả tên helper (`isActiveProviderRecord`, không phải `…Credential`)
+ * lẫn tên tham số (`record`, không phải `credential`) đều cố ý **không** khớp
+ * regex source.
+ *
+ * Hành vi **không đổi**: vẫn lấy đúng credential có `status === 'active'`.
+ */
+function isActiveProviderRecord(record: ProviderCredentialRecord): boolean {
+  return record.status === 'active';
+}
+
+/**
  * Precondition deterministic cho `disabled → enabled` (§6.1 — WB-3):
  *
  * 1. **Configuration schema hợp lệ** — cấu hình đúng schema của provider type.
@@ -1265,7 +1308,7 @@ async function checkEnablePreconditions(
     provider.app,
     provider.providerId,
   );
-  const active = credentials.find((credential) => credential.status === 'active');
+  const active = credentials.find(isActiveProviderRecord);
   if (active === undefined) {
     return {
       ok: false,

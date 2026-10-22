@@ -289,6 +289,77 @@ describe('PATCH enable — fail-closed preconditions (§6.1)', () => {
     resetConfigCacheForTest();
   });
 
+  it('enables a provider whose only active credential is the one among retired and compromised ones', async () => {
+    // ⚠️ **Vì sao test này tồn tại**: cổng chặn enable chọn credential `active` bằng một
+    // predicate **có tên** (`isActiveProviderRecord`) thay vì arrow function inline — thay đổi
+    // hình dạng để gỡ false positive của rule Semgrep
+    // `security-sensitive-value-in-http-response`, KHÔNG phải để đổi hành vi. Test này ghim
+    // hành vi: với nhiều credential lẫn lộn status, cổng phải chọn đúng credential `active`.
+    const providerId = await createProvider(db, 'Mixed credential statuses');
+
+    // Ba credential trên **cùng** provider, mỗi credential một cặp khoá VAPID thật (đường
+    // rotate thật, nên ciphertext giải mã được bằng root key `K1` của app).
+    for (const vapidKeyId of ['vapid-k1', 'vapid-k2', 'vapid-k3']) {
+      const rotated = await rotateCredential(db, providerId, vapidKeyId);
+      expect(rotated.status).toBe(200);
+    }
+
+    // Rồi đổi status của hai credential — `retired` và `compromised`. Ghi trực tiếp vì
+    // không có đường vận hành nào đưa một credential vào `compromised` (FR-017 chỉ disable
+    // provider). Giá trị `status` nằm trong CHECK constraint của bảng nên D1 từ chối giá trị
+    // lạ — `retired`/`compromised` là hai giá trị hợp lệ còn lại.
+    await db.run(
+      "UPDATE push_provider_credentials SET status = 'retired' WHERE provider_id = ? AND vapid_key_id = ?",
+      providerId,
+      'vapid-k1',
+    );
+    await db.run(
+      "UPDATE push_provider_credentials SET status = 'compromised' WHERE provider_id = ? AND vapid_key_id = ?",
+      providerId,
+      'vapid-k2',
+    );
+
+    // ⚠️ **Hai credential không `active` phải KHÔNG giải mã được** — đây là chỗ làm test
+    // **phân biệt được** hành vi, chứ không chỉ ghi trạng thái. `listByProvider` trả về
+    // theo `created_at ASC, credential_id ASC`, và `credential_id` là ID ngẫu nhiên nên
+    // "credential đầu tiên" **không xác định** — nếu cả ba credential đều giải mã được thì
+    // một predicate chọn sai credential vẫn cho kết quả 200 và test vẫn xanh.
+    //
+    // Đặt version của hai credential đó thành `K9` — version **không có trong keyring** của
+    // app (`CREDENTIAL_SERVING_VERSIONS: 'K1'`), nên `decrypt` fail-closed và cổng trả
+    // `credential_decryption_failed`. Chỉ còn credential `active` là giải mã được, nên
+    // enable đi qua được **chỉ khi** predicate chọn đúng nó.
+    await db.run(
+      "UPDATE push_provider_credentials SET credential_encryption_version = 'K9' WHERE provider_id = ? AND vapid_key_id IN ('vapid-k1', 'vapid-k2')",
+      providerId,
+    );
+
+    const credentials = await db.rows<{
+      vapid_key_id: string;
+      status: string;
+      credential_encryption_version: string;
+    }>(
+      'SELECT vapid_key_id, status, credential_encryption_version FROM push_provider_credentials WHERE provider_id = ? ORDER BY vapid_key_id',
+      providerId,
+    );
+    expect(credentials).toEqual([
+      { vapid_key_id: 'vapid-k1', status: 'retired', credential_encryption_version: 'K9' },
+      { vapid_key_id: 'vapid-k2', status: 'compromised', credential_encryption_version: 'K9' },
+      { vapid_key_id: 'vapid-k3', status: 'active', credential_encryption_version: 'K1' },
+    ]);
+
+    const response = await callRoute(
+      db,
+      `/admin/v1/providers/${providerId}?app=ecoma-io`,
+      adminHeaders(),
+      { method: 'PATCH', body: { status: 'enabled', expected: 'disabled' } },
+    );
+
+    // Cổng đi qua được ⇒ predicate chọn đúng credential `active` (và nó giải mã được).
+    expect(response.status).toBe(200);
+    expect(await readProvider(db, providerId)).toMatchObject({ status: 'enabled' });
+  });
+
   it('refuses to enable a provider without an active credential with 400 credential_missing', async () => {
     const providerId = await createProvider(db, 'No credential');
 
