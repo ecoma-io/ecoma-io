@@ -100,6 +100,8 @@ export const NONCE_CLAIM_CONNECT_TIMEOUT_SECONDS = 2;
  */
 export async function signInternalRequest(params: {
   secret: string;
+  /** `kid` của khoá đang ký — tuỳ chọn (transition: sender chưa bật `kid`). */
+  kid?: string;
   method: string;
   path: string;
   body: Uint8Array;
@@ -113,6 +115,7 @@ export async function signInternalRequest(params: {
     path: params.path,
     body: params.body,
     secret: params.secret,
+    kid: params.kid,
     timestamp,
     nonce,
   });
@@ -150,6 +153,13 @@ export async function signInternalRequest(params: {
  */
 export async function isAuthenticatedInternalRequest(params: {
   secret: string;
+  /**
+   * Resolver secret theo `kid` — tuỳ chọn, dùng để nhận envelope có `kid` trong transition.
+   *
+   * ⚠️ Cast map kid → secret: không có `kid` trên wire ⇒ dùng `params.secret` (secret
+   * hiện hành); có `kid` mà resolver từ chối ⇒ `bad_signature` từ lib.
+   */
+  secretByKid?: (kid: string) => Promise<string>;
   request: Request;
   body: Uint8Array;
   nowMs: number;
@@ -184,6 +194,7 @@ export async function isAuthenticatedInternalRequest(params: {
       body: params.body,
       headers,
       secret: params.secret,
+      secretByKid: params.secretByKid,
       now: String(Math.floor(params.nowMs / 1000)),
       skewSeconds,
       claimNonce: makeNonceGuard(params.hyperdrive, skewSeconds),
@@ -288,10 +299,13 @@ export function makeNonceGuard(
 export class AccountClient {
   readonly #binding: AccountServiceBinding;
   readonly #secret: string;
+  /** `kid` gắn trên mọi envelope đi ra — `undefined` khi transition chưa bật `kid`. */
+  readonly #kid: string | undefined;
 
-  constructor(params: { binding: AccountServiceBinding; secret: string }) {
+  constructor(params: { binding: AccountServiceBinding; secret: string; kid?: string }) {
     this.#binding = params.binding;
     this.#secret = params.secret;
+    this.#kid = params.kid;
   }
 
   /**
@@ -339,6 +353,7 @@ export class AccountClient {
   async #get<T>(path: string, nowMs: number): Promise<T> {
     const signed = await signInternalRequest({
       secret: this.#secret,
+      kid: this.#kid,
       method: 'GET',
       path,
       body: new Uint8Array(),
@@ -351,6 +366,7 @@ export class AccountClient {
     const body = new TextEncoder().encode(JSON.stringify(payload));
     const signed = await signInternalRequest({
       secret: this.#secret,
+      kid: this.#kid,
       method: 'POST',
       path,
       body,

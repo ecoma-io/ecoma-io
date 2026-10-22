@@ -1,5 +1,9 @@
 import { AuthConfigurationError, SigningKeyProvider } from '@ecoma-io/identity-auth-domain';
-import { DEFAULT_SKEW_SECONDS, MAX_SKEW_SECONDS } from '@ecoma-io/identity-auth-contracts';
+import {
+  assertKid,
+  DEFAULT_SKEW_SECONDS,
+  MAX_SKEW_SECONDS,
+} from '@ecoma-io/identity-auth-contracts';
 
 /**
  * Nạp cấu hình từ Worker Secrets (D2, D4).
@@ -31,6 +35,23 @@ export interface AuthEnv {
   AUTH_HANDLE_KEY_VERSION?: string;
   /** Secret HMAC dùng cho các contract nội bộ hai chiều. */
   AUTH_INTERNAL_SECRET?: string;
+  /**
+   * `kid` của `AUTH_INTERNAL_SECRET` — tuỳ chọn (transition). Có ⇒ mọi envelope đi ra
+   * gắn `x-ecoma-internal-kid`; thiếu ⇒ sender gửi envelope không `kid` (phía nhận vẫn
+   * verify được bằng secret hiện hành).
+   */
+  AUTH_INTERNAL_KID?: string;
+  /**
+   * Secret HMAC **chỉ dùng để verify** — tuỳ chọn. Không bao giờ dùng để **ký**.
+   *
+   * ⚠️ **Đây là slot "verify-only", không phải slot "khoá cũ".** Khi xoay secret, nó
+   * chứa khoá **mới** trong pha nạp trước, rồi khoá **cũ** trong pha overlap — cùng một
+   * cặp biến, hai ý nghĩa khác nhau theo giai đoạn. Xem runbook ở
+   * `docs/services/auth/03-operations.md` §3.3.
+   */
+  AUTH_INTERNAL_PREVIOUS_SECRET?: string;
+  /** `kid` của `AUTH_INTERNAL_PREVIOUS_SECRET` — bắt buộc khi previous secret được đặt. */
+  AUTH_INTERNAL_PREVIOUS_KID?: string;
   /** Skew (giây) của envelope internal — để trống ⇒ `DEFAULT_SKEW_SECONDS`. */
   AUTH_INTERNAL_SKEW_SECONDS?: string;
   /** Issuer, phải khớp `iss` trong discovery. */
@@ -60,6 +81,14 @@ export interface AuthConfig {
   /** Phiên bản của `handleKey` tại thời điểm mint (§5.6: ghi lại lúc mint). */
   readonly handleKeyVersion: number;
   readonly internalSecret: string;
+  /** `kid` của `internalSecret`, đã qua kiểm — `undefined` khi chưa bật `kid`. */
+  readonly internalKid: string | undefined;
+  /**
+   * Map `kid` → secret cho resolver phía nhận: current trước, previous sau (nếu có).
+   * Nhóm lại ở đây để composition root truyền thẳng một callback duy nhất xuống
+   * `isAuthenticatedInternalRequest`, không thiếu thành phần nào mỗi lần gắn.
+   */
+  readonly internalSecretsByKid: ReadonlyMap<string, string>;
   readonly internalAuthSkewSeconds: number;
   readonly accessTokenTtlSeconds: number;
   readonly signingKeyProvider: SigningKeyProvider;
@@ -114,6 +143,45 @@ export async function loadAuthConfig(env: AuthEnv): Promise<AuthConfig> {
   const signingKeyPem = requireSecret(env.AUTH_SIGNING_KEY, 'AUTH_SIGNING_KEY');
   const kid = requireSecret(env.AUTH_SIGNING_KEY_ID, 'AUTH_SIGNING_KEY_ID');
 
+  // `kid` của envelope internal — cặp (kid, secret hiện hành) và (kid, secret cũ) được
+  // kiểm nguyên vẹn ở đây: một biến được đặt mà cặp của nó thiếu là cấu hình sai rõ ràng
+  // (fail-closed lúc boot, trước request đầu). Xem `parseInternalKidPair` dưới đây.
+  const internalKid = parseOptionalKid(env.AUTH_INTERNAL_KID, 'AUTH_INTERNAL_KID');
+  const internalPreviousKid = parseOptionalKid(
+    env.AUTH_INTERNAL_PREVIOUS_KID,
+    'AUTH_INTERNAL_PREVIOUS_KID',
+  );
+  const internalPreviousSecret = env.AUTH_INTERNAL_PREVIOUS_SECRET;
+  if (internalPreviousSecret !== undefined) {
+    if (
+      internalPreviousSecret.trim() === '' ||
+      internalPreviousSecret !== internalPreviousSecret.trim()
+    ) {
+      throw new AuthConfigurationError(
+        'Worker Secret AUTH_INTERNAL_PREVIOUS_SECRET rong hoac co khoang trang dau/cuoi; auth tu choi thay vi trim am tham',
+      );
+    }
+    if (internalPreviousKid === undefined) {
+      throw new AuthConfigurationError(
+        'AUTH_INTERNAL_PREVIOUS_SECRET duoc dat nhung thieu AUTH_INTERNAL_PREVIOUS_KID; ' +
+          'envelope co kid khong the duoc li khong co anh xa kid -> secret',
+      );
+    }
+  } else if (internalPreviousKid !== undefined) {
+    throw new AuthConfigurationError(
+      'AUTH_INTERNAL_PREVIOUS_KID duoc dat nhung thieu AUTH_INTERNAL_PREVIOUS_SECRET',
+    );
+  }
+  if (
+    internalKid !== undefined &&
+    internalPreviousKid !== undefined &&
+    internalKid === internalPreviousKid
+  ) {
+    throw new AuthConfigurationError(
+      'AUTH_INTERNAL_KID trung AUTH_INTERNAL_PREVIOUS_KID; hai khoa khong the chia mot kid',
+    );
+  }
+
   // Hyperdrive: thiếu binding là fail-closed, không phải "chạy không có DB".
   // `auth` cần `db-auth` ở mọi đường phát hành, nên Worker không có database là
   // Worker không có chức năng.
@@ -148,6 +216,13 @@ export async function loadAuthConfig(env: AuthEnv): Promise<AuthConfig> {
     handleKey: requireSecret(env.AUTH_HANDLE_KEY, 'AUTH_HANDLE_KEY'),
     handleKeyVersion,
     internalSecret: requireSecret(env.AUTH_INTERNAL_SECRET, 'AUTH_INTERNAL_SECRET'),
+    internalKid,
+    internalSecretsByKid: buildInternalSecretsByKid({
+      currentKid: internalKid,
+      currentSecret: requireSecret(env.AUTH_INTERNAL_SECRET, 'AUTH_INTERNAL_SECRET'),
+      previousKid: internalPreviousKid,
+      previousSecret: internalPreviousSecret,
+    }),
     internalAuthSkewSeconds,
     accessTokenTtlSeconds: 300,
     signingKeyProvider: await SigningKeyProvider.fromPem({ pem: signingKeyPem, kid }),
@@ -271,4 +346,87 @@ function parseInternalAuthSkewSeconds(value: string | undefined): number {
     );
   }
   return parsed;
+}
+
+/**
+ * Dựng resolver `kid` → secret cho phía nhận envelope.
+ *
+ * ⚠️ Callback ném khi `kid` không có trong map — lib dịch thành `bad_signature`
+ * (fail-closed): envelope tự khao `kid` ngoài registry là envelope không có khoá để
+ * khớp, không bao giờ được "chấp nhận với secret mặc định".
+ *
+ * ⚠️ Resolver này là **cùng một nguồn** với secret dùng ký (`internalSecret`): khi
+ * `internalKid` được đặt, entry current của map trả về chính secret đó — hai nguồn số
+ * cho một khoá là chỗ hai phía lệch nhau trong transition.
+ */
+export function resolveInternalSecret(config: AuthConfig): (kid: string) => Promise<string> {
+  return async (kid: string): Promise<string> => {
+    const secret = config.internalSecretsByKid.get(kid);
+    if (secret === undefined) {
+      throw new Error(`kid '${kid}' khong co trong registry secret internal cua auth`);
+    }
+    return secret;
+  };
+}
+
+/**
+ * Parse `kid` tuỳ chọn của envelope internal — rỗng ⇒ `undefined` (transition: `kid`
+ * chưa bật), và khi có thì phải đúng hình dạng 8–16 hex chữ thường của lib
+ * (`assertKid`). Sai hình dạng là lỗi cấu hình, phải nổ lúc boot — không âm thầm gửi
+ * một header `kid` rác đi ra.
+ */
+function parseOptionalKid(value: string | undefined, name: string): string | undefined {
+  if (value === undefined || value === '') {
+    return undefined;
+  }
+  if (value !== value.trim()) {
+    throw new AuthConfigurationError(
+      `Worker Secret ${name} co khoang trang dau/cuoi; auth tu choi thay vi trim am tham`,
+    );
+  }
+  try {
+    assertKid(value);
+  } catch {
+    throw new AuthConfigurationError(
+      `Worker Secret ${name} khong dung dinh dang 8-16 hex chu thuong cung kid envelope`,
+    );
+  }
+  return value;
+}
+
+/**
+ * Dựng map `kid` → secret cho resolver phía nhận.
+ *
+ * ⚠️ Entry previous chỉ có khi **cả hai** biến previous được đặt — hai kiểm rời ở
+ * `loadAuthConfig` đã chặn mọi tổ hợp lệch, nên builder này chỉ còn xử lý trường hợp
+ * chuẩn. Map rỗng (không `kid` nào được đặt) là hợp lệ: phía nhận verify envelope có
+ * `kid` sẽ trả `bad_signature` từ resolver, còn envelope không `kid` dùng secret
+ * hiện hành như trước.
+ */
+function buildInternalSecretsByKid(entries: {
+  currentKid: string | undefined;
+  currentSecret: string;
+  previousKid: string | undefined;
+  previousSecret: string | undefined;
+}): ReadonlyMap<string, string> {
+  const map = new Map<string, string>();
+  if (entries.currentKid !== undefined) {
+    map.set(entries.currentKid, entries.currentSecret);
+  }
+  if (entries.previousKid !== undefined && entries.previousSecret !== undefined) {
+    map.set(entries.previousKid, entries.previousSecret);
+  }
+  // Hai secret trùng giá trị (kể khác kid) là cấu hình mơ hồ: cùng giá trị nhưng hai
+  // `kid` khác nhau khiến "kid nào cũng đúng" — xóa chủ ý của selector. Chặn lúc boot.
+  const secretsByValue = new Map<string, string>();
+  for (const [kid, secret] of map) {
+    const owner = secretsByValue.get(secret);
+    if (owner !== undefined) {
+      throw new AuthConfigurationError(
+        `AUTH_INTERNAL_SECRET va AUTH_INTERNAL_PREVIOUS_SECRET trung gia tri; hai kid ${owner} va ${kid} khong the chia mot secret`,
+      );
+    }
+    secretsByValue.set(secret, kid);
+  }
+  return map;
 }

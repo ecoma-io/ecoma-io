@@ -2,7 +2,12 @@ import { createApp, toWebHandler, type WebHandler } from 'h3';
 import type { Pool } from 'pg';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { VerifyRequestInput } from '@ecoma-io/identity-contracts';
+import {
+  createNonce,
+  INTERNAL_KID_HEADER,
+  signRequest,
+  type VerifyRequestInput,
+} from '@ecoma-io/identity-contracts';
 
 import internalAuthMiddleware, { makeNonceGuard } from './internal-auth';
 import { withRequestPool } from '../utils/db';
@@ -119,6 +124,19 @@ describe('makeNonceGuard', () => {
 const SECRET = 'test-internal-hmac-secret-0123456789abcdef';
 
 /**
+ * Khoá thứ hai — đại diện cho khoá MỚI sau khi xoay secret.
+ *
+ * ⚠️ Hai giá trị này KHÁC NHAU một cách có chủ đích: nếu chúng trùng nhau thì `kid` mất
+ * hết ý nghĩa làm selector, và test "khoá được chọn theo `kid`" sẽ xanh dù cơ chế
+ * chọn khoá hỏng hoàn toàn.
+ */
+const ROTATED_SECRET = 'test-internal-hmac-secret-rotated-9876543210';
+
+/** `kid` hợp lệ: 8 hex chữ thường (đúng hình dạng lib chấp nhận). */
+const KID = '0123abcd';
+const PREVIOUS_KID = 'abcd0123';
+
+/**
  * Connection string giả trong message lỗi driver — không host thật nào bị chạm.
  *
  * `pg` thật có thể đặt connection string vào message lỗi (ví dụ khi auth fail),
@@ -181,5 +199,276 @@ describe('internal-auth middleware when the pool fails', () => {
 
     // Response cũng không được chứa nó (createError chỉ mang statusMessage).
     expect(await response.text()).not.toContain(FAKE_CONNECTION_STRING);
+  });
+});
+
+/**
+ * Phía nhận chọn khoá theo `kid` (issue #64).
+ *
+ * ⚠️ Đây là phần **thuộc app** của hợp đồng `kid`: registry `kid` → secret và cách
+ * fail-closed khi `kid` lạ. Phần thuộc lib (hình dạng `kid`, thứ tự kiểm, việc `kid`
+ * không nằm trong canonical string) đã có test ở `@ecoma-io/identity-contracts`.
+ *
+ * ⚠️ `withRequestPool` bị mock ở suite này nên **không có DB thật** — `claimNonce`
+ * không chạy, và `recordNonce` được giữ bản thật. Cái cần kiểm ở đây là quyết định
+ * accept/reject của middleware, không phải hành vi replay guard (phần đó thuộc e2e
+ * với PostgreSQL thật).
+ */
+describe('internal-auth middleware — key selection by kid', () => {
+  let handler: WebHandler;
+
+  beforeAll(() => {
+    const app = createApp();
+    app.use(internalAuthMiddleware);
+    handler = toWebHandler(app);
+  });
+
+  beforeEach(() => {
+    vi.stubGlobal('useRuntimeConfig', () => ({
+      internalHmacSecret: SECRET,
+      internalHmacKid: KID,
+      internalHmacPreviousKid: PREVIOUS_KID,
+      internalHmacPreviousSecret: ROTATED_SECRET,
+      internalAuthSkewSeconds: '',
+      cloudflare: { env: { DB_ACCOUNT: { connectionString: 'postgres://stub-binding' } } },
+    }));
+    mockedWriteLog.mockClear();
+    // Pool giả: `recordNonce` trả `false` (nonce mới) ⇒ verify thành công.
+    mockedWithRequestPool.mockImplementation(
+      async (_hyperdrive, callback) => (await callback(fakePool(1) as never)) as unknown,
+    );
+  });
+
+  it('accepts an envelope whose kid selects the current key', async () => {
+    const headers = await signRequest({
+      method: 'GET',
+      path: '/internal/account/status',
+      secret: SECRET,
+      timestamp: String(Math.floor(Date.now() / 1000)),
+      nonce: createNonce(),
+      kid: KID,
+    });
+
+    const response = await handler(
+      new Request('http://localhost/internal/account/status', { headers }),
+    );
+
+    expect(response.status).toBe(404);
+    // 404 = middleware ĐÃ cho qua, request rơi xuống route handler (không có route
+    // trong app test này). 401 mới là "middleware từ chối".
+    expect(mockedWriteLog).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'internal_auth.rejected' }),
+    );
+  });
+
+  it('accepts an envelope whose kid selects the previous key, during the rotation overlap', async () => {
+    // Đây là toàn bộ điểm của `kid`: sau khi đổi secret, sender ký bằng khoá MỚI
+    // trong khi receiver vẫn giữ cả hai — không có khoảng chết dịch vụ.
+    const headers = await signRequest({
+      method: 'GET',
+      path: '/internal/account/status',
+      secret: ROTATED_SECRET,
+      timestamp: String(Math.floor(Date.now() / 1000)),
+      nonce: createNonce(),
+      kid: PREVIOUS_KID,
+    });
+
+    const response = await handler(
+      new Request('http://localhost/internal/account/status', { headers }),
+    );
+
+    expect(response.status).toBe(404);
+    expect(mockedWriteLog).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'internal_auth.rejected' }),
+    );
+  });
+
+  it('rejects an envelope whose kid is outside the registry', async () => {
+    // Fail-closed: `kid` lạ ⇒ không có khoá nào để khớp ⇒ 401, KHÔNG phải "chấp nhận
+    // bằng secret mặc định".
+    const headers = await signRequest({
+      method: 'GET',
+      path: '/internal/account/status',
+      secret: SECRET,
+      timestamp: String(Math.floor(Date.now() / 1000)),
+      nonce: createNonce(),
+      kid: 'ffffffff',
+    });
+
+    const response = await handler(
+      new Request('http://localhost/internal/account/status', { headers }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(mockedWriteLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'internal_auth.rejected',
+        status: 401,
+        reason: 'bad_signature',
+      }),
+    );
+  });
+
+  it('rejects an envelope signed with the key its kid does not select', async () => {
+    // `kid` KHÔNG phải một claim tự thuyết phục: nó chỉ là chỉ dẫn chọn khoá, còn HMAC
+    // mới là bằng chứng. Chữ ký bằng khoá B trong khi `kid` trỏ tới khoá A ⇒ 401.
+    const headers = await signRequest({
+      method: 'GET',
+      path: '/internal/account/status',
+      secret: ROTATED_SECRET,
+      timestamp: String(Math.floor(Date.now() / 1000)),
+      nonce: createNonce(),
+      kid: KID,
+    });
+
+    const response = await handler(
+      new Request('http://localhost/internal/account/status', { headers }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(mockedWriteLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'internal_auth.rejected',
+        status: 401,
+        reason: 'bad_signature',
+      }),
+    );
+  });
+
+  it('rejects a malformed kid as invalid_field, without consulting the registry', async () => {
+    const headers = await signRequest({
+      method: 'GET',
+      path: '/internal/account/status',
+      secret: SECRET,
+      timestamp: String(Math.floor(Date.now() / 1000)),
+      nonce: createNonce(),
+    });
+
+    const response = await handler(
+      new Request('http://localhost/internal/account/status', {
+        headers: { ...headers, [INTERNAL_KID_HEADER]: 'NOT-HEX' },
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(mockedWriteLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'internal_auth.rejected',
+        status: 401,
+        reason: 'invalid_field',
+      }),
+    );
+  });
+
+  it('still accepts an envelope without a kid, using the current secret', async () => {
+    // Phase transition: sender chưa bật `kid` ⇒ không có header `kid` ⇒ dùng secret
+    // hiện hành, đúng như trước khi có `kid`.
+    const headers = await signRequest({
+      method: 'GET',
+      path: '/internal/account/status',
+      secret: SECRET,
+      timestamp: String(Math.floor(Date.now() / 1000)),
+      nonce: createNonce(),
+    });
+
+    const response = await handler(
+      new Request('http://localhost/internal/account/status', { headers }),
+    );
+
+    expect(response.status).toBe(404);
+    expect(mockedWriteLog).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'internal_auth.rejected' }),
+    );
+  });
+
+  /**
+   * Pha **nạp trước** (preload) của runbook xoay secret — bước 2 trong
+   * `docs/services/auth/03-operations.md` §3.3.
+   *
+   * ⚠️ Ở pha này slot `previous` chứa khoá **MỚI**, không phải khoá cũ: Worker đã
+   * verify được khoá mới (đối tác sắp ký bằng nó) nhưng **vẫn ký bằng khoá hiện hành**.
+   * Test này khóa đúng cái hành vi đó, vì nhầm hai nghĩa của slot `previous` là lỗi
+   * khiến runbook hướng dẫn người vận hành làm sai.
+   */
+  describe('preload phase — the previous slot holds the NEW key', () => {
+    beforeEach(() => {
+      // current = (K1, S1) — vẫn ký bằng khoá cũ.
+      // previous = (K2, S2) — khoá MỚI, chỉ dùng để verify.
+      vi.stubGlobal('useRuntimeConfig', () => ({
+        internalHmacSecret: SECRET,
+        internalHmacKid: KID,
+        internalHmacPreviousKid: PREVIOUS_KID,
+        internalHmacPreviousSecret: ROTATED_SECRET,
+        internalAuthSkewSeconds: '',
+        cloudflare: { env: { DB_ACCOUNT: { connectionString: 'postgres://stub-binding' } } },
+      }));
+    });
+
+    it('verifies an envelope signed with the preloaded new key', async () => {
+      const headers = await signRequest({
+        method: 'GET',
+        path: '/internal/account/status',
+        secret: ROTATED_SECRET,
+        timestamp: String(Math.floor(Date.now() / 1000)),
+        nonce: createNonce(),
+        kid: PREVIOUS_KID,
+      });
+
+      const response = await handler(
+        new Request('http://localhost/internal/account/status', { headers }),
+      );
+
+      expect(response.status).toBe(404);
+      expect(mockedWriteLog).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'internal_auth.rejected' }),
+      );
+    });
+
+    it('still verifies an envelope signed with the current key', async () => {
+      // Worker chưa chuyển `current` nên vẫn phải verify được cả hai bên trong lúc
+      // nạp trước — đây là điều kiện cho phép hai Worker đi qua bước 2 ở hai thời điểm
+      // khác nhau mà không gián đoạn.
+      const headers = await signRequest({
+        method: 'GET',
+        path: '/internal/account/status',
+        secret: SECRET,
+        timestamp: String(Math.floor(Date.now() / 1000)),
+        nonce: createNonce(),
+        kid: KID,
+      });
+
+      const response = await handler(
+        new Request('http://localhost/internal/account/status', { headers }),
+      );
+
+      expect(response.status).toBe(404);
+      expect(mockedWriteLog).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'internal_auth.rejected' }),
+      );
+    });
+
+    it('rejects an envelope whose kid is outside both slots', async () => {
+      const headers = await signRequest({
+        method: 'GET',
+        path: '/internal/account/status',
+        secret: SECRET,
+        timestamp: String(Math.floor(Date.now() / 1000)),
+        nonce: createNonce(),
+        kid: 'ffffffff',
+      });
+
+      const response = await handler(
+        new Request('http://localhost/internal/account/status', { headers }),
+      );
+
+      expect(response.status).toBe(401);
+      expect(mockedWriteLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'internal_auth.rejected',
+          status: 401,
+          reason: 'bad_signature',
+        }),
+      );
+    });
   });
 });

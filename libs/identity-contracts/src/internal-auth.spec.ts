@@ -1,16 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  assertKid,
   assertNonceExpirySeconds,
   canonicalString,
   createNonce,
   DEFAULT_SKEW_SECONDS,
   hashBody,
   INTERNAL_BODY_LIMIT_BYTES,
+  INTERNAL_KID_HEADER,
   INTERNAL_NONCE_HEADER,
   INTERNAL_SIGNATURE_HEADER,
   INTERNAL_TIMESTAMP_HEADER,
   InvalidCanonicalFieldError,
+  InvalidKidError,
   isValidNonceExpirySeconds,
   isStrongNonce,
   MAX_NONCE_EXPIRY_EPOCH_SECONDS,
@@ -26,6 +29,10 @@ import {
 
 const SECRET = 'shared-internal-secret-for-test-only';
 const OTHER_SECRET = 'a-different-secret';
+/** Khoá thứ hai — đại diện cho khoá MỚI sau khi xoay secret. */
+const ROTATED_SECRET = 'the-rotated-internal-secret-for-test-only';
+/** `kid` hợp lệ: 8 hex chữ thường. */
+const KID = '0123abcd';
 const TIMESTAMP = '1700000000';
 const NONCE = '9f1c2b3a-4d5e-4f60-8a71-b2c3d4e5f607';
 const PATH = '/internal/session/verified';
@@ -1601,5 +1608,345 @@ describe('body semantics — the signature covers bytes, not JSON meaning', () =
       claimNonce: () => false,
     });
     expect(result).toEqual({ ok: false, reason: 'bad_signature' });
+  });
+});
+
+/**
+ * `kid` — chỉ dẫn chọn khoá trên header `x-ecoma-internal-kid` (issue #64).
+ *
+ * ⚠️ Ba bất biến cốt lõi, mỗi bất biến có một test riêng:
+ *
+ *  1. **`kid` KHÔNG nằm trong canonical string.** Chữ ký của envelope có `kid` và
+ *     envelope không `kid` phải **byte-identical** khi dùng cùng secret — nếu không,
+ *     mọi golden vector cũ vỡ và việc xoay secret trở thành thay đổi giao thức.
+ *  2. **`kid` sai hình dạng ⇒ `invalid_field`**, không phải `bad_signature`: nó là lỗi
+ *     đầu vào, và resolver không được kích hoạt bởi một `kid` do bên gọi kiểm soát.
+ *  3. **`kid` lạ (resolver ném) ⇒ `bad_signature`**, fail-closed: không có nhánh nào
+ *     "chấp nhận bằng secret mặc định" cho envelope mà resolver không biết chọn khoá.
+ */
+describe('assertKid', () => {
+  it('accepts 8 to 16 lowercase hex characters', () => {
+    expect(() => assertKid('0123abcd')).not.toThrow();
+    expect(() => assertKid('0123456789abcdef')).not.toThrow();
+  });
+
+  it('rejects a value shorter than 8 characters', () => {
+    expect(() => assertKid('0123abc')).toThrow(InvalidKidError);
+  });
+
+  it('rejects a value longer than 16 characters', () => {
+    expect(() => assertKid('0123456789abcdef0')).toThrow(InvalidKidError);
+  });
+
+  it('rejects uppercase hex', () => {
+    expect(() => assertKid('0123ABCD')).toThrow(InvalidKidError);
+  });
+
+  it('rejects non-hex characters', () => {
+    expect(() => assertKid('zzzzzzzz')).toThrow(InvalidKidError);
+  });
+
+  it('accepts null and undefined, so a missing kid is not a shape error', () => {
+    expect(() => assertKid(null)).not.toThrow();
+    expect(() => assertKid(undefined)).not.toThrow();
+  });
+
+  it('never puts the offending value in the error message', () => {
+    // Giá trị `kid` đọc được ở nhiều nơi và một giá trị sai có thể là nhầm dán secret
+    // ⇒ thông báo lỗi không được mang giá trị (cùng nguyên tắc với F-07).
+    const error = catchError(() => assertKid('sup3rs3cret!'));
+    expect(error).toBeInstanceOf(InvalidKidError);
+    expect((error as InvalidKidError).message).not.toContain('sup3rs3cret');
+    expect((error as InvalidKidError).field).toBe('kid');
+  });
+});
+
+describe('signRequest — kid', () => {
+  it('emits the kid header when a kid is supplied', async () => {
+    const headers = await signRequest({
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      secret: SECRET,
+      timestamp: TIMESTAMP,
+      nonce: NONCE,
+      kid: KID,
+    });
+    expect(headers[INTERNAL_KID_HEADER]).toBe(KID);
+  });
+
+  it('omits the kid header entirely when no kid is supplied', async () => {
+    const headers = await signRequest({
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      secret: SECRET,
+      timestamp: TIMESTAMP,
+      nonce: NONCE,
+    });
+    expect(INTERNAL_KID_HEADER in headers).toBe(false);
+  });
+
+  it('produces a byte-identical signature with and without the kid header', async () => {
+    // Bất biến cốt lõi của issue #64: `kid` là header, KHÔNG phải một dòng trong
+    // canonical string. Nếu chữ ký khác nhau thì việc thêm `kid` đã là một thay đổi
+    // giao thức, và mọi golden vector cũ vỡ.
+    const base = {
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      secret: SECRET,
+      timestamp: TIMESTAMP,
+      nonce: NONCE,
+    };
+    const withoutKid = await signRequest(base);
+    const withKid = await signRequest({ ...base, kid: KID });
+    expect(withKid[INTERNAL_SIGNATURE_HEADER]).toBe(withoutKid[INTERNAL_SIGNATURE_HEADER]);
+  });
+
+  it('rejects a malformed kid before signing anything', async () => {
+    await expect(
+      signRequest({
+        method: 'POST',
+        path: PATH,
+        body: BODY,
+        secret: SECRET,
+        timestamp: TIMESTAMP,
+        nonce: NONCE,
+        kid: 'not-hex',
+      }),
+    ).rejects.toThrow(InvalidKidError);
+  });
+});
+
+describe('verifyRequest — kid', () => {
+  it('verifies an envelope carrying a kid, resolving the key by that kid', async () => {
+    const headers = await signRequest({
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      secret: SECRET,
+      timestamp: TIMESTAMP,
+      nonce: NONCE,
+      kid: KID,
+    });
+    const result = await verifyRequest({
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      headers,
+      secret: SECRET,
+      secretByKid: async (kid) => {
+        expect(kid).toBe(KID);
+        return SECRET;
+      },
+      now: TIMESTAMP,
+      skewSeconds: 300,
+      claimNonce: () => false,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts a kid-carrying envelope signed with the rotated key only', async () => {
+    // Kịch bản xoay secret: sender đã ký bằng khoá MỚI, receiver vẫn giữ cả hai.
+    const headers = await signRequest({
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      secret: ROTATED_SECRET,
+      timestamp: TIMESTAMP,
+      nonce: NONCE,
+      kid: KID,
+    });
+    const result = await verifyRequest({
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      headers,
+      secret: SECRET,
+      secretByKid: async (kid) => (kid === KID ? ROTATED_SECRET : ''),
+      now: TIMESTAMP,
+      skewSeconds: 300,
+      claimNonce: () => false,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('still verifies an envelope without a kid using the current secret', async () => {
+    // Phase transition: sender chưa bật `kid` ⇒ không có header `kid` ⇒ dùng secret mặc định.
+    const headers = await signRequest({
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      secret: SECRET,
+      timestamp: TIMESTAMP,
+      nonce: NONCE,
+    });
+    const result = await verifyRequest({
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      headers,
+      secret: SECRET,
+      secretByKid: async () => ROTATED_SECRET,
+      now: TIMESTAMP,
+      skewSeconds: 300,
+      claimNonce: () => false,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects a malformed kid as invalid_field, not as bad_signature', async () => {
+    const headers = await signRequest({
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      secret: SECRET,
+      timestamp: TIMESTAMP,
+      nonce: NONCE,
+    });
+    const result = await verifyRequest({
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      headers: { ...headers, [INTERNAL_KID_HEADER]: 'NOT-HEX' },
+      secret: SECRET,
+      secretByKid: async () => SECRET,
+      now: TIMESTAMP,
+      skewSeconds: 300,
+      claimNonce: () => false,
+    });
+    expect(result).toEqual({ ok: false, reason: 'invalid_field' });
+  });
+
+  it('does not call the resolver for a malformed kid', async () => {
+    // Một `kid` rác là đầu vào do bên gọi kiểm soát ⇒ không được kích hoạt lệnh tra
+    // registry (đó là đường đi vào hệ thống, không phải dữ liệu cần tra).
+    const headers = await signRequest({
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      secret: SECRET,
+      timestamp: TIMESTAMP,
+      nonce: NONCE,
+    });
+    const resolver = vi.fn<(kid: string) => Promise<string>>(async () => SECRET);
+    const result = await verifyRequest({
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      headers: { ...headers, [INTERNAL_KID_HEADER]: 'NOT-HEX' },
+      secret: SECRET,
+      secretByKid: resolver,
+      now: TIMESTAMP,
+      skewSeconds: 300,
+      claimNonce: () => false,
+    });
+    expect(result).toEqual({ ok: false, reason: 'invalid_field' });
+    expect(resolver).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown kid as bad_signature when the resolver throws', async () => {
+    // Fail-closed: không có nhánh nào "chấp nhận bằng secret mặc định" cho envelope mà
+    // resolver không biết chọn khoá.
+    const headers = await signRequest({
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      secret: SECRET,
+      timestamp: TIMESTAMP,
+      nonce: NONCE,
+      kid: KID,
+    });
+    const result = await verifyRequest({
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      headers,
+      secret: SECRET,
+      secretByKid: async () => {
+        throw new Error('unknown kid');
+      },
+      now: TIMESTAMP,
+      skewSeconds: 300,
+      claimNonce: () => false,
+    });
+    expect(result).toEqual({ ok: false, reason: 'bad_signature' });
+  });
+
+  it('rejects an unknown kid as bad_signature when the resolver returns an empty secret', async () => {
+    const headers = await signRequest({
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      secret: SECRET,
+      timestamp: TIMESTAMP,
+      nonce: NONCE,
+      kid: KID,
+    });
+    const result = await verifyRequest({
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      headers,
+      secret: SECRET,
+      secretByKid: async () => '',
+      now: TIMESTAMP,
+      skewSeconds: 300,
+      claimNonce: () => false,
+    });
+    expect(result).toEqual({ ok: false, reason: 'bad_signature' });
+  });
+
+  it('rejects an envelope whose signature was made with the key the kid does not select', async () => {
+    // Resolver trả khoá A, chữ ký được tạo bằng khoá B ⇒ `bad_signature`. `kid` KHÔNG
+    // phải một claim tự thuyết phục: nó chỉ là chỉ dẫn chọn khoá, còn HMAC mới là bằng
+    // chứng.
+    const headers = await signRequest({
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      secret: ROTATED_SECRET,
+      timestamp: TIMESTAMP,
+      nonce: NONCE,
+      kid: KID,
+    });
+    const result = await verifyRequest({
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      headers,
+      secret: SECRET,
+      secretByKid: async () => SECRET,
+      now: TIMESTAMP,
+      skewSeconds: 300,
+      claimNonce: () => false,
+    });
+    expect(result).toEqual({ ok: false, reason: 'bad_signature' });
+  });
+
+  it('checks the kid shape before the timestamp window', async () => {
+    // Thứ tự kiểm là hợp đồng: `kid` hình dạng sai là lỗi đầu vào, và nó phải được
+    // phân biệt với `bad_timestamp` — timestamp ngoài cửa sổ cũng là lỗi đầu vào.
+    const headers = await signRequest({
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      secret: SECRET,
+      timestamp: TIMESTAMP,
+      nonce: NONCE,
+    });
+    const result = await verifyRequest({
+      method: 'POST',
+      path: PATH,
+      body: BODY,
+      headers: { ...headers, [INTERNAL_KID_HEADER]: 'NOT-HEX' },
+      secret: SECRET,
+      secretByKid: async () => SECRET,
+      now: '1700009999',
+      skewSeconds: 300,
+      claimNonce: () => false,
+    });
+    expect(result).toEqual({ ok: false, reason: 'invalid_field' });
   });
 });

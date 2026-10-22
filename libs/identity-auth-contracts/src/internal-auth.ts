@@ -10,6 +10,7 @@
  * Node/bundler từ chối với `ERR_PACKAGE_PATH_NOT_EXPORTED` — đừng viết code theo đường đó.
  */
 export {
+  assertKid,
   assertNonceExpirySeconds,
   canonicalString,
   hashBody,
@@ -17,6 +18,8 @@ export {
   DEFAULT_SKEW_SECONDS,
   INTERNAL_BODY_LIMIT_BYTES,
   InvalidCanonicalFieldError,
+  InvalidKidError,
+  INTERNAL_KID_HEADER,
   isValidNonceExpirySeconds,
   MAX_NONCE_CHARS,
   MAX_NONCE_EXPIRY_EPOCH_SECONDS,

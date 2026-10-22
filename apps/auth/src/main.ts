@@ -21,7 +21,7 @@ import {
 import { createPostgresClient } from '@ecoma-io/identity-auth-infrastructure';
 import { createAuthorizationStore } from './authorization-store';
 import { AccountClient, isAuthenticatedInternalRequest } from './account-client';
-import { type AuthConfig, type AuthEnv, loadAuthConfig } from './config';
+import { type AuthConfig, type AuthEnv, loadAuthConfig, resolveInternalSecret } from './config';
 import { PROVIDER_ROUTES } from './oidc/provider';
 import { dispatchToNode, getRuntime } from './oidc/runtime';
 import { handleAuthorize, handleAuthorizeConfirm } from './browser-handlers';
@@ -416,6 +416,7 @@ async function verifyInternalEnvelope(
 
   const auth = await isAuthenticatedInternalRequest({
     secret: config.internalSecret,
+    secretByKid: resolveInternalSecret(config),
     request: c.req.raw,
     body: raw,
     nowMs: Date.now(),
@@ -471,6 +472,7 @@ app.post(INTERNAL_VERIFIED_ROUTE, async (c) => {
         fetch: (request: Request) => Promise<Response>;
       },
       secret: config.internalSecret,
+      kid: config.internalKid,
     });
     const result = await runSessionVerified({
       provider: runtime.provider,

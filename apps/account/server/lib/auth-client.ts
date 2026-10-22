@@ -118,6 +118,8 @@ export function authServiceBinding(runtimeConfig: unknown): AuthServiceBinding |
  */
 async function signEnvelope(params: {
   signingKey: string;
+  /** `kid` gắn trên envelope đi ra — `undefined` khi transition chưa bật `kid`. */
+  signingKid?: string;
   method: string;
   path: string;
   body: Uint8Array;
@@ -128,6 +130,7 @@ async function signEnvelope(params: {
     path: params.path,
     body: params.body,
     secret: params.signingKey,
+    kid: params.signingKid,
     timestamp: String(Math.floor(params.nowMs / 1000)),
     nonce: createNonce(),
   });
@@ -139,6 +142,7 @@ async function signEnvelope(params: {
 async function postSignedJson<T>(params: {
   binding: AuthServiceBinding;
   signingKey: string;
+  signingKid?: string;
   path: string;
   payload: unknown;
   nowMs: number;
@@ -146,6 +150,7 @@ async function postSignedJson<T>(params: {
   const body = new TextEncoder().encode(JSON.stringify(params.payload));
   const envelope = await signEnvelope({
     signingKey: params.signingKey,
+    signingKid: params.signingKid,
     method: 'POST',
     path: params.path,
     body,
@@ -288,6 +293,8 @@ function isConsentDecideResponse(value: unknown): value is ConsentDecideResponse
 export async function announceSessionVerified(params: {
   binding: AuthServiceBinding | null;
   signingKey: string;
+  /** `kid` gắn trên envelope đi ra — `undefined` khi transition chưa bật `kid`. */
+  signingKid?: string;
   request: SessionVerifiedRequest;
   nowMs: number;
 }): Promise<AuthCallResult<SessionVerifiedResponse>> {
@@ -297,6 +304,7 @@ export async function announceSessionVerified(params: {
   const result = await postSignedJson<unknown>({
     binding: params.binding,
     signingKey: params.signingKey,
+    signingKid: params.signingKid,
     path: '/internal/session/verified',
     payload: params.request,
     nowMs: params.nowMs,
@@ -322,6 +330,8 @@ export async function announceSessionVerified(params: {
 export async function fetchConsentContext(params: {
   binding: AuthServiceBinding | null;
   signingKey: string;
+  /** `kid` gắn trên envelope đi ra — `undefined` khi transition chưa bật `kid`. */
+  signingKid?: string;
   request: ConsentContextRequest;
   nowMs: number;
 }): Promise<AuthCallResult<ConsentContextResponse>> {
@@ -331,6 +341,7 @@ export async function fetchConsentContext(params: {
   const result = await postSignedJson<unknown>({
     binding: params.binding,
     signingKey: params.signingKey,
+    signingKid: params.signingKid,
     path: '/internal/consent/context',
     payload: params.request,
     nowMs: params.nowMs,
@@ -358,6 +369,8 @@ export async function fetchConsentContext(params: {
 export async function submitConsentDecision(params: {
   binding: AuthServiceBinding | null;
   signingKey: string;
+  /** `kid` gắn trên envelope đi ra — `undefined` khi transition chưa bật `kid`. */
+  signingKid?: string;
   request: ConsentDecideRequest;
   nowMs: number;
 }): Promise<AuthCallResult<ConsentDecideResponse>> {
@@ -367,6 +380,7 @@ export async function submitConsentDecision(params: {
   const result = await postSignedJson<unknown>({
     binding: params.binding,
     signingKey: params.signingKey,
+    signingKid: params.signingKid,
     path: '/internal/consent/decide',
     payload: params.request,
     nowMs: params.nowMs,

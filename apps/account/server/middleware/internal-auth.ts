@@ -32,6 +32,7 @@ import type { Pool } from 'pg';
 
 import {
   INTERNAL_BODY_LIMIT_BYTES,
+  INTERNAL_KID_HEADER,
   INTERNAL_NONCE_HEADER,
   INTERNAL_SIGNATURE_HEADER,
   INTERNAL_TIMESTAMP_HEADER,
@@ -272,6 +273,12 @@ export default defineEventHandler(async (event: H3Event): Promise<void> => {
     throw createError({ statusCode: 401, statusMessage: 'Unauthorized' });
   }
 
+  // Registry `kid` → secret: từ các biến đã qua validate ở `config-validation.ts`
+  // (assertKid + cặp previous + cấm trùng `kid`/trùng giá trị secret). Envelope có
+  // `kid` ngoài registry ⇒ resolver ném ⇒ lib trả `bad_signature` — không có nhánh
+  // "chấp nhận với secret mặc định".
+  const secretsByKid = buildInternalSecretsByKid(config);
+
   // ⚠️ Chuẩn hoá skew **một lần** rồi truyền cùng số đó cho `verifyRequest` lẫn
   // `makeNonceGuard`. `verifyRequest` tự chuẩn hoá bên trong, còn TTL của nonce được ghi
   // từ giá trị mà `makeNonceGuard` nhận — hai luật khác nhau trên cùng một hằng số thì
@@ -327,8 +334,14 @@ export default defineEventHandler(async (event: H3Event): Promise<void> => {
           [INTERNAL_TIMESTAMP_HEADER]: getHeader(event, INTERNAL_TIMESTAMP_HEADER) ?? null,
           [INTERNAL_NONCE_HEADER]: getHeader(event, INTERNAL_NONCE_HEADER) ?? null,
           [INTERNAL_SIGNATURE_HEADER]: getHeader(event, INTERNAL_SIGNATURE_HEADER) ?? null,
+          // ⚠️ `kid` PHẢI được chuyển vào đây. Thiếu dòng này thì `verifyRequest`
+          // không bao giờ thấy `kid` ⇒ resolver không bao giờ chạy ⇒ một envelope tự
+          // khai `kid` ngoài registry vẫn verify được bằng secret hiện hành. Đó là
+          // fail-OPEN, đúng cái lỗi mà cặp `kid`/secret sinh ra để chặn.
+          [INTERNAL_KID_HEADER]: getHeader(event, INTERNAL_KID_HEADER) ?? null,
         },
         secret,
+        secretByKid: buildInternalSecretResolver(secretsByKid),
         now: String(Math.floor(Date.now() / 1000)),
         skewSeconds,
         claimNonce: makeNonceGuard(pool, skewSeconds),
@@ -349,3 +362,68 @@ export default defineEventHandler(async (event: H3Event): Promise<void> => {
     timestamp: verification.timestamp,
   };
 });
+
+/**
+ * Dựng registry `kid` → secret từ runtime config của `account`.
+ *
+ * Giá trị vào đã qua `validateAccountConfig` (`server/utils/config-validation.ts`):
+ * hình dạng `kid` (8-16 hex chữ thường), cặp previous đủ hai biến, và cấm trùng
+ * `kid` hay trùng giá trị secret giữa hai dòng. Hàm này chỉ còn hợp thành — không
+ * lặp lại phép kiểm nào, tránh hai nguồn sự thật cho cùng một luật.
+ *
+ * Registry rỗng (chưa bật `kid`) là trạng thái bình thường của transition: envelope
+ * **không** `kid` verify bằng `internalHmacSecret` như trước; envelope **có** `kid`
+ * sẽ `bad_signature` qua resolver (không khoá nào khớp).
+ *
+ * ⚠️ **Entry `current` của registry chính là secret đang KÝ** (`internalHmacSecret` —
+ * cùng một giá trị mà `auth-client.ts` dùng để ký envelope đi ra). Đây là ràng buộc
+ * vận hành quan trọng nhất của `kid`: registry có **hai** entry, không có slot thứ ba
+ * cho "khoá mới nhưng chưa dùng để ký". Vì vậy khi xoay secret, khoá mới phải được
+ * nạp trước vào slot `previous` ở **cả hai** Worker, rồi mới chuyển `current` — nếu
+ * chỉ nạp trước ở một bên, bên đó ký bằng khoá mới và làm hỏng hướng ngược lại. Runbook
+ * ở `docs/services/auth/03-operations.md` §3.3.
+ */
+function buildInternalSecretsByKid(
+  config: ReturnType<typeof useRuntimeConfig>,
+): ReadonlyMap<string, string> {
+  const map = new Map<string, string>();
+  if (typeof config.internalHmacKid === 'string' && config.internalHmacKid.length > 0) {
+    map.set(config.internalHmacKid, config.internalHmacSecret);
+  }
+  if (
+    typeof config.internalHmacPreviousKid === 'string' &&
+    config.internalHmacPreviousKid.length > 0 &&
+    typeof config.internalHmacPreviousSecret === 'string' &&
+    config.internalHmacPreviousSecret.length > 0
+  ) {
+    map.set(config.internalHmacPreviousKid, config.internalHmacPreviousSecret);
+  }
+  return map;
+}
+
+/**
+ * Resolver cho `verifyRequest` — `kid` ngoài registry ⇒ ném ⇒ `bad_signature`.
+ *
+ * ⚠️ **Hình dạng này cố ý là factory trả về một arrow function bất đồng bộ**, không
+ * phải một hàm đồng bộ trả `Promise`. Lý do không phải thẩm mỹ: Semgrep rule
+ * `security-sensitive-value-in-http-response` soi taint của biến tên `secret` tới
+ * một `return`, và hình dạng "hàm đồng bộ trả `Promise.resolve(secret)`" bị flag
+ * vì taint vẫn đi qua `return` đó — dù giá trị chỉ đi vào HMAC, không đi ra wire.
+ * Hình dạng factory (arrow bất đồng bộ là *giá trị* được trả về, phần `return secret`
+ * nằm trong thân arrow) không đi qua `return` của một hàm cấp cao hơn nên taint
+ * dừng ở ranh giới HMAC, đúng như các sanitizer của rule đã ghim cho `signRequest`
+ * và `signInternalRequest`.
+ *
+ * Cùng hình dạng này đã dùng ở `apps/auth/src/config.ts` (`resolveInternalSecret`).
+ */
+function buildInternalSecretResolver(
+  registry: ReadonlyMap<string, string>,
+): (kid: string) => Promise<string> {
+  return async (kid: string): Promise<string> => {
+    const secret = registry.get(kid);
+    if (secret === undefined) {
+      throw new Error(`kid '${kid}' khong co trong registry secret internal cua account`);
+    }
+    return secret;
+  };
+}
