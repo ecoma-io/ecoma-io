@@ -15,7 +15,7 @@ import {
   branchSchema,
   environmentNameSchema,
 } from '../domain/validation';
-import { validateParam } from '../middleware/validate';
+import { readJsonBodyWithLimit, validateParam } from '../middleware/validate';
 import { PgVersionRepo } from '../repo/version-repo';
 import { PgEnvironmentRepo } from '../repo/environment-repo';
 
@@ -141,11 +141,14 @@ export function pacticipantRoutes(
     if (!versionResult.valid) return versionResult.errorResponse;
     const versionNumber = versionResult.value;
 
+    const bodyResult = await readJsonBodyWithLimit(c, 64 * 1024, 'Pacticipant body');
     let body: { branch?: unknown; buildUrl?: unknown } = {};
-    try {
-      body = (await c.req.json()) as typeof body;
-    } catch {
-      // A bare PUT is the documented case.
+    if (bodyResult.ok) {
+      body = (bodyResult.value ?? {}) as typeof body;
+    } else if (bodyResult.errorResponse.status === 413) {
+      return bodyResult.errorResponse;
+    } else {
+      // Invalid JSON — bare PUT documented case; ignore parse error.
     }
 
     let branch: string | undefined;

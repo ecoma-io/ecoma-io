@@ -176,6 +176,7 @@ ABAC được định nghĩa là logical access control mà kết quả authoriz
 | 10  | Catalog là nguồn sự thật duy nhất của permission; resource-owning backend **không** tự phát minh permission ngoài catalog                      | Contract test + catalog review: permission dùng bởi backend phải có trong catalog |
 | 11  | Least-privilege DB credential; runtime privilege ≠ migrator privilege                                                                          | DB grant review: `has_table_privilege` sweep không còn quyền thừa                 |
 | 12  | Authorization audit **append-only**, access-restricted                                                                                         | SQL check: UPDATE/DELETE trên audit bị từ chối; grant read có giới hạn            |
+| 13  | UI **không giả lập backend**: không mở rộng trạng thái backend chưa xác nhận; ngoài prototype chỉ backend; lỗi → lỗi thật, không fallback mẫu  | E2E `e2e/readonly-boundary.spec.ts` + unit `tests/data-gate.spec.ts`: fail-closed |
 
 ## 10. Đã chốt qua ADR
 

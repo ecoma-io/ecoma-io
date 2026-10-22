@@ -25,7 +25,7 @@ import {
   PactBrokerConfigurationError,
   type PactBrokerConfig,
 } from './config';
-import { createPool } from './db/client';
+import { createPool, isConnectionTerminatedError } from './db/client';
 import { PgTokenRepo } from './repo/token-repo';
 import { requireMachineToken } from './auth/token-auth';
 import type { TokenRepo } from './auth/token-auth';
@@ -131,13 +131,43 @@ function createApp(): Hono<AppEnv> {
   // Body limit — đọc Content-Length trước khi buffer body. Không annotate
   // tường minh: `Promise<Response | void>` viết ra vi phạm
   // `no-invalid-void-type`, còn ngữ cảnh của `app.use` đã đặt kiểu đúng.
+  // Body limit — đếm byte THẬT trên stream, không tin `Content-Length` (request
+  // chunked không có header đó và bypass mọi check dựa trên header). Đọc từng
+  // chunk, dừng NGAY khi vượt trần; buffer lại body để downstream (route) vẫn
+  // đọc được qua `c.req.raw.body`.
   app.use('*', async (c, next) => {
-    const contentLength = c.req.header('content-length');
-    if (contentLength !== undefined && Number.parseInt(contentLength, 10) > MAX_BODY_BYTES) {
-      return c.json(
-        { error: 'Payload Too Large', message: `Body exceeds ${MAX_BODY_BYTES} bytes` },
-        413,
-      );
+    const body = c.req.raw.body;
+    if (body !== null) {
+      const reader = body.getReader();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > MAX_BODY_BYTES) {
+          await reader.cancel();
+          return c.json(
+            { error: 'Payload Too Large', message: `Body exceeds ${MAX_BODY_BYTES} bytes` },
+            413,
+          );
+        }
+        chunks.push(value);
+      }
+      const merged = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        merged.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      const original = c.req.raw;
+      const headers = new Headers(original.headers);
+      headers.delete('transfer-encoding');
+      c.req.raw = new Request(original.url, {
+        method: original.method,
+        headers,
+        body: total === 0 ? null : merged,
+      });
     }
     await next();
     return undefined;
@@ -197,8 +227,25 @@ function createApp(): Hono<AppEnv> {
 
     // Một Pool mỗi isolate (module-level var sống cùng isolate, không phải
     // cùng request — Hono per-request `c.set` sẽ tạo Pool mới mỗi request).
+    // PERF-06: wrap `createPool` trong try để không cache trạng thái hỏng;
+    // connection-terminated error reset `cachedPool = null` (lazy re-create).
     if (cachedPool === null) {
-      cachedPool = createPool(config.hyperdrive.connectionString);
+      try {
+        const pool = createPool(config.hyperdrive.connectionString);
+        // Reset lazy khi connection bị chấm dứt — listener riêng, không đụng
+        // listener log của `createPool`.
+        pool.on('error', (error: unknown) => {
+          if (isConnectionTerminatedError(error)) {
+            cachedPool = null;
+            // oxlint-disable-next-line promise/no-promise-in-callback
+            void pool.end().catch(() => undefined);
+          }
+        });
+        cachedPool = pool;
+      } catch (error) {
+        cachedPool = null;
+        throw error;
+      }
     }
     c.set('pool', cachedPool);
 

@@ -8,8 +8,7 @@
  * luật với `apps/account/tests/integration/harness.ts`.
  */
 
-import { readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readdirSync } from 'node:fs';
 
 import { applyAllMigrations } from '../../db/apply.mts';
 
@@ -77,7 +76,8 @@ const DOCKER_PROBE_ENV = 'ECOMA_PACT_BROKER_DOCKER_PROBE';
  * PostgreSQL mà test sẽ dùng (một runner thiếu Docker socket vẫn có thể làm
  * `docker info` thoát 0 — probe đó loại được đúng nguy hiểm này).
  *
- * `PACT_BROKER_REQUIRE_DOCKER=1` biến skip thành hard failure (CI đặt).
+ * `PACT_BROKER_REQUIRE_DOCKER=1` hoặc `ECOMA_REQUIRE_DOCKER=1` biến skip
+ * thành hard failure (CI đặt `ECOMA_REQUIRE_DOCKER=1`).
  */
 export function probeDocker(): Promise<boolean> {
   const flag = process.env[DOCKER_PROBE_ENV];
@@ -124,11 +124,14 @@ async function runDockerProbe(): Promise<boolean> {
   // Output của tooling trên CI → tiếng Anh (AGENTS.md).
   console.warn(
     `Docker is unavailable: the ${suiteCount} integration suite(s) guarded by probeDocker will be SKIPPED and this run still exits 0. ` +
-      'Set PACT_BROKER_REQUIRE_DOCKER=1 to turn the skipped suites into a hard failure.',
+      'Set PACT_BROKER_REQUIRE_DOCKER=1 or ECOMA_REQUIRE_DOCKER=1 to turn the skipped suites into a hard failure.',
   );
-  if (process.env['PACT_BROKER_REQUIRE_DOCKER'] === '1') {
+  const requireDocker =
+    process.env['PACT_BROKER_REQUIRE_DOCKER'] === '1' ||
+    process.env['ECOMA_REQUIRE_DOCKER'] === '1';
+  if (requireDocker) {
     throw new Error(
-      'PACT_BROKER_REQUIRE_DOCKER=1 but the Docker probe failed; refusing to skip the integration suites.',
+      'Docker is required (PACT_BROKER_REQUIRE_DOCKER=1 or ECOMA_REQUIRE_DOCKER=1) but the Docker probe failed; refusing to skip the integration suites.',
     );
   }
   return false;
@@ -136,11 +139,7 @@ async function runDockerProbe(): Promise<boolean> {
 
 /** Đếm spec gọi `probeDocker` để cảnh báo nêu đúng số suite sẽ skip. */
 function countProbeGuardedSuites(): number {
-  return readdirSync(import.meta.dirname)
-    .filter((entry) => entry.endsWith('.spec.ts'))
-    .filter((entry) =>
-      readFileSync(resolve(import.meta.dirname, entry), 'utf8').includes('probeDocker'),
-    ).length;
+  return readdirSync(import.meta.dirname).filter((entry) => entry.endsWith('.spec.ts')).length;
 }
 
 /**

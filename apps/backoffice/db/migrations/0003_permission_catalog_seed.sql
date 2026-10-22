@@ -21,17 +21,30 @@
 --     (`GET /api/staff`, `GET /api/roles`, `GET /api/permissions`). Không thêm
 --     permission "cho chắc", không thêm permission chưa được route nào dùng.
 --
--- Idempotent: `INSERT … ON CONFLICT (id) DO NOTHING` — apply lại là no-op, đúng
--- quy ước migration của `db-backoffice` (forward-only, không down-migration).
+-- Idempotent + drift-proof:
+--   * `WHERE NOT EXISTS (domain, action)` tự tài liệu hoá ý định: nếu slot
+--     `(domain, action)` đã bị một row drift chiếm thì bỏ qua seed row đó,
+--     không nhân bản và không overwrite drift row (không tự sửa dữ liệu).
+--   * `ON CONFLICT DO NOTHING` (không target) bắt **mọi** unique violation
+--     (PK `id` lẫn `UNIQUE (domain, action)`), nên re-apply không bao giờ ném
+--     lỗi dù drift row cùng id hay cùng `(domain, action)`.
+--   * Áp cho cả hai unique constraint của `backoffice.permissions` — xem
+--     `0005_permission_catalog_integrity.sql` (CHECK `id = domain.action`).
 -- Chạy bằng migrator (role khác runtime); runtime role vẫn chỉ SELECT được.
 
 BEGIN;
 
 INSERT INTO backoffice.permissions (id, domain, action, status)
-VALUES
+SELECT v.id, v.domain, v.action, v.status
+FROM (VALUES
   ('staff.read', 'staff', 'read', 'active'),
   ('role.read', 'role', 'read', 'active'),
   ('permission.read', 'permission', 'read', 'active')
-ON CONFLICT (id) DO NOTHING;
+) AS v(id, domain, action, status)
+WHERE NOT EXISTS (
+  SELECT 1 FROM backoffice.permissions p
+   WHERE p.domain = v.domain AND p.action = v.action
+)
+ON CONFLICT DO NOTHING;
 
 COMMIT;

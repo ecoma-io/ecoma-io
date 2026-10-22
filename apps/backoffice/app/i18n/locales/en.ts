@@ -142,6 +142,22 @@ export default {
     // Mô tả lấy theo `<domain>.<action>` của fixture. `domain` và `action` đều là
     // một token không chứa dấu chấm, nên chuỗi key dựng được là một path hợp lệ
     // của vue-i18n.
+    //
+    // ⚠️ Hai nguồn của cùng một khối này:
+    //   * **Catalog thật** (`db/migrations/0003_permission_catalog_seed.sql`) —
+    //     seed 3 id `status = 'active'`, mỗi id một dòng đọc đúng permission mà
+    //     route yêu cầu. Mô tả phải khớp **hành vi thật** của permission: đúng
+    //     những cột mà query cho route đọc (`01-architecture.md` §4.3 là
+    //     định danh, không phải nhãn để dịch), không phải một câu chung chung.
+    //     Ba id này được ghim ở `tests/permission-catalog-i18n.spec.ts` —
+    //     catalogue seed là nguồn của phép kiểm, không phải danh sách chép tay.
+    //   * **Fixture prototype** (`app/backoffice-data/prototype-fixture.ts`) —
+    //     `delivery.redrive`, `mail.read`, `mail.send`, `role.assign`,
+    //     `audit.read` là minh hoạ của UI prototype, không phải catalog thật và
+    //     không được seed; `staff.read` đứng ở nhóm trên vì trùng id thật.
+    //     Giữ chúng là để UI prototype còn nhãn (`tests/prototype-data.spec.ts`
+    //     buộc đủ key cho mọi id trong fixture); xoá một cái là làm UI prototype
+    //     hiện key rỗng.
     items: {
       delivery: {
         redrive: 'Queue a redrive for a delivery that already ran.',
@@ -150,14 +166,25 @@ export default {
         read: 'Read transactional mail templates and delivery records.',
         send: 'Send a transactional mail.',
       },
+      // `staff.read` — catalog thật (`0003`).
       staff: {
         read: 'Read the staff directory.',
       },
       role: {
         assign: 'Assign a role to a staff member.',
+        // `role.read` — catalog thật (`0003`). Phạm vi đọc đúng `listRoles`
+        // (`server/queries.ts`): catalog role với `id` + `isSystem`, không gồm
+        // grant (`role_permissions`) hay assignment (`role_assignments`).
+        read: 'Read the role catalog and which roles are system-defined.',
       },
       audit: {
         read: 'Read authorization audit records.',
+      },
+      // `permission.read` — catalog thật (`0003`). Phạm vi đọc đúng
+      // `listPermissions`: cả row `retired`, vì catalog là sealed history và
+      // việc lọc `retired` là quyết định hiển thị của UI, không phải của API.
+      permission: {
+        read: 'Read the permission catalog, including retired entries.',
       },
     },
   },

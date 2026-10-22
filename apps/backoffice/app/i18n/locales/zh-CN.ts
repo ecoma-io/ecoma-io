@@ -135,6 +135,8 @@ const zhCN: BackofficeMessages = {
     },
     empty: '尚未定义权限。',
     noResults: '未找到匹配的权限。',
+    // `items` 来自两个来源：真实目录（`0003_permission_catalog_seed.sql`）与
+    // prototype fixture —— 理由与边界见 `en.ts`。
     items: {
       delivery: {
         redrive: '对已运行的交付任务重新排队。',
@@ -143,14 +145,24 @@ const zhCN: BackofficeMessages = {
         read: '读取事务邮件模板与交付记录。',
         send: '发送事务邮件。',
       },
+      // `staff.read` — 真实目录（`0003`）。
       staff: {
         read: '读取员工目录。',
       },
       role: {
         assign: '为员工分配角色。',
+        // `role.read` — 真实目录（`0003`）。读取范围与 `listRoles` 一致：
+        // 角色目录含 `id` 与 `isSystem`，不含授权与分配记录。
+        read: '读取角色目录，并了解哪些角色由系统预定义。',
       },
       audit: {
         read: '读取授权审计记录。',
+      },
+      // `permission.read` — 真实目录（`0003`）。读取范围与 `listPermissions`
+      // 一致：包含 `retired` 记录，因为目录是 sealed 历史，过滤 `retired` 属于
+      // UI 的展示决定。
+      permission: {
+        read: '读取权限目录，包含已退役的条目。',
       },
     },
   },

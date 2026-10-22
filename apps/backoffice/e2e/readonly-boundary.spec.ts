@@ -65,6 +65,20 @@ const WRITE_AFFORDANCE_NAME =
   /save|submit|assign|create|delete|remove|edit|update|invite|revoke|publish|apply|reset|upload|\badd\b/iu;
 
 /**
+ * Path `/api/**` mà prototype được phép gọi — allow-list **tường minh**.
+ *
+ * ⚠️ Mặc định **rỗng**, và đó là chủ ý: prototype không có backend, nên không được
+ * gọi route `/api/**` nào — kể cả GET same-origin. Một `fetch('/api/staff')` là
+ * nguồn sự thật thứ hai bên cạnh fixture, trong khi banner vẫn ghi "never talks to
+ * a backend": đúng cái cửa sổ "hai nguồn sự thật" mà bộ test này phải chặn.
+ *
+ * So khớp là **pathname chính xác** (không phải prefix). Nếu sau này prototype cần
+ * gọi route thật, khai path cụ thể ở đây — tường minh, kèm lý do — chứ không âm
+ * thầm nới phép kiểm bên dưới.
+ */
+const ALLOWED_API_PATHS: readonly string[] = [];
+
+/**
  * Chữ tự nhận một thao tác ghi **đã hoàn tất**.
  *
  * Đây là heuristic theo từ khoá, không phải bằng chứng "không có thao tác ghi" — bảo
@@ -187,6 +201,27 @@ test('sends no mutating request and never leaves the app origin', async ({ page,
     requests.filter((request) => !['GET', 'HEAD', 'OPTIONS'].includes(request.method)),
   ).toEqual([]);
   expect(requests.filter((request) => new URL(request.url).origin !== origin)).toEqual([]);
+
+  // Vế cấm **đọc** từ backend: mọi request tới `/api/**` đều bị chặn, kể cả GET
+  // same-origin. Lý do: prototype không có backend, nên bất kỳ request `/api/**`
+  // nào cũng là một nguồn sự thật thứ hai bên cạnh fixture — trong khi banner
+  // vẫn ghi "never talks to a backend". Bộ test trước đây chỉ cấm method ghi và
+  // cross-origin, nên `fetch('/api/staff')` lọt qua mà vẫn xanh.
+  //
+  // Allow-list khai ở `ALLOWED_API_PATHS` (mặc định rỗng) là **đường nới duy
+  // nhất**, và nó phải tường minh: thêm path ở đó kèm lý do, không sửa phép kiểm
+  // này.
+  expect(
+    requests
+      .map((request) => new URL(request.url).pathname)
+      .filter((pathname) => pathname.startsWith('/api/'))
+      .filter((pathname) => !ALLOWED_API_PATHS.includes(pathname)),
+  ).toEqual([]);
+
+  // Vế console/page error đặt **sau** vế trên: một request `/api/**` bị server từ
+  // chối (503 vì chưa có authn layer) cũng làm Chromium ghi console error, và
+  // nếu vế này đứng trước thì lỗi đỏ sẽ chỉ nói về console chứ không nói về
+  // ranh giới dữ liệu — tức là không chỉ ra đúng điều cần sửa.
   expect(failures.consoleErrors).toEqual([]);
   expect(failures.pageErrors).toEqual([]);
 });

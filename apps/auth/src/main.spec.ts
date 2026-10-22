@@ -200,7 +200,7 @@ describe('GET /.well-known/openid-configuration', () => {
 
     expect(response.status).toBe(200);
     expect(body.issuer).toBe(TEST_ISSUER);
-    expect(body.authorization_endpoint).toBe(`${TEST_ISSUER}/auth`);
+    expect(body.authorization_endpoint).toBe(`${TEST_ISSUER}/authorize`);
     expect(body.token_endpoint).toBe(`${TEST_ISSUER}/token`);
     expect(body.jwks_uri).toBe(`${TEST_ISSUER}/jwks.json`);
     expect(body.code_challenge_methods_supported).toEqual(['S256']);
@@ -217,7 +217,7 @@ describe('GET /.well-known/openid-configuration', () => {
       unknown
     >;
 
-    expect(body.authorization_endpoint).toBe(`${TEST_ISSUER}/auth`);
+    expect(body.authorization_endpoint).toBe(`${TEST_ISSUER}/authorize`);
     expect(body.token_endpoint).toBe(`${TEST_ISSUER}/token`);
     expect(body.jwks_uri).toBe(`${TEST_ISSUER}/jwks.json`);
     // Issuer của test không được xuất hiện ở bất kỳ chỗ nào trong `src/`.

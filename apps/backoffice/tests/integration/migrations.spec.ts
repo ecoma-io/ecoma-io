@@ -27,6 +27,13 @@ const EXPECTED_TABLES = [
   'staff',
 ];
 
+/**
+ * Account ID hợp lệ theo định dạng `libs/backoffice-domain`: prefix `sub_` + 32
+ * ký tự base32 viết thường. CHECK `staff_sub_account_id_format_check` (migration
+ * `0004`) chặn mọi chuỗi tự do — fixture phải đúng định dạng đó.
+ */
+const SMOKE_SUB = `sub_${'m'.repeat(32)}`;
+
 async function tableNames(db: BackofficeDatabase): Promise<string[]> {
   const client = await db.connect();
   try {
@@ -125,11 +132,16 @@ describe.skipIf(!dockerAvailable)('db-backoffice migrations on a real PostgreSQL
     // DML smoke trên bảng `staff` qua runtime role, rồi một `CREATE TABLE` bị
     // từ chối. Hai nửa phải nằm trong MỘT test: "chỉ DML" là cặp điều kiện —
     // đủ DML và không DDL — tách hai test thì một nửa lỗi không làm đỏ cặp.
+    //
+    // ⚠️ `sub` phải là Account ID đúng định dạng (`sub_` + 32 ký tự base32
+    // viết thường) — CHECK `staff_sub_account_id_format_check` ở migration
+    // `0004` chặn mọi chuỗi tự do. Fixture ở đây dùng đúng định dạng đó.
     const runtime = await db.asRuntime();
     try {
-      await runtime.query(`INSERT INTO backoffice.staff (sub) VALUES ('sub_migrations_smoke')`);
+      await runtime.query(`INSERT INTO backoffice.staff (sub) VALUES ($1)`, [SMOKE_SUB]);
       const { rows } = await runtime.query<{ sub: string }>(
-        `SELECT sub FROM backoffice.staff WHERE sub = 'sub_migrations_smoke'`,
+        `SELECT sub FROM backoffice.staff WHERE sub = $1`,
+        [SMOKE_SUB],
       );
       expect(rows).toHaveLength(1);
     } finally {

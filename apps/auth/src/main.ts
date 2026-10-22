@@ -194,12 +194,32 @@ async function probeDatabase(hyperdrive: { connectionString: string }): Promise<
 }
 
 /**
+ * Route PUBLIC của bước authorization — cửa ngõ DUY NHẤT mà client được gọi.
+ *
+ * ⚠️ Đây là route của GLUE (Hono), KHÔNG phải route của provider. Provider có
+ * route authorization riêng (`PROVIDER_ROUTES.authorizationRoute` = `/auth`) —
+ * route nội bộ mà `handleAuthorize` 302 tới sau khi đã mint transaction + browser
+ * binding. `/auth` không tạo transaction, nên một client gọi thẳng nó sẽ không
+ * bao giờ có được cái glue tạo ra.
+ *
+ * ⚠️ Discovery quảng bá `/authorize` (route này), KHÔNG phải `/auth` — xem
+ * {@link discoveryDocument} và issue #122.
+ */
+const PUBLIC_AUTHORIZATION_ROUTE = '/authorize';
+
+/**
  * Discovery — SHADOW cả hai well-known của OIDC Core §4 và OAuth 2.0 AF §5.
  *
  * ⚠️ Dựng từ `PROVIDER_ROUTES` + `config.issuer`, KHÔNG hardcode path: provider
  * là nguồn sự thật của chính routes nó mount, và ghi lại chúng hai nơi là hai
  * chỗ để lệch. Cùng lý do, `jwks_uri` trỏ `/jwks.json` của provider — bản
  * hand-rolled JWKS đã bỏ, một JWKS duy nhất từ chính bộ máy cấp token.
+ *
+ * ⚠️ Một ngoại lệ CÓ CHỦ Ý: `authorization_endpoint` trỏ `/authorize` (glue),
+ * không phải `/auth` (provider). Đây là divergent duy nhất so với document mà
+ * chính provider render — và nó là divergent SỰ ĐÚNG: client đọc metadata rồi
+ * gọi đúng endpoint được quảng bá thì luồng phải chạy được, còn gọi `/auth`
+ * (route provider) thì không có transaction ⇒ không hoàn tất được.
  *
  * ⚠️ "Trung thực" nghĩa là: chỉ quảng bá endpoint provider thực sự mount.
  * `revocation_endpoint` được mount (RFC 7009 bật) và `end_session_endpoint`
@@ -219,7 +239,8 @@ function discoveryDocument(config: AuthConfig): Record<string, unknown> {
   const issuer = config.issuer;
   return {
     issuer,
-    authorization_endpoint: `${issuer}${PROVIDER_ROUTES.authorizationRoute}`,
+    // Entrypoint PUBLIC — xem `PUBLIC_AUTHORIZATION_ROUTE` ở trên.
+    authorization_endpoint: `${issuer}${PUBLIC_AUTHORIZATION_ROUTE}`,
     token_endpoint: `${issuer}${PROVIDER_ROUTES.tokenRoute}`,
     revocation_endpoint: `${issuer}${PROVIDER_ROUTES.revocation}`,
     jwks_uri: `${issuer}${PROVIDER_ROUTES.jwks}`,
@@ -237,7 +258,29 @@ function discoveryDocument(config: AuthConfig): Record<string, unknown> {
     scopes_supported: ['openid', 'offline_access', 'profile'],
     token_endpoint_auth_methods_supported: ['none'],
     code_challenge_methods_supported: ['S256'],
-    claims_supported: ['sub', 'aud', 'iss', 'exp', 'iat', 'nbf', 'client_id', 'scope'],
+    // Khớp `CLAIMS` của provider (`oidc/provider.ts`): `openid` ⇒ `sub`, `acr`,
+    // `auth_time`. Provider tự gộp thêm `sid`/`iss` vào `claimsSupported` do
+    // default của nó, nhưng `sid` không bao giờ được phát trong ID token của
+    // `auth` (không backchannel logout, claims param tắt) và `iss` là claim
+    // payload của JWT, không phải claim theo scope. Quảng bá chúng là quảng bá
+    // contract mà implementation không cung cấp.
+    claims_supported: ['sub', 'acr', 'auth_time'],
+    // Các field dưới đây provider thật render (discovery.js) với cấu hình hiện
+    // hành — shadow phải khớp để client không lệch. `claims_parameter` tắt ⇒
+    // `false`; `iss` được provider gắn vào authorization response (respond.js);
+    // `request_uri` không được hỗ trợ; `claim_types` mặc định `normal`.
+    claims_parameter_supported: false,
+    authorization_response_iss_parameter_supported: true,
+    request_uri_parameter_supported: false,
+    claim_types_supported: ['normal'],
+    // ⚠️ CHỈ `query`: glue chép tham số authorize sang provider qua allowlist
+    // `AUTHORIZED_FORWARD_PARAMS` (`browser-handlers.ts`) — `response_mode` KHÔNG
+    // có trong đó, nên provider luôn thấy mặc định của mình: `query` cho
+    // `response_type=code` (`resolve_response_mode.js`). Provider đăng ký cả
+    // `form_post`/`fragment` (discovery.js render đúng ba giá trị đó), nhưng
+    // quảng bá chúng ở đây là hứa một contract mà entrypoint public không
+    // chuyển tiếp được — client sẽ xin `form_post` và nhận `query`.
+    response_modes_supported: ['query'],
   };
 }
 

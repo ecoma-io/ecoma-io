@@ -17,6 +17,32 @@ const dockerAvailable = await probeDocker();
 const RUNTIME = 'ecoma_backoffice_runtime';
 
 /**
+ * Account ID hợp lệ theo định dạng `libs/backoffice-domain`: prefix `sub_` + 32
+ * ký tự base32 viết thường (`a`–`z`, `2`–`7`).
+ *
+ * ⚠️ Từ migration `0004` (`staff_sub_account_id_format_check`) mọi `sub` phải
+ * đúng định dạng này — fixture cũ dùng chuỗi tự do (`sub_unique_a`) thì bị
+ * CHECK chặn **trước** khi assertion của test kịp chạy, tức test xanh vì
+ * lý do sai. Fixture ở đây dùng đúng định dạng đó.
+ */
+const accountId = (seed: string): string => `sub_${seed.repeat(32)}`;
+
+/**
+ * Actor của các fixture ghi assignment. Khác `staff_sub` — vì trigger
+ * `role_assignments_no_self_elevation` (`0004`) chặn việc runtime tự gán role
+ * cho chính mình (SR-005).
+ */
+const FIXTURE_ACTOR = accountId('a');
+
+/** `sub` của các fixture cụ thể — mỗi fixture một Account ID riêng. */
+const NO_DELETE_SUB = accountId('b');
+const NO_ASSIGNMENT_DELETE_SUB = accountId('c');
+const UNIQUE_SUB = accountId('d');
+const TERMINAL_SUB = accountId('e');
+const RENAME_SUB = accountId('f');
+const PAST_VALID_SUB = accountId('g');
+
+/**
  * Bảng và grant kỳ vọng của runtime role, theo đúng `0002_roles_and_grants.sql`.
  *
  * Ba hình dạng grant khác nhau, không suy ra từ một quy tắc chung:
@@ -203,9 +229,9 @@ describe.skipIf(!dockerAvailable)('roles and grants on db-backoffice', () => {
     // nên assertion cụ thể một DELETE là thứ bắt được.
     const runtime = await db.asRuntime();
     try {
-      await runtime.query(`INSERT INTO backoffice.staff (sub) VALUES ('sub_r04_no_delete')`);
+      await runtime.query(`INSERT INTO backoffice.staff (sub) VALUES ($1)`, [NO_DELETE_SUB]);
       await expect(
-        runtime.query(`DELETE FROM backoffice.staff WHERE sub = 'sub_r04_no_delete'`),
+        runtime.query(`DELETE FROM backoffice.staff WHERE sub = $1`, [NO_DELETE_SUB]),
       ).rejects.toThrow(/permission denied/iu);
     } finally {
       await runtime.end();
@@ -251,11 +277,18 @@ describe.skipIf(!dockerAvailable)('roles and grants on db-backoffice', () => {
     }
     const runtime = await db.asRuntime();
     try {
-      await runtime.query(`INSERT INTO backoffice.staff (sub) VALUES ('sub_r06_no_del')`);
-      await runtime.query(`INSERT INTO backoffice.role_assignments (staff_sub, role_id)
-        VALUES ('sub_r06_no_del', 'role_reader_del')`);
+      await runtime.query(`INSERT INTO backoffice.staff (sub) VALUES ($1)`, [
+        NO_ASSIGNMENT_DELETE_SUB,
+      ]);
+      await runtime.query(
+        `INSERT INTO backoffice.role_assignments (staff_sub, role_id, created_by_sub)
+         VALUES ($1, 'role_reader_del', $2)`,
+        [NO_ASSIGNMENT_DELETE_SUB, FIXTURE_ACTOR],
+      );
       await expect(
-        runtime.query(`DELETE FROM backoffice.role_assignments WHERE staff_sub = 'sub_r06_no_del'`),
+        runtime.query(`DELETE FROM backoffice.role_assignments WHERE staff_sub = $1`, [
+          NO_ASSIGNMENT_DELETE_SUB,
+        ]),
       ).rejects.toThrow(/permission denied/iu);
     } finally {
       await runtime.end();
@@ -283,9 +316,9 @@ describe.skipIf(!dockerAvailable)('roles and grants on db-backoffice', () => {
     // Account ID tương ứng tối đa một staff entry".
     const runtime = await db.asRuntime();
     try {
-      await runtime.query(`INSERT INTO backoffice.staff (sub) VALUES ('sub_unique_a')`);
+      await runtime.query(`INSERT INTO backoffice.staff (sub) VALUES ($1)`, [UNIQUE_SUB]);
       await expect(
-        runtime.query(`INSERT INTO backoffice.staff (sub) VALUES ('sub_unique_a')`),
+        runtime.query(`INSERT INTO backoffice.staff (sub) VALUES ($1)`, [UNIQUE_SUB]),
       ).rejects.toThrow(/unique|duplicate key/iu);
     } finally {
       await runtime.end();
@@ -300,12 +333,14 @@ describe.skipIf(!dockerAvailable)('roles and grants on db-backoffice', () => {
     // nhìn thấy OLD row.
     const runtime = await db.asRuntime();
     try {
-      await runtime.query(`INSERT INTO backoffice.staff (sub) VALUES ('sub_terminal_a')`);
-      await runtime.query(
-        `UPDATE backoffice.staff SET status = 'terminated' WHERE sub = 'sub_terminal_a'`,
-      );
+      await runtime.query(`INSERT INTO backoffice.staff (sub) VALUES ($1)`, [TERMINAL_SUB]);
+      await runtime.query(`UPDATE backoffice.staff SET status = 'terminated' WHERE sub = $1`, [
+        TERMINAL_SUB,
+      ]);
       await expect(
-        runtime.query(`UPDATE backoffice.staff SET status = 'active' WHERE sub = 'sub_terminal_a'`),
+        runtime.query(`UPDATE backoffice.staff SET status = 'active' WHERE sub = $1`, [
+          TERMINAL_SUB,
+        ]),
       ).rejects.toThrow(/terminated la trang thai terminal/u);
     } finally {
       await runtime.end();
@@ -319,11 +354,12 @@ describe.skipIf(!dockerAvailable)('roles and grants on db-backoffice', () => {
     // (T-01 đường thứ hai @ 02-requirements.md §3.4, §4.1).
     const runtime = await db.asRuntime();
     try {
-      await runtime.query(`INSERT INTO backoffice.staff (sub) VALUES ('sub_rename_a')`);
+      await runtime.query(`INSERT INTO backoffice.staff (sub) VALUES ($1)`, [RENAME_SUB]);
       await expect(
-        runtime.query(
-          `UPDATE backoffice.staff SET sub = 'sub_rename_b' WHERE sub = 'sub_rename_a'`,
-        ),
+        runtime.query(`UPDATE backoffice.staff SET sub = $1 WHERE sub = $2`, [
+          accountId('h'),
+          RENAME_SUB,
+        ]),
       ).rejects.toThrow(/khong duoc doi tren hang da ton tai/u);
     } finally {
       await runtime.end();
@@ -353,9 +389,12 @@ describe.skipIf(!dockerAvailable)('roles and grants on db-backoffice', () => {
     }
     const runtime = await db.asRuntime();
     try {
-      await runtime.query(`INSERT INTO backoffice.staff (sub) VALUES ('sub_past_valid')`);
-      await runtime.query(`INSERT INTO backoffice.role_assignments (staff_sub, role_id, valid_until)
-        VALUES ('sub_past_valid', 'role_past_valid', now() + interval '50 milliseconds')`);
+      await runtime.query(`INSERT INTO backoffice.staff (sub) VALUES ($1)`, [PAST_VALID_SUB]);
+      await runtime.query(
+        `INSERT INTO backoffice.role_assignments (staff_sub, role_id, created_by_sub, valid_until)
+         VALUES ($1, 'role_past_valid', $2, now() + interval '50 milliseconds')`,
+        [PAST_VALID_SUB, FIXTURE_ACTOR],
+      );
     } finally {
       await runtime.end();
     }
@@ -369,7 +408,8 @@ describe.skipIf(!dockerAvailable)('roles and grants on db-backoffice', () => {
       const { rows } = await reader.query<{ count: string }>(
         `SELECT count(*)::text AS count
            FROM backoffice.role_assignments
-          WHERE staff_sub = 'sub_past_valid' AND valid_until < now()`,
+          WHERE staff_sub = $1 AND valid_until < now()`,
+        [PAST_VALID_SUB],
       );
       expect(rows[0]?.count).toBe('1');
     } finally {

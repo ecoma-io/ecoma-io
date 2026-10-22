@@ -343,12 +343,18 @@ export function pactRoutes(
     if (!providerResult.valid) return providerResult.errorResponse;
     const providerName = providerResult.value;
 
+    const bodyResult = await readJsonBodyWithLimit(
+      c,
+      1 * 1024 * 1024,
+      'Pact for-verification body',
+    );
     let body: { consumerVersionSelectors?: Array<Record<string, unknown>> } = {};
-    try {
-      body = await c.req.json();
-    } catch {
-      // Empty body is valid - defaults to latest pacts
+    if (bodyResult.ok) {
+      body = (bodyResult.value ?? {}) as typeof body;
+    } else if (bodyResult.errorResponse.status === 413) {
+      return bodyResult.errorResponse;
     }
+    // Invalid JSON or empty body: keep default (latest pacts)
 
     const repo = new PgPactRepo(c.get('pool'));
     const rawSelectors = body.consumerVersionSelectors;
