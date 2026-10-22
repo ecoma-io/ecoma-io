@@ -25,7 +25,7 @@ import {
   PactBrokerConfigurationError,
   type PactBrokerConfig,
 } from './config';
-import { createPool } from './db/client';
+import { createPool, isConnectionTerminatedError } from './db/client';
 import { PgTokenRepo } from './repo/token-repo';
 import { requireMachineToken } from './auth/token-auth';
 import type { TokenRepo } from './auth/token-auth';
@@ -227,8 +227,25 @@ function createApp(): Hono<AppEnv> {
 
     // Một Pool mỗi isolate (module-level var sống cùng isolate, không phải
     // cùng request — Hono per-request `c.set` sẽ tạo Pool mới mỗi request).
+    // PERF-06: wrap `createPool` trong try để không cache trạng thái hỏng;
+    // connection-terminated error reset `cachedPool = null` (lazy re-create).
     if (cachedPool === null) {
-      cachedPool = createPool(config.hyperdrive.connectionString);
+      try {
+        const pool = createPool(config.hyperdrive.connectionString);
+        // Reset lazy khi connection bị chấm dứt — listener riêng, không đụng
+        // listener log của `createPool`.
+        pool.on('error', (error: unknown) => {
+          if (isConnectionTerminatedError(error)) {
+            cachedPool = null;
+            // oxlint-disable-next-line promise/no-promise-in-callback
+            void pool.end().catch(() => undefined);
+          }
+        });
+        cachedPool = pool;
+      } catch (error) {
+        cachedPool = null;
+        throw error;
+      }
     }
     c.set('pool', cachedPool);
 
