@@ -53,8 +53,10 @@ export const CLEANUP_KINDS: readonly DeployResourceKind[] = [
   'traefik',
   'postgres',
   'home',
+  'backoffice',
   'network',
   'home-image',
+  'backoffice-image',
   'postgres-volume',
 ];
 
@@ -322,7 +324,7 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
         ? 'network'
         : kind === POSTGRES_VOLUME_KIND
           ? 'volume'
-          : kind === 'home-image'
+          : kind === 'home-image' || kind === 'backoffice-image'
             ? 'image'
             : 'container';
 
@@ -344,9 +346,12 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
       .filter((line) => {
         if (line.length === 0) return false;
         if (dockerType === 'image') {
-          // Image name format `ecoma-home-<ns>:local` — không có suffix `-home-image`
-          // trong tag, nên lọc theo prefix + namespace pattern ở tên repo.
-          return line.startsWith('ecoma-home-') && line.endsWith(':local');
+          // Image name format `ecoma-<app>-<ns>:local` (home/backoffice) — không có
+          // suffix `-image` trong tag, nên lọc theo prefix + namespace pattern.
+          return (
+            (line.startsWith('ecoma-home-') || line.startsWith('ecoma-backoffice-')) &&
+            line.endsWith(':local')
+          );
         }
         return line.startsWith('ecoma-') && line.endsWith(`-${kind}`);
       });

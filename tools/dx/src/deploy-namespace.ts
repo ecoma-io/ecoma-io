@@ -86,7 +86,9 @@ export type DeployResourceKind =
   | 'postgres'
   | 'postgres-volume'
   | 'home'
-  | 'home-image';
+  | 'home-image'
+  | 'backoffice'
+  | 'backoffice-image';
 
 /**
  * Tên Docker resource hợp lệ và nhất quán cho một namespace.

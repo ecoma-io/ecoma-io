@@ -81,12 +81,13 @@ afterEach(() => {
 });
 
 describe('DEPLOY_STEPS', () => {
-  it('thứ tự contract: platform → outputs → env → home → smoke', () => {
+  it('thứ tự contract: platform → outputs → env → home → backoffice → smoke', () => {
     expect(DEPLOY_STEPS).toEqual([
       'platform-up',
       'read-outputs',
       'update-env',
       'home-up',
+      'backoffice-up',
       'smoke-https',
     ]);
   });
@@ -232,15 +233,17 @@ describe('localDeploy previewOnly', () => {
       expect(args).toContain('--json');
     }
 
-    // pulumiRun đúng hai lần: platform preview rồi home preview, theo thứ tự
-    // contract; cả hai prepareStack !== true và không truyền --config (CLI lưu
+    // pulumiRun đúng ba lần: platform preview rồi home preview rồi backoffice preview,
+    // theo thứ tự contract; cả ba prepareStack !== true và không truyền --config (CLI lưu
     // --config vào stack config file kể cả ở preview).
-    expect(pulumiRunMock.mock.calls.length).toBe(2);
-    const [platformCall, homeCall] = pulumiRunMock.mock.calls;
+    expect(pulumiRunMock.mock.calls.length).toBe(3);
+    const [platformCall, homeCall, backofficeCall] = pulumiRunMock.mock.calls;
     expect(platformCall[1]).toBe('platform-deploy');
     expect(platformCall[2]).toEqual(['preview']);
     expect(homeCall[1]).toBe('home-deploy');
     expect(homeCall[2]).toEqual(['preview']);
+    expect(backofficeCall[1]).toBe('backoffice-deploy');
+    expect(backofficeCall[2]).toEqual(['preview']);
     for (const call of pulumiRunMock.mock.calls) {
       expect(call[2]).not.toContain('--config');
       expect(call[5]?.prepareStack).not.toBe(true);
@@ -399,11 +402,12 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
 
     // pulumiRun: platform up (prepareStack: true, có --config) rồi home up.
     const upCalls = pulumiRunMock.mock.calls.filter(([, , args]) => args[0] === 'up');
-    expect(upCalls.length).toBe(2);
+    expect(upCalls.length).toBe(3);
     expect(upCalls[0][1]).toBe('platform-deploy');
     expect(upCalls[0][5]?.prepareStack).toBe(true);
     expect(upCalls[0][2]).toContain('--config');
     expect(upCalls[1][1]).toBe('home-deploy');
+    expect(upCalls[2][1]).toBe('backoffice-deploy');
 
     // .env được ghi với port từ outputs — apply GIỮ hành vi ghi .env.
     const envContent = readFileSync(join(root, '.env'), 'utf8');

@@ -40,7 +40,10 @@
 # không có lý do gì nằm trong context của image này.
 apps/*
 !apps/home
+!apps/backoffice
 libs/*
+!libs/backoffice-domain
+!libs/ui-app-shell
 !libs/ui-ecoma-logo
 tools/*
 !tools/dx
@@ -91,3 +94,7 @@ tools/dx/*
 # `apps/home` được mở trọn nên phải loại tường minh.
 apps/home/tests
 apps/home/vitest.config.mts
+apps/backoffice/tests
+apps/backoffice/vitest.config.mts
+apps/backoffice/tsconfig.db.json
+apps/backoffice/tsconfig.spec.json

@@ -173,6 +173,7 @@ export function probePostgresVolume(
 /** Tên Nx project của hai deploy unit — dùng cho stack ref đầy đủ và exec cwd. */
 const PLATFORM_PROJECT = 'platform-deploy';
 const HOME_PROJECT = 'home-deploy';
+const BACKOFFICE_PROJECT = 'backoffice-deploy';
 
 function projectDir(project: string): string {
   return join(ROOT_DIR, 'deploys', project);
@@ -290,6 +291,7 @@ export const DEPLOY_STEPS = [
   'read-outputs',
   'update-env',
   'home-up',
+  'backoffice-up',
   'smoke-https',
 ] as const;
 export type DeployStep = (typeof DEPLOY_STEPS)[number];
@@ -579,6 +581,10 @@ function runApply(
       `${POSTGRES_PASSWORD_ENV_KEY} đã ghi vào ${envPath}`,
   );
 
+  // Mật khẩu hai role của db-backoffice — sinh ngẫu nhiên bằng API mật mã an toàn.
+  const runtimeRolePassword = generatePostgresPassword();
+  const migratorRolePassword = generatePostgresPassword();
+
   // 4. Home up — image build + container + routing labels.
   console.log('[local-deploy] home up…');
   const homeOk = runProjectStep(
@@ -612,6 +618,28 @@ function runApply(
     { prepareStack: true, stream: true },
   );
   if (!homeOk) return 1;
+
+  // 4b. Backoffice up — image build + container + routing labels + DB provisioning.
+  console.log('[local-deploy] backoffice up…');
+  const backofficeOk = runProjectStep(
+    'backoffice up',
+    BACKOFFICE_PROJECT,
+    [
+      'up',
+      '--yes',
+      ...sharedConfigArgs,
+      '--config',
+      `namespace:platformStackRef=organization/platform-deploy/${ctx.stackName}`,
+      '--config',
+      `namespace:runtimePassword=${runtimeRolePassword}`,
+      '--config',
+      `namespace:migratorPassword=${migratorRolePassword}`,
+    ],
+    ctx,
+    env,
+    { prepareStack: true, stream: true },
+  );
+  if (!backofficeOk) return 1;
 
   // 5. Smoke HTTPS qua Traefik với certificate local.
   if (options.skipSmoke !== true) {
@@ -723,6 +751,28 @@ function runPreview(ctx: LocalDeployContext, env: NodeJS.ProcessEnv): number {
     return 1;
   }
 
+  const backofficeCheck = classifyStackOutput(
+    exec(
+      'pulumi',
+      ['stack', 'output', '--json', '--stack', fullStackRef(BACKOFFICE_PROJECT, ctx)],
+      projectDir(BACKOFFICE_PROJECT),
+      env,
+    ),
+  );
+  if (backofficeCheck.state === 'backend-error' || backofficeCheck.state === 'parse-error') {
+    console.error(
+      `[local-deploy] preview: lỗi Pulumi/backend đọc backoffice: ${backofficeCheck.detail}`,
+    );
+    return 1;
+  }
+  if (backofficeCheck.state === 'no-stack') {
+    console.error(
+      '[local-deploy] preview: chưa có backoffice stack — worktree chưa apply đủ. Chạy `pnpm dx ' +
+        'local-deploy` (apply) trước; preview KHÔNG tự tạo stack.',
+    );
+    return 1;
+  }
+
   console.log('[local-deploy] platform preview…');
   const platformOk = runProjectStep(
     'platform preview',
@@ -744,6 +794,25 @@ function runPreview(ctx: LocalDeployContext, env: NodeJS.ProcessEnv): number {
       '[local-deploy] home preview thất bại — platform ĐÃ preview, home KHÔNG được preview ' +
         '(không có gì được apply). Xem lỗi pulumi phía trên; nếu thiếu config ' +
         '`namespace:platformStackRef` của home stack, chạy `pnpm dx local-deploy` (apply) trước.',
+    );
+    return 1;
+  }
+
+  console.log('[local-deploy] backoffice preview…');
+  const backofficeOk = runProjectStep(
+    'backoffice preview',
+    BACKOFFICE_PROJECT,
+    ['preview'],
+    ctx,
+    env,
+    {
+      prepareStack: false,
+    },
+  );
+  if (!backofficeOk) {
+    console.error(
+      '[local-deploy] backoffice preview thất bại — platform/home ĐÃ preview, backoffice KHÔNG được preview ' +
+        '(không có gì được apply). Xem lỗi pulumi phía trên.',
     );
     return 1;
   }
@@ -822,6 +891,16 @@ function runDestroySteps(
   env: NodeJS.ProcessEnv,
   options: { worktreeRoot?: string; removeData?: boolean },
 ): number {
+  console.log('[local-deploy] backoffice destroy…');
+  const backofficeOk = runProjectStep(
+    'backoffice destroy',
+    BACKOFFICE_PROJECT,
+    ['destroy', '--yes', '--config', `namespace:worktreeRoot=${ctx.worktreeRoot}`],
+    ctx,
+    env,
+    { prepareStack: false },
+  );
+
   console.log('[local-deploy] home destroy…');
   const homeOk = runProjectStep(
     'home destroy',
@@ -849,7 +928,7 @@ function runDestroySteps(
   // Với lỗi Pulumi khác (daemon down, sai passphrase…), cũng tiếp tục tới volume
   // theo yêu cầu `--remove-data` nhưng báo rõ để người dùng biết destroy stack
   // chưa trọn. Không `--remove-data`: lỗi thật → exit 1, không đụng volume.
-  const destroyFailed = !(homeOk && platformOk);
+  const destroyFailed = !(backofficeOk && homeOk && platformOk);
   if (destroyFailed && options.removeData !== true) {
     return 1;
   }
@@ -985,6 +1064,7 @@ export function localStatus(options: { worktreeRoot?: string }): number {
   console.log(`postgres:       ${dockerResourceName(ctx.namespace, 'postgres')}`);
   console.log(`volume:         ${dockerResourceName(ctx.namespace, 'postgres-volume')}`);
   console.log(`home:           ${dockerResourceName(ctx.namespace, 'home')}`);
+  console.log(`backoffice:     ${dockerResourceName(ctx.namespace, 'backoffice')}`);
 
   const envPath = join(ctx.worktreeRoot, '.env');
   if (existsSync(envPath)) {
