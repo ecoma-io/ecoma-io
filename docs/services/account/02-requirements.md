@@ -2,7 +2,7 @@
 
 > Phạm vi: yêu cầu kiểm thử được, NFR, yêu cầu bảo mật và privacy, threat model, acceptance matrix của `account`.
 > Thiết kế → [`01-architecture.md`](./01-architecture.md) · vận hành → [`03-operations.md`](./03-operations.md) · đối tác protocol → [`../auth/01-architecture.md`](../auth/01-architecture.md).
-> ⚠️ `account` đã có triển khai một phần: migrations `db-account` (0001–0006), contract `GET /internal/account/status` và luồng đăng nhập email-OTP (`apps/account/server/api/auth/`). Các yêu cầu dưới đây giữ vai trò đặc tả: phần luồng OTP có integration test phủ (`apps/account/tests/integration/`), phần còn lại là target design chưa có mã.
+> ⚠️ `account` đã có triển khai một phần: migrations `db-account` (0001–0007), contract `GET /internal/account/status`, luồng đăng nhập email-OTP (`apps/account/server/api/auth/`), UI login/consent (`apps/account/app/pages/`) và back-channel đẩy sang `auth` (`apps/account/server/api/auth/handoff.post.ts`, `apps/account/server/api/consent/`). Các yêu cầu dưới đây giữ vai trò đặc tả: phần luồng OTP và back-channel có integration test phủ (`apps/account/tests/integration/`), phần còn lại là target design chưa có mã.
 
 ---
 
