@@ -702,6 +702,42 @@ describe('POST /admin/v1/deliveries/:deliveryId/retry — failed → queued (§5
     expect(await readAuditEvents(db, 'deliv')).toEqual(['delivery_retried']);
   });
 
+  it('creates an outbox intent for the requeued delivery that the publisher can publish', async () => {
+    const response = await callRoute(db, '/admin/v1/deliveries/deliv/retry', adminHeaders(), {
+      method: 'POST',
+      body: { app: APP, reason: 'operator-requeue' },
+    });
+
+    expect(response.status).toBe(200);
+
+    const intents = await db.rows<{ outbox_id: string; status: string }>(
+      'SELECT outbox_id, status FROM push_outbox WHERE delivery_id = ?',
+      'deliv',
+    );
+    // §5.6.1: requeue phải đi kèm **đúng một** outbox intent — không có intent thì publisher
+    // không nhặt được gì (predicate claim chỉ đọc `push_outbox`) và delivery nằm `queued` mãi.
+    expect(intents).toHaveLength(1);
+    expect(intents[0]?.status).toBe('pending');
+
+    // Và intent đó phải đi qua được publisher: message thật sự publish lên Queue.
+    const publish = await callRoute(db, '/internal/outbox/publish', adminHeaders(), {
+      method: 'POST',
+      body: {},
+    });
+    expect(publish.status).toBe(200);
+    const run = (await publish.json()) as {
+      readonly published: number;
+      readonly send_calls: number;
+    };
+    expect(run).toMatchObject({ published: 1, send_calls: 1 });
+    expect(
+      await db.rows<{ status: string }>(
+        'SELECT status FROM push_outbox WHERE delivery_id = ?',
+        'deliv',
+      ),
+    ).toEqual([{ status: 'published' }]);
+  });
+
   it('refuses a non-terminal delivery with 409 recovery_precondition_failed', async () => {
     await db.run(
       "UPDATE push_deliveries SET status = 'pending', dispatch_generation = 0 WHERE delivery_id = ?",

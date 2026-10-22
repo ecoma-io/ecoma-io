@@ -120,6 +120,37 @@ export async function administrativeRetry(
     };
   }
 
+  // §5.6.1: requeue `failed → queued` PHẢI đi kèm **đúng một** outbox intent — nếu không,
+  // publisher (predicate chỉ đọc `push_outbox`) không bao giờ nhặt được delivery này và nó
+  // nằm `queued` mãi mãi. `retryFailed` (state write) phải thành công trước; chỉ khi delivery
+  // đã thực sự `queued` mới tạo intent, để không sinh intent mồ côi cho một delivery chưa
+  // requeue. Thứ tự này chấp nhận một crash window giữa hai lệnh (delivery `queued` chưa có
+  // intent): delivery lúc đó là **non-terminal** `queued`, nên reconciliation (c) a4 sẽ tạo
+  // intent khi nó đủ già — không mất vĩnh viễn. D1 không có BEGIN/COMMIT từ tầng application
+  // (chỉ `db.batch()` ở infrastructure), và gộp hai port vào một batch đòi đổi shape port cho
+  // mọi use case — không nằm trong phạm vi WA-3.
+  const intent = await createIntent(deps, target.deliveryId, now);
+  if (intent === null) {
+    // `createIntent` trả `null` nghĩa là partial unique index `push_outbox_one_open_intent`
+    // chặn: đã có một intent `pending`/`publishing` cho delivery này (race hợp lệ — §4.2,
+    // không phải lỗi cần alert). Khi đó delivery vẫn có đường publish qua intent đang mở,
+    // nên **không** phải "mất vĩnh viễn".
+    //
+    // Nhưng `null` còn có thể là va chạm khoá chính (`outbox_id` trùng) — một race khác
+    // **không** để lại intent nào. Fail-closed: chỉ coi là thành công khi **thật sự** có
+    // intent open; nếu không, delivery `queued` không có gì để publish ⇒ báo lỗi cho operator
+    // thay vì trả `{ ok: true }`.
+    const hasOpen = await ports.outbox.hasOpenIntent(target.deliveryId);
+    if (!hasOpen) {
+      return {
+        ok: false,
+        reason: ADMIN_REJECTION.StorageFailure,
+        detail:
+          'Delivery đã requeue nhưng không tạo được outbox intent — không có gì để publish; reconciliation sẽ thử lại.',
+      };
+    }
+  }
+
   await recordRecovery(deps, AUDIT_EVENT.DeliveryRetried, command, target, now, {
     dispatch_generation: decision.dispatchGeneration,
     reason: command.reason,
