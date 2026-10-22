@@ -19,12 +19,19 @@
  * repo; một khoá production phải nằm trong Worker Secret. Nó tồn tại vì `buildCipher`
  * fail-closed khi thiếu key của version đang phục vụ (`K1`), nên không thể dựng context mà
  * thiếu nó.
+ *
+ * ⚠️ **Giá trị đó nằm ở `credential-root-key.ts`, không viết lại ở đây.** Fixture seed
+ * credential (`d1-harness.ts`) phải mã hoá bằng **cùng** root key mà Worker này đọc — nếu hai
+ * bên lệch nhau thì credential seed không giải mã được và cổng chặn enable
+ * (`credential_decryption_failed`) làm đỏ test.
  */
 
 import type { PushWorkerEnv } from '../src/config';
 import type { TestDatabase } from './d1-harness';
 
 import worker from '../src/main';
+
+import { ROOT_KEY_K1_BASE64 } from './credential-root-key';
 
 /** Bearer token của Application API — principal `ecoma-io` là `App` mà nó đại diện. */
 export const APPLICATION_TOKEN = 'application-token';
@@ -46,7 +53,7 @@ export function completeEnv(db: TestDatabase): Record<string, unknown> {
     APPLICATION_API_PRINCIPAL: 'ecoma-io',
     CREDENTIAL_KEY_VERSION: 'K1',
     CREDENTIAL_SERVING_VERSIONS: 'K1',
-    PUSH_CREDENTIAL_ROOT_KEY_K1: btoa(String.fromCodePoint(...new Uint8Array(32).fill(7))),
+    PUSH_CREDENTIAL_ROOT_KEY_K1: ROOT_KEY_K1_BASE64,
     ENVIRONMENT: 'test',
     LOG_LEVEL: 'error',
     push: db.probe.database,

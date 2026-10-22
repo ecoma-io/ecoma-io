@@ -390,8 +390,25 @@ export async function createNotification(
   } catch {
     // ⚠️ Không ném chi tiết lỗi ra ngoài: thông điệp của D1 có thể chứa giá trị bind (payload,
     // endpoint) và đi vào log của Worker. Lỗi unique constraint của idempotency là **kết
-    // quả bình thường** của đua đồng thời (FR-008) — request thua sẽ đọc lại record ở lần
-    // gọi sau và nhận kết quả idempotent, nên nó không phải lỗi cần alert.
+    // quả bình thường** của đua đồng thời (FR-008) — request thua sẽ đọc lại record ở đây
+    // và nhận kết quả idempotent, nên nó không phải lỗi cần alert. Chỉ coi là StorageFailure
+    // khi không có record nào được ghi (lỗi storage thật sự).
+    const raced = await ports.idempotency.find(
+      command.authenticatedApp,
+      command.principalId,
+      command.idempotencyKey,
+    );
+    if (raced !== null) {
+      if (raced.requestHash === requestHash) {
+        // FR-008: đua đồng thời thua — trả cùng shape replay thành công.
+        return { ok: true, replayed: true, notificationId: raced.notificationId };
+      }
+      return {
+        ok: false,
+        reason: CREATE_NOTIFICATION_REJECTION.IdempotencyKeyConflict,
+        detail: 'Idempotency-Key đã dùng cho một request khác.',
+      };
+    }
     return {
       ok: false,
       reason: CREATE_NOTIFICATION_REJECTION.StorageFailure,
@@ -399,16 +416,32 @@ export async function createNotification(
     };
   }
 
-  await ports.audit.append({
-    auditId: deps.ids.next(),
-    event: 'notification_created',
-    actor: command.principalId,
-    entityType: 'push_notification',
-    entityId: notificationId,
-    // Audit không chứa payload/endpoint/secret (FR-020, SR-005) — chỉ số lượng và scope.
-    detail: { app: command.authenticatedApp, deliveries: deliveries.length },
-    now,
-  });
+  // Audit ghi **sau** khi batch đã commit. Audit là bằng chứng quan sát được (FR-020),
+  // không phải điều kiện của kết cục: nếu audit thất bại, notification đã persist vẫn là
+  // kết cục thật — phải trả thành công, chỉ log để operator thấy (B-11). Không chứa
+  // payload/endpoint/secret (FR-020, SR-005).
+  try {
+    await ports.audit.append({
+      auditId: deps.ids.next(),
+      event: 'notification_created',
+      actor: command.principalId,
+      entityType: 'push_notification',
+      entityId: notificationId,
+      detail: { app: command.authenticatedApp, deliveries: deliveries.length },
+      now,
+    });
+  } catch {
+    // eslint-disable-next-line no-console -- application không có logger port; Workers ghi log qua console.
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        service: 'push-notification',
+        message: 'notification_created_audit_append_failed',
+        notificationId,
+        app: command.authenticatedApp,
+      }),
+    );
+  }
 
   return {
     ok: true,

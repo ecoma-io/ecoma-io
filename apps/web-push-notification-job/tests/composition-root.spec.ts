@@ -302,6 +302,7 @@ describe('handleReconcileRequest', () => {
     expect(Object.keys(report).toSorted()).toEqual([
       'failed',
       'redelivered',
+      'skippedExhausted',
       'skippedProcessed',
       'stuckFound',
     ]);
@@ -367,6 +368,7 @@ describe('handleReconcileRequest', () => {
       redelivered: 0,
       failed: 0,
       skippedProcessed: 0,
+      skippedExhausted: 0,
     });
   });
 });

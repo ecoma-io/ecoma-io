@@ -376,3 +376,90 @@ describe('consumeQueueBatch mixed batch', () => {
     await expect(consumeQueueBatch(depsWith({ runtime }), [])).resolves.toBeUndefined();
   });
 });
+
+describe('consumeQueueBatch DC-2 lease release on unhandled error', () => {
+  // Regression: mọi đường retry sau khi claim đã thắng phải release lease TRƯỚC retry().
+  // Đi qua ranh giới thật: consumeQueueBatch với message thật (fake ack/retry ghi lại lời gọi)
+  // và runtime.release spy để assert thứ tự release trước retry.
+  it('releases the lease strictly before retrying on an unhandled post-claim error', async () => {
+    const trace: Trace[] = [];
+    const order: string[] = [];
+    const releases: { deliveryId: string; generation: number }[] = [];
+    const runtime = fakeRuntime({
+      ...claimWon(),
+      writeOutcome: async () => {
+        throw new Error('control plane unreachable');
+      },
+    });
+    const baseRelease = runtime.release.bind(runtime);
+    runtime.release = async (deliveryId: string, generation: number) => {
+      order.push('release');
+      releases.push({ deliveryId, generation });
+      return baseRelease(deliveryId, generation);
+    };
+
+    const message = {
+      body: envelope(DELIVERY_A),
+      attempts: 1,
+      trace,
+      ack: () => {
+        trace.push({ kind: 'ack' });
+      },
+      retry: (options?: { readonly delaySeconds?: number }) => {
+        order.push('retry');
+        trace.push(
+          options === undefined
+            ? { kind: 'retry' }
+            : { kind: 'retry', delaySeconds: options.delaySeconds },
+        );
+      },
+    };
+
+    await consumeQueueBatch(depsWith({ runtime }), [message]);
+
+    // ⚠️ Assertion **thứ tự**, không chỉ "đã gọi release": một consumer gọi `retry()` rồi mới
+    // release vẫn xanh với hai assertion độc lập, nhưng đó chính là lỗi FR-008.
+    expect(order).toEqual(['release', 'retry']);
+    expect(trace).toEqual([{ kind: 'retry' }]);
+    // Release mang `dispatch_generation` của claim — fencing token, không phải số thứ tự.
+    expect(releases).toEqual([{ deliveryId: DELIVERY_A, generation: 1 }]);
+  });
+
+  // Lỗi TRƯỚC claim (envelope hỏng) — không có lease để release: fail-safe, không release thừa.
+  it('does not release on a broken envelope (pre-claim)', async () => {
+    const trace: Trace[] = [];
+    const releases: string[] = [];
+    const runtime = fakeRuntime({
+      claim: async () => {
+        throw new Error('must not be called for a broken envelope');
+      },
+    });
+    const baseRelease = runtime.release.bind(runtime);
+    runtime.release = async (deliveryId: string, generation: number) => {
+      releases.push(deliveryId);
+      return baseRelease(deliveryId, generation);
+    };
+
+    const message = {
+      body: { garbage: true },
+      attempts: 1,
+      trace,
+      ack: () => {
+        trace.push({ kind: 'ack' });
+      },
+      retry: (options?: { readonly delaySeconds?: number }) => {
+        trace.push(
+          options === undefined
+            ? { kind: 'retry' }
+            : { kind: 'retry', delaySeconds: options.delaySeconds },
+        );
+      },
+    };
+
+    await consumeQueueBatch(depsWith({ runtime }), [message]);
+
+    // Không có lease để release: envelope hỏng là lỗi trước claim, không có gì để trả.
+    expect(releases).toHaveLength(0);
+    expect(trace).toEqual([{ kind: 'retry' }]);
+  });
+});

@@ -202,7 +202,7 @@ Internal application API và `Admin API` **MUST** có authorization boundary ri�
 
 ### FR-020 — Audit
 
-Thao tác quản trị quan trọng **MUST** được audit — tối thiểu: `provider_created`, `provider_updated`, `provider_enabled`, `provider_disabled`, `provider_held`, `provider_released`, `credential_rotated`, `subscription_disabled`, `subscription_removed`, `notification_created`, `delivery_retried`, `delivery_republished`. Audit record chứa actor và timestamp; secret **MUST NOT** ghi vào audit. Administrative recovery (`retry`, `republish`), key rotation, emergency hold/revoke, và bulk operation **MUST** có administrative authorization (FR-017/SR-004) kèm audit record.
+Thao tác quản trị quan trọng **MUST** được audit — tối thiểu: `provider_created`, `provider_updated`, `provider_enabled`, `provider_disabled`, `provider_held`, `provider_released`, `credential_rotated`, `subscription_disabled`, `subscription_removed`, `notification_created`, `delivery_retried`, `delivery_republished`. Audit record chứa actor và timestamp; secret **MUST NOT** ghi vào audit. Provider test (`POST /admin/v1/providers/:id/test`) ghi audit `provider_updated` với `detail.test_result` (cùng `subscription_id`, `duration_ms` khi có). Administrative recovery (`retry`, `republish`), key rotation, emergency hold/revoke, và bulk operation **MUST** có administrative authorization (FR-017/SR-004) kèm audit record.
 
 ### FR-021 — Rate Limiting và Abuse Prevention
 

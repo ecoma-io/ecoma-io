@@ -28,6 +28,9 @@ import { join, resolve } from 'node:path';
 
 import { getPlatformProxy, unstable_splitSqlQuery as splitSqlQuery } from 'wrangler';
 
+import { rootKeyCipherK1 } from './credential-root-key';
+import { vapidTestKeyPair } from './vapid-test-keys';
+
 /**
  * Thư mục `migrations/` của app — nằm cạnh `src/`, **đọc từ file thật**, không viết lại schema
  * trong test.
@@ -400,6 +403,12 @@ export interface SeededScope {
  * Seed một scope đầy đủ: device + subscription `active` + provider `enabled` + primary
  * mapping + routing policy + credential `active` + notification + delivery `pending`.
  *
+ * ⚠️ **Credential seed là một provider credential CÓ THẬT**: private key VAPID P-256 derive
+ * lúc chạy (`vapid-test-keys.ts`), mã hoá bằng root key `K1` của **composition root**
+ * (`credential-root-key.ts`) và version ghi trên record là `K1` — đúng version trong keyring
+ * của app. Cổng chặn enable (`checkEnablePreconditions`) giải mã credential này, nên một
+ * fixture không giải mã được là một fixture **không đại diện** một provider đang phục vụ.
+ *
  * @param options.app Scope cần seed; mặc định `APP`.
  * @param options.subscriptionStatus Cho phép tạo một subscription `disabled` để test
  *   eligibility (bảng a `ineligible_subscription` của §8.1).
@@ -432,6 +441,20 @@ export async function seedScope(
   const deliveryId = `deliv${suffix}`;
   const subscriptionStatus = options.subscriptionStatus ?? 'active';
   const providerStatus = options.providerStatus ?? 'enabled';
+
+  // ⚠️ **Credential seed phải là ciphertext THẬT, mã hoá bằng đúng root key mà app đang
+  // chạy** (`PUSH_CREDENTIAL_ROOT_KEY_K1` của `app-env.ts`) và mang đúng **version** `K1`.
+  //
+  // Lý do: cổng chặn enable của provider (`checkEnablePreconditions`) **giải mã** credential
+  // `active` trước khi cho `disabled → enabled`. Một fixture với ciphertext rác (bản đầu là
+  // `new Uint8Array([1, 2, 3, 4])` — ngắn hơn IV 12 byte của AES-GCM, và version `'k1'` viết
+  // thường trong khi keyring khai `K1`) khiến **mọi** lời gọi enable trả
+  // `credential_decryption_failed` — một fixture sai làm đỏ test bằng lý do không liên quan.
+  //
+  // ⚠️ `encrypt` là **async** còn `db.batch()` nhận statement đã bind sẵn, nên phần mã hoá
+  // chạy **trước** batch và ciphertext/version được bind vào statement.
+  const keyPair = await vapidTestKeyPair(app);
+  const sealedCredential = await rootKeyCipherK1().encrypt(keyPair.privateKeyDerBase64Url);
 
   await testDb.db.batch([
     testDb.db
@@ -493,7 +516,7 @@ export async function seedScope(
         `INSERT INTO push_provider_credentials
            (credential_id, provider_id, app, vapid_key_id, public_key, credential_ciphertext,
             credential_encryption_version, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'k1', 'active', ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
       )
       .bind(
         `cred${suffix}`,
@@ -501,7 +524,8 @@ export async function seedScope(
         app,
         vapidKeyId,
         `public-${app}`,
-        new Uint8Array([1, 2, 3, 4]),
+        sealedCredential.ciphertext,
+        sealedCredential.version,
         now,
         now,
       ),

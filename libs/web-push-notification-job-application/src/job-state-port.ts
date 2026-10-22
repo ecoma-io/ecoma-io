@@ -175,5 +175,12 @@ export interface JobStatePort {
     readonly stuckAfterMs: number;
     readonly nowMs: number;
     readonly limit: number;
+    /**
+     * Trần attempt cho attempt budget của job reconciliation. Job có `consume_count` hoặc
+     * `lastAttempt.attempt` đạt/vượt giá trị này bị coi là **đã kiệt** và không được
+     * re-deliver. Tuỳ chọn: khi vắng mặt, repository không áp ngân sách (giữ tương thích
+     * với các caller cũ) — nhưng job reconciliation **bắt buộc** truyền giá trị này.
+     */
+    readonly maxAttempts?: number;
   }): Promise<readonly JobRecord[]>;
 }

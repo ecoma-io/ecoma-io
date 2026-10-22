@@ -15,6 +15,7 @@
  * | ----------- | ------------------------------------- | --------------------------------------------- |
  * | `2xx`       | `delivered`                           | ghi outcome `delivered` + ACK                  |
  * | `404`       | `failed` / `endpoint_invalid`         | outcome `failed` + invalidate + ACK            |
+ * | `410`       | `failed` / `endpoint_invalid`         | outcome `failed` + invalidate + ACK            |
  * | `401`/`403` | `failed` / `provider_auth`            | outcome `failed`, **KHÔNG** invalidate + ACK   |
  * | `413`       | `failed` / `payload_too_large`        | outcome `failed` + ACK, không retry            |
  * | `3xx`       | `failed` / `redirect_not_followed`    | outcome `failed`, **KHÔNG** invalidate + ACK   |
@@ -40,12 +41,12 @@ export type WebPushTransientPhase =
  * Class permanent failure của attempt — **không retry**.
  *
  * `endpoint_invalid` là class **duy nhất** cho phép invalidate subscription (chỉ khi
- * provider chứng minh endpoint chết — thường `404`, worker §13); mọi class khác
+ * provider chứng minh endpoint chết — `404` hoặc `410`, worker §13); mọi class khác
  * **MUST NOT** dẫn tới invalidate (§7.2: `provider_auth` là provider-level failure;
  * `redirect_not_followed` cấm invalidate — `03-operations.md` §5).
  */
 export type WebPushPermanentFailureClass =
-  /** Provider trả `404` — endpoint không còn hợp lệ. */
+  /** Provider trả `404` hoặc `410` — endpoint không còn hợp lệ. */
   | 'endpoint_invalid'
   /** Provider trả `401`/`403` — credential/configuration provider-level; remediation ở control plane. */
   | 'provider_auth'

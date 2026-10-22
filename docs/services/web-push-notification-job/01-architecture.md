@@ -176,7 +176,7 @@ Envelope lưu ở D1 `push-job` **không** được chứa thêm gì ngoài bả
 
 Retry điều khiển bởi **provider error classification** — error matrix canonical ở `docs/services/push-notification/03-operations.md` §5 (dùng chung control/delivery plane). Ba nhóm outcome, xử lý thống nhất:
 
-**(i) Determinate terminal** — `2xx` → `delivered`; `404` → `failed` + invalidate subscription; `401`/`403` → `failed` (provider-level); `413` → `failed`; **mọi `3xx`** → `failed` (redirect **không** được đi theo — không gọi tiếp sang host khác, **không** invalidate subscription, alert). Ghi outcome kèm `dispatch_generation`, rồi **ACK**. `401/403` **không** hard-code thành invalid subscription và **không** invalidate subscription.
+**(i) Determinate terminal** — `2xx` → `delivered`; `404`/`410` → `failed` + invalidate subscription; `401`/`403` → `failed` (provider-level); `413` → `failed`; **mọi `3xx`** → `failed` (redirect **không** được đi theo — không gọi tiếp sang host khác, **không** invalidate subscription, alert). Ghi outcome kèm `dispatch_generation`, rồi **ACK**. `401/403` **không** hard-code thành invalid subscription và **không** invalidate subscription.
 
 **(ii) Determinate retryable — provider đã trả lời hoặc lỗi xảy ra TRƯỚC khi gọi provider** — `429`, `5xx`, và lỗi validate/kết nối/runtime-resolve xảy ra **trước khi** request tới provider. Kết quả **xác định** (biết chắc provider **chưa** accept message) nên retry không tạo duplicate. **Release lease** (operation riêng `POST /internal/deliveries/:delivery_id/release`, kèm `dispatch_generation`) rồi `retry()`.
 
@@ -199,7 +199,7 @@ Worker xử lý từng Queue message độc lập: failure của message A khôn
 
 ## 13. Subscription Invalidation
 
-Nếu provider xác nhận subscription không còn hợp lệ, worker báo `push-notification` chuyển `active → disabled/expired`; delivery mới tới subscription này không được tạo. Worker chỉ báo invalid khi **provider response chứng minh** (thường `404`); worker không tự xóa subscription khỏi database.
+Nếu provider xác nhận subscription không còn hợp lệ, worker báo `push-notification` chuyển `active → disabled/expired`; delivery mới tới subscription này không được tạo. Worker chỉ báo invalid khi **provider response chứng minh** (`404` hoặc `410`); worker không tự xóa subscription khỏi database.
 
 ## 14. Provider Handling
 

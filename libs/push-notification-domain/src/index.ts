@@ -86,6 +86,7 @@ export {
   evaluateProviderRoutingEligibility,
   isProviderStatus,
   isProviderType,
+  isV1ExecutableProviderScope,
   resolveSubscriptionSigningKeyId,
   selectPrimaryProvider,
 } from './provider';

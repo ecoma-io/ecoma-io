@@ -29,6 +29,7 @@ import {
   validateDeliveryCommand,
   validateV1ExecutionMaterialScope,
   validateV1ExecutionTransport,
+  type DeliveryClaim,
   type DeliveryCommandV1,
 } from '@ecoma-io/push-notification-contracts';
 
@@ -49,7 +50,12 @@ import {
   type DeliveryRuntimePort,
 } from './runtime-control-plane-port';
 import { WEB_PUSH_REQUEST_TIMEOUT_MS, computeTtlSeconds, queueRetryDelaySeconds } from './timing';
-import type { WebPushSendRequest, WebPushSendResult, WebPushSender } from './web-push-sender';
+import type {
+  WebPushSendRequest,
+  WebPushSendResult,
+  WebPushSender,
+  WebPushTransientPhase,
+} from './web-push-sender';
 
 /** Dependency của {@link processDeliveryMessage} — toàn bộ I/O, inject được. */
 export interface DeliveryPipelineDeps {
@@ -97,6 +103,17 @@ export type SkipReason =
  * ⚠️ `disposition` là của **message này**, không phải của batch: đây là toàn bộ cơ chế
  * per-message ACK của §12.1, và một caller truyền `retryAll`/`ackAll` không thể biên dịch
  * được vào đây.
+ *
+ * ⚠️ **Không có `try { … } catch { ack() }` bao trùm**: một lỗi không dự đoán được **không**
+ * được biến thành một ACK mù. Đường lỗi không xác định đi qua bounded retry (rồi DLQ), đúng
+ * §11 và §6.
+ *
+ * ⚠️ **Claim là "cửa" của lease (DC-2).** Trước cửa — envelope, scope envelope, job state,
+ * claim bị từ chối/ném — worker **không** giữ lease, chọn không release thừa. Sau cửa — mọi
+ * nhánh trong {@link processClaimedDelivery} — worker **đang** giữ lease, nên một lỗi chưa
+ * phân loại ném ra từ vùng đó được `catch` ở dưới release lease **trước** khi ném tiếp lên
+ * caller (catch-all của caller vẫn `retry()` và metric/log như cũ — FR-008: retry của Queue
+ * phải thực sự retry provider).
  */
 export async function processDeliveryMessage(
   deps: DeliveryPipelineDeps,
@@ -152,6 +169,8 @@ export async function processDeliveryMessage(
     disposition.ack();
     return { kind: 'skipped', reason: 'already_processed' };
   }
+  // ⚠️ Lỗi ném ở đây xảy ra **trước** claim ⇒ không có lease để release: caller chỉ
+  // `retry()` và lease của delivery vẫn thuộc về lần claim sau.
   await deps.jobs.beginAttempt({
     envelope: storedEnvelope,
     attempt: attemptNumber,
@@ -171,6 +190,47 @@ export async function processDeliveryMessage(
     return outcome;
   }
   const claim = claimResult.claim;
+
+  // ⚠️ **Cửa của lease.** Từ dòng này trở đi worker **đang giữ lease** (claim đã thắng), nên
+  // mọi lỗi chưa phân loại ném ra phải release lease **trước** khi caller `retry()` — theo
+  // FR-008. Vì vậy phần còn lại của pipeline nằm trong một `try` bọc `catch` riêng, và
+  // `catch` đó **release rồi ném tiếp** lên caller.
+  try {
+    return await processClaimedDelivery(deps, envelope, claim, message, disposition, attemptNumber);
+  } catch (error) {
+    // DC-2: claim đã thắng ⇒ worker đang giữ lease. Mọi đường retry sau cửa này phải release
+    // lease TRƯỚC `retry()` — nếu không, delivery vẫn `processing` với lease còn hiệu lực,
+    // redelivery gặp `409 lease_held` và bị ACK ⇒ **retry của Queue không thực sự retry
+    // provider**. Release là **guarded conditional write** (predicate nằm trong statement của
+    // control plane) nên nó không đổi `dispatch_generation`: generation cũ ⇒ `409 stale_write`
+    // ⇒ no-op an toàn, không ghi đè state của execution thế hệ sau.
+    const release = await releaseBeforeRetry(deps, envelope.delivery_id, claim.dispatch_generation);
+    deps.logger.log('warn', 'delivery.lease_released_before_unhandled_retry', {
+      delivery_id: envelope.delivery_id,
+      lease_released: release.succeeded,
+    });
+    throw error;
+  }
+}
+
+/**
+ * Thân của pipeline **sau khi claim đã thắng** — tức mọi đường ở đây đều đang giữ lease.
+ *
+ * ⚠️ **Tách riêng để có đúng MỘT `catch` cho cả vùng hậu-claim.** Gộp vào thân hàm thì mỗi
+ * đường lỗi mới thêm vào phải tự nhớ "có phải release trước không", và một đường quên là
+ * một lỗi im lặng đắt nhất ở đây (§12/FR-008) — nó chỉ biểu hiện dưới tải thật thành
+ * "retry không bao giờ thử lại provider". Ở đây cả vùng hậu-claim chỉ có **một** lối thoát
+ * lỗi, và lối thoát đó luôn release trước.
+ */
+async function processClaimedDelivery(
+  deps: DeliveryPipelineDeps,
+  envelope: DeliveryCommandV1,
+  claim: DeliveryClaim,
+  message: QueueMessageInfo,
+  disposition: MessageDisposition,
+  attemptNumber: number,
+): Promise<MessageProcessingOutcome> {
+  const { clock, metrics, logger } = deps;
 
   /* -- (5) Guard scope thực thi trên runtime material ----------------------------------- */
   const materialScope = validateV1ExecutionMaterialScope({
@@ -329,14 +389,22 @@ export async function processDeliveryMessage(
 
   const startedAt = clock.now();
   let sendResult: WebPushSendResult | undefined;
-  let sendThrew = false;
+  // Phase suy ra khi adapter **throw** (lỗi contract của adapter): không có kết quả adapter
+  // để đọc phase, nên suy từ lỗi. AbortError ⇒ request có thể đã rời worker ⇒ `after_send`
+  // (nguồn duplicate tiềm năng, §12 nhóm iii); mọi lỗi khác ⇒ `before_send`.
+  // ⚠️ Adapter hiện đã phân loại timeout nội bộ và **trả** kết quả thay vì throw, nên nhánh
+  // throw chỉ còn cho lỗi contract thật sự — nhưng vẫn phải đọc phase từ "kết quả adapter"
+  // (ở đây là kết quả tổng hợp) thay vì hard-code, để test AbortError từ adapter đi đúng nhánh.
+  let threwPhase: WebPushTransientPhase | null = null;
   try {
     sendResult = await deps.sender.send(sendRequest);
-  } catch {
-    // Adapter throw = lỗi contract của adapter. Đường an toàn duy nhất là coi như
-    // transient **trước khi gửi xác định được** — không có kết quả nào để chứng minh provider
-    // đã nhận, nên phải release trước retry để retry thực sự có hiệu lực.
-    sendThrew = true;
+  } catch (error) {
+    // Adapter throw = lỗi contract của adapter. Đường an toàn: coi như transient. Phase lấy
+    // từ lỗi thay vì hard-code 'before_send' (B-2): AbortError ⇒ after_send.
+    threwPhase =
+      (error as { readonly name?: unknown } | null)?.name === 'AbortError'
+        ? 'after_send'
+        : 'before_send';
   }
   const durationMs = Math.max(0, clock.now() - startedAt);
   metrics.observe('provider_request_latency_ms', durationMs, {
@@ -348,11 +416,18 @@ export async function processDeliveryMessage(
     transport: envelope.transport,
   });
 
-  const action: ProviderAction = sendThrew
-    ? { kind: 'release_then_retry', phase: 'before_send', retryAfterMs: null }
-    : classifySendResult(sendResult);
+  // Nếu adapter throw, dựng một kết quả transient từ phase suy ra rồi đi qua cùng
+  // `classifySendResult` — "đọc phase từ kết quả adapter" thay vì hard-code action.
+  const effectiveResult: WebPushSendResult | undefined =
+    sendResult === undefined && threwPhase !== null
+      ? { outcome: 'transient', phase: threwPhase, retryAfterMs: null, httpStatus: null }
+      : sendResult;
+  const action: ProviderAction =
+    effectiveResult === undefined
+      ? { kind: 'release_then_retry', phase: 'before_send', retryAfterMs: null }
+      : classifySendResult(effectiveResult);
   const projection = projectAttempt(action);
-  const httpStatus = sendThrew || sendResult === undefined ? null : readHttpStatus(sendResult);
+  const httpStatus = effectiveResult === undefined ? null : readHttpStatus(effectiveResult);
   const retryAfterMs = readRetryAfterMs(action);
 
   return applyProviderAction(
@@ -504,6 +579,11 @@ function assertNeverReason(reason: string): never {
  * ⚠️ **Release fail vẫn `retry()`**: lease sẽ tự hết hạn và fence chính nó, nên lần claim kế
  * tiệp sẽ thắng trở lại. Ngược lại, không release **và** không retry (ACK) là mất việc; còn
  * release fail rồi bỏ retry là chờ lease hết hạn mà không có backoff — tệ hơn một lần claim thừa.
+ *
+ * ⚠️ **Hai caller, chung cơ chế.** Một là các nhánh đã phân loại trong thân pipeline
+ * (`processClaimedDelivery`); hai là catch-all hậu-claim của
+ * {@link processDeliveryMessage} khi một lỗi chưa phân loại ném ra sau cửa lease — thứ tự
+ * release trước retry là bất biến FR-008, không phụ thuộc việc lỗi đã được phân loại hay chưa.
  */
 async function releaseBeforeRetry(
   deps: DeliveryPipelineDeps,

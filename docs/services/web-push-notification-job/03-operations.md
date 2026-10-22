@@ -55,7 +55,7 @@ Queue phải có: `consumer`, `batch size`, `batch timeout`, `max retries` (retr
 
 Phân loại mã lỗi theo **error matrix canonical** ở `docs/services/push-notification/03-operations.md` §5; mục này chỉ nêu policy của delivery worker. Ba nhóm outcome, xử lý thống nhất:
 
-- **Determinate terminal** — `2xx`/`404`/`401`/`403`/`413`. Ghi outcome kèm `dispatch_generation`, rồi **ACK**. `404` → invalidate subscription; `401`/`403` → provider-level path, **không** invalidate subscription (§7.2); `413` → payload failure.
+- **Determinate terminal** — `2xx`/`404`/`410`/`401`/`403`/`413`. Ghi outcome kèm `dispatch_generation`, rồi **ACK**. `404`/`410` → class `endpoint_invalid` → mark failed, invalidate subscription, ACK (**không** retry); `401`/`403` → provider-level path, **không** invalidate subscription (§7.2); `413` → payload failure.
 - **Determinate retryable — provider đã trả lời hoặc lỗi trước khi gọi provider** (`429`, `5xx`, lỗi validate/kết nối/runtime-resolve trước khi gửi) → **release lease** rồi `retry()`.
 - **Indeterminate — request CÓ THỂ đã tới provider** (timeout sau khi đã gửi, connection reset giữa response, runtime API fail sau khi gọi provider) → cũng **release lease** rồi `retry()`; đây là nguồn duplicate tiềm năng (alert policy §12).
 
@@ -79,7 +79,7 @@ Tách bạch bốn loại failure — không gộp chung:
 
 ### 7.1. Subscription failure
 
-Provider chứng minh subscription invalid (thường `404`) → mark delivery failed → disable subscription → ACK. Chỉ loại này mới invalidate subscription.
+Provider chứng minh subscription invalid (`404` hoặc `410`) → mark delivery failed → disable subscription → ACK. Chỉ loại này mới invalidate subscription.
 
 ### 7.2. Provider credential/configuration failure
 
@@ -174,9 +174,9 @@ Duplicate do Queue redelivery + idempotency thiếu phải sửa ở consumer. D
 
 1. Phân loại theo `provider_id`. 2. Kiểm tra credential còn hạn / rotation đang dở. 3. Kiểm tra provider configuration thay đổi gần đây. 4. **KHÔNG** disable subscription hàng loạt. Xử lý ở provider level: rotate credential / sửa configuration / disable provider nếu systemic (§7.2).
 
-### 14.7. 404 / invalid subscription spike
+### 14.7. 404 / 410 invalid subscription spike
 
-1. Phân loại theo `provider_id`, `app`, `transport`. 2. Xác định `404` do endpoint hết hạn (bình thường sau khi user revoke) hay classification sai (`401`/`403` bị coi là invalid?). 3. Kiểm tra subscription invalidation rate. 4. Nếu bất thường: dừng mảng invalidate, điều tra root cause. Chỉ `404` (hoặc response tương đương) hợp lệ để invalidate subscription.
+1. Phân loại theo `provider_id`, `app`, `transport`. 2. Xác định `404`/`410` do endpoint hết hạn (bình thường sau khi user revoke) hay classification sai (`401`/`403` bị coi là invalid?). 3. Kiểm tra subscription invalidation rate. 4. Nếu bất thường: dừng mảng invalidate, điều tra root cause. Chỉ `404` hoặc `410` hợp lệ để invalidate subscription — cả hai đều là class `endpoint_invalid`; `http_status` giữ **riêng** `404` và `410` trong metrics/log (`provider_request_failure`) nên spike 404 và spike 410 tách biệt, điều tra theo từng giá trị.
 
 ### 14.8. 429 spike
 
@@ -252,7 +252,7 @@ Trần concurrency là **một** giá trị duy nhất: platform limit (`docs/ov
 1. Worker không có public application API.
 2. Secret không nằm trong Queue hoặc DLQ (bao gồm `auth`, `p256dh`, VAPID private key, provider secret, authorization header).
 3. Retry phải bounded (per-message, backoff, không vô hạn).
-4. Chỉ subscription failure được provider chứng minh (thường `404`) mới invalidate subscription; `401/403` là provider-level failure, không bulk-disable.
+4. Chỉ subscription failure được provider chứng minh (`404` hoặc `410`) mới invalidate subscription; `401/403` là provider-level failure, không bulk-disable.
 5. Credential rotation không yêu cầu thay đổi Queue contract.
 6. Worker restart không làm mất persistent delivery state.
 7. Rollback Worker không phá vỡ supported Queue schema; deployment không yêu cầu downtime của `push-notification`.

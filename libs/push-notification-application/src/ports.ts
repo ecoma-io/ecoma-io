@@ -373,6 +373,8 @@ export interface SetProviderStatusInput {
   readonly status: ProviderStatus;
   readonly expected: ProviderStatus;
   readonly now: number;
+  /** Khi `status === 'enabled'`, predicate kèm `emergency_hold` phải khớp giá trị này (mặc định `false`). */
+  readonly emergencyHold?: boolean;
 }
 
 export interface SetProviderHoldInput {
@@ -731,6 +733,21 @@ export interface IdempotencyRepository {
    * trị header tự khai.
    */
   find(app: string, principalId: string, idempotencyKey: string): Promise<IdempotencyRecord | null>;
+
+  /**
+   * Cleanup idempotency record theo **đúng ba điều kiện canonical của FR-008** (điều kiện
+   * nằm **trong** statement — guarded conditional write, Invariant B), trả về số record bị xoá:
+   *   (i) không còn delivery non-terminal nào của notification đó;
+   *   (ii) không còn outbox record `pending`/`publishing` nào cho bất kỳ delivery nào của
+   *        notification đó;
+   *   (iii) `now > created_at + retentionMs`.
+   * Thiếu bất kỳ điều kiện nào → giữ. Idempotent: gọi lại không xoá thêm gì.
+   */
+  deleteEligible(input: {
+    readonly now: number;
+    readonly retentionMs: number;
+    readonly limit: number;
+  }): Promise<number>;
 }
 
 /* -------------------------------------------------------------------------------------- */

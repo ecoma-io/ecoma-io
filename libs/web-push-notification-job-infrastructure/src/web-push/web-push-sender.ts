@@ -42,6 +42,11 @@ function transientBeforeSend(): WebPushSendResult {
   return { outcome: 'transient', phase: 'before_send', retryAfterMs: null, httpStatus: null };
 }
 
+/** Kết quả transient cho lỗi **sau** khi request đã rời worker (timeout/abort) — nguồn duplicate tiềm năng. */
+function transientAfterSend(): WebPushSendResult {
+  return { outcome: 'transient', phase: 'after_send', retryAfterMs: null, httpStatus: null };
+}
+
 /** Kết quả permanent cho credential VAPID không dùng được (worker §18). */
 function vapidKeyMissing(): WebPushSendResult {
   return { outcome: 'failed', failureClass: 'vapid_key_missing', httpStatus: null };
@@ -189,10 +194,18 @@ export function createWebPushSender(deps: WebPushSenderDeps = {}): WebPushSender
 
       // --- Gửi -------------------------------------------------------------------------
       const controller = new AbortController();
+      // Cờ `dispatched`: được bật **ngay trước** khi gọi `doFetch` — tức là request đã được
+      // handing off cho fetch implementation (đã "rời" adapter). Dùng để phân biệt rejection
+      // xảy ra sau khi request đã gửi (timeout/abort → `after_send`, nguồn duplicate tiềm
+      // năng) với rejection trước khi gửi (DNS/connection refused → `before_send`).
+      // ⚠️ Cờ này không chứng minh byte đã tới provider, chỉ chứng minh adapter đã bắt đầu
+      // gửi — đúng mức quan sát được của adapter (worker §12 nhóm iii).
+      let dispatched = false;
       const timer = setTimeout(() => {
         controller.abort();
       }, request.timeoutMs);
       try {
+        dispatched = true;
         const response = await doFetch(endpoint.href, {
           method: 'POST',
           headers: {
@@ -208,16 +221,20 @@ export function createWebPushSender(deps: WebPushSenderDeps = {}): WebPushSender
           signal: controller.signal,
         });
         return classifyResponse(response.status, readRetryAfter(response.headers));
-      } catch {
-        // Rejection: DNS/connection refused **trước** khi gửi, hoặc abort do timeout.
-        // Cả hai đều `before_send`: chưa có bằng chứng request đã tới provider, nên retry
-        // không tạo duplicate. Timeout **sau** khi đã gửi là crash window đã chấp nhận
-        // (worker §12 nhóm iii) — nhưng phân loại `before_send` ở đây là lựa chọn **có
-        // chủ đích**: adapter không quan sát được request đã rời máy hay chưa, và
-        // `before_send` là phase **ít nguy hiểm hơn** vì nó không tuyên bố provider đã nhận.
-        // Sự thật nằm ở pipeline: retry vẫn có thể tạo duplicate, và worker §12 đã chấp
-        // nhận điều đó. Port không có phase nào trung thực hơn cho "không biết", nên `before_send`
-        // là giá trị mặc định an toàn cho rejection.
+      } catch (error) {
+        // Rejection sau khi request đã gửi (timeout do chính timer, hoặc abort từ fetch
+        // implementation) → `after_send`: crash window đã chấp nhận (worker §12 nhóm iii),
+        // retry có thể tạo duplicate phía provider. Phải quan sát được trong job state +
+        // log + metric (§12).
+        const isAbortError =
+          (error instanceof DOMException && error.name === 'AbortError') ||
+          (error instanceof Error && error.name === 'AbortError');
+        if (dispatched && isAbortError) {
+          // Timeout/abort sau khi request đã gửi → `after_send` (nguồn duplicate tiềm năng).
+          return transientAfterSend();
+        }
+        // Rejection trước khi gửi (DNS/connection refused, hoặc lỗi không phải abort) →
+        // `before_send`: chưa có bằng chứng request đã tới provider, retry không tạo duplicate.
         return transientBeforeSend();
       } finally {
         // Dọn timer **luôn**, kể cả khi thành công — giữ worker không giữ timer tới hết

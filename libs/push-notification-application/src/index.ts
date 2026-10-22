@@ -213,6 +213,9 @@ export type {
   ReconciliationDeps,
 } from './reconciliation';
 
+export { cleanupIdempotencyRecords } from './idempotency-cleanup';
+export type { IdempotencyCleanupDeps, IdempotencyCleanupResult } from './idempotency-cleanup';
+
 /* -------------------------------------------------------------------------------------- */
 /* Admin API (FR-017, FR-018, FR-020)                                                          */
 /* -------------------------------------------------------------------------------------- */
@@ -226,10 +229,14 @@ export {
   releaseProvider,
   getProvider,
   listVapidPublicKeys,
+  readVapidSubject,
   rotateCredential,
   runProviderTest,
   setProviderStatus,
   updateProvider,
+  validateConfigurationForProviderType,
+  validateWebPushConfiguration,
+  verifyVapidKeyPair,
 } from './admin-provider';
 export type {
   AdminDeps,
@@ -241,6 +248,7 @@ export type {
   ProviderTestOutcome,
   RotateCredentialCommand,
   VapidPublicKeyView,
+  ValidateConfigurationResult,
 } from './admin-provider';
 
 export {

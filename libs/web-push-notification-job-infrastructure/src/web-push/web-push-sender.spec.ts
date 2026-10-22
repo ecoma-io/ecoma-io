@@ -357,6 +357,26 @@ describe('createWebPushSender response classification', () => {
     });
   });
 
+  // DC-1: `410` trên **send path** của push service là endpoint đã chết, không phải trạng
+  // thái tạm thời — Mozilla autopush map `NoUser`/`NoSubscription` → `410 GONE`
+  // ("Expired URL endpoint"). Giữ transient sẽ chỉ đốt budget của Queue rồi rơi vào DLQ
+  // trong khi subscription đã chết sống mãi.
+  //
+  // ⚠️ `httpStatus` giữ **410** (không gộp về 404) để metrics phân biệt một spike 410
+  // với một spike 404 — chúng cùng class nhưng khác hệ quốc vận hành.
+  it('maps 410 to endpoint_invalid, because a gone endpoint never becomes valid again', async () => {
+    const { fetchImpl, calls } = fakeFetch({ status: 410 });
+    const sender = createWebPushSender({ fetchImpl, now: () => FIXED_NOW_MS });
+
+    expect(await sender.send(validRequest)).toEqual({
+      outcome: 'failed',
+      failureClass: 'endpoint_invalid',
+      httpStatus: 410,
+    });
+    // Terminal: không retry, không gửi lần thứ hai.
+    expect(calls).toHaveLength(1);
+  });
+
   it('maps 401 and 403 to provider_auth without invalidating', async () => {
     for (const status of [401, 403]) {
       const { fetchImpl } = fakeFetch({ status });
@@ -453,7 +473,7 @@ describe('createWebPushSender response classification', () => {
     });
   });
 
-  it('aborts at timeoutMs and returns transient before_send', async () => {
+  it('aborts at timeoutMs and returns transient after_send', async () => {
     // Fake chỉ settle khi thấy `signal.aborted` — tức là **chính** AbortController của
     // adapter đang làm việc, chứ không phải một rejection giả lập sẵn.
     let sawAbort = false;
@@ -472,7 +492,7 @@ describe('createWebPushSender response classification', () => {
     expect(sawAbort).toBe(true);
     expect(result).toEqual({
       outcome: 'transient',
-      phase: 'before_send',
+      phase: 'after_send',
       retryAfterMs: null,
       httpStatus: null,
     });
