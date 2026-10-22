@@ -114,6 +114,7 @@ interface Scenario {
     redelivered: number;
     failed: number;
     skippedProcessed: number;
+    skippedExhausted: number;
   }>;
 }
 
@@ -174,7 +175,13 @@ describe('runJobReconciliation scope', () => {
 
     const report = await s.sweep();
 
-    expect(report).toEqual({ stuckFound: 0, redelivered: 0, failed: 0, skippedProcessed: 0 });
+    expect(report).toEqual({
+      stuckFound: 0,
+      redelivered: 0,
+      failed: 0,
+      skippedProcessed: 0,
+      skippedExhausted: 0,
+    });
     expect(s.producer.sent).toEqual([]);
     // Không có một port nào đọc D1 `push`, và cũng không có một method "list deliveries".
     expect(Object.keys(s.deps.jobs).toSorted()).toEqual([
@@ -345,7 +352,13 @@ describe('runJobReconciliation per-job isolation', () => {
 
     const report = await runJobReconciliation(deps, { stuckAfterMs: STUCK_AFTER_MS, limit: 100 });
 
-    expect(report).toEqual({ stuckFound: 3, redelivered: 2, failed: 1, skippedProcessed: 0 });
+    expect(report).toEqual({
+      stuckFound: 3,
+      redelivered: 2,
+      failed: 1,
+      skippedProcessed: 0,
+      skippedExhausted: 0,
+    });
     expect(observability.logNamed('reconcile.publish_failed')[0]?.fields).toMatchObject({
       delivery_id: 'del_b',
     });
@@ -367,7 +380,13 @@ describe('runJobReconciliation per-job isolation', () => {
 
     const report = await s.sweep();
 
-    expect(report).toEqual({ stuckFound: 2, redelivered: 1, failed: 1, skippedProcessed: 0 });
+    expect(report).toEqual({
+      stuckFound: 2,
+      redelivered: 1,
+      failed: 1,
+      skippedProcessed: 0,
+      skippedExhausted: 0,
+    });
     expect(s.producer.sent).toHaveLength(1);
     expect((s.producer.sent[0] as { delivery_id: string }).delivery_id).toBe('del_good');
     expect(s.observability.logNamed('reconcile.stored_envelope_invalid')[0]?.fields).toMatchObject({
@@ -421,7 +440,13 @@ describe('runJobReconciliation race with a consumer', () => {
 
     const report = await runJobReconciliation(deps, { stuckAfterMs: STUCK_AFTER_MS, limit: 100 });
 
-    expect(report).toEqual({ stuckFound: 1, redelivered: 0, failed: 0, skippedProcessed: 1 });
+    expect(report).toEqual({
+      stuckFound: 1,
+      redelivered: 0,
+      failed: 0,
+      skippedProcessed: 1,
+      skippedExhausted: 0,
+    });
     expect(producer.sent).toEqual([]);
   });
 
