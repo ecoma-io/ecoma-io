@@ -120,9 +120,8 @@ CREATE TABLE push_providers (
   name TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'disabled',
   emergency_hold INTEGER NOT NULL DEFAULT 0,
-  -- FR-005: mỗi `App` + `Transport` có **đúng một** active primary provider. Cột này là
-  -- *ý định* của admin; **ambiguity** (hai hàng enabled + primary cùng scope) bị từ chối ở
-  -- application theo `selectPrimaryProvider` (fail safe, không chọn theo thứ tự DB — FR-005).
+  -- Cột dormant: không có repository nào đọc `is_primary` của `push_providers` (B-9).
+  -- Khai báo primary thật nằm ở `push_app_provider_mappings` (`is_primary` partial unique index).
   is_primary INTEGER NOT NULL DEFAULT 0,
   configuration_json TEXT NOT NULL DEFAULT '{}',
   disabled_reason TEXT,
@@ -153,10 +152,11 @@ CREATE TABLE push_providers (
 --
 -- ⚠️ Vì sao `vapid_key_id` **không** unique toàn cục: §7.2 cho phép một App có nhiều key
 -- version cùng phục vụ (key mới cho subscription MỚI, key cũ cho subscription CŨ) trong
--- lúc rotation. Ràng buộc thật là **một key version mỗi App** — nó được đặt ở
--- `push_app_provider_mappings` (`vapid_key_id` + `app` unique) để thể hiện đúng phạm vi
--- scope mà không cấm một `vapid_key_id` bị dùng lại ở App khác (mỗi App có namespace
--- credential riêng — FR-007).
+-- lúc rotation. Ràng buộc thật là **một credential version cho mỗi (provider, vapid_key_id)**
+-- — được đặt ở `push_provider_credentials` (`UNIQUE (provider_id, vapid_key_id)`), để mỗi
+-- key version chỉ có một row active/retired/compromised cho cùng provider. Một `vapid_key_id`
+-- vẫn có thể bị dùng lại ở provider/App khác vì mỗi provider có namespace credential riêng
+-- (FR-007).
 CREATE TABLE push_provider_credentials (
   credential_id TEXT NOT NULL,
   provider_id TEXT NOT NULL,

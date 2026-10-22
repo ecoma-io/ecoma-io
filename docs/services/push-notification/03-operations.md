@@ -196,7 +196,7 @@ Theo dõi health theo `provider_id`, `app`, `transport` — không chỉ theo pr
 
 ### 6.4. Provider test runbook
 
-Select provider (`provider_id`) → select target subscription đã authorization (`subscription_id`) → execute test delivery → inspect `delivery_id` và provider response. Test result phân loại theo `02-requirements.md` FR-018; test có audit record, payload không chứa dữ liệu nhạy cảm không cần thiết.
+Select provider (`provider_id`) → select target subscription đã authorization (`subscription_id`) → execute test delivery → inspect `delivery_id` và provider response. Test result phân loại theo `02-requirements.md` FR-018; test có audit record `provider_updated` với `detail.test_result` (và `subscription_id`, `duration_ms` khi có), payload không chứa dữ liệu nhạy cảm không cần thiết.
 
 ### 6.5. Emergency hold / revoke provider
 

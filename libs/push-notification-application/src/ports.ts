@@ -373,6 +373,8 @@ export interface SetProviderStatusInput {
   readonly status: ProviderStatus;
   readonly expected: ProviderStatus;
   readonly now: number;
+  /** Khi `status === 'enabled'`, predicate kèm `emergency_hold` phải khớp giá trị này (mặc định `false`). */
+  readonly emergencyHold?: boolean;
 }
 
 export interface SetProviderHoldInput {

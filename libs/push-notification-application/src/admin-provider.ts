@@ -398,6 +398,23 @@ export async function updateProvider(
   nowOverride?: number,
 ): Promise<AdminResult<ProviderRecord>> {
   const now = nowOverride ?? deps.ports.clock.now();
+
+  const current = await deps.ports.providers.findById(input.providerId);
+  const mismatch = checkProviderScope(current, input.app);
+  if (mismatch !== null) {
+    return mismatch;
+  }
+  const target = current as ProviderRecord;
+
+  const configuration = validateConfigurationForProviderType(target.type, input.configuration);
+  if (!configuration.ok) {
+    return {
+      ok: false,
+      reason: configuration.reason,
+      detail: configuration.detail,
+    };
+  }
+
   const updated = await deps.ports.providers.updateConfiguration({
     app: input.app,
     providerId: input.providerId,
@@ -493,6 +510,7 @@ export async function setProviderStatus(
     status: input.status,
     expected: input.expected,
     now,
+    emergencyHold: input.status === 'enabled' ? false : undefined,
   });
   if (updated === null) {
     // `findById` vừa thấy provider và `expected` phải khớp trong statement — nên `null` ở đây
@@ -582,6 +600,12 @@ async function applyHold(
 
   const updated = await ports.providers.setEmergencyHold({ app, providerId, hold, now });
   if (updated === null) {
+    // Idempotent no-op: nếu record đã ở trạng thái đích (race giữa hai lời gọi cùng chiều),
+    // trả record hiện tại mà không ghi audit (B-8).
+    const refreshed = await ports.providers.findById(providerId);
+    if (refreshed !== null && refreshed.app === app && refreshed.emergencyHold === hold) {
+      return { ok: true, value: refreshed };
+    }
     return {
       ok: false,
       reason: ADMIN_REJECTION.StateMismatch,
@@ -776,6 +800,12 @@ export async function rotateCredential(
     return mismatch;
   }
 
+  const target = provider as ProviderRecord;
+  const scope = checkProviderScopeSupport(target.type, target.transport);
+  if (scope !== null) {
+    return scope;
+  }
+
   // WB-6: **Verify cặp khoá VAPID trước khi mã hoá/ghi** — chỉ so trực tiếp 2 string là
   // không đủ, vì một "public key" nhầm (khớp là do sao chép sai) sẽ ký được JWT nhưng
   // push service sẽ từ chối 401, nghĩa là mọi delivery sẽ hỏng nhưng rotate vẫn 200.
@@ -827,7 +857,19 @@ export async function rotateCredential(
           now,
         });
         if (retired !== null) {
-          retiredVapidKeyId = command.retireVapidKeyId;
+          // Re-check subscription references after retire to close TOCTOU window:
+          // a new active subscription may have appeared between the count and the write.
+          const referencesAfter = await ports.providerCredentials.countActiveSubscriptionReferences(
+            command.app,
+            command.retireVapidKeyId,
+          );
+          if (referencesAfter !== 0) {
+            // TOCTOU close: retire already happened, but an active subscription now
+            // references the key. Report as skipped (not success) per §7.2.
+            retiredVapidKeyId = null; // reported as skipped_still_referenced
+          } else {
+            retiredVapidKeyId = command.retireVapidKeyId;
+          }
         }
       }
     }
@@ -903,6 +945,9 @@ export async function verifyVapidKeyPair(
   const der = decodeBase64Url(privateKeyBase64Url);
   const point = decodeBase64Url(publicKeyBase64Url);
   if (der === null || point === null || point.length === 0) {
+    return false;
+  }
+  if (point.length !== 65 || point[0] !== 0x04) {
     return false;
   }
   let privateKey: CryptoKey;
@@ -1121,7 +1166,7 @@ export async function runProviderTest(
     command.providerId,
     targetSubscription.vapidKeyId,
   );
-  if (credential === null || credential.status !== 'active') {
+  if (credential === null || credential.status === 'compromised') {
     await appendAudit(
       deps,
       AUDIT_EVENT.ProviderUpdated,
@@ -1142,7 +1187,10 @@ export async function runProviderTest(
         providerId: command.providerId,
         subscriptionId: command.subscriptionId,
         durationMs: 0,
-        detail: 'Không resolve được credential active cho vapid_key_id của target.',
+        detail:
+          credential === null
+            ? 'Không resolve được credential cho vapid_key_id của target.'
+            : 'Credential của vapid_key_id của target đang ở trạng thái compromised.',
       },
     };
   }
@@ -1455,7 +1503,7 @@ async function appendAudit(
   detail: Readonly<Record<string, string | number | boolean>>,
 ): Promise<void> {
   await deps.ports.audit.append({
-    auditId: `${entityType}:${event}:${entityId}:${now}`,
+    auditId: deps.ids.next(),
     event,
     actor,
     entityType,

@@ -60,12 +60,7 @@ import {
 // domain, không phải của use case. `type:infrastructure` được phép phụ thuộc `type:domain`, và
 // import thẳng giữ một nguồn duy nhất cho chúng — dùng bản re-export sẽ là một bản khai thứ hai
 // phải giữ đồng bộ mà không có gì bắt.
-import {
-  isProviderType,
-  TRANSPORT,
-  V1_EXECUTABLE_PROVIDER_TYPE,
-  type ProviderType,
-} from '@ecoma-io/push-notification-domain';
+import { TRANSPORT, type ProviderType } from '@ecoma-io/push-notification-domain';
 
 import type { D1DatabaseLike } from './d1-surface';
 
@@ -444,10 +439,10 @@ const PROVIDER_COLUMNS = `p.provider_id, p.app, p.transport, p.type, p.name, p.s
 /**
  * Truy vấn provider + cờ `is_primary` từ mapping.
  *
- * ⚠️ `is_primary` **không** phải cột của `push_providers` — nó thuộc
- * `push_app_provider_mappings` vì "một scope có một primary" là một khẳng định về **quan hệ**
- * giữa scope và provider, không phải về provider. Giữ nó ở đây là một `EXISTS` để `findById`
- * và `listByScope` trả về cùng một shape, không phải vì nhân bản trạng thái.
+ * ⚠️ `push_providers` **có** cột `is_primary`, nhưng nó là cột dormant (B-9): không
+ * repository nào đọc nó. Nguồn sự thật về primary nằm ở `push_app_provider_mappings`
+ * (`is_primary` partial unique index), nên ở đây `is_primary` được tính từ mapping qua
+ * `EXISTS` để `findById` và `listByScope` trả về cùng một shape — không đọc cột dormant.
  */
 export class D1ProviderRepository implements ProviderRepository {
   readonly #db: D1DatabaseLike;
@@ -565,28 +560,42 @@ export class D1ProviderRepository implements ProviderRepository {
   }
 
   async setStatus(input: SetProviderStatusInput): Promise<ProviderRecord | null> {
+    // Khi enable provider, predicate phải kèm `emergency_hold` để chặn TOCTOU giữa đọc và ghi
+    // (B-7): một hold áp vào giữa lúc đọc và lúc ghi phải khiến statement này không chạm hàng nào.
+    const emergencyHoldPredicate = input.status === 'enabled' ? ' AND emergency_hold = ?6' : '';
+    const bindings: unknown[] = [
+      input.app,
+      input.providerId,
+      input.status,
+      input.now,
+      input.expected,
+    ];
+    if (input.status === 'enabled') {
+      bindings.push(input.emergencyHold === true ? 1 : 0);
+    }
     const result = await this.#db
       .prepare(
         `UPDATE push_providers SET status = ?3, updated_at = ?4
-         WHERE provider_id = ?2 AND app = ?1 AND status = ?5
+         WHERE provider_id = ?2 AND app = ?1 AND status = ?5${emergencyHoldPredicate}
          RETURNING provider_id`,
       )
-      .bind(input.app, input.providerId, input.status, input.now, input.expected)
+      .bind(...bindings)
       .run();
     return result.meta.changes === 1 ? this.findById(input.providerId) : null;
   }
 
   async setEmergencyHold(input: SetProviderHoldInput): Promise<ProviderRecord | null> {
-    // ⚠️ **Không** guard `emergency_hold` hiện tại trong predicate: `applyHold` ở use case đã
-    // xử lý idempotency bằng cách trả về sớm, và thêm guard ở đây sẽ khiến "đặt lại hold"
-    // (hold → hold) trả `null` mà không có lý do.
+    // Guard `emergency_hold` hiện tại trong predicate: chỉ đổi từ trạng thái đối diện, để hai
+    // lời gọi cùng chiều chạy đồng thời thì đúng một thắng (B-8). Use case coi `null` là
+    // idempotent no-op khi record đã ở trạng thái đích.
+    const previousHold = input.hold ? 0 : 1;
     const result = await this.#db
       .prepare(
         `UPDATE push_providers SET emergency_hold = ?3, updated_at = ?4
-         WHERE provider_id = ?2 AND app = ?1
+         WHERE provider_id = ?2 AND app = ?1 AND emergency_hold = ?5
          RETURNING provider_id`,
       )
-      .bind(input.app, input.providerId, input.hold ? 1 : 0, input.now)
+      .bind(input.app, input.providerId, input.hold ? 1 : 0, input.now, previousHold)
       .run();
     return result.meta.changes === 1 ? this.findById(input.providerId) : null;
   }
@@ -1105,18 +1114,8 @@ function toProviderStatus(value: string): ProviderStatus {
 }
 
 function toProviderType(value: string): ProviderType {
-  // ⚠️ **Trả đúng giá trị đã lưu** — không ép về `web-push`. Bản đầu viết
-  // `return value === 'web-push' ? 'web-push' : 'web-push'`, tức mọi provider type khác
-  // đều bị đọc lại thành `web-push`. Hậu quả đo được: một provider `fcm`/`apns` hiện
-  // trong Admin list là `web-push`, nên operator **không thấy** được rằng scope đó đang
-  // có một provider ngoài scope v1 — và cổng chặn scope (control plane create/enable/
-  // make-primary) trông như không có tác dụng vì read-model không còn phân biệt được.
-  // Giá trị lạ fallback về `web-push` **chỉ** khi hàng hỏng nằm ngoài vocabulary: đó là
-  // CHECK của schema, và một hàng hỏng phải **vẫn** hiển thị được để operator sửa.
-  if (isProviderType(value)) {
-    return value;
-  }
-  return V1_EXECUTABLE_PROVIDER_TYPE;
+  // B-12: trả đúng giá trị đã lưu, không ép về `web-push` (fail-open làm cổng chặn scope fail-open theo).
+  return value as ProviderType;
 }
 
 function toCredentialStatus(value: string): 'active' | 'retired' | 'compromised' {
