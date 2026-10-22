@@ -47,6 +47,13 @@ export interface AccountRuntimeConfig {
   otpHmacSecret?: unknown;
   /** Origin của transactional-mail (không có path cuối) — rỗng ⇒ mail fail-closed. */
   mailServiceUrl?: unknown;
+  /**
+   * Credential HMAC ký cho path Account↔Mail (`POST /v1/messages`) — đúng secret
+   * receiver nhận diện là principal `svc.account`. Tách khỏi
+   * `internalHmacSecret`: envelope không mang principal, nên "cùng một secret cho
+   * hai path" là một cấu hình mơ hồ mà chỉ receiver lật ra được, ở request thật.
+   */
+  mailInternalAuthSecret?: unknown;
 }
 
 /**
@@ -158,6 +165,46 @@ export function validateAccountConfig(config: AccountRuntimeConfig): void {
   if (mailUrl !== undefined && mailUrl !== '') {
     if (typeof mailUrl !== 'string' || !/^https?:\/\//u.test(mailUrl)) {
       throw new Error('NUXT_MAIL_SERVICE_URL phải là origin http(s) của transactional-mail.');
+    }
+
+    // ⚠️ **Credential ký của path Account↔Mail là bắt buộc khi path đó bật.**
+    // Receiver xác thực envelope trước mọi logic nghiệp vụ
+    // (`apps/transactional-mail/src/main.ts` bước 1 của `POST /v1/messages`) ⇒
+    // thiếu secret ⇒ mọi request mail là `401`, tức mail OTP chết im lặng. Fail
+    // closed ở request đầu làm lỗi cấu hình lộ ra **trước** khi có người dùng
+    // chờ mã.
+    //
+    // Vì sao chỉ bắt buộc **khi có URL**: URL rỗng = đường mail **tắt** (không
+    // gửi được mail nào), nên không có request nào để xác thực ⇒ không cần secret.
+    // Bắt buộc luôn sẽ phá chế độ "chưa cấu hình mail" mà README mô tả.
+    //
+    // ⚠️ Message nêu **tên biến**, không nêu giá trị — đọc được trong log platform.
+    const mailSecret = config.mailInternalAuthSecret;
+    if (typeof mailSecret !== 'string' || mailSecret.length === 0) {
+      throw new Error(
+        'Thiếu NUXT_MAIL_INTERNAL_AUTH_SECRET. Path account → transactional-mail ký envelope ' +
+          'ecoma-internal-v1 và receiver xác thực nó trước mọi logic nghiệp vụ: thiếu secret ' +
+          'thì mọi request mail bị từ chối, không có fallback rỗng.',
+      );
+    }
+    if (mailSecret.length < MIN_INTERNAL_HMAC_SECRET_LENGTH) {
+      // Chỉ nêu **ngưỡng** — độ dài secret là thông tin hữu ích cho attacker.
+      throw new Error(
+        `NUXT_MAIL_INTERNAL_AUTH_SECRET phải dài ít nhất ${MIN_INTERNAL_HMAC_SECRET_LENGTH} ký tự.`,
+      );
+    }
+    // ⚠️ **Không được trùng secret của path Account↔Auth.** Envelope internal **không
+    // mang principal** (`docs/services/transactional-mail/01-architecture.md` §7.4):
+    // phía nhận suy ra principal từ credential đã khớp. Một secret dùng cho cả hai
+    // path là cấu hình mơ hồ — nó không làm hỏng gì ở phía gửi, nhưng nó phá đúng
+    // ranh giới cách ly mà registry của receiver thiết lập (một principal riêng
+    // cho mỗi consumer). Chặn ở đây, lúc request đầu, thay vì để nó lọt tới
+    // production.
+    if (typeof secret === 'string' && mailSecret === secret) {
+      throw new Error(
+        'NUXT_MAIL_INTERNAL_AUTH_SECRET trùng NUXT_INTERNAL_HMAC_SECRET — mỗi path cần một ' +
+          'credential riêng: receiver suy ra principal từ secret đã khớp.',
+      );
     }
   }
 }

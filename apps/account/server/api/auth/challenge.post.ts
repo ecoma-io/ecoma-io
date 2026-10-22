@@ -425,23 +425,30 @@ export default defineEventHandler(async (event) => {
 });
 
 /**
- * Gửi mail với URL từ config — tách hàm để route ngắn và để test mock được
- * `sendMail` qua module mock mà không dựng runtime config.
+ * Gửi mail với URL + credential ký từ config — tách hàm để route ngắn và để test
+ * mock được `sendMail` qua module mock mà không dựng runtime config.
  *
  * ⚠️ Contract receiver bắt buộc `Idempotency-Key` per-attempt: `sendMail` tự đặt
  * header từ `correlationId` ({@link otpMailIdempotencyKey} trong lib/mail.ts), với
  * correlationId = 16 hex đầu của digest HMAC của attempt tại route này — per-challenge
  * unique (mỗi attempt sinh digest riêng), deterministic cho retry cùng attempt.
+ *
+ * ⚠️ Credential ký là của riêng path Account↔Mail (`NUXT_MAIL_INTERNAL_AUTH_SECRET`),
+ * và thiếu nó là một reason riêng của `sendMail` (`credential_missing`) — không
+ * ngụy trang thành `config_missing` của URL hay lỗi transport, để log giữ được
+ * nhánh "thiếu secret" tách khỏi nhánh "URL sai khi cài đặt".
  */
 function sendConfigured(
-  config: { mailServiceUrl?: unknown },
+  config: { mailServiceUrl?: unknown; mailInternalAuthSecret?: unknown },
   params: { recipient: string; code: string; correlationId: string },
 ): ReturnType<typeof sendMail> {
   const url = typeof config.mailServiceUrl === 'string' ? config.mailServiceUrl : undefined;
+  const signingSecret =
+    typeof config.mailInternalAuthSecret === 'string' ? config.mailInternalAuthSecret : undefined;
   const request = buildOtpMailRequest({
     recipient: params.recipient,
     code: params.code,
     correlationId: params.correlationId,
   });
-  return sendMail(url, request);
+  return sendMail(url, request, signingSecret);
 }

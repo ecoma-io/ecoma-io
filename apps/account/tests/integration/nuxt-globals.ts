@@ -24,6 +24,8 @@ export interface AccountTestRuntimeConfig {
   otpHmacSecret?: unknown;
   /** Origin của transactional-mail — dùng bởi `server/api/auth/challenge`. */
   mailServiceUrl?: unknown;
+  /** Credential HMAC ký cho path Account↔Mail — dùng bởi `server/api/auth/challenge`. */
+  mailInternalAuthSecret?: unknown;
   cloudflare?: unknown;
 }
 

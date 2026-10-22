@@ -89,15 +89,35 @@ describe('sendMail', () => {
     // transport thoáng qua, và không được fetch gì cả.
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal('fetch', fetchMock);
-    const result = await sendMail(undefined, VALID_REQUEST);
+    const result = await sendMail(
+      undefined,
+      VALID_REQUEST,
+      'test-mail-internal-auth-secret-placeholder-0001',
+    );
     expect(result).toEqual({ ok: false, reason: 'config_missing' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('fails closed with credential_missing when no signing secret is configured', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await sendMail('https://mail.example.com', VALID_REQUEST, undefined);
+    expect(result).toEqual({
+      ok: false,
+      reason: 'credential_missing',
+      detail: 'NUXT_MAIL_INTERNAL_AUTH_SECRET',
+    });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('fails closed with invalid_payload without fetching', async () => {
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal('fetch', fetchMock);
-    const result = await sendMail('https://mail.example.com', null);
+    const result = await sendMail(
+      'https://mail.example.com',
+      null,
+      'test-mail-internal-auth-secret-placeholder-0001',
+    );
     expect(result).toEqual({ ok: false, reason: 'invalid_payload' });
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -111,14 +131,22 @@ describe('sendMail', () => {
       .fn<typeof fetch>()
       .mockResolvedValue(new Response(JSON.stringify(validMailResponse()), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
-    const result = await sendMail('https://mail.example.com', VALID_REQUEST);
+    const result = await sendMail(
+      'https://mail.example.com',
+      VALID_REQUEST,
+      'test-mail-internal-auth-secret-placeholder-0001',
+    );
     expect(result).toEqual({ ok: true });
     const init = fetchMock.mock.calls[0]?.[1];
     expect(init?.method).toBe('POST');
-    expect(init?.headers).toEqual({
-      'content-type': 'application/json',
-      'idempotency-key': otpMailIdempotencyKey(VALID_REQUEST.correlation_id),
-    });
+    const headers = new Headers(init?.headers as HeadersInit);
+    expect(headers.get('content-type')).toBe('application/json');
+    expect(headers.get('idempotency-key')).toBe(
+      otpMailIdempotencyKey(VALID_REQUEST.correlation_id),
+    );
+    expect(headers.get('x-ecoma-internal-timestamp')).not.toBeNull();
+    expect(headers.get('x-ecoma-internal-nonce')).not.toBeNull();
+    expect(headers.get('x-ecoma-internal-signature')).toMatch(/^v1=[0-9a-f]{64}$/u);
   });
 
   it('strips a trailing slash from the configured URL', async () => {
@@ -126,7 +154,11 @@ describe('sendMail', () => {
       .fn<typeof fetch>()
       .mockResolvedValue(new Response(JSON.stringify(validMailResponse()), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
-    await sendMail('https://mail.example.com/', VALID_REQUEST);
+    await sendMail(
+      'https://mail.example.com/',
+      VALID_REQUEST,
+      'test-mail-internal-auth-secret-placeholder-0001',
+    );
     const calledUrl = String(fetchMock.mock.calls[0]?.[0] ?? '');
     expect(calledUrl.endsWith('/v1/messages')).toBe(true);
   });
@@ -136,7 +168,11 @@ describe('sendMail', () => {
       'fetch',
       vi.fn<typeof fetch>().mockResolvedValue(new Response('too many requests', { status: 429 })),
     );
-    const result = await sendMail('https://mail.example.com', VALID_REQUEST);
+    const result = await sendMail(
+      'https://mail.example.com',
+      VALID_REQUEST,
+      'test-mail-internal-auth-secret-placeholder-0001',
+    );
     expect(result).toEqual({ ok: false, reason: 'rejected', detail: '429' });
   });
 
@@ -146,13 +182,21 @@ describe('sendMail', () => {
       'fetch',
       vi.fn<typeof fetch>().mockResolvedValue(new Response('<html>ok</html>', { status: 200 })),
     );
-    const result = await sendMail('https://mail.example.com', VALID_REQUEST);
+    const result = await sendMail(
+      'https://mail.example.com',
+      VALID_REQUEST,
+      'test-mail-internal-auth-secret-placeholder-0001',
+    );
     expect(result).toMatchObject({ ok: false, reason: 'rejected' });
   });
 
   it('classifies a network error as unreachable', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new TypeError('fetch failed')));
-    const result = await sendMail('https://mail.example.com', VALID_REQUEST);
+    const result = await sendMail(
+      'https://mail.example.com',
+      VALID_REQUEST,
+      'test-mail-internal-auth-secret-placeholder-0001',
+    );
     expect(result).toEqual({ ok: false, reason: 'unreachable' });
   });
 
@@ -199,7 +243,11 @@ describe('sendMail', () => {
           }),
       ),
     );
-    const result = await sendMail('https://mail.example.com', VALID_REQUEST);
+    const result = await sendMail(
+      'https://mail.example.com',
+      VALID_REQUEST,
+      'test-mail-internal-auth-secret-placeholder-0001',
+    );
     expect(result).toEqual({ ok: false, reason: 'unreachable' });
   });
 
@@ -207,6 +255,12 @@ describe('sendMail', () => {
     // Bốn loại lỗi đã phân loại đều phải trả giá trị — ném ở đây buộc route
     // phân loại lại, tức là hai tầng cùng biết chi tiết transport.
     vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new Error('boom')));
-    await expect(sendMail('https://mail.example.com', VALID_REQUEST)).resolves.toBeDefined();
+    await expect(
+      sendMail(
+        'https://mail.example.com',
+        VALID_REQUEST,
+        'test-mail-internal-auth-secret-placeholder-0001',
+      ),
+    ).resolves.toBeDefined();
   });
 });
