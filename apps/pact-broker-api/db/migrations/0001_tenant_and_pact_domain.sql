@@ -310,7 +310,7 @@ CREATE TABLE IF NOT EXISTS pact.verifications (
   CONSTRAINT verifications_provider_version_fk
     FOREIGN KEY (tenant_id, provider_version_id)
     REFERENCES pact.versions (tenant_id, id) ON DELETE RESTRICT,
-  CONSTRAINT verifications_build_url_format_check CHECK (build_url IS NULL OR build_url ~ '^.{1,2048}$')
+  CONSTRAINT verifications_build_url_format_check CHECK (build_url IS NULL OR length(build_url) <= 2048)
 );
 
 -- "Verification mới nhất của pact" — tie-break id DESC như upstream (`:551`).
