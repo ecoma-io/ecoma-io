@@ -36,10 +36,43 @@ export interface MigrationFile {
   readonly sql: string;
 }
 
-/** Thứ tự apply là thứ tự tên file (`0001_`, `0002_`, ...), không phải mtime. */
+/**
+ * Tên file migration phải khớp `NNNN_<slug>.sql` — **4 chữ số** rồi gạch dưới.
+ *
+ * ⚠️ Vì sao 4 chữ số là bắt buộc chứ không phải "sở thích": thứ tự apply là
+ * thứ tự **tên file** (`localeCompare`), nên tiền tố số phải có **cùng độ dài**
+ * để so sánh lexicographic khớp thứ tự số. `0003_` < `0010_` đúng, nhưng
+ * `2_x.sql` (thiếu zero) sort **sau** `0003_` — file đó sẽ chạy ở sai vị trí
+ * trong lịch sử migration, và không có gì báo.
+ *
+ * Nên quy ước này được **khai báo và kiểm**, không chỉ ghi trong README:
+ * `listMigrations` ném lỗi ngay khi thấy tên vi phạm, trước khi bất kỳ DDL nào
+ * được apply — lỗi rõ ràng ("tên file này sai quy ước") hơn là một schema sai
+ * không ai biết.
+ */
+export const MIGRATION_FILE_NAME_PATTERN = /^\d{4}_.+\.sql$/u;
+
+/**
+ * Thứ tự apply là thứ tự tên file (`0001_`, `0002_`, ...), không phải mtime.
+ *
+ * ⚠️ `localeCompare` chỉ đúng khi mọi tiền tố số có cùng độ dài — vì vậy mọi
+ * tên file phải khớp {@link MIGRATION_FILE_NAME_PATTERN}; file không khớp thì
+ * hàm ném lỗi thay vì sort sai.
+ *
+ * @throws Error nếu có file `.sql` không khớp quy ước tên.
+ */
 export function listMigrations(dir = MIGRATIONS_DIR): MigrationFile[] {
-  return readdirSync(dir)
-    .filter((entry) => entry.endsWith('.sql'))
+  const names = readdirSync(dir).filter((entry) => entry.endsWith('.sql'));
+
+  const invalid = names.filter((name) => !MIGRATION_FILE_NAME_PATTERN.test(name));
+  if (invalid.length > 0) {
+    throw new Error(
+      `migration file name must match ${String(MIGRATION_FILE_NAME_PATTERN)} ` +
+        `(4-digit prefix + '_' + slug + '.sql'); offending file(s): ${invalid.toSorted().join(', ')}`,
+    );
+  }
+
+  return names
     .toSorted((a, b) => a.localeCompare(b, 'en'))
     .map((name) => ({ name, sql: readFileSync(resolve(dir, name), 'utf8') }));
 }
