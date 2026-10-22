@@ -8,7 +8,7 @@ import type { AppEnv } from '../domain/types';
 import { currentTenantId } from '../middleware/tenant-context';
 import { HalBuilder, getBaseUrl } from '../domain/hal';
 import { environmentNameSchema } from '../domain/validation';
-import { validateParam } from '../middleware/validate';
+import { readJsonBodyWithLimit, validateParam } from '../middleware/validate';
 import { PgEnvironmentRepo } from '../repo/environment-repo';
 
 export function environmentRoutes(
@@ -46,12 +46,16 @@ export function environmentRoutes(
 
   // Create — `pact-broker create-environment` POSTs collection.
   app.post('/', writeAuth(), async (c) => {
-    let body: { name?: unknown; displayName?: unknown; production?: unknown };
-    try {
-      body = await c.req.json();
-    } catch {
+    const bodyResult = await readJsonBodyWithLimit(c, 1 * 1024 * 1024, 'Environment body');
+    if (!bodyResult.ok) return bodyResult.errorResponse;
+    if (bodyResult.value === undefined) {
       return c.json({ error: 'Bad Request', message: 'Invalid JSON body' }, 400);
     }
+    const body = bodyResult.value as {
+      name?: unknown;
+      displayName?: unknown;
+      production?: unknown;
+    };
 
     const nameResult = validateParam(
       c,
@@ -109,11 +113,12 @@ export function environmentRoutes(
     const nameResult = validateParam(c, environmentNameSchema, c.req.param('name'), 'name');
     if (!nameResult.valid) return nameResult.errorResponse;
 
+    const bodyResult = await readJsonBodyWithLimit(c, 1 * 1024 * 1024, 'Environment body');
     let body: { displayName?: unknown; production?: unknown } = {};
-    try {
-      body = await c.req.json();
-    } catch {
-      // Empty body is valid
+    if (bodyResult.ok) {
+      body = (bodyResult.value ?? {}) as typeof body;
+    } else if (bodyResult.errorResponse.status === 413) {
+      return bodyResult.errorResponse;
     }
 
     const repo = new PgEnvironmentRepo(c.get('pool'));

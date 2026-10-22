@@ -15,6 +15,7 @@ import { array, enum as zEnum, object, string } from 'zod';
 import type { AppEnv } from '../domain/types';
 import { currentTenantId } from '../middleware/tenant-context';
 import { PgTenantRepo } from '../repo/tenant-repo';
+import { readJsonBodyWithLimit } from '../middleware/validate';
 import { insertAuditEvent } from '../repo/token-repo';
 
 const createTokenSchema = object({
@@ -51,12 +52,12 @@ export function adminRoutes(adminAuth: () => MiddlewareHandler<AppEnv>): Hono<Ap
 
   // Create machine token — response chứa token bản rõ ĐÚNG MỘT LẦN.
   app.post('/machine-tokens', adminAuth(), async (c) => {
-    let raw: unknown;
-    try {
-      raw = await c.req.json();
-    } catch {
+    const bodyResult = await readJsonBodyWithLimit(c, 64 * 1024, 'Admin body');
+    if (!bodyResult.ok) return bodyResult.errorResponse;
+    if (bodyResult.value === undefined) {
       return c.json({ error: 'Bad Request', message: 'Invalid JSON body' }, 400);
     }
+    const raw = bodyResult.value;
     const parsed = createTokenSchema.safeParse(raw);
     if (!parsed.success) {
       const first = parsed.error.issues[0];

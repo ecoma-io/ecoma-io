@@ -10,7 +10,7 @@ import type { AppEnv } from '../domain/types';
 import { currentTenantId } from '../middleware/tenant-context';
 import { HalBuilder, getBaseUrl } from '../domain/hal';
 import { nameSchema, shaSchema } from '../domain/validation';
-import { validateParam } from '../middleware/validate';
+import { readJsonBodyWithLimit, validateParam } from '../middleware/validate';
 import { PgVerificationRepo } from '../repo/verification-repo';
 
 /** UUID format — id của verification ở schema PG. */
@@ -75,12 +75,16 @@ export function verificationRoutes(writeAuth: () => MiddlewareHandler<AppEnv>): 
       if (!shaResult.valid) return shaResult.errorResponse;
       const pactSha = shaResult.value;
 
-      let body: { success?: unknown; providerApplicationVersion?: unknown; buildUrl?: unknown };
-      try {
-        body = await c.req.json();
-      } catch {
+      const bodyResult = await readJsonBodyWithLimit(c, 64 * 1024, 'Verification body');
+      if (!bodyResult.ok) return bodyResult.errorResponse;
+      if (bodyResult.value === undefined) {
         return c.json({ error: 'Bad Request', message: 'Invalid JSON body' }, 400);
       }
+      const body = bodyResult.value as {
+        success?: unknown;
+        providerApplicationVersion?: unknown;
+        buildUrl?: unknown;
+      };
 
       if (typeof body.success !== 'boolean') {
         return c.json(
