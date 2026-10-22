@@ -480,6 +480,68 @@ export class PgPactRepo {
     }
 
     const allCandidates = await this.getAllPactsForProvider(tenantId, providerName);
+
+    // Batch lookups cho tag/deployed: gom version id của mọi candidate (latest
+    // + allCandidates) rồi tra tag/deployed bằng `= ANY($n::uuid[])` thay vì
+    // gọi versions.getTagsForVersion / getPacticipant / isVersionDeployed trong
+    // vòng selector×candidate (PERF-01/09).
+    const candidatePacts = [...latest, ...allCandidates];
+    const consumerNames = [...new Set(candidatePacts.map((r) => r.consumer.name))];
+
+    const versionIdByKey = new Map<string, string>();
+    if (consumerNames.length > 0) {
+      const { rows } = await this.pool.query<{ id: string; name: string; number: string }>(
+        `SELECT v.id, p.name, v.number
+           FROM pact.versions v
+           JOIN pact.pacticipants p ON p.tenant_id = v.tenant_id AND p.id = v.pacticipant_id
+          WHERE v.tenant_id = $1 AND p.name = ANY($2::text[])`,
+        [tenantId, consumerNames],
+      );
+      for (const row of rows) {
+        versionIdByKey.set(`${row.name}::${row.number}`, row.id);
+      }
+    }
+
+    const versionIds = [...new Set(versionIdByKey.values())];
+
+    const tagsByVersionId = new Map<string, string[]>();
+    if (versionIds.length > 0) {
+      const { rows } = await this.pool.query<{ version_id: string; name: string }>(
+        `SELECT version_id, name
+           FROM pact.tags
+          WHERE tenant_id = $1 AND version_id = ANY($2::uuid[])`,
+        [tenantId, versionIds],
+      );
+      for (const row of rows) {
+        const list = tagsByVersionId.get(row.version_id) ?? [];
+        list.push(row.name);
+        tagsByVersionId.set(row.version_id, list);
+      }
+    }
+
+    const deployedByVersionId = new Map<string, Set<string | null>>();
+    if (versionIds.length > 0) {
+      const { rows } = await this.pool.query<{ version_id: string; environment: string | null }>(
+        `SELECT v.id AS version_id, e.name AS environment
+           FROM pact.deployed_versions dv
+           JOIN pact.versions v ON v.tenant_id = dv.tenant_id AND v.id = dv.version_id
+           JOIN pact.pacticipants p ON p.tenant_id = v.tenant_id AND p.id = v.pacticipant_id
+           LEFT JOIN pact.environments e ON e.tenant_id = dv.tenant_id AND e.id = dv.environment_id
+          WHERE dv.tenant_id = $1
+            AND dv.undeployed_at IS NULL
+            AND v.id = ANY($2::uuid[])`,
+        [tenantId, versionIds],
+      );
+      for (const row of rows) {
+        const set = deployedByVersionId.get(row.version_id) ?? new Set<string | null>();
+        set.add(row.environment);
+        deployedByVersionId.set(row.version_id, set);
+      }
+    }
+
+    const versionIdOf = (r: PactFull): string | undefined =>
+      versionIdByKey.get(`${r.consumer.name}::${r.version.number}`);
+
     const matched = new Map<string, PactForVerificationResult>();
 
     for (const selector of selectors) {
@@ -498,16 +560,13 @@ export class PgPactRepo {
       }
 
       if (selector.tag) {
-        const tagFiltered: PactFull[] = [];
-        for (const r of results) {
-          const tags = await this.versions.getTagsForVersion(
-            tenantId,
-            r.consumer.name,
-            r.version.number,
-          );
-          if (tags.some((t) => t.name === selector.tag)) tagFiltered.push(r);
-        }
-        results = tagFiltered;
+        const tag = selector.tag;
+        results = results.filter((r) => {
+          const vid = versionIdOf(r);
+          if (vid === undefined) return false;
+          const tags = tagsByVersionId.get(vid) ?? [];
+          return tags.some((t) => t === tag);
+        });
         notices.push(`version tagged with '${selector.tag}'`);
       }
 
@@ -517,31 +576,22 @@ export class PgPactRepo {
       }
 
       if (selector.mainBranch) {
-        const mainFiltered: PactFull[] = [];
-        for (const r of results) {
-          const consumer = await this.versions.getPacticipant(tenantId, r.consumer.name);
-          // main_branch của consumer: trait pacticipant — upstream đọc
-          // consumer.mainBranch; schema của ta chưa có cột đó nên so với
-          // 'main' (default upstream).
-          const mainBranch = 'main';
-          if (consumer && r.version.branch === mainBranch) mainFiltered.push(r);
-        }
-        results = mainFiltered;
+        // mainBranch comparison in-memory: default 'main', không tra DB.
+        const mainBranch = 'main';
+        results = results.filter((r) => r.version.branch === mainBranch);
         notices.push('version is on the main branch');
       }
 
       if (selector.deployed) {
-        const deployedFiltered: PactFull[] = [];
-        for (const r of results) {
-          const isDeployed = await this.isVersionDeployed(
-            tenantId,
-            r.consumer.name,
-            r.version.number,
-            selector.environment,
-          );
-          if (isDeployed) deployedFiltered.push(r);
-        }
-        results = deployedFiltered;
+        const environment = selector.environment;
+        results = results.filter((r) => {
+          const vid = versionIdOf(r);
+          if (vid === undefined) return false;
+          const envs = deployedByVersionId.get(vid);
+          if (envs === undefined || envs.size === 0) return false;
+          if (environment === undefined) return true;
+          return envs.has(environment);
+        });
         notices.push(
           selector.environment
             ? `version is deployed to '${selector.environment}'`
@@ -563,20 +613,26 @@ export class PgPactRepo {
         notices.push('it is the latest pact');
       }
 
+      const selectorNotices =
+        notices.length > 0 ? notices : ['it matches the consumer version selectors'];
+
       for (const r of results) {
         const existing = matched.get(r.pact.contentSha);
         if (existing !== undefined) {
-          existing.notices.push(...notices);
+          existing.notices = dedupeStrings([...existing.notices, ...notices]);
         } else {
           matched.set(r.pact.contentSha, {
             ...r,
-            notices: notices.length > 0 ? notices : ['it matches the consumer version selectors'],
+            notices: dedupeStrings(selectorNotices),
           });
         }
       }
     }
 
-    return Array.from(matched.values());
+    return Array.from(matched.values()).map((r) => ({
+      ...r,
+      notices: dedupeStrings(r.notices),
+    }));
   }
 
   async isVersionDeployed(
@@ -600,6 +656,18 @@ export class PgPactRepo {
     );
     return rows.length > 0;
   }
+}
+
+/** Loại bỏ notice trùng nội dung, giữ thứ tự xuất hiện đầu tiên. */
+function dedupeStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of values) {
+    if (seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+  }
+  return out;
 }
 
 function toPact(row: PactRow): PactRecord {
