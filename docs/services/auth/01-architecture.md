@@ -559,6 +559,7 @@ Cả bốn contract ở §5.1.7 dùng **một** envelope HMAC duy nhất, và gi
 | `x-ecoma-internal-timestamp` | Epoch **giây** — chuỗi thập phân, số nguyên, không phần thập phân |
 | `x-ecoma-internal-nonce`     | Token ≥128 bit entropy; `createNonce()` sinh UUID v4              |
 | `x-ecoma-internal-signature` | `v1=<64 hex chữ thường>` — HMAC-SHA-256                           |
+| `x-ecoma-internal-kid`       | **Tuỳ chọn** — `kid` của khoá đã ký: 8–16 hex chữ thường          |
 
 Chuỗi được ký là một dạng canonical có **length prefix theo byte UTF-8**, phân tách bằng `\n`. Sáu dòng, theo đúng thứ tự này:
 
@@ -589,6 +590,26 @@ Có **hai** chữ "v1" trong envelope này và chúng trả lời hai câu hỏi
 ⚠️ **`v1=` KHÔNG phải số phiên bản của giao thức.** Nó chỉ nói định dạng của giá trị trong header. PR hợp nhất này đổi canonicalization (thêm dòng `PROTOCOL_ID`, đổi length prefix từ UTF-16 sang byte UTF-8) mà **giữ nguyên** `v1=` — nên một envelope của bản cũ vẫn mang header `v1=…` và không có gì trong header cho biết nó không tương thích. Đọc `v1=` thành "envelope phiên bản 1" là suy sai.
 
 ⚠️ **Không có dual-accept.** `PROTOCOL_ID` nằm trong chuỗi ký, nên verifier của bản mới **từ chối** envelope do bản cũ ký (`bad_signature`), và tiền tố chữ ký không được dùng để quyết định chấp nhận hay không. Điều kiện triển khai vì vậy là: **hai Worker phải deploy cùng phiên bản giao thức.** Không có cửa sổ nào để một bên chạy bản cũ giao tiếp với bên chạy bản mới; thứ tự deploy không cứu được, chỉ có deploy cùng nhau. `libs/identity-contracts/src/internal-auth.spec.ts` có test dựng lại **chính xác** canonicalization của bản cũ và khẳng định verifier từ chối nó, cùng một test khẳng định tiền tố chữ ký lạ (`v2=…`) bị từ chối dù payload HMAC hợp lệ.
+
+#### `kid` — chỉ dẫn chọn khoá, KHÔNG phải trường đã ký
+
+Header `x-ecoma-internal-kid` mang `kid` của khoá đã ký: chuỗi **8–16 hex chữ thường** (`/^[0-9a-f]{8,16}$/u` — hằng giao thức ở `libs/identity-contracts`, mọi service đọc **cùng** một hằng đó). Header này là **tuỳ chọn**: không có nó thì envelope dùng secret hiện hành, đúng như trước khi có `kid`.
+
+⚠️ **`kid` KHÔNG nằm trong chuỗi canonical, và đây là điều kiện để nó không phải một thay đổi giao thức.** Chữ ký của envelope có `kid` và envelope không `kid` là **giống nhau từng byte** khi dùng cùng secret. Đổi lại, thêm `kid` không phá vector ký cũ, không đòi bump `PROTOCOL_ID`, và không cần dual-accept — hai bên ở hai phiên bản khác nhau vẫn giao tiếp được, chỉ khác ở chỗ envelope có mang `kid` hay không.
+
+| Khái niệm       | `kid` mang nghĩa gì                                                                | Nó **không** mang nghĩa gì                           |
+| --------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Chỉ dẫn         | "Hãy dùng khoá này để tính HMAC"                                                   | Không phải bằng chứng — HMAC mới là bằng chứng       |
+| Đầu vào tin cậy | **Không** — `kid` do bên gọi kiểm soát, nên nó là dữ liệu đầu vào, không phải luật | Không phải principal, không phải danh tính người gọi |
+| Hình dạng       | Sai hình dạng ⇒ `invalid_field`, và resolver **không** được kích hoạt              | Không phải `bad_signature` — đó là lỗi chữ ký        |
+
+⚠️ **Thứ tự kiểm là hợp đồng:** thiếu header → **hình dạng `kid`** → **chọn khoá theo `kid`** → timestamp → nonce → dựng canonical → chữ ký → chiếm nonce. `kid` được kiểm **trước** timestamp và trước chữ ký vì nó là chỉ dẫn chọn khoá: hỏi "khoá nào?" phải đứng trước mọi phép băm.
+
+⚠️ **`kid` lạ ⇒ `bad_signature`, và không có nhánh "chấp nhận bằng secret mặc định".** Receiver tra registry `kid → secret`; không biết `kid` nào thì không có khoá nào để khớp, nên envelope đó bị từ chối. Đây là fail-closed — một nhánh "không biết `kid` thì dùng secret hiện hành" sẽ biến `kid` thành trang trí và mở lại đúng lỗ hổng mà `kid` sinh ra để chặn.
+
+Receiver dùng cơ chế này để **xoay secret không gián đoạn**: giữ hai khoá trong một registry `kid → secret` trong lúc overlap, rồi thu hồi khoá cũ. Runbook vận hành ở [`03-operations.md`](./03-operations.md) §3.3.
+
+⚠️ **`kid` chọn được khoá để verify, nhưng không tách được "khoá để ký" khỏi "khoá để verify".** Mỗi Worker có **một** entry `current` duy nhất và entry đó **chính là** secret đang ký — không có slot thứ ba cho một khoá "mới nhưng chưa dùng để ký". Vì `auth` và `account` là **cặp song phương** (mỗi bên vừa gửi vừa nhận trên cùng cơ chế), quy trình xoay phải **nạp trước khoá mới vào slot `previous` ở cả hai Worker** rồi mới chuyển `current` — nếu chỉ "nạp trước ở phía nhận", phía nhận đó sẽ bắt đầu **ký** bằng khoá mới và làm hỏng hướng ngược lại. Runbook §3.3 nêu đúng thứ tự này.
 
 ⚠️ **Chữ ký phủ `path` nguyên văn, kể cả query string, và không bao giờ phủ JSON đã parse rồi serialize lại.** Ký trên dữ liệu tái tuần tự hoá làm chữ ký phụ thuộc thứ tự key và khoảng trắng — hai bên dùng hai thư viện JSON khác nhau là đủ để lệch nhau im lặng. Caller ký chuỗi nó thật sự gửi; verifier ký lại chuỗi nó thật sự nhận. Cùng lý do, không có quy tắc chuẩn hoá query riêng ở mỗi phía: không có bước chuẩn hoá nào cả.
 

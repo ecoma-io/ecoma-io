@@ -109,7 +109,36 @@ Vận hành của envelope HMAC dùng chung với `account`. Giao thức, canoni
 
 ⚠️ **Không có giá trị mặc định và không có fallback.** `loadAuthConfig` gọi `requireSecret(env.AUTH_INTERNAL_SECRET, …)` và ném lúc khởi động nếu thiếu; middleware của `account` trả `401` khi secret rỗng. Không có nhánh nào coi "chưa cấu hình" là "cho phép". **Không bao giờ** đặt giá trị thật của secret vào Git, vào PR build hay vào Preview runtime (non-negotiable; [`02` §5.3](../../overview/02-delivery.md)).
 
-⚠️ **Rotate secret là thao tác phải đồng thời, và hiện không có giai đoạn overlap.** `v1=` trong header chữ ký là version của **scheme**, không phải `kid` của khoá, nên không có cách để hai bên tạm thời chấp nhận hai giá trị. Đổi secret nghĩa là: (1) chấp nhận một cửa sổ request nội bộ `401`, rồi (2) đặt cùng giá trị mới ở cả hai Worker. Làm ngược thứ tự (đặt một bên trước) chỉ kéo dài cửa sổ đó. Nếu cần rotate không gián đoạn thì phải thêm `kid` vào envelope — một thay đổi giao thức, không phải thao tác vận hành.
+⚠️ **Rotate secret có giai đoạn overlap, nhờ header `x-ecoma-internal-kid`.** `v1=` trong header chữ ký là version của **scheme**, không phải `kid` của khoá — nhưng `kid` giờ đi ở **header riêng** (`x-ecoma-internal-kid`), **không** nằm trong canonical string. Hệ quả: chữ ký của envelope có `kid` và envelope không `kid` là **giống nhau từng byte** khi dùng cùng secret, nên thêm `kid` không phải một thay đổi giao thức và không phá các vector ký cũ. Receiver đọc `kid` như một **chỉ dẫn chọn khoá** trước khi tính HMAC: không có `kid` ⇒ dùng secret hiện hành; có `kid` ⇒ tra registry, không biết `kid` nào thì `401` (`bad_signature`).
+
+| Biến (`auth`)                   | Biến (`account`)                     | Ý nghĩa                                |
+| ------------------------------- | ------------------------------------ | -------------------------------------- |
+| `AUTH_INTERNAL_KID`             | `NUXT_INTERNAL_HMAC_KID`             | `kid` của khoá **đang ký**             |
+| `AUTH_INTERNAL_PREVIOUS_KID`    | `NUXT_INTERNAL_HMAC_PREVIOUS_KID`    | `kid` của khoá **chỉ dùng để verify**  |
+| `AUTH_INTERNAL_PREVIOUS_SECRET` | `NUXT_INTERNAL_HMAC_PREVIOUS_SECRET` | Secret của khoá **chỉ dùng để verify** |
+
+⚠️ **Slot "previous" là slot "không dùng để ký", không phải slot "khoá cũ".** Trong lúc nạp trước (bước 2 của runbook) nó chứa khoá **mới**; trong lúc overlap (bước 3) nó chứa khoá **cũ**. Không có slot riêng cho "khoá mới chỉ để verify" — một Worker chỉ có **hai** entry registry, và entry `current` **chính là** secret đang ký (`apps/auth/src/config.ts`, `apps/account/server/middleware/internal-auth.ts`).
+
+⚠️ **`kid` là chuỗi 8–16 hex chữ thường** (`/^[0-9a-f]{8,16}$/u` — hằng giao thức ở `libs/identity-contracts`, cả hai service đọc **cùng** một hằng đó). Cả hai Worker **từ chối lúc khởi động** khi `kid` sai hình dạng, khi cặp previous thiếu một nửa, khi `kid` hiện hành trùng `kid` cũ, và khi hai secret trùng **giá trị** (hai `kid` chia một secret làm mất ý nghĩa của selector). Thông báo lỗi **không bao giờ chứa giá trị** `kid` hay secret.
+
+**Runbook — xoay secret không gián đoạn** (giả định `kid` đã bật ở cả hai Worker; xem bước 0):
+
+| #   | Hành động                                                                                                                  | Vì sao an toàn                                                                                                                    |
+| --- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 0   | Bật `kid` trước (nếu chưa): đặt `kid` hiện hành ở **cả hai** Worker, cùng secret hiện hành                                 | Envelope có `kid` vẫn verify được bằng chính secret đó — `kid` không đổi chữ ký                                                   |
+| 1   | Sinh secret mới (`S2`) và `kid` mới (`K2`); **`S2` ≠ secret hiện hành**                                                    | Hai `kid` chia một secret là cấu hình mơ hồ, bị chặn lúc khởi động                                                                |
+| 2   | **Nạp trước ở CẢ HAI Worker**: `previous kid` = `K2`, `previous secret` = `S2`; `current` vẫn là `K1`/`S1`                 | Cả hai Worker **verify** được cả `K1` và `K2`, nhưng **vẫn ký bằng `K1`** — không có Worker nào ký bằng khoá mà đối tác chưa biết |
+| 3   | **Chuyển sang khoá mới ở CẢ HAI Worker**: `current` = `K2`/`S2`, `previous` = `K1`/`S1`                                    | Mỗi Worker ký bằng `K2`; đối tác đã có `K2` trong registry từ bước 2 ⇒ không envelope nào bị từ chối                              |
+| 4   | Chờ ≥ `skew` + thời gian dài nhất một request nội bộ (thực tế: vài phút), tính từ lúc **Worker cuối cùng** hoàn tất bước 3 | Bảo đảm không còn envelope ký bằng `K1` trên đường                                                                                |
+| 5   | Xoá cặp previous ở **cả hai** Worker                                                                                       | Thu hồi khoá cũ; `kid` cũ từ đây trở đi là `kid` lạ ⇒ `401`                                                                       |
+
+⚠️ **Bước 2 phải áp dụng cho CẢ HAI Worker, không phải "phía nhận trước".** `auth` và `account` là **cặp song phương**: mỗi bên vừa gửi vừa nhận trên cùng một cơ chế, và mỗi bên có **một** entry `current` duy nhất — chính là secret đang ký. Nếu chỉ nạp trước ở một bên, bên đó **bắt đầu ký bằng khoá mới** ngay khi đổi `current`, trong khi đối tác chưa biết `K2` ⇒ chính hướng ngược lại bị `401`. Đây là lý do `kid` không đủ: nó chọn được khoá để **verify**, nhưng không tách được "khoá để ký" khỏi "khoá để verify".
+
+⚠️ **Bước 2 và bước 3 có thể đổi thứ tự với nhau, miễn là mỗi Worker phải đi qua đủ hai bước.** Vì ở bước 2 mọi Worker vẫn ký bằng `K1`, nên Worker nào hoàn tất bước 3 trước vẫn **được** nhận envelope ký bằng `K1` từ Worker chưa chuyển. Điều kiện duy nhất là: **không Worker nào ký bằng `K2` trước khi cả hai đều có `K2` trong registry** — đúng nghĩa bước 2 phải xong ở cả hai.
+
+⚠️ **Bước 4 đếm từ Worker cuối cùng hoàn tất bước 3**, không phải từ Worker đầu tiên: envelope ký bằng `K1` có thể còn trên đường từ Worker chưa chuyển.
+
+⚠️ **Bỏ qua `kid` thì vẫn xoay đồng thời được** (giá trị secret hiện hành + secret mới đặt cùng lúc ở cả hai Worker), nhưng phải chấp nhận một cửa sổ `401` giữa hai lần deploy. Đó là đường lùi, không phải cách bình thường.
 
 #### Kho nonce
 
