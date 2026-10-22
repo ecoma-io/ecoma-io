@@ -23,6 +23,7 @@ import { resetConfigCacheForTest } from '../src/config';
 
 import { callRoute } from './app-env';
 import { APP, createTestDatabase, seedScope, type TestDatabase } from './d1-harness';
+import { vapidTestKeyPair } from './vapid-test-keys';
 
 /** Header của một caller Admin API đã xác thực — cùng token với `app-env.ts`. */
 function adminHeaders(): Record<string, string> {
@@ -80,6 +81,36 @@ async function createProvider(db: TestDatabase, name: string): Promise<string> {
   expect(response.status).toBe(201);
   const body = (await response.json()) as { providerId: string };
   return body.providerId;
+}
+
+/**
+ * Rotate một credential VAPID **thật** lên provider, qua đúng đường vận hành
+ * (`POST /admin/v1/providers/:id/rotate-credential`).
+ *
+ * ⚠️ **Vì sao phải qua API thay vì ghi thẳng D1.** Cổng chặn enable giải mã credential đọc
+ * từ D1, nên một credential ghi tay mà không mã hoá bằng root key của app sẽ không giải mã
+ * được. Đường thật dùng cipher của composition root, nên credential sinh ra **chắc chắn** đọc
+ * được — đó là điều một fixture "xanh giả" không đảm bảo được.
+ *
+ * @param label Nhãn biến thể của cặp khoá — cặp khác label là cặp khác hoàn toàn.
+ */
+async function rotateCredential(
+  db: TestDatabase,
+  providerId: string,
+  vapidKeyId: string,
+  options: { readonly label?: string; readonly retireVapidKeyId?: string | null } = {},
+): Promise<Response> {
+  const keyPair = await vapidTestKeyPair(options.label ?? 'default');
+  return callRoute(db, `/admin/v1/providers/${providerId}/rotate-credential`, adminHeaders(), {
+    method: 'POST',
+    body: {
+      app: APP,
+      vapid_key_id: vapidKeyId,
+      public_key: keyPair.publicPointBase64Url,
+      private_key: keyPair.privateKeyDerBase64Url,
+      retire_vapid_key_id: options.retireVapidKeyId ?? null,
+    },
+  });
 }
 
 describe('POST /admin/v1/providers — create (FR-005, §6.1)', () => {
@@ -169,6 +200,12 @@ describe('PATCH /admin/v1/providers/:providerId — update and enable/disable (F
     const providerId = await createProvider(db, 'To enable');
     expect(await readProvider(db, providerId)).toMatchObject({ status: 'disabled' });
 
+    // ⚠️ **Enable đòi credential `active` giải mã được** (§6.1 — `credential availability` ·
+    // `credential validity` là cổng chặn fail-closed của API). Provider vừa tạo qua API chưa
+    // có credential nào, nên bước rotate là **điều kiện** của enable — không phải thừa.
+    const rotated = await rotateCredential(db, providerId, 'vapid-k2');
+    expect(rotated.status).toBe(200);
+
     const response = await callRoute(
       db,
       `/admin/v1/providers/${providerId}?app=ecoma-io`,
@@ -178,6 +215,8 @@ describe('PATCH /admin/v1/providers/:providerId — update and enable/disable (F
 
     expect(response.status).toBe(200);
     expect(await readProvider(db, providerId)).toMatchObject({ status: 'enabled' });
+    // ⚠️ Audit của rotation nằm trên entity `push_provider_credential` (ID do server sinh),
+    // **không** trên `provider_id` — nên danh sách audit của provider vẫn đúng hai event.
     expect(await readAuditEvents(db, providerId)).toEqual(['provider_created', 'provider_enabled']);
   });
 
@@ -222,6 +261,110 @@ describe('PATCH /admin/v1/providers/:providerId — update and enable/disable (F
     expect(response.status).toBe(200);
     expect(await readProvider(db, 'prov')).toMatchObject({ status: 'disabled' });
     expect(await readAuditEvents(db, 'prov')).toEqual(['provider_disabled']);
+  });
+});
+
+/**
+ * Cổng chặn enable của provider — fail-closed trước `disabled → enabled` (§6.1).
+ *
+ * ⚠️ **Ba điều kiện API-side**: `configuration schema` · `credential availability` ·
+ * `credential validity`. `provider connectivity` và `test delivery` là bước **runbook của
+ * operator** (§6.4, qua `POST /admin/v1/providers/:id/test`), không phải cổng chặn của API —
+ * control plane không có provider SDK nên không thể tự kiểm tra connectivity.
+ *
+ * ⚠️ **Mỗi test ở đây đi qua `worker.fetch` thật** và đọc lại D1 sau request: một cổng chặn
+ * chỉ có ý nghĩa khi nó chặn **cả** ghi state **và** ghi audit — một `provider_enabled` cho
+ * một provider chưa đủ điều kiện là bằng chứng sai (FR-020).
+ */
+describe('PATCH enable — fail-closed preconditions (§6.1)', () => {
+  let db: TestDatabase;
+
+  beforeEach(async () => {
+    resetConfigCacheForTest();
+    db = await createTestDatabase();
+    await seedScope(db);
+  });
+
+  afterEach(() => {
+    resetConfigCacheForTest();
+  });
+
+  it('refuses to enable a provider without an active credential with 400 credential_missing', async () => {
+    const providerId = await createProvider(db, 'No credential');
+
+    const response = await callRoute(
+      db,
+      `/admin/v1/providers/${providerId}?app=ecoma-io`,
+      adminHeaders(),
+      { method: 'PATCH', body: { status: 'enabled', expected: 'disabled' } },
+    );
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe('credential_missing');
+    // Provider vẫn `disabled` — cổng chặn phải chặn **cả** state, không chỉ trả lỗi.
+    expect(await readProvider(db, providerId)).toMatchObject({ status: 'disabled' });
+    // Và không có `provider_enabled` cho một thay đổi không xảy ra (FR-020).
+    expect(await readAuditEvents(db, providerId)).toEqual(['provider_created']);
+  });
+
+  it('refuses to enable a provider whose credential cannot be decrypted with 400 credential_decryption_failed', async () => {
+    const providerId = await createProvider(db, 'Broken credential');
+    const rotated = await rotateCredential(db, providerId, 'vapid-k2');
+    expect(rotated.status).toBe(200);
+
+    // ⚠️ Version `K9` **không có trong keyring** của app (`CREDENTIAL_SERVING_VERSIONS: 'K1'`):
+    // đây là hình dạng thật của keyring lệch sau một lần rotate secret, và nó phải bị chặn
+    // ở enable — không phải lúc claim (lúc đó provider đã nhận traffic).
+    await db.run(
+      'UPDATE push_provider_credentials SET credential_encryption_version = ? WHERE provider_id = ?',
+      'K9',
+      providerId,
+    );
+
+    const response = await callRoute(
+      db,
+      `/admin/v1/providers/${providerId}?app=ecoma-io`,
+      adminHeaders(),
+      { method: 'PATCH', body: { status: 'enabled', expected: 'disabled' } },
+    );
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe('credential_decryption_failed');
+    expect(await readProvider(db, providerId)).toMatchObject({ status: 'disabled' });
+    expect(await readAuditEvents(db, providerId)).toEqual(['provider_created']);
+  });
+
+  it('refuses to enable a provider whose configuration has no VAPID subject with 400 configuration_invalid', async () => {
+    // ⚠️ **Cấu hình hỏng đi vào DB bằng `PATCH /admin/v1/providers/:id`** — route create
+    // (`POST /admin/v1/providers`) chặn configuration thiếu subject ngay từ đầu, nhưng
+    // `updateProvider` chỉ ghi `configuration_json` xuống D1 mà không validate lại. Đường
+    // enable phải tự kiểm lần nữa, vì record trong D1 không đi qua route create.
+    const providerId = await createProvider(db, 'Bad configuration');
+    const rotated = await rotateCredential(db, providerId, 'vapid-k2');
+    expect(rotated.status).toBe(200);
+
+    const patched = await callRoute(
+      db,
+      `/admin/v1/providers/${providerId}?app=ecoma-io`,
+      adminHeaders(),
+      { method: 'PATCH', body: { name: 'Bad configuration', configuration: {} } },
+    );
+    expect(patched.status).toBe(200);
+
+    const response = await callRoute(
+      db,
+      `/admin/v1/providers/${providerId}?app=ecoma-io`,
+      adminHeaders(),
+      { method: 'PATCH', body: { status: 'enabled', expected: 'disabled' } },
+    );
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe('configuration_invalid');
+    expect(await readProvider(db, providerId)).toMatchObject({ status: 'disabled' });
+    expect(await readAuditEvents(db, providerId)).toEqual(['provider_created', 'provider_updated']);
   });
 });
 
@@ -288,21 +431,13 @@ describe('POST /admin/v1/providers/:providerId/rotate-credential — rotation (F
   it('inserts the new credential active and keeps the old one when it is still referenced', async () => {
     // seedScope tạo subscription `sub` `active` tham chiếu `vapid-k1` — §7.2 cấm retire key
     // cũ khi còn subscription tham chiếu: rotation vẫn thành công, chỉ là không retire.
-    const response = await callRoute(
-      db,
-      '/admin/v1/providers/prov/rotate-credential',
-      adminHeaders(),
-      {
-        method: 'POST',
-        body: {
-          app: APP,
-          vapid_key_id: 'vapid-k2',
-          public_key: 'new-public-key',
-          private_key: 'new-private-key-material',
-          retire_vapid_key_id: 'vapid-k1',
-        },
-      },
-    );
+    //
+    // ⚠️ **Cặp VAPID phải thật** (`verifyVapidKeyPair` ký và verify trước khi ghi): material
+    // giả không import được PKCS#8/điểm EC và bị trả `vapid_key_pair_mismatch` — đó là cổng
+    // chặn đúng, không phải lỗi fixture. Cặp thật derive lúc chạy từ `vapid-test-keys`.
+    const response = await rotateCredential(db, 'prov', 'vapid-k2', {
+      retireVapidKeyId: 'vapid-k1',
+    });
 
     expect(response.status).toBe(200);
     // Route trả value của use case nguyên trạng — camelCase, không qua projection snake_case.
@@ -343,21 +478,9 @@ describe('POST /admin/v1/providers/:providerId/rotate-credential — rotation (F
     // rotate kèm `retire_vapid_key_id` thì key cũ được retire đúng thứ tự §7.2.
     await db.run('DELETE FROM push_subscriptions WHERE subscription_id = ?', 'sub');
 
-    const response = await callRoute(
-      db,
-      '/admin/v1/providers/prov/rotate-credential',
-      adminHeaders(),
-      {
-        method: 'POST',
-        body: {
-          app: APP,
-          vapid_key_id: 'vapid-k2',
-          public_key: 'new-public-key',
-          private_key: 'new-private-key-material',
-          retire_vapid_key_id: 'vapid-k1',
-        },
-      },
-    );
+    const response = await rotateCredential(db, 'prov', 'vapid-k2', {
+      retireVapidKeyId: 'vapid-k1',
+    });
 
     expect(response.status).toBe(200);
     const body = (await response.json()) as { retiredVapidKeyId: string | null };
@@ -372,6 +495,43 @@ describe('POST /admin/v1/providers/:providerId/rotate-credential — rotation (F
       { vapid_key_id: 'vapid-k1', status: 'retired' },
       { vapid_key_id: 'vapid-k2', status: 'active' },
     ]);
+  });
+
+  it('refuses to rotate a credential whose public key does not match the private key with 400 vapid_key_pair_mismatch', async () => {
+    // ⚠️ **Hai cặp khoá THẬT, lệch nhau** — private key của cặp `default` đi cùng public
+    // point của cặp `mismatch`. Cả hai đều import được (PKCS#8 hợp lệ, điểm EC 65 octet
+    // hợp lệ) nên đây **không** phải lỗi định dạng: nó là đúng hình dạng "public key sai
+    // được nhầm" mà `verifyVapidKeyPair` phải chặn — một cặp lệch vẫn ký được JWT VAPID
+    // nhưng push service sẽ từ chối, tức mọi delivery hỏng trong khi rotate trả `200`.
+    const privatePair = await vapidTestKeyPair('default');
+    const otherPair = await vapidTestKeyPair('mismatch');
+
+    const response = await callRoute(
+      db,
+      '/admin/v1/providers/prov/rotate-credential',
+      adminHeaders(),
+      {
+        method: 'POST',
+        body: {
+          app: APP,
+          vapid_key_id: 'vapid-k2',
+          public_key: otherPair.publicPointBase64Url,
+          private_key: privatePair.privateKeyDerBase64Url,
+        },
+      },
+    );
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe('vapid_key_pair_mismatch');
+    // Cổng chặn phải chặn **trước khi ghi**: không được để lại credential `active` thiếu
+    // ciphertext — cùng hình dạng mà test thiếu `private_key` bên dưới khẳng định.
+    const count = await db.rows<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM push_provider_credentials WHERE provider_id = ?',
+      'prov',
+    );
+    expect(count[0].n).toBe(1);
+    expect(await readAuditByEvent(db, 'credential_rotated')).toHaveLength(0);
   });
 
   it('rejects a rotation missing private_key with 400 and no credential row', async () => {
