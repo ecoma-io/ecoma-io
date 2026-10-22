@@ -407,11 +407,10 @@ describe('PATCH enable — fail-closed preconditions (§6.1)', () => {
     expect(await readAuditEvents(db, providerId)).toEqual(['provider_created']);
   });
 
-  it('refuses to enable a provider whose configuration has no VAPID subject with 400 configuration_invalid', async () => {
-    // ⚠️ **Cấu hình hỏng đi vào DB bằng `PATCH /admin/v1/providers/:id`** — route create
-    // (`POST /admin/v1/providers`) chặn configuration thiếu subject ngay từ đầu, nhưng
-    // `updateProvider` chỉ ghi `configuration_json` xuống D1 mà không validate lại. Đường
-    // enable phải tự kiểm lần nữa, vì record trong D1 không đi qua route create.
+  it('refuses to write a provider configuration that has no VAPID subject with 400 configuration_invalid', async () => {
+    // ⚠️ **B-3**: `updateProvider` giờ validate `configuration` trước khi ghi — cấu hình hỏng
+    // không còn đi vào D1 qua `PATCH`. Cổng enable vẫn kiểm lại (defense in depth), nhưng đường
+    // PATCH là nơi cấu hình bị từ chối trước.
     const providerId = await createProvider(db, 'Bad configuration');
     const rotated = await rotateCredential(db, providerId, 'vapid-k2');
     expect(rotated.status).toBe(200);
@@ -422,20 +421,11 @@ describe('PATCH enable — fail-closed preconditions (§6.1)', () => {
       adminHeaders(),
       { method: 'PATCH', body: { name: 'Bad configuration', configuration: {} } },
     );
-    expect(patched.status).toBe(200);
-
-    const response = await callRoute(
-      db,
-      `/admin/v1/providers/${providerId}?app=ecoma-io`,
-      adminHeaders(),
-      { method: 'PATCH', body: { status: 'enabled', expected: 'disabled' } },
-    );
-
-    expect(response.status).toBe(400);
-    const body = (await response.json()) as { error: string };
+    expect(patched.status).toBe(400);
+    const body = (await patched.json()) as { error: string };
     expect(body.error).toBe('configuration_invalid');
     expect(await readProvider(db, providerId)).toMatchObject({ status: 'disabled' });
-    expect(await readAuditEvents(db, providerId)).toEqual(['provider_created', 'provider_updated']);
+    expect(await readAuditEvents(db, providerId)).toEqual(['provider_created']);
   });
 });
 
