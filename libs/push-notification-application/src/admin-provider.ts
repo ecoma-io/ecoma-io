@@ -982,11 +982,14 @@ export interface ProviderProbe {
   /**
    * Gửi một test delivery tới một subscription **đã authorization** (FR-018).
    *
-   * ⚠️ Đây là port của **control plane**, nhưng provider SDK thuộc delivery worker
-   * (`docs/services/web-push-notification-job`). Vì vậy adapter chỉ có hai lựa chọn hợp lệ:
-   * gọi provider trực tiếp, hoặc **không implement** port này và trả
-   * `configuration_invalid`. Control plane `MUST NOT` giả vờ đã test khi chưa gọi được
-   * provider — FR-018 nói test gồm "actual delivery".
+   * ⚠️ Đây là port của **control plane**, nhưng Web Push client primitive thuộc delivery worker
+   * (`web-push-notification-job-infrastructure`) — control plane không giữ adapter nào. Vị trí
+   * của adapter thật nằm ở composition root (`apps/push-notification/src/provider-probe.ts`),
+   * nơi duy nhất được phép nối hai tầng: adapter **bọc** `createWebPushSender` của delivery
+   * plane và mapping kết quả về `ProviderTestResult` của FR-018.
+   *
+   * ⚠️ FR-018 đòi "actual delivery", nên use case này **không bao giờ** tự trả một phân loại
+   * thay cho adapter — adapter quyết định classification từ kết quả thật của provider.
    */
   sendTestDelivery(input: {
     readonly endpoint: string;
@@ -994,12 +997,46 @@ export interface ProviderProbe {
     readonly auth: string;
     readonly vapidKeyId: string;
     readonly privateKey: string;
+    /**
+     * Public key VAPID **khớp** `privateKey` — đi vào tham số `k` của header `vapid` (RFC 8292
+     * §3.2).
+     *
+     * ⚠️ Adapter **không** được derive lại từ private key (WP2): `vapid_key_id` của subscription
+     * phải khớp key đã dùng lúc tạo subscription, và derive lại không bảo chứng được điều đó
+     * (`vapid.ts` — `buildVapidAuthorizationHeader`).
+     */
+    readonly publicKey: string;
+    /** Claim `sub` của JWT VAPID (RFC 8292 §2.1); `null` khi provider configuration không có. */
+    readonly vapidSubject: string | null;
     readonly timeoutMs: number;
     readonly payloadJson: string;
   }): Promise<
     | { readonly ok: true }
     | { readonly ok: false; readonly classification: ProviderTestResult; readonly detail: string }
   >;
+}
+
+/** Tên khoá `sub` của provider `configuration` mà **worker thật sự đọc** (đúng thứ tự của `buildSendRequest`). */
+const VAPID_SUBJECT_KEYS = ['vapidSubject', 'vapid_subject', 'subject'] as const;
+
+/**
+ * Đọc claim `sub` (RFC 8292 §2.1) từ `provider.configuration` — **không** bịa default.
+ *
+ * ⚠️ Danh sách tên khoá phải **cùng thứ tự** với `buildSendRequest`
+ * (`web-push-notification-job-application/src/delivery-pipeline.ts`): hai nơi đọc hai thứ tự
+ * khác nhau sẽ cho hai kết quả JWT khác nhau cho cùng một provider — điều mà một test trên
+ * control plane sẽ không thấy.
+ *
+ * @returns Chuỗi không rỗng đầu tiên tìm thấy, hoặc `null` khi không có khóa nào hợp lệ.
+ */
+export function readVapidSubject(configuration: Readonly<Record<string, unknown>>): string | null {
+  for (const key of VAPID_SUBJECT_KEYS) {
+    const value = configuration[key];
+    if (typeof value === 'string' && value.length > 0) {
+      return value;
+    }
+  }
+  return null;
 }
 
 /** Input của `POST /admin/v1/providers/:id/test`. */
@@ -1110,10 +1147,42 @@ export async function runProviderTest(
     };
   }
 
-  const privateKey = await ports.credentialCipher.decrypt(
-    credential.credentialCiphertext,
-    credential.credentialEncryptionVersion,
-  );
+  // ⚠️ **Giải mã credential có thể throw** (AES-GCM tag không khớp — ciphertext hoặc root key
+  // sai). Điều này thuộc nhánh `configuration_invalid` của FR-018 (decrypt lỗi), **không** phải
+  // lỗi HTTP: một credential hỏng là một kết quả của test, và trả `500` kèm message library
+  // làm mất cả hai — phân loại FR-018 lẫn chạy ga không rò secret.
+  let privateKey: string;
+  try {
+    privateKey = await ports.credentialCipher.decrypt(
+      credential.credentialCiphertext,
+      credential.credentialEncryptionVersion,
+    );
+  } catch {
+    await appendAudit(
+      deps,
+      AUDIT_EVENT.ProviderUpdated,
+      command.actor,
+      'push_provider',
+      command.providerId,
+      now,
+      {
+        app: command.app,
+        test_result: PROVIDER_TEST_RESULT.ConfigurationInvalid,
+        subscription_id: command.subscriptionId,
+      },
+    );
+    return {
+      ok: true,
+      value: {
+        result: PROVIDER_TEST_RESULT.ConfigurationInvalid,
+        providerId: command.providerId,
+        subscriptionId: command.subscriptionId,
+        durationMs: 0,
+        detail: 'Credential không giải mã được bằng keyring hiện tại.',
+      },
+    };
+  }
+
   // Đo thời gian **thật** của lần gọi provider: hai mốc lấy từ `clock` chứ không phải từ
   // `nowOverride`, vì `nowOverride` là mốc logic của use case (dùng để test) và một mốc cố
   // định sẽ cho `durationMs = 0` cho mọi lần chạy trong test — tức metric provider latency
@@ -1125,6 +1194,12 @@ export async function runProviderTest(
     auth: targetSubscription.auth,
     vapidKeyId: credential.vapidKeyId,
     privateKey,
+    // RFC 8292 §3.2: tham số `k` của header `vapid` là public key — không derive lại từ
+    // private key, dùng đúng public key đã lưu trên credential record (WP2).
+    publicKey: credential.publicKey,
+    // `sub` lấy từ provider configuration, đúng nguồn của worker (`buildSendRequest`);
+    // không có → `null`, và adapter vẫn ký JWT hợp lệ (RFC 8292 §2.1 OPTIONAL).
+    vapidSubject: readVapidSubject(target.configuration),
     timeoutMs: config.engineering.providerTestTimeoutMs,
     payloadJson: command.payloadJson,
   });

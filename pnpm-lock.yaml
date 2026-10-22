@@ -556,6 +556,12 @@ importers:
       '@ecoma-io/push-notification-infrastructure':
         specifier: workspace:*
         version: link:../../libs/push-notification-infrastructure
+      '@ecoma-io/web-push-notification-job-application':
+        specifier: workspace:*
+        version: link:../../libs/web-push-notification-job-application
+      '@ecoma-io/web-push-notification-job-infrastructure':
+        specifier: workspace:*
+        version: link:../../libs/web-push-notification-job-infrastructure
 
   apps/transactional-mail:
     dependencies:

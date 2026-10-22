@@ -226,6 +226,7 @@ export {
   releaseProvider,
   getProvider,
   listVapidPublicKeys,
+  readVapidSubject,
   rotateCredential,
   runProviderTest,
   setProviderStatus,

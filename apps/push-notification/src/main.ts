@@ -103,7 +103,6 @@ import {
   type FencedWriteOutcome,
   type IdGenerator,
   type InventoryDeps,
-  type ProviderProbe,
   type PushNotificationConfig,
   type PushNotificationPorts,
   type ReconcileDecision,
@@ -134,6 +133,7 @@ import {
 } from './wire';
 import { applicationDeviceRoutes } from './devices';
 import type { RequireApplication } from './application-routes';
+import { createProviderProbe } from './provider-probe';
 import { applicationSubscriptionRoutes } from './subscriptions';
 
 /**
@@ -1426,10 +1426,11 @@ async function runProviderHold(context: Context, hold: boolean): Promise<Respons
  * `4xx`/`5xx` ở đây khiến một `Backoffice` phân biệt "provider hỏng" với "service hỏng" bằng
  * status code và chọn nhầm remediation (§15.3: 401/403 → credential path, không retry).
  *
- * ⚠️ **Probe của control plane cố ý luôn trả `configuration_invalid`.** Provider SDK thuộc
- * delivery worker; control plane không có SDK, và FR-018 nói test gồm "actual delivery".
- * Trả `delivery_accepted` mà chưa gọi provider là một **test xanh giả** — thứ tệ hơn một test
- * đỏ vì nó dừng operator bỏ một lỗi thật.
+ * ⚠️ **Probe thật — mỗi test là một Web Push request tới push service** (`provider-probe.ts`).
+ * FR-018 đòi test gồm configuration test **+ actual delivery**, nên control plane **không** tự
+ * trả một phân loại thay cho provider: adapter bọc `createWebPushSender` của delivery plane
+ * (import hợp lệ theo tag — `type:composition` → `type:infrastructure`) và gửi một request
+ * thật. Mapping HTTP → classification (5 nhánh FR-018) nằm ở adapter, không ở đây.
  *
  * ⚠️ Payload test **không** phải payload thật: FR-018 nói test không chứa dữ liệu nhạy cảm
  * không cần thiết, nên default là một thông điệp không chứa PII.
@@ -1459,7 +1460,7 @@ worker.post('/admin/v1/providers/:providerId/test', async (context) => {
     return providerId;
   }
   return adminResultResponse(
-    await runProviderTest(adminDeps(deps), unconfiguredProviderProbe(deps.logger), {
+    await runProviderTest(adminDeps(deps), createProviderProbe(), {
       app,
       providerId,
       subscriptionId,
@@ -1475,49 +1476,6 @@ const DEFAULT_TEST_PAYLOAD_JSON = JSON.stringify({
   title: 'Push notification configuration test',
   body: 'This is a test delivery from the push-notification control plane.',
 });
-
-/**
- * Input của `ProviderProbe.sendTestDelivery` — **khai tường minh**, không trích qua
- * `Parameters<…>[0]`.
- *
- * ⚠️ Vì sao: ở target `build`, app được phân tích mà node của lib được type bằng
- * `main: ./src/index.ts` (xem `wire.ts` để biết vì sao điều đó), và
- * `Parameters<ProviderProbe['sendTestDelivery']>[0]` suy ra thành `unknown` — một probe với
- * `input: unknown` vẫn **thỏa** port về hình thức nên lỗi hiện ra ở chỗ dùng field, không phải
- * ở chỗ khai. Khai shape ở đây làm nó sai ngay lúc viết.
- */
-interface ProbeInput {
-  readonly endpoint: string;
-  readonly p256dh: string;
-  readonly auth: string;
-  readonly vapidKeyId: string;
-  readonly privateKey: string;
-  readonly timeoutMs: number;
-  readonly payloadJson: string;
-}
-
-/** Probe fail-closed của control plane — xem giải thích ở route `/test`. */
-function unconfiguredProviderProbe(logger: Logger): ProviderProbe {
-  return {
-    // ⚠️ Kiểu tham số lấy từ chính `ProviderProbe` thay vì khai lại shape: một bản khai lại ở
-    // đây là nơi thứ hai phải giữ đồng bộ với port, và nó trôi khỏi port mà không ai thấy.
-    async sendTestDelivery(input: ProbeInput) {
-      // ⚠️ Log **không** chứa endpoint/p256dh/auth/private key (FR-006, §9): chỉ
-      // `vapid_key_id` — là định danh đã có trong audit record và không phải secret.
-      logger.warn('provider_test_not_executed', {
-        vapid_key_id: input.vapidKeyId,
-        timeout_ms: input.timeoutMs,
-      });
-      return {
-        ok: false,
-        classification: 'configuration_invalid',
-        detail:
-          'Control plane chưa có provider SDK — test chưa gọi được provider. ' +
-          'Phía gửi thật thuộc web-push-notification-job.',
-      };
-    },
-  };
-}
 
 /**
  * `POST /admin/v1/providers/:id/rotate-credential` — rotate VAPID key pair (§7.2).
