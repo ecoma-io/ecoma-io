@@ -377,9 +377,10 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
     const exit = localDeploy({ worktreeRoot: root, skipSmoke: true });
     expect(exit).toBe(0);
 
-    // ensureStack (stack init) được gọi cho platform — apply GIỮ hành vi khởi tạo.
-    expect(vi.mocked(ensureStack)).toHaveBeenCalledTimes(1);
+    // ensureStack (stack init) được gọi cho platform và backoffice — apply GIỮ hành vi khởi tạo.
+    expect(vi.mocked(ensureStack)).toHaveBeenCalledTimes(2);
     expect(vi.mocked(ensureStack).mock.calls[0][1]).toBe('platform-deploy');
+    expect(vi.mocked(ensureStack).mock.calls[1][1]).toBe('backoffice-deploy');
 
     // config get rồi config set (generate password) — apply vẫn sinh password.
     const configGetCall = execMock.mock.calls.find(

@@ -585,6 +585,37 @@ function runApply(
   const runtimeRolePassword = generatePostgresPassword();
   const migratorRolePassword = generatePostgresPassword();
 
+  // Lưu hai mật khẩu vào stack config của backoffice qua stdin (KHÔNG qua argv)
+  // — tránh rò mật khẩu ra process listing / output lỗi của pulumi (CodeQL
+  // clear-text logging). Khớp pattern đã dùng cho postgres:password.
+  ensureStack(projectDir(BACKOFFICE_PROJECT), BACKOFFICE_PROJECT, ctx, env);
+  for (const [configKey, configValue] of [
+    ['namespace:runtimePassword', runtimeRolePassword],
+    ['namespace:migratorPassword', migratorRolePassword],
+  ] as const) {
+    const setResult = exec(
+      'pulumi',
+      [
+        'config',
+        'set',
+        configKey,
+        '--plaintext',
+        '--raw',
+        '--stack',
+        fullStackRef(BACKOFFICE_PROJECT, ctx),
+      ],
+      projectDir(BACKOFFICE_PROJECT),
+      env,
+      { input: configValue },
+    );
+    if (setResult.status !== 0) {
+      console.error(
+        `[local-deploy] backoffice config set ${configKey} thất bại:\\n${setResult.stderr}`,
+      );
+      return 1;
+    }
+  }
+
   // 4. Home up — image build + container + routing labels.
   console.log('[local-deploy] home up…');
   const homeOk = runProjectStep(
@@ -630,10 +661,6 @@ function runApply(
       ...sharedConfigArgs,
       '--config',
       `namespace:platformStackRef=organization/platform-deploy/${ctx.stackName}`,
-      '--config',
-      `namespace:runtimePassword=${runtimeRolePassword}`,
-      '--config',
-      `namespace:migratorPassword=${migratorRolePassword}`,
     ],
     ctx,
     env,
