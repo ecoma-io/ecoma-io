@@ -6,7 +6,9 @@
     "@ecoma-io/push-notification-application": "workspace:*",
     "@ecoma-io/push-notification-contracts": "workspace:*",
     "@ecoma-io/push-notification-domain": "workspace:*",
-    "@ecoma-io/push-notification-infrastructure": "workspace:*"
+    "@ecoma-io/push-notification-infrastructure": "workspace:*",
+    "@ecoma-io/web-push-notification-job-application": "workspace:*",
+    "@ecoma-io/web-push-notification-job-infrastructure": "workspace:*"
   },
   "nx": {
     "tags": [

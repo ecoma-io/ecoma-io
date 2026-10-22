@@ -42,6 +42,12 @@
     },
     {
       "path": "../../libs/push-notification-domain/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/web-push-notification-job-infrastructure/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/web-push-notification-job-application/tsconfig.lib.json"
     }
   ]
 }
