@@ -936,6 +936,65 @@ export class D1IdempotencyRepository implements IdempotencyRepository {
       createdAt: row.created_at,
     };
   }
+
+  async deleteEligible(input: {
+    readonly now: number;
+    readonly retentionMs: number;
+    readonly limit: number;
+  }): Promise<number> {
+    // ⚠️ **Ba điều kiện FR-008 nằm TRONG statement** (guarded conditional write, Invariant B):
+    //   (i) mọi delivery của notification đã terminal — `NOT EXISTS` delivery non-terminal;
+    //   (ii) không còn outbox record `pending`/`publishing` cho bất kỳ delivery nào của
+    //        notification đó — `NOT EXISTS` join outbox↔delivery;
+    //   (iii) `now > created_at + retentionMs` — biểu diễn `created_at < now - retentionMs`.
+    // Thiếu bất kỳ điều kiện nào → hàng **không** nằm trong tập xoá. Một statement duy nhất
+    // là ranh giới nguyên tử của D1 (DB2) nên không cần `db.batch()`; không có read-then-write.
+    //
+    // ⚠️ Xoá theo **notification**, không theo delivery: điều kiện (i)/(ii) tổng hợp trên
+    // **tất cả** delivery của notification (`push_deliveries.notification_id`), nên notification
+    // có nhiều delivery chỉ bị xoá khi mọi delivery terminal.
+    //
+    // ⚠️ Điều kiện (ii) nói về **outbox record**, KHÔNG phải job record: một delivery chưa
+    // từng được consume (không có job record) vẫn bị chặn nếu còn outbox `pending`/`publishing`.
+    const capped = clampIdempotencyLimit(input.limit);
+    const cutoff = input.now - input.retentionMs;
+    const result = await this.#db
+      .prepare(
+        `DELETE FROM notification_idempotency
+         WHERE rowid IN (
+           SELECT ni.rowid
+           FROM notification_idempotency AS ni
+           WHERE ni.created_at < ?1
+             AND NOT EXISTS (
+               SELECT 1 FROM push_deliveries AS d
+               WHERE d.notification_id = ni.notification_id
+                 AND d.status NOT IN ('delivered', 'failed', 'expired', 'cancelled')
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM push_outbox AS o
+               INNER JOIN push_deliveries AS d ON d.delivery_id = o.delivery_id
+               WHERE d.notification_id = ni.notification_id
+                 AND o.status IN ('pending', 'publishing')
+             )
+           ORDER BY ni.created_at ASC, ni.rowid ASC
+           LIMIT ?2
+         )
+         RETURNING app`,
+      )
+      .bind(cutoff, capped)
+      .all<{ readonly app: string }>();
+    // ⚠️ Đếm bằng `RETURNING`, không bằng `meta.changes`: D1 local/`meta.changes` có thể không
+    // điền (DB3) — precedent nonce store. `results.length` là con số đáng tin.
+    return result.results.length;
+  }
+}
+
+/** Trần `limit` cho một lượt cleanup — lựa chọn của service, không phải giá trị tài liệu. */
+function clampIdempotencyLimit(limit: number): number {
+  if (!Number.isSafeInteger(limit) || limit <= 0) {
+    return 100;
+  }
+  return Math.min(limit, 500);
 }
 
 export class D1AuditRepository implements AuditRepository {

@@ -119,6 +119,7 @@ function raceFixture(options: {
       // catch): record của request thắng đã commit.
       return findCalls === 1 ? null : options.raced;
     },
+    deleteEligible: async (): Promise<number> => 0,
   };
 
   const ports: PushNotificationPorts = {
