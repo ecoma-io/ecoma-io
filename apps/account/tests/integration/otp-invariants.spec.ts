@@ -69,6 +69,7 @@ function fullRuntimeConfig(connectionString: string): AccountTestRuntimeConfig {
     internalHmacSecret: 'test-internal-hmac-secret-0123456789abcdef',
     otpHmacSecret: OTP_SECRET,
     mailServiceUrl: 'https://mail.test',
+    mailInternalAuthSecret: 'test-mail-internal-auth-secret-placeholder-0001',
     cloudflare: { env: { DB_ACCOUNT: { connectionString } } },
   };
 }

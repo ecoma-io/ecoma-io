@@ -6,16 +6,39 @@
  * Contract public của `transactional-mail` là `POST /v1/messages` trên Worker
  * public của service đó (`docs/services/transactional-mail/01-architecture.md`
  * §5, §7.1). Binding service-to-service cho đường này là **hạ tầng chưa provision**
- * — `apps/transactional-mail/src/main.ts` hiện là scaffold `Hello word!`, chưa có
- * route nào. Adapter vì vậy dựng URL từ `runtimeConfig` (`mailServiceUrl`) và
- * caller fail-closed khi config thiếu — không có đường "không gửi được thì coi như
- * đã gửi".
+ * — receiver hiện serve HTTP thật, nhưng đường gọi công khai giữa hai deploy unit
+ * vẫn là HTTP fetch tới origin (`runtimeConfig.mailServiceUrl`). Adapter vì vậy
+ * dựng URL từ `runtimeConfig` và caller fail-closed khi config thiếu — không có
+ * đường "không gửi được thì coi như đã gửi".
  *
- * ⚠️ **Payload build bằng validator thật của lib contract** — cùng một hàm mà
- * phía nhận dùng để từ chối. Nếu request của ta không qua
- * `validatePostMessagesRequest` thì đó là bug của adapter, phát hiện ở test chứ
- * không ở production (`01-architecture.md` §7.1: `app` bị bỏ qua ở body,
- * `principal_id` do server kiểm soát — adapter không tự thêm field đó).
+ * ## Xác thực: envelope `ecoma-internal-v1` ký bằng lib dùng chung
+ *
+ * ⚠️ Receiver **bắt buộc** envelope HMAC trước khi vào bất kỳ logic nghiệp vụ nào
+ * (`apps/transactional-mail/src/main.ts` bước 1 của `POST /v1/messages`; middleware
+ * verify phủ mọi route cần authenticate — `01-architecture.md` §7.4). Một request
+ * không envelope là `401` thống nhất, tức **mọi** mail OTP sẽ chết im lặng nếu
+ * adapter gửi không ký.
+ *
+ * ⚠️ **Ký bằng `signRequest` của `@ecoma-io/identity-contracts`** — lib canonical
+ * duy nhất, cùng một bản cài đặt mà receiver verify. Tự viết lại HMAC ở đây là
+ * tạo một bản envelope thứ hai, lệch nhau ở chữ hoa/thường của method hay đơn vị
+ * length-prefix (đúng lệch ship hai envelope khác nhau mà JSDoc của lib nhắc tới)
+ * và chỉ lộ ra khi chữ ký đầu tiên tới receiver thật.
+ *
+ * ⚠️ **Credential là CỦA PATH NÀY.** Envelope không mang principal
+ * (`01-architecture.md` §7.4); principal được suy ra từ credential đã khớp trong
+ * registry của receiver, và `svc.account` ký bằng secret đăng ký tại
+ * `MAIL_INTERNAL_AUTH_SECRET_SVC_ACCOUNT`. Vì vậy sender phải mang credential
+ * **riêng** của path Account↔Mail (`NUXT_MAIL_INTERNAL_AUTH_SECRET` — fail-closed,
+ * không default): khoá Account↔Auth là một credential khác cho một receiver khác,
+ * và giả định "cùng một secret cho hai path" là một lỗi cấu hình mà không gì bắt
+ * được cho tới khi chữ ký lệch ở production.
+ *
+ * ⚠️ **Body đã ký phải byte-identical với body gửi đi.** `hashBody` băm đúng byte
+ * truyền vào; ký một chuỗi rồi `JSON.stringify` lại ở chỗ khác đổi thứ tự khoá /
+ * khoảng trắng ⇒ chữ ký hợp lệ trên một body không gửi đi. Vì vậy adapter tính
+ * `JSON.stringify` **một lần**, dùng đúng `Uint8Array` đó vừa để ký vừa để gửi
+ * (cùng hình thức `signEnvelope` của `auth-client.ts`).
  *
  * ## Không tự gọi provider
  *
@@ -24,6 +47,7 @@
  * request đúng contract và xử lý lỗi transport/fail-closed.
  */
 
+import { signRequest } from '@ecoma-io/identity-contracts';
 import {
   validatePostMessagesRequest,
   isPostMessagesResponse,
@@ -32,6 +56,19 @@ import {
 
 /** Logical template của mail OTP đăng nhập. Contract để chuỗi mở (open logical string). */
 export const OTP_LOGIN_TEMPLATE = 'account.login-otp';
+
+/**
+ * Path của contract public — **tường minh và không query string**.
+ *
+ * Receiver dựng canonical từ `url.pathname` và từ chối mọi request **có** query
+ * string (`apps/transactional-mail/src/internal-auth.ts` — `invalid_field` trước
+ * vòng duyệt credential). Vì vậy path ký phải đúng chuỗi này; nối query vào URL
+ * là đổi canonical thành thứ receiver không bao giờ dựng.
+ */
+export const MAIL_MESSAGES_PATH = '/v1/messages';
+
+/** Tên biến runtime config mang credential ký cho path Account↔Mail. */
+export const MAIL_INTERNAL_AUTH_SECRET_ENV = 'NUXT_MAIL_INTERNAL_AUTH_SECRET';
 
 /**
  * Timeout một lần gọi mail (ms) — dưới timeout tổng của request route.
@@ -45,6 +82,7 @@ export const MAIL_TIMEOUT_MS = 3_000;
 /** Lý do gửi mail thất bại — mã ổn định cho log, không mang chi tiết transport. */
 export type MailSendFailureReason =
   | 'config_missing'
+  | 'credential_missing'
   | 'invalid_payload'
   | 'rejected'
   | 'unreachable';
@@ -102,7 +140,7 @@ export function otpMailIdempotencyKey(correlationId: string | undefined): string
 }
 
 /**
- * Gửi mail qua `POST {mailServiceUrl}/v1/messages`.
+ * Gửi mail qua `POST {mailServiceUrl}/v1/messages` với envelope HMAC đã ký.
  *
  * ⚠️ **Fail-closed là hàm trả `{ ok: false }`, không bao giờ ném cho lỗi đã phân
  * loại** — route quyết định hành vi (OTP domain: việc mail lỗi phải để lại dấu
@@ -116,10 +154,17 @@ export function otpMailIdempotencyKey(correlationId: string | undefined): string
  *   thành lỗi transport thoáng qua).
  * @param request Request **đã validate** ({@link buildOtpMailRequest}); `null`
  *   ⇒ `{ ok: false, reason: 'invalid_payload' }` và không fetch.
+ * @param signingSecret Credential ký cho path Account↔Mail — đúng secret mà
+ *   receiver nhận diện là principal `svc.account` trong registry của nó
+ *   (`MAIL_INTERNAL_AUTH_SECRET_SVC_ACCOUNT`). Rỗng/`undefined` ⇒
+ *   `{ ok: false, reason: 'credential_missing', detail: NUXT_MAIL_INTERNAL_AUTH_SECRET }`
+ *   **trước** mọi fetch: không có đường "gửi unsigned cho biết receiver nói gì",
+ *   và detail nêu **tên biến**, không nêu giá trị (đọc được trong log platform).
  */
 export async function sendMail(
   mailServiceUrl: string | undefined,
   request: PostMessagesRequest | null,
+  signingSecret: string | undefined,
 ): Promise<MailSendResult> {
   if (request === null) {
     return { ok: false, reason: 'invalid_payload' };
@@ -127,6 +172,37 @@ export async function sendMail(
   if (mailServiceUrl === undefined || mailServiceUrl === '') {
     return { ok: false, reason: 'config_missing' };
   }
+  if (signingSecret === undefined || signingSecret === '') {
+    return {
+      ok: false,
+      reason: 'credential_missing',
+      detail: MAIL_INTERNAL_AUTH_SECRET_ENV,
+    };
+  }
+
+  // ⚠️ Một lần stringify, một `Uint8Array`: đúng byte này vừa được băm trong
+  // `signRequest`, vừa được gửi làm thân request. Ký trên chuỗi rồi stringify
+  // lại ở nhánh fetch là hai bản body có thể lệch nhau ở khoảng trắng/thứ tự khoá,
+  // và chữ ký hợp lệ trên một body không hề đi qua dây — đúng lỗi mà §7.4 coi là
+  // "sửa body ⇒ 401" nhưng chỉ phát hiện ở receiver thật.
+  const bodyBytes = new TextEncoder().encode(JSON.stringify(request));
+
+  // ⚠️ Không `kid`: receiver của path này (credential registry
+  // `MAIL_INTERNAL_AUTH_SECRET_SVC_ACCOUNT`) không khai `secretByKid`, nên một
+  // header `kid` là chỉ dẫn chọn khoá mà receiver không có hàm resolve — nó không
+  // nằm trong canonical string (không đổi chữ ký) nhưng thêm một trường mà không
+  // bên nào dùng. Khi receiver hỗ trợ `kid` cho slot này, bật nó ở sender và
+  // receiver cùng lúc, không trước.
+  //
+  // Timestamp = epoch giây tại thời điểm ký; nonce tự sinh trong `signRequest`
+  // (crypto.randomUUID — đủ mạnh cho yêu cầu replay của contract).
+  const envelope = await signRequest({
+    method: 'POST',
+    path: MAIL_MESSAGES_PATH,
+    body: bodyBytes,
+    secret: signingSecret,
+    timestamp: String(Math.floor(Date.now() / 1000)),
+  });
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), MAIL_TIMEOUT_MS);
@@ -135,13 +211,22 @@ export async function sendMail(
     // `400 invalid_request`, request không bao giờ tới được hàng SEND). Key từ
     // attempt cấu tử (correlationId per-challenge) — không phải recipient/template,
     // vì hai attempt khác nhau cùng địa chỉ phải không va nhau ở bước 5 (FR-002).
-    const response = await fetch(`${mailServiceUrl.replace(/\/+$/u, '')}/v1/messages`, {
+    //
+    // `Idempotency-Key` KHÔNG nằm trong envelope ký (receiver không băm header
+    // này vào bodyHash — `01-architecture.md` §7.4, mục "giới hạn đã nhận biết"):
+    // đổi key trên cùng payload không đổi chữ ký, đúng hợp đồng.
+    const headers = new Headers({
+      'content-type': 'application/json',
+      'idempotency-key': otpMailIdempotencyKey(request.correlation_id),
+    });
+    for (const [name, value] of Object.entries(envelope)) {
+      headers.set(name, value);
+    }
+
+    const response = await fetch(`${mailServiceUrl.replace(/\/+$/u, '')}${MAIL_MESSAGES_PATH}`, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'idempotency-key': otpMailIdempotencyKey(request.correlation_id),
-      },
-      body: JSON.stringify(request),
+      headers,
+      body: bodyBytes,
       signal: controller.signal,
     });
 

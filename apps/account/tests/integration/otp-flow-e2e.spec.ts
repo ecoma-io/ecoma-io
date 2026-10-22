@@ -67,6 +67,7 @@ function fullRuntimeConfig(connectionString: string): AccountTestRuntimeConfig {
     internalHmacSecret: 'test-internal-hmac-secret-0123456789abcdef',
     otpHmacSecret: OTP_SECRET,
     mailServiceUrl: 'https://mail.test',
+    mailInternalAuthSecret: 'test-mail-internal-auth-secret-placeholder-0001',
     cloudflare: {
       env: { DB_ACCOUNT: { connectionString } },
     },
@@ -90,7 +91,17 @@ function installMailStub(options: { status?: number; shape?: unknown } = {}): {
   }> = [];
   const original = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+    const rawBody = init?.body;
+    const isUint8 =
+      rawBody !== null &&
+      typeof rawBody === 'object' &&
+      (rawBody as { constructor?: { name?: string } }).constructor?.name === 'Uint8Array';
+    const bodyText = isUint8
+      ? new TextDecoder().decode(rawBody as Uint8Array)
+      : typeof rawBody === 'string'
+        ? rawBody
+        : String(rawBody ?? '{}');
+    const body = JSON.parse(bodyText) as Record<string, unknown>;
     const headers: Record<string, string> = {};
     for (const [key, value] of new Headers(init?.headers).entries()) {
       headers[key] = value;

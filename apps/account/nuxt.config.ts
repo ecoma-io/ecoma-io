@@ -130,6 +130,18 @@ export default defineNuxtConfig({
     // Rỗng = chưa cấu hình; luồng OTP fail-closed ở lần gửi (`server/lib/mail.ts`)
     // chứ không tự gọi provider — `account` không giữ provider credential.
     mailServiceUrl: '',
+    // Credential HMAC ký cho path Account↔Mail (`POST /v1/messages`).
+    //
+    // ⚠️ **Không dùng chung `internalHmacSecret`.** Receiver suy ra principal từ
+    // credential đã khớp (`apps/transactional-mail/src/internal-auth.ts`); secret của
+    // path này là entry `MAIL_INTERNAL_AUTH_SECRET_SVC_ACCOUNT` trong registry của
+    // receiver, khác entry của path Account↔Auth ở receiver kia. Tái sử dụng một
+    // secret cho hai path là lỗi cấu hình mà không gì bắt được cho tới khi chữ ký
+    // lệch ở production.
+    //
+    // Cùng luật `NUXT_*` ở trên: không default, thiếu ⇒ validate throw ở request
+    // đầu (fail-closed, không có "gửi unsigned" để receiver từ chối).
+    mailInternalAuthSecret: '',
     // Cửa sổ skew (giây) của envelope HMAC; rỗng ⇒ `verifyRequest` dùng mặc định
     // 300s. Để trống chứ không đặt số ở đây để chỉ có **một** nơi định nghĩa mặc định
     // (trong `identity-contracts`) — tránh hai nguồn sự thật cho cùng một luật.

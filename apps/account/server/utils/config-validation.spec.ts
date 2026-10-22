@@ -178,13 +178,109 @@ describe('validateAccountConfig — mail service URL', () => {
 
   it('accepts an https origin', () => {
     expect(() =>
-      validateAccountConfig(validConfig({ mailServiceUrl: 'https://mail.example.com' })),
+      validateAccountConfig(
+        validConfig({
+          mailServiceUrl: 'https://mail.example.com',
+          mailInternalAuthSecret: 'm'.repeat(32),
+        }),
+      ),
     ).not.toThrow();
   });
 
   it('accepts an http origin for local transactional-mail dev', () => {
     expect(() =>
-      validateAccountConfig(validConfig({ mailServiceUrl: 'http://127.0.0.1:8787' })),
+      validateAccountConfig(
+        validConfig({
+          mailServiceUrl: 'http://127.0.0.1:8787',
+          mailInternalAuthSecret: 'm'.repeat(32),
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('accepts an https origin together with a dedicated mail credential', () => {
+    // Credential của path Account↔Mail là một secret riêng (không dùng chung với
+    // internal HMAC); bộ URL + secret hợp lệ phải đi qua cùng nhau.
+    expect(() =>
+      validateAccountConfig(
+        validConfig({
+          mailServiceUrl: 'https://mail.example.com',
+          mailInternalAuthSecret: 'm'.repeat(32),
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('requires NUXT_MAIL_INTERNAL_AUTH_SECRET when the mail path is enabled', () => {
+    // Receiver xác thực envelope trước mọi logic nghiệp vụ ⇒ thiếu credential =
+    // mọi request mail là 401, tức luồng OTP chết im lặng. Fail-closed ở request
+    // đầu làm lỗi cấu hình lộ ra trước khi có người dùng chờ mã.
+    expect(() =>
+      validateAccountConfig(validConfig({ mailServiceUrl: 'https://mail.example.com' })),
+    ).toThrow(/NUXT_MAIL_INTERNAL_AUTH_SECRET/u);
+  });
+
+  it('does not require the mail credential when the mail path is off', () => {
+    // URL rỗng = đường mail tắt — không request nào chạm receiver nên không cần
+    // secret. Bắt buộc luôn sẽ phá chế độ "chưa cấu hình mail" của README.
+    expect(() =>
+      validateAccountConfig(validConfig({ mailInternalAuthSecret: undefined })),
+    ).not.toThrow();
+  });
+
+  it('rejects a mail credential shorter than the minimum length', () => {
+    // Cùng ngưỡng 32 ký tự với internal HMAC secret — một key ngắn làm HMAC dễ đoán
+    // hơn, và đây là credential xác thực service-to-service.
+    expect(() =>
+      validateAccountConfig(
+        validConfig({
+          mailServiceUrl: 'https://mail.example.com',
+          mailInternalAuthSecret: 'm'.repeat(31),
+        }),
+      ),
+    ).toThrow(/ít nhất 32 ký tự/u);
+  });
+
+  it('never reveals the configured mail credential in the error message', () => {
+    // Message lỗi đọc được trong log platform — nêu tên biến, không nêu giá trị.
+    let message = '';
+    try {
+      validateAccountConfig(
+        validConfig({
+          mailServiceUrl: 'https://mail.example.com',
+          mailInternalAuthSecret: 'm'.repeat(31),
+        }),
+      );
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).not.toContain('mmmm');
+    expect(message).toContain('NUXT_MAIL_INTERNAL_AUTH_SECRET');
+  });
+
+  it('rejects a mail credential shared with the internal HMAC secret', () => {
+    // Envelope không mang principal (`docs/services/transactional-mail/
+    // 01-architecture.md` §7.4): phía nhận suy ra principal từ credential đã khớp,
+    // nên một secret dùng cho cả hai path là cấu hình mơ hồ — chặn lúc config thay
+    // vì nhận một loạt envelope trong đó chỉ một path thực sự hợp lệ.
+    expect(() =>
+      validateAccountConfig(
+        validConfig({
+          mailServiceUrl: 'https://mail.example.com',
+          mailInternalAuthSecret: VALID_SECRET,
+        }),
+      ),
+    ).toThrow(/NUXT_MAIL_INTERNAL_AUTH_SECRET/u);
+  });
+
+  it('accepts an http origin for local transactional-mail dev', () => {
+    expect(() =>
+      validateAccountConfig(
+        validConfig({
+          mailServiceUrl: 'http://127.0.0.1:8787',
+          mailInternalAuthSecret: 'm'.repeat(32),
+        }),
+      ),
     ).not.toThrow();
   });
 
