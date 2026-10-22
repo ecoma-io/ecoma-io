@@ -339,7 +339,7 @@ Crash window phải được chấp nhận: provider accept → worker crash tr�
     POST /internal/deliveries/:delivery_id/claim      → 200 lease mới | 409 <reason>
     POST /internal/deliveries/:delivery_id/release    → 200 | 409 stale_write | 409 terminal
     POST /internal/deliveries/:delivery_id/outcome    → 200 | 409 stale_write | 409 terminal
-    POST /internal/subscriptions/:subscription_id/invalidate   (chỉ khi provider chứng minh endpoint chết — `404`)
+    POST /internal/subscriptions/:subscription_id/invalidate   (chỉ khi provider chứng minh endpoint chết — `404`/`410`)
     ```
 
     **KHÔNG** có operation đọc delivery: operation set **không** có `GET`, vì `claim` đã trả đủ delivery material cho execution đang giữ lease và **không** có use case bắt buộc nào cần đọc delivery mà không claim (`POST .../claim` là **operation duy nhất** cấp quyền thực thi và là **operation duy nhất** trả credentialed material). Một endpoint chỉ trả metadata không phục vụ use case nào thì **MUST NOT** được giữ lại chỉ vì tài liệu trước đây đã liệt kê nó.
@@ -349,7 +349,7 @@ Crash window phải được chấp nhận: provider accept → worker crash tr�
     ```text
     POST /internal/subscriptions/:subscription_id/invalidate
     Headers: X-ECOMA-PRINCIPAL: svc.web-push-notification-job · Authorization: <shared secret>
-    Body:    {}   — KHÔNG nhận evidence/payload/credential. Điều kiện "provider chứng minh endpoint chết (404)"
+    Body:    {}   — KHÔNG nhận evidence/payload/credential. Điều kiện "provider chứng minh endpoint chết (404/410)"
                     là policy phía worker (web-push-notification-job 01 §16.8, 03 §5/§7.2); control plane
                     không verify được bằng chứng đó và MUST NOT tự fetch endpoint để kiểm chứng (`02-requirements.md` FR-003).
     200 → { "subscription_id": "<id>", "status": "disabled" }      — idempotent: gọi lần 2 vẫn 200
@@ -357,7 +357,7 @@ Crash window phải được chấp nhận: provider accept → worker crash tr�
     401 → sai/thiếu credential, trước lookup, không tiết lộ tồn tại (SR-006)
     ```
 
-    `invalidate` **MUST NOT** nhận hay trả delivery material, `payload`, credential hay key material; response `200` là body ĐÓNG đúng hai field. `status` trong ack là **subscription state** theo vocabulary `FR-004` (`active` · `disabled` · `expired`) — **KHÔNG** phải một trạng thái riêng của operation. Execution hiện tại chỉ đặt `disabled` (nhánh `404`-provider → endpoint chết vĩnh viễn, §13 worker); `expired` là state dành cho subscription hết hạn theo chính sách vòng đời và **không** do operation này set ở v1 — nên ack của nhánh worker-path luôn là `disabled`. **MUST NOT** phát minh giá trị `"invalidated"` hay bất kỳ giá trị nào ngoài vocabulary `FR-004`: đó không phải state của subscription và ghi nó vào cột `status` sẽ tạo state thứ tư ngoài lifecycle. Idempotency: gọi lặp với cùng `subscription_id` đã `disabled` trả **cùng** `200` (không lỗi transition) — idempotent theo kết quả, không cần `Idempotency-Key`. Invalidate **chỉ** đổi subscription state (`active → disabled`); nó **không** đụng delivery state và **không** thu hồi claim đã thắng (giới hạn tuyến tính hoá ở claim contract). Chỉ nhánh `404`-provider được gọi operation này; `401`/`403` từ provider thì **không** (worker 01 §16.8).
+    `invalidate` **MUST NOT** nhận hay trả delivery material, `payload`, credential hay key material; response `200` là body ĐÓNG đúng hai field. `status` trong ack là **subscription state** theo vocabulary `FR-004` (`active` · `disabled` · `expired`) — **KHÔNG** phải một trạng thái riêng của operation. Execution hiện tại chỉ đặt `disabled` (nhánh `404`/`410`-provider → endpoint chết vĩnh viễn, §13 worker); `expired` là state dành cho subscription hết hạn theo chính sách vòng đời và **không** do operation này set ở v1 — nên ack của nhánh worker-path luôn là `disabled`. **MUST NOT** phát minh giá trị `"invalidated"` hay bất kỳ giá trị nào ngoài vocabulary `FR-004`: đó không phải state của subscription và ghi nó vào cột `status` sẽ tạo state thứ tư ngoài lifecycle. Idempotency: gọi lặp với cùng `subscription_id` đã `disabled` trả **cùng** `200` (không lỗi transition) — idempotent theo kết quả, không cần `Idempotency-Key`. Invalidate **chỉ** đổi subscription state (`active → disabled`); nó **không** đụng delivery state và **không** thu hồi claim đã thắng (giới hạn tuyến tính hoá ở claim contract). Chỉ nhánh `404`/`410`-provider được gọi operation này; `401`/`403` từ provider thì **không** (worker 01 §16.8).
 
     **KHÔNG** expose `Admin API`; **KHÔNG** có operation discovery theo `app`/`user`; **KHÔNG** có operation reroute. `web-push-notification-job` **KHÔNG** gọi `Admin API` và **KHÔNG** truy cập D1 `push` (owner → `docs/overview/01-architecture.md` §4 · `docs/services/web-push-notification-job/01-architecture.md` §6.1).
 

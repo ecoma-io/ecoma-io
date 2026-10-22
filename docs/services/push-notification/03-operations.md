@@ -156,11 +156,13 @@ Lặp lại hoặc gọi đồng thời từng operation là an toàn: `retry`/`
 | `429`       | transient / retry                         | backoff, tôn trọng `Retry-After`                           |
 | `5xx`       | transient / retry                         | retry                                                      |
 | `404`       | subscription invalidation                 | mark failed, invalidate subscription, ACK                  |
+| `410`       | subscription invalidation (endpoint gone) | mark failed, invalidate subscription, ACK                  |
 | `401`/`403` | provider credential/configuration failure | provider-level failure path — xem dưới                     |
 | `413`       | permanent payload failure                 | mark failed, ACK, không retry                              |
 | `3xx`       | permanent (redirect không được đi theo)   | mark failed, ACK, **không** invalidate subscription, alert |
 
-- **Transient** (timeout, connection reset, 5xx, 429, DNS tạm): retry. **Permanent** (subscription invalid, endpoint expired, provider-level credential invalid — **không** invalidate subscription, malformed payload): mark failed, ACK. **Unknown:** retry → vượt limit → DLQ. Subscription invalidation **chỉ** khi provider chứng minh endpoint không còn hợp lệ (thường `404`).
+- **Transient** (timeout, connection reset, 5xx, 429, DNS tạm): retry. **Permanent** (subscription invalid, endpoint expired, provider-level credential invalid — **không** invalidate subscription, malformed payload): mark failed, ACK. **Unknown:** retry → vượt limit → DLQ. Subscription invalidation **chỉ** khi provider chứng minh endpoint không còn hợp lệ (`404` hoặc `410`).
+- **`410` — class `endpoint_invalid`, giống hệt `404` về hành vi:** RFC 8030 §7.3 quy định `404` cho subscription hết hạn trên **send path**; `410` là hành vi **ngoài spec** cho send path (spec chỉ dùng `410` cho receipt channel §6.2/§6.3). Push service sản phẩm — Mozilla autopush — dùng `410` cho "endpoint không còn dùng được vĩnh viễn" (`ApiErrorKind::NoUser | NoSubscription` → `StatusCode::GONE`, `autoendpoint/src/error.rs`; errno 103/105/106, `docs/src/errors.md`). Vì vậy `410` cùng lớp ngữ nghĩa với `404`: `endpoint_invalid` → mark failed → invalidate subscription → ACK, **không** retry. `http_status` giữ **410** (không gộp vào `404`) trong metrics/log để operator phân biệt spike 404 với spike 410.
 - **`401`/`403`:** mark failed, ACK, ghi nhận theo `provider_id` và alert; **không retry**, **không** invalidate subscription, không disable hàng loạt — remediation ở §6/§7 cho các delivery tiếp theo.
 - **429:** tôn trọng `Retry-After`, tránh tight retry loop; backlog do 429 → giảm effective concurrency, không tăng concurrency vô hạn (§16).
 - Không tự động reroute sang provider khác nếu routing policy không cho phép (`01-architecture.md` §5.3).

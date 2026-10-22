@@ -42,7 +42,7 @@ Trước khi trả `retry()`, worker **MUST release lease** (`POST /internal/del
 
 ### FR-009 — Permanent Failure, Subscription Invalidation và Provider Authentication Failure
 
-Worker MUST không retry vô hạn permanent errors. Khi **provider response chứng minh** subscription không còn hợp lệ (thường `404`): (1) mark delivery failed/permanent; (2) request disable/expire subscription; (3) ACK sau khi state persist. Worker MUST NOT xóa trực tiếp DB record, tạo subscription mới hay chọn subscription khác.
+Worker MUST không retry vô hạn permanent errors. Khi **provider response chứng minh** subscription không còn hợp lệ (`404` hoặc `410`): (1) mark delivery failed/permanent; (2) request disable/expire subscription; (3) ACK sau khi state persist. Worker MUST NOT xóa trực tiếp DB record, tạo subscription mới hay chọn subscription khác.
 
 Provider credential/configuration failure (`401`/`403`) và payload failure (`413`) là permanent cho delivery attempt nhưng MUST NOT dẫn tới disable subscription; worker MUST NOT disable subscriptions hàng loạt vì credential/configuration sai.
 
