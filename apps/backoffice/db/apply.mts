@@ -65,14 +65,21 @@ export interface ApplyMigrationsOptions {
  * `provision()` của integration harness ghi chú.
  *
  * Thứ tự:
- * 1. `pg_advisory_lock(hashtext('db-backoffice'))` — chặn hai runner chạy song
+ * 1. Assert `current_database()` = {@link BACKOFFICE_DATABASE} (F3, issue
+ *    #101) — TRƯỚC advisory lock. Một `DATABASE_URL` trỏ nhầm database (vd
+ *    `db-account` cùng cluster) mà không assert này sẽ migrate thành công:
+ *    schema `backoffice` rơi vào database sai, trọn bộ guard CONNECT/role của
+ *    ranh giới không có tác dụng, và mọi migration sau đó chạy trên một
+ *    database không thuộc sở hữu của service. Assert này biến cấu hình sai
+ *    thành lỗi tường minh ở lần chạy đầu thay vì một database nửa-thế-giới.
+ * 2. `pg_advisory_lock(hashtext('db-backoffice'))` — chặn hai runner chạy song
  *    song. Lock session-scoped nên tự nhả khi connection đóng. `hashtext`
  *    phía server thay vì hard-code hash trong code — đổi tên database thì
  *    khóa đổi theo.
- * 2. Apply từng file theo thứ tự tên. File hỏng dừng ngay và ném lỗi kèm tên
+ * 3. Apply từng file theo thứ tự tên. File hỏng dừng ngay và ném lỗi kèm tên
  *    file — expand → compatible rollout → contract, forward-fix, không
  *    down-migration.
- * 3. Đếm bảng trong schema `backoffice`. Không có bảng ledger riêng: catalog
+ * 4. Đếm bảng trong schema `backoffice`. Không có bảng ledger riêng: catalog
  *    `pg_class` là nguồn sự thật — mọi câu DDL trong `migrations/` phải là
  *    idempotent, apply lại là no-op.
  */
@@ -80,6 +87,17 @@ export async function applyAllMigrations(
   client: Client,
   options?: ApplyMigrationsOptions,
 ): Promise<ApplyMigrationsResult> {
+  const { rows: currentDbRows } = await client.query<{ db: string }>(
+    'SELECT current_database() AS db',
+  );
+  const currentDb = currentDbRows[0]?.db;
+  if (currentDb !== BACKOFFICE_DATABASE) {
+    throw new Error(
+      `migration runner is connected to "${currentDb ?? 'unknown'}", expected "${BACKOFFICE_DATABASE}" ` +
+        `— DATABASE_URL must point at ${BACKOFFICE_DATABASE} (ADR-0001), refusing to migrate a foreign database`,
+    );
+  }
+
   await client.query('SELECT pg_advisory_lock(hashtext($1))', [BACKOFFICE_DATABASE]);
 
   let applied = 0;

@@ -43,6 +43,7 @@ export {
   can,
   type AuthorizationDecision,
   type AuthorizationDenialReason,
+  type AuthorizationMode,
   type AuthorizationRiskClass,
   type CatalogPermission,
   type GrantedAssignment,
