@@ -11,9 +11,21 @@
 import type { H3Event } from 'h3';
 import { describe, expect, it } from 'vitest';
 
+import { BACKOFFICE_ACCOUNT_ID_ENTROPY_CHARS } from '@ecoma-io/backoffice-domain';
+
 import { PRINCIPAL_CONTEXT_KEY, readPrincipal, requirePrincipal } from './principal';
 
-const VALID_SUB = `sub_${'a'.repeat(52)}`;
+/**
+ * Account ID hợp lệ theo `isBackofficeAccountId`: prefix `sub_` + phần entropy
+ * đúng độ dài mà producer (`account`) phát hành.
+ *
+ * ⚠️ Độ dài lấy từ hằng `BACKOFFICE_ACCOUNT_ID_ENTROPY_CHARS` chứ không viết
+ * literal: `isBackofficeAccountId` từ chối mọi `sub` khác độ dài, nên một
+ * literal lệch (52 ký tự — format local cũ đã bị gỡ ở F1, issue #101) làm
+ * `readPrincipal` trả `null` ⇒ `requirePrincipal` ném `503` ⇒ mọi test ở đây
+ * đỏ **vì lý do sai**.
+ */
+const VALID_SUB = `sub_${'a'.repeat(BACKOFFICE_ACCOUNT_ID_ENTROPY_CHARS)}`;
 
 /** Event giả — chỉ cần `context`, đúng phần mà module này đọc. */
 function fakeEvent(context: Record<string, unknown>): H3Event {

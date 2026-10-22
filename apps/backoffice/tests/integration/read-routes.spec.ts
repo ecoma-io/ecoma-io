@@ -32,6 +32,8 @@
 import { createApp, createRouter, defineEventHandler, toWebHandler } from 'h3';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { BACKOFFICE_ACCOUNT_ID_ENTROPY_CHARS } from '@ecoma-io/backoffice-domain';
+
 import staffRoute from '../../server/api/staff.get';
 import rolesRoute from '../../server/api/roles.get';
 import permissionsRoute from '../../server/api/permissions.get';
@@ -46,12 +48,18 @@ import {
 const dockerAvailable = await probeDocker();
 
 /**
- * Account ID hợp lệ theo `isBackofficeAccountId`: prefix `sub_` + 52 ký tự
- * base32 viết thường (`a`…`z`, `2`…`7`). 52 ký tự là entropy chuẩn của
- * `backoffice` (260 bit).
+ * Account ID hợp lệ theo `isBackofficeAccountId`: prefix `sub_` + 32 ký tự
+ * base32 viết thường (`a`…`z`, `2`…`7`) — 160 bit, đúng bằng entropy mà
+ * producer (`account`) cấp.
+ *
+ * ⚠️ Độ dài lấy từ hằng `BACKOFFICE_ACCOUNT_ID_ENTROPY_CHARS` chứ không viết
+ * literal: `isBackofficeAccountId` từ chối mọi `sub` khác độ dài, nên một
+ * literal lệch (52 ký tự — format local cũ đã bị gỡ ở F1, issue #101) làm
+ * `readPrincipal` trả `null` ⇒ `requirePrincipal` ném `503` ⇒ mọi test ở đây
+ * đỏ **vì lý do sai**.
  */
 function accountId(char: string): string {
-  return `sub_${char.repeat(52)}`;
+  return `sub_${char.repeat(BACKOFFICE_ACCOUNT_ID_ENTROPY_CHARS)}`;
 }
 
 const READER = accountId('a');
