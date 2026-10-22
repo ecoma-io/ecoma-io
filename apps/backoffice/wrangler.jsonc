@@ -55,6 +55,42 @@
   "env": {
     "staging": {
       "name": "stg-ecoma-backoffice",
+      // Hyperdrive binding tới `db-backoffice` — khai **cho staging** để 3 read
+      // route của issue #99 có đường đọc DB thật.
+      //
+      // ⚠️ **CHỈ tên binding — không host, không port, không user, không
+      // password.** `01-architecture.md` invariant 4: application code chỉ chứa
+      // tên binding. `id` ở đây là định danh Hyperdrive config **theo môi
+      // trường** (thuộc hạ tầng), không phải thông tin kết nối; connection
+      // string thật lấy ở runtime qua `binding.connectionString`.
+      //
+      // ⚠️ **`id` dưới đây là placeholder toàn số 0 — deploy layer sẽ thay.**
+      // `db-backoffice` chưa được provision; schema của Wrangler bắt buộc có
+      // `id` (placeholder giữ config hợp lệ và fail closed lúc deploy thay vì
+      // deploy xanh rồi lỗi lúc chạy). Credential của runtime role không nằm
+      // ở file này — nó thuộc `wrangler secret` / tầng deploy riêng.
+      //
+      // ⚠️ **Binding này KHÔNG được Preview dùng** (`01-architecture.md`
+      // invariant 2): Worker đích giữ Hyperdrive production nên một Preview
+      // gọi binding là **ghi vào dữ liệu production qua một Worker
+      // production**. Wrangler **không** inherit binding giữa các `env.<lane>`
+      // (đo trên `wrangler` 4.151.0: top-level `hyperdrive` không xuất hiện ở
+      // `env.staging`/`env.production`), nên mỗi `env` phải khai binding của
+      // chính nó — staging tuyệt đối không trỏ vào Hyperdrive production.
+      //
+      // ⚠️ **QUERY CACHE OFF — bắt buộc, không có ngoại lệ.** Cache được đặt ở
+      // **config Hyperdrive**, không phải ở `wrangler.jsonc`, nên không có key
+      // nào ở file này tắt được nó; việc tắt là thao tác vận hành trên
+      // `db-backoffice`. Lý do: HD3 (cache bật mặc định, `max_age` 60s) +
+      // HD4 (cache **không** invalidate khi ghi) ⇒ một staff vừa bị thu hồi
+      // role vẫn được đọc là còn quyền trong tối đa 60s. Đây là đường
+      // correctness nên không có ngoại lệ nào.
+      "hyperdrive": [
+        {
+          "binding": "DB_BACKOFFICE",
+          "id": "00000000000000000000000000000000",
+        },
+      ],
       // Origin dùng cho smoke check. KHÔNG phải thuộc tính Wrangler — Wrangler
       // bo qua nó; nó tồn tại để `tools/delivery` có một origin tất định cho
       // deploy unit mà không phải suy đoán từ `account_id` (subdomain
