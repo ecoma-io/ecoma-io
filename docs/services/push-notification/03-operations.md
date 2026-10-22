@@ -178,7 +178,7 @@ Phân loại ba nhóm outcome, operation `release`, và thứ tự **release tr�
 
 ### 6.1. Configuration management
 
-Provider quản lý qua `Admin API`: `create` · `update` · `enable` · `disable` · `test` · `rotate credential`. Mọi thay đổi production provider phải có audit record (§14). Validation trước production enable — chỉ `disabled → enabled` sau khi pass: `configuration schema` · `credential availability` · `credential validity` · `provider connectivity` · `test delivery`. Operational rule: `one active primary provider per App + Transport` — `Admin API` MUST từ chối cấu hình tạo ambiguity, không bao giờ chọn provider random/thứ tự database (`01-architecture.md` §5.3).
+Provider quản lý qua `Admin API`: `create` · `update` · `enable` · `disable` · `test` · `rotate credential`. Mọi thay đổi production provider phải có audit record (§14). Validation trước production enable — `Admin API` chỉ cho `disabled → enabled` sau khi pass ba precondition fail-closed: `configuration schema` · `credential availability` · `credential validity`. `provider connectivity` · `test delivery` là **bước runbook của operator** (§6.4), chạy qua `POST /admin/v1/providers/:id/test` với kết quả phân loại theo FR-018 (`02-requirements.md`) — không phải gate fail-closed phía API. Operational rule: `one active primary provider per App + Transport` — `Admin API` MUST từ chối cấu hình tạo ambiguity, không bao giờ chọn provider random/thứ tự database (`01-architecture.md` §5.3).
 
 ### 6.2. Provider health
 
