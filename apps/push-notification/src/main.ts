@@ -68,6 +68,7 @@ import {
   administrativeRetry,
   claimDelivery,
   claimProviderPrimary,
+  cleanupIdempotencyRecords,
   createNotification,
   createProvider,
   deleteProviderByAdmin,
@@ -102,6 +103,7 @@ import {
   type DeliveryRuntimeDeps,
   type FencedWriteOutcome,
   type IdGenerator,
+  type IdempotencyCleanupDeps,
   type InventoryDeps,
   type ProviderProbe,
   type PushNotificationConfig,
@@ -450,6 +452,10 @@ function outboxPublisherDeps(context: RequestContext): {
 
 function reconciliationDeps(context: RequestContext): ReconciliationDeps {
   return { config: context.config, ports: context.ports, ids: context.ids };
+}
+
+function idempotencyCleanupDeps(context: RequestContext): IdempotencyCleanupDeps {
+  return { config: context.config, ports: context.ports };
 }
 
 /* -------------------------------------------------------------------------------------- */
@@ -1049,6 +1055,37 @@ worker.post('/internal/reconcile/deliveries', async (context) => {
       reason: decision.reason,
     })),
   });
+});
+
+/**
+ * `POST /internal/idempotency/cleanup` — cleanup idempotency record theo **đúng ba điều
+ * kiện canonical của FR-008** (điều kiện xoá an toàn).
+ *
+ * ⚠️ **Điều kiện nằm trong statement, không phải read-then-write.** Ba điều kiện (i)/(ii)/(iii)
+ * của FR-008 được kiểm tra trong chính predicate của `DELETE` (guarded conditional write,
+ * Invariant B) — thiếu bất kỳ điều kiện nào thì hàng không nằm trong tập xoá. Điều kiện (i)
+ * tổng hợp trên **tất cả** delivery của notification (`NOT EXISTS` delivery non-terminal); điều
+ * kiện (ii) kiểm **outbox record** `pending`/`publishing` (KHÔNG phải job record); điều kiện
+ * (iii) so `created_at + retention` với `now`.
+ *
+ * ⚠️ **Retention lấy từ config**, không tự chọn: `IDEMPOTENCY_RETENTION_MS` (launch gate,
+ * `03-operations.md` §11/§13). `queue_retention` **không** thay thế được.
+ *
+ * ⚠️ **Admin guard** (cùng boundary với reconciliation/publisher): đây là operation control
+ * plane xoá dữ liệu theo retention — không phải delivery runtime, cũng không phải capability
+ * của Application API. Trigger định kỳ là một quyết định vận hành chưa chốt (cùng nhóm với
+ * cron của publisher) — route cho phép gọi thủ công/automation khi đã chốt, không tự bịa lịch.
+ *
+ * ⚠️ **Idempotent**: gọi lại nhiều lần không phá hỏng gì — đã thoả thì xoá, chưa thoả thì giữ;
+ * không hồi sinh delivery terminal nào (FR-008 replay semantics giữ nguyên).
+ */
+worker.post('/internal/idempotency/cleanup', async (context) => {
+  const authorizedCall = guard(context, 'admin');
+  if (authorizedCall instanceof Response) {
+    return authorizedCall;
+  }
+  const result = await cleanupIdempotencyRecords(idempotencyCleanupDeps(authorizedCall.context));
+  return json({ deleted: result.deleted });
 });
 
 /**

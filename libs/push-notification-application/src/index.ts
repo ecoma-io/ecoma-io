@@ -213,6 +213,9 @@ export type {
   ReconciliationDeps,
 } from './reconciliation';
 
+export { cleanupIdempotencyRecords } from './idempotency-cleanup';
+export type { IdempotencyCleanupDeps, IdempotencyCleanupResult } from './idempotency-cleanup';
+
 /* -------------------------------------------------------------------------------------- */
 /* Admin API (FR-017, FR-018, FR-020)                                                          */
 /* -------------------------------------------------------------------------------------- */
