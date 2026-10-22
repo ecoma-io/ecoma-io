@@ -205,9 +205,33 @@ describe('import boundaries', () => {
 
   it('adapter.ts imports only the gating modules, no request API', () => {
     expect(BACKOFFICE_DATA.adapter).toMatch(/from '\.\/data-mode'/u);
-    expect(BACKOFFICE_DATA.adapter).toMatch(/from '\.\/mock-adapter'/u);
+    expect(BACKOFFICE_DATA.adapter).toMatch(/import\('\.\/mock-adapter'\)/u);
     expect(BACKOFFICE_DATA.adapter).toMatch(/from '\.\/unavailable-adapter'/u);
     expect(BACKOFFICE_DATA.adapter).not.toMatch(/#app|#imports|nitropack|h3/u);
+  });
+
+  it('adapter.ts loads the mock adapter through a dynamic import, not a static one', () => {
+    // Import tĩnh của `mock-adapter` kéo `prototype-fixture` vào client bundle
+    // của mọi env (S6): gating chỉ chặn *dùng* fixture, không chặn *phát bytes*.
+    // Dynamic `import()` là điều kiện để bundler tách fixture thành chunk riêng,
+    // nên assertion này phải khẳng định cả hai chiều: specifier động có mặt ở
+    // điểm chọn adapter, và dạng tĩnh không tồn tại ở đó.
+    expect(BACKOFFICE_DATA.adapter).toMatch(/import\('\.\/mock-adapter'\)/u);
+    expect(BACKOFFICE_DATA.adapter).not.toMatch(/from '\.\/mock-adapter'/u);
+  });
+
+  it('adapter.ts pins the factory registry exhaustively, with no type cast', () => {
+    // Bảng mode → factory được đánh dấu `satisfies Readonly<Record<...>>`:
+    // thêm mode mới vào `data-mode.ts` mà quên khai factory là lỗi compile.
+    // `as unknown as` ở đây chính là lỗ hổng S7 — nó tắt đúng phép kiểm đó,
+    // nên cả ba chiều được ghim: `satisfies` phải có mặt (mutation "bỏ
+    // satisfies" đỏ), phép cast bị cấm (mutation "thêm lại cast" đỏ), và
+    // chú thích `Partial` phải có mặt (mutation "đổi sang Record đầy đủ rồi
+    // bỏ `??` fallback" sẽ đi qua đây). Ghim trên chữ đã gỡ comment: comment
+    // có nhắc `as unknown as` để giải thích lý do cấm thì không được thoá.
+    expect(BACKOFFICE_DATA.adapter).toMatch(/satisfies Readonly<Record<BackofficeDataMode/u);
+    expect(BACKOFFICE_DATA.adapter).toMatch(/Partial<Record<BackofficeDataMode/u);
+    expect(BACKOFFICE_DATA.adapter).not.toMatch(/as unknown as/u);
   });
 
   it('adapter.ts compares against the mode constant, not a literal', () => {
