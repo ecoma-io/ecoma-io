@@ -131,13 +131,43 @@ function createApp(): Hono<AppEnv> {
   // Body limit — đọc Content-Length trước khi buffer body. Không annotate
   // tường minh: `Promise<Response | void>` viết ra vi phạm
   // `no-invalid-void-type`, còn ngữ cảnh của `app.use` đã đặt kiểu đúng.
+  // Body limit — đếm byte THẬT trên stream, không tin `Content-Length` (request
+  // chunked không có header đó và bypass mọi check dựa trên header). Đọc từng
+  // chunk, dừng NGAY khi vượt trần; buffer lại body để downstream (route) vẫn
+  // đọc được qua `c.req.raw.body`.
   app.use('*', async (c, next) => {
-    const contentLength = c.req.header('content-length');
-    if (contentLength !== undefined && Number.parseInt(contentLength, 10) > MAX_BODY_BYTES) {
-      return c.json(
-        { error: 'Payload Too Large', message: `Body exceeds ${MAX_BODY_BYTES} bytes` },
-        413,
-      );
+    const body = c.req.raw.body;
+    if (body !== null) {
+      const reader = body.getReader();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > MAX_BODY_BYTES) {
+          await reader.cancel();
+          return c.json(
+            { error: 'Payload Too Large', message: `Body exceeds ${MAX_BODY_BYTES} bytes` },
+            413,
+          );
+        }
+        chunks.push(value);
+      }
+      const merged = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        merged.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      const original = c.req.raw;
+      const headers = new Headers(original.headers);
+      headers.delete('transfer-encoding');
+      c.req.raw = new Request(original.url, {
+        method: original.method,
+        headers,
+        body: total === 0 ? null : merged,
+      });
     }
     await next();
     return undefined;

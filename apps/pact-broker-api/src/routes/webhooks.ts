@@ -14,6 +14,7 @@ import type { AppEnv } from '../domain/types';
 import { currentTenantId } from '../middleware/tenant-context';
 import { HalBuilder, getBaseUrl } from '../domain/hal';
 import { PgWebhookRepo } from '../repo/webhook-repo';
+import { readJsonBodyWithLimit } from '../middleware/validate';
 
 const webhookCreateSchema = object({
   events: array(zEnum(['contract_published', 'provider_verification_published'])).min(
@@ -92,12 +93,12 @@ export function webhookRoutes(
 
   // Create webhook
   app.post('/', writeAuth(), async (c) => {
-    let raw: unknown;
-    try {
-      raw = await c.req.json();
-    } catch {
+    const bodyResult = await readJsonBodyWithLimit(c, 1 * 1024 * 1024, 'Webhook body');
+    if (!bodyResult.ok) return bodyResult.errorResponse;
+    if (bodyResult.value === undefined) {
       return c.json({ error: 'Bad Request', message: 'Invalid JSON body' }, 400);
     }
+    const raw = bodyResult.value;
     const parsed = webhookCreateSchema.safeParse(raw);
     if (!parsed.success) {
       const first = parsed.error.issues[0];
@@ -141,12 +142,12 @@ export function webhookRoutes(
     if (!UUID_RE.test(id)) {
       return c.json({ error: 'Not Found', message: 'Webhook not found' }, 404);
     }
-    let raw: unknown;
-    try {
-      raw = await c.req.json();
-    } catch {
+    const bodyResult = await readJsonBodyWithLimit(c, 1 * 1024 * 1024, 'Webhook body');
+    if (!bodyResult.ok) return bodyResult.errorResponse;
+    if (bodyResult.value === undefined) {
       return c.json({ error: 'Bad Request', message: 'Invalid JSON body' }, 400);
     }
+    const raw = bodyResult.value;
     const parsed = webhookUpdateSchema.safeParse(raw);
     if (!parsed.success) {
       const first = parsed.error.issues[0];
