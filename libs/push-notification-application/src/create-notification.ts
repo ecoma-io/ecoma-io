@@ -416,16 +416,32 @@ export async function createNotification(
     };
   }
 
-  await ports.audit.append({
-    auditId: deps.ids.next(),
-    event: 'notification_created',
-    actor: command.principalId,
-    entityType: 'push_notification',
-    entityId: notificationId,
-    // Audit không chứa payload/endpoint/secret (FR-020, SR-005) — chỉ số lượng và scope.
-    detail: { app: command.authenticatedApp, deliveries: deliveries.length },
-    now,
-  });
+  // Audit ghi **sau** khi batch đã commit. Audit là bằng chứng quan sát được (FR-020),
+  // không phải điều kiện của kết cục: nếu audit thất bại, notification đã persist vẫn là
+  // kết cục thật — phải trả thành công, chỉ log để operator thấy (B-11). Không chứa
+  // payload/endpoint/secret (FR-020, SR-005).
+  try {
+    await ports.audit.append({
+      auditId: deps.ids.next(),
+      event: 'notification_created',
+      actor: command.principalId,
+      entityType: 'push_notification',
+      entityId: notificationId,
+      detail: { app: command.authenticatedApp, deliveries: deliveries.length },
+      now,
+    });
+  } catch {
+    // eslint-disable-next-line no-console -- application không có logger port; Workers ghi log qua console.
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        service: 'push-notification',
+        message: 'notification_created_audit_append_failed',
+        notificationId,
+        app: command.authenticatedApp,
+      }),
+    );
+  }
 
   return {
     ok: true,
