@@ -51,6 +51,7 @@
 - Badge SVG public (đòi public read — mâu thuẫn SR-003; cân nhắc sau).
 - UI quản lý tenant toàn hệ thống (dashboard chỉ thấy tenant của mình).
 - Cross-tenant sharing pacts (nhất thiết tenant-isolated).
+- BFF session/principal auth cho `pact-broker-app` (#144) — hoãn tới khi đường mang credential tới BFF được chốt (ADR-0011 pattern, xem #116). Dashboard hiện fail-closed theo broker-config (503 khi thiếu config) và read-only (read-only-bff invariant); machine token scope `read` server-side.
 - Migration UI/down-migration.
 
 ## 5. Acceptance
