@@ -1,7 +1,7 @@
 /**
  * `internal_nonces` — kho bền cho replay guard của đường nội bộ.
  *
- * Đây là bảng mà `verifyRequest` (`libs/identity-contracts/src/internal-auth.ts`)
+ * Đây là bảng mà `verifyRequest` (`libs/internal-auth-contracts/src/internal-auth.ts`)
  * gọi qua callback `claimNonce`. Vì vậy test ở đây không kiểm tra SQL cho vui:
  * chúng kiểm tra **tính chất mà `verifyRequest` dựa vào**, và tính chất đó có
  * hai mặt dễ tự lừa:
@@ -80,7 +80,7 @@ describe('internal_nonces', () => {
     const { resolve } = await import('node:path');
 
     const source = readFileSync(
-      resolve(import.meta.dirname, '../../../../libs/identity-contracts/src/internal-auth.ts'),
+      resolve(import.meta.dirname, '../../../../libs/internal-auth-contracts/src/internal-auth.ts'),
       'utf8',
     );
     const declared = /DEFAULT_SKEW_SECONDS = (\d+)/u.exec(source);

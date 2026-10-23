@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "dependencies": {
-    "@ecoma-io/identity-auth-contracts": "workspace:*",
+    "@ecoma-io/internal-auth-contracts": "workspace:*",
     "@ecoma-io/transactional-mail-contracts": "workspace:*",
     "@ecoma-io/transactional-mailer-job-application": "workspace:*",
     "@ecoma-io/transactional-mailer-job-infrastructure": "workspace:*"

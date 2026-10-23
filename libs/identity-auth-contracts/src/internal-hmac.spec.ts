@@ -44,7 +44,7 @@ const bytes = (value: string): Uint8Array => new TextEncoder().encode(value);
  * method không phân biệt hoa/thường, body rỗng vẫn có hash, từ chối nonce yếu, từ chối
  * sai secret / body / path / method, cửa sổ skew và biên của nó, chữ ký thiếu version,
  * query string nằm trong chuỗi ký, đọc header không phân biệt hoa/thường) đều được phủ
- * ở **bản canonical** — `libs/identity-contracts/src/internal-auth.spec.ts`, gồm cả
+ * ở **bản canonical** — `libs/internal-auth-contracts/src/internal-auth.spec.ts`, gồm cả
  * golden vector tính bằng một cài đặt độc lập. File này giữ lại đúng phần mà bản
  * canonical **không** phủ được: chứng minh gói này **không** sinh ra envelope thứ hai.
  *

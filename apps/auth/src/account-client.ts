@@ -26,7 +26,7 @@ import { createPostgresClient, recordNonce } from '@ecoma-io/identity-auth-infra
  * `AUTH_INTERNAL_SECRET`.
  *
  * ⚠️ **Thứ tự kiểm của `verifyRequest` là timestamp (định dạng + skew) TRƯỚC chữ ký** — xem
- * thứ tự trong `libs/identity-contracts/src/internal-auth.ts`. Comment ở đây từng ghi ngược
+ * thứ tự trong `libs/internal-auth-contracts/src/internal-auth.ts`. Comment ở đây từng ghi ngược
  * lại ("kiểm chữ ký trước cả kiểm skew"), đúng với bản `auth` cũ nhưng sai với bản hợp nhất.
  * Ai đọc comment đó rồi suy ra thứ tự của `reason` sẽ suy sai: một envelope quá cũ trả
  * `bad_timestamp` mà **không** chạm tới bước kiểm chữ ký, nên log sẽ không bao giờ thấy
@@ -148,7 +148,7 @@ export async function signInternalRequest(params: {
  * "không có kho nonce" trở thành **lỗi type**, không còn là hành vi lúc chạy.
  * ⚠️ **`body` là byte thô, không phải chuỗi.** Call site đọc body từ dây và truyền thẳng mảng
  * byte đó xuống; hàm này không decode (và không có đường nào để nó decode — xem
- * `libs/identity-contracts/src/internal-auth.ts`). Decode ở đây là biến chữ ký thành chữ ký
+ * `libs/internal-auth-contracts/src/internal-auth.ts`). Decode ở đây là biến chữ ký thành chữ ký
  * của một ảnh chiếu mất thông tin của payload, đúng lỗi mà PR này sửa.
  */
 export async function isAuthenticatedInternalRequest(params: {

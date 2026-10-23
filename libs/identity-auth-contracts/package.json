@@ -12,7 +12,8 @@
     }
   },
   "dependencies": {
-    "@ecoma-io/identity-contracts": "workspace:*"
+    "@ecoma-io/identity-contracts": "workspace:*",
+    "@ecoma-io/internal-auth-contracts": "workspace:*"
   },
   "nx": {
     "tags": [

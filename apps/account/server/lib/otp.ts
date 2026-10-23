@@ -23,7 +23,7 @@
  * ⚠️ Không import `node:*`: `.oxlintrc.json` cấm Node builtin trong `apps/**`
  * (`runtime:edge`). WebCrypto (`crypto.subtle`, `crypto.getRandomValues`) là
  * global có trên cả Workers lẫn Node ≥ 19 — cùng đường với
- * `libs/identity-contracts/src/internal-auth.ts`.
+ * `libs/internal-auth-contracts/src/internal-auth.ts`.
  */
 
 /** Số chữ số của mã OTP. 8 chữ số = 10^8 không gian. */
@@ -420,7 +420,7 @@ export async function insertChallenge(
     /** Cửa sổ dài của rate limit (giây) — cùng nguồn với phép đo pre-check route. */
     rateLimitHourWindowSeconds: number;
   },
-): Promise<{ id: string; expiresAt: Date } | null> {
+): Promise<{ id: string; expiresAt: Date } | undefined> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -444,9 +444,9 @@ export async function insertChallenge(
     const activeRow = active.rows[0];
     if (activeRow !== undefined && isResendBlocked(activeRow.created_at, Date.now())) {
       // Cooldown còn hiệu lực: không consume, không ghi. COMMIT để nhả khoá và
-      // trả `null` — đây là branch bị chặn bình thường, không phải lỗi.
+      // trả `undefined` — đây là branch bị chặn bình thường, không phải lỗi.
       await client.query('COMMIT');
-      return null;
+      return undefined;
     }
     // Lớp 2: đếm hai cửa sổ trượt — đứng SAU statement khoá (lớp 1), KHÔNG trước.
     // Thứ tự này là phần đóng path "consume-slot-freed": T2 block trong lớp 1 trong
@@ -473,10 +473,10 @@ export async function insertChallenge(
     const windowRow = window.rows[0];
     if (isRateLimited(windowRow?.short_count ?? 0, windowRow?.hour_count ?? 0)) {
       // Cửa sổ trượt hết allowance: không consume, không ghi — nhánh bị chặn
-      // bình thường. COMMIT để nhả khoá, trả `null` cùng hợp đồng với nhánh
+      // bình thường. COMMIT để nhả khoá, trả `undefined` cùng hợp đồng với nhánh
       // cooldown: route đổi nó thành 204 im lặng.
       await client.query('COMMIT');
-      return null;
+      return undefined;
     }
     // Lớp 3: chỉ consume hàng ngoài cooldown — hàng sinh ra trong cooldown là hàng
     // của một request khác thắng gần đây, request này không được cướp. Hàng commit

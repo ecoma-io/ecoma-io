@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ARCH_TAG_DIMENSIONS,
   buildWorkspaceState,
+  CONTRACT_EDGE_OWNERSHIP,
   DEPLOYMENT_DIR,
   DEPLOYMENT_TYPE,
   findDanglingDeploymentRefs,
@@ -18,6 +19,7 @@ import {
   PLATFORM_DEPLOY_PROJECT,
   RUNTIME_COMPAT,
   validateArchitecture,
+  validateContractEdgeOwnership,
   validateDeploymentGraph,
   validateRuntimeCompat,
   validateTagSchema,
@@ -53,6 +55,16 @@ function deployState(apps: readonly string[]): ArchWorkspaceState {
     ...apps.map((name) => deployNode(name, 'platform', [PLATFORM_DEPLOY_PROJECT])),
   ];
   return { projects: new Map(nodes.map((n) => [n.name, n])) };
+}
+
+/** Node messaging composition chuẩn — hình thật của transactional-mail. */
+function messagingApp(deps: string[]): ArchProjectNode {
+  return node('mail-app', ['scope:messaging', 'type:composition', 'runtime:edge'], deps);
+}
+
+/** Node contracts chuẩn cho lượt kiểm contract-edge. */
+function contractsNode(name: string, scope: string): ArchProjectNode {
+  return node(name, [`scope:${scope}`, 'type:contracts', 'runtime:universal']);
 }
 
 describe('validateTagSchema', () => {
@@ -521,6 +533,79 @@ async function directEdgeViolations(sourceTags: string[], targetTags: string[]):
   return violations;
 }
 
+describe('validateContractEdgeOwnership', () => {
+  it('blocks a messaging dependency on another business context contracts', () => {
+    // Hình regression thật: transactional-mail từng import identity-auth-contracts
+    // (scope:identity) để dùng protocol HMAC nội bộ — chéo BC qua wildcard
+    // `type:contracts` của allowlist lint (OR-match theo tag, không nhìn scope
+    // của target). Edge này phải bị bắt ở mức graph.
+    const state: ArchWorkspaceState = {
+      projects: new Map([
+        [messagingApp(['identity-auth-contracts']).name, messagingApp(['identity-auth-contracts'])],
+        ['identity-auth-contracts', contractsNode('identity-auth-contracts', 'identity')],
+      ]),
+    };
+    const violations = validateContractEdgeOwnership(state.projects);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatchObject({
+      project: 'mail-app',
+      kind: 'cross-context-contract-edge',
+    });
+    expect(violations[0].detail).toContain('scope:identity');
+  });
+
+  it('allows messaging dependencies on its own contracts and platform contracts', () => {
+    const own = messagingApp(['mail-contracts', 'platform-auth-contracts']);
+    const state: ArchWorkspaceState = {
+      projects: new Map([
+        [own.name, own],
+        ['mail-contracts', contractsNode('mail-contracts', 'messaging')],
+        ['platform-auth-contracts', contractsNode('platform-auth-contracts', 'platform')],
+      ]),
+    };
+    expect(validateContractEdgeOwnership(state.projects)).toEqual([]);
+  });
+
+  it('ignores non-contracts dependencies and scopes without an ownership entry', () => {
+    // Scope chưa có chính sách riêng không bị lượt này kiểm, và non-contracts
+    // deps của messaging vẫn thuộc các lượt khác — lượt này chỉ nói contract-edge.
+    const app = node(
+      'some-app',
+      ['scope:identity', 'type:composition', 'runtime:edge'],
+      ['any-contracts', 'some-shared-lib'],
+    );
+    const msgWithImplDep = messagingApp(['platform-shared-lib']);
+    const state: ArchWorkspaceState = {
+      projects: new Map([
+        [app.name, app],
+        [msgWithImplDep.name, msgWithImplDep],
+        ['any-contracts', contractsNode('any-contracts', 'messaging')],
+        [
+          'platform-shared-lib',
+          node('platform-shared-lib', [
+            'scope:platform',
+            'type:infrastructure',
+            'runtime:universal',
+          ]),
+        ],
+      ]),
+    };
+    expect(validateContractEdgeOwnership(state.projects)).toEqual([]);
+  });
+
+  it('keeps .oxlintrc.json unable to reopen the cross-context edge for messaging', async () => {
+    // Hai lớp phải khớp nhau: constraint lint của scope:messaging KHÔNG được chứa
+    // `type:contracts` (OR-match sẽ cho mọi contract chéo scope đi qua), còn
+    // validator graph ở trên chặn theo scope thật của target. Nếu ai thêm lại
+    // wildcard vào allowlist lint thì test này đỏ — chính là chỗ từng lọt.
+    const allowlist = (await scopeAllowlistFor(['scope:messaging', 'type:composition'])).filter(
+      (t) => t !== 'scope:messaging',
+    );
+    expect(allowlist).not.toContain('type:contracts');
+    expect(allowlist).toEqual(expect.arrayContaining(['scope:shared', 'scope:platform']));
+  });
+});
+
 describe('validateDeploymentGraph', () => {
   it('requires every deployment consumer to depend on platform-deploy', () => {
     // Không phụ thuộc tầng nền = project provision không kế thừa được gì từ
@@ -801,20 +886,43 @@ describe('allowlists sync with .oxlintrc.json', () => {
     }
   });
 
+  it('keeps contract-edge ownership keys and values within KNOWN_SCOPES', () => {
+    // Dữ liệu của lượt kiểm contract-edge cũng phải neo vào taxonomy: key scope
+    // đã xoá là chính sách trên project không bao giờ tồn tại (chết code), value
+    // scope lạ là cho phép contract của scope không bao giờ được tag như vậy.
+    for (const [source, allowed] of Object.entries(CONTRACT_EDGE_OWNERSHIP)) {
+      expect(
+        KNOWN_SCOPES,
+        `contract-edge ownership key scope:${source} must be declared in KNOWN_SCOPES`,
+      ).toContain(source);
+      for (const scope of allowed) {
+        expect(
+          KNOWN_SCOPES,
+          `contract-edge ownership value scope:${scope} (of scope:${source}) must be declared in KNOWN_SCOPES`,
+        ).toContain(scope);
+      }
+    }
+  });
+
   /**
    * Policy chéo scope qua HÀNH VI constraint thật (engine @nx/eslint-plugin đang
    * cài, không substring config). Ma trận:
    * - foundation (shared/platform) được phép cho bounded context — vai trò tầng nền;
-   * - `type:contracts` chéo scope nghiệp vụ được phép;
+   * - `type:contracts` chéo scope nghiệp vụ được phép với scope CHÍNH SÁCH MẶC ĐỊNH;
    * - implementation scope nghiệp vụ khác bị chặn;
    * - đáy: shared không chạm platform; platform không chạm scope nghiệp vụ.
+   *
+   * `messaging` KHÔNG còn thuộc nhóm mặc định: nó có chính sách contract-edge
+   * riêng (chỉ self + platform — xem `validateContractEdgeOwnership` và constraint
+   * `scope:messaging` đã bỏ wildcard `type:contracts`), sau khi transactional-mail
+   * từng import `identity-auth-contracts` chéo BC qua chính wildcard đó.
    */
-  const boundedContexts = KNOWN_SCOPES.filter(
-    (s) => !['shared', 'platform', 'local', 'public'].includes(s),
+  const defaultPolicyContexts = KNOWN_SCOPES.filter(
+    (s) => !['shared', 'platform', 'local', 'public', 'messaging'].includes(s),
   );
 
   it('allows bounded contexts to depend on shared foundation implementations', async () => {
-    for (const scope of boundedContexts) {
+    for (const scope of defaultPolicyContexts) {
       expect(
         await edgeAllowed([`scope:${scope}`], ['scope:shared', 'type:infrastructure']),
         `scope:${scope} -> shared implementation must be allowed`,
@@ -823,7 +931,7 @@ describe('allowlists sync with .oxlintrc.json', () => {
   });
 
   it('allows bounded contexts to depend on platform foundation implementations', async () => {
-    for (const scope of boundedContexts) {
+    for (const scope of defaultPolicyContexts) {
       expect(
         await edgeAllowed([`scope:${scope}`], ['scope:platform', 'type:infrastructure']),
         `scope:${scope} -> platform implementation must be allowed`,
@@ -832,8 +940,8 @@ describe('allowlists sync with .oxlintrc.json', () => {
   });
 
   it('allows cross-scope dependencies only through type:contracts', async () => {
-    for (const source of boundedContexts) {
-      for (const target of boundedContexts.filter((t) => t !== source)) {
+    for (const source of defaultPolicyContexts) {
+      for (const target of defaultPolicyContexts.filter((t) => t !== source)) {
         expect(
           await edgeAllowed([`scope:${source}`], [`scope:${target}`, 'type:contracts']),
           `${source} -> ${target} contracts must be allowed`,
@@ -852,6 +960,33 @@ describe('allowlists sync with .oxlintrc.json', () => {
         ).toBe(false);
       }
     }
+  });
+
+  it('keeps messaging out of the default cross-scope contracts policy', async () => {
+    // messaging có chính sách riêng: contract chỉ từ self + platform (mục tiêu
+    // issue #203). Engine thật phải chặn messaging → contracts của BC khác, kể cả
+    // khi target còn mang `type:contracts` — đúng hình dependency từng lọt.
+    expect(
+      await edgeAllowed(
+        ['scope:messaging', 'type:composition'],
+        ['scope:identity', 'type:contracts'],
+      ),
+      'messaging -> identity contracts must be blocked',
+    ).toBe(false);
+    expect(
+      await edgeAllowed(
+        ['scope:messaging', 'type:composition'],
+        ['scope:messaging', 'type:contracts'],
+      ),
+      'messaging -> own contracts must be allowed',
+    ).toBe(true);
+    expect(
+      await edgeAllowed(
+        ['scope:messaging', 'type:composition'],
+        ['scope:platform', 'type:contracts'],
+      ),
+      'messaging -> platform contracts must be allowed',
+    ).toBe(true);
   });
 
   it('blocks composition-to-composition edges (app never imports app)', async () => {
@@ -903,7 +1038,7 @@ describe('allowlists sync with .oxlintrc.json', () => {
     expect(await edgeAllowed(['scope:platform'], ['scope:shared', 'type:infrastructure'])).toBe(
       true,
     );
-    for (const scope of boundedContexts) {
+    for (const scope of defaultPolicyContexts) {
       expect(
         await edgeAllowed(['scope:platform'], [`scope:${scope}`, 'type:infrastructure']),
         `platform -> ${scope} implementation must be blocked`,

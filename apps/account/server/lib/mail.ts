@@ -124,19 +124,43 @@ export function buildOtpMailRequest(params: {
 }
 
 /**
- * Khoá idempotency của một attempt gửi mail — prefix chuẩn + phần duy nhất per-attempt.
+ * Khoá idempotency của một lần gửi mail OTP — derive từ **identity của challenge**.
  *
- * ⚠️ `transactional-mail` **bắt buộc** `Idempotency-Key` (`apps/transactional-mail/src/main.ts`,
- * FR-001 bước 3 — thiếu ⇒ `400 invalid_request`), và phân biệt replay (`200`, cùng
- * fingerprint) với conflict (`409 idempotency_key_conflict`, cùng key + fingerprint khác —
- * FR-002). Key vì thế KHÔNG được chỉ từ recipient/template: hai attempt khác nhau của
- * cùng địa chỉ phải ra hai key khác nhau, còn retry của MỘT attempt phải tái dùng đúng
- * key đó. `correlationId` truyền vào `buildOtpMailRequest` đã thoả cả hai điều kiện —
- * mỗi attempt sinh digest HMAC riêng nên 16-hex đầu unique per attempt, deterministic
- * cho retry, và đủ ngắn để cùng prefix lọt ceiling 128 ký tự.
+ * ⚠️ **Nguồn duy nhất của khoá là `otp_challenges.id`** (UUID do PostgreSQL cấp khi
+ * `insertChallenge` ghi hàng) — KHÔNG phải digest HMAC của mã OTP. Digest là hàm tất định
+ * của `(key, purpose, code)` và mã chỉ có 10^8 giá trị: hai challenge khác nhau (hai user,
+ * hai lần cấp) hoàn toàn có thể sinh cùng một mã ⇒ cùng digest ⇒ cùng khoá nếu khoá derive
+ * từ digest — và receiver (`transactional-mail` FR-002) sẽ trả `200` replay cho request thứ
+ * hai thay vì gửi mail: **user thứ hai không bao giờ nhận được mã đăng nhập**, một lỗi im
+ * lặng mà không có exception nào báo. UUID của challenge là duy nhất per challenge theo
+ * PRIMARY KEY của DB, nên hai challenge không bao giờ chia sẻ khoá — kể cả khi OTP trùng.
+ *
+ * ⚠️ **Retry cùng challenge tái dùng đúng khoá này** (deterministic theo `challengeId`):
+ * một lần gửi ambiguous (fetch timeout nhưng receiver đã xử lý) mà được thử lại sẽ nhận
+ * `200` replay thay vì nhân đôi mail — đúng hợp đồng idempotency của receiver.
+ *
+ * ⚠️ **`correlation_id` và khoá này là hai khái niệm khác nhau.** Khoá là an toàn
+ * (receiver dùng nó để replay/conflict); correlation là quan sát được (trace mail ↔
+ * challenge). Code giữ hai đường derive riêng — {@link otpMailCorrelationId} ở body,
+ * khoá này ở header — và `sendMail` nhận khoá **tường minh** thay vì suy ra từ body, nên
+ * không có đường nào hai concept bị trộn lại.
+ *
+ * Độ dài: `account-otp-ch-` (15) + UUID 36 = 51 ký tự, lọt trần 128 của receiver (FR-001).
  */
-export function otpMailIdempotencyKey(correlationId: string | undefined): string {
-  return `account-otp-corr-${correlationId ?? 'none'}`;
+export function otpMailIdempotencyKey(challengeId: string): string {
+  return `account-otp-ch-${challengeId}`;
+}
+
+/**
+ * Correlation ID cho một lần gửi mail OTP — phục vụ **quan sát**, không phục vụ an toàn.
+ *
+ * Giá trị là identity của challenge (UUID): một challenge một correlation, ổn định qua
+ * retry, và không mang byte nào của mã OTP hay digest. Receiver lưu nó vào `mail_messages`
+ * (`correlation_id`) để trace mail ↔ challenge mà không lộ nội dung nào (FR-007). Đây
+ * KHÔNG phải nguồn của `Idempotency-Key` — xem {@link otpMailIdempotencyKey}.
+ */
+export function otpMailCorrelationId(challengeId: string): string {
+  return challengeId;
 }
 
 /**
@@ -154,6 +178,11 @@ export function otpMailIdempotencyKey(correlationId: string | undefined): string
  *   thành lỗi transport thoáng qua).
  * @param request Request **đã validate** ({@link buildOtpMailRequest}); `null`
  *   ⇒ `{ ok: false, reason: 'invalid_payload' }` và không fetch.
+ * @param idempotencyKey Khoá idempotency của lần gửi — **tường minh, không suy từ body**.
+ *   Caller (OTP flow) truyền {@link otpMailIdempotencyKey}(challengeId): cùng challenge ⇒
+ *   cùng khoá (retry nhận `200` replay), khác challenge ⇒ khác khoá (kể cả khi mã OTP trùng).
+ *   Receive bắt buộc header này (FR-001 bước 3); để adapter tự derive từ body là trộn
+ *   `correlation_id` (quan sát) với khoá (an toàn) — hai khái niệm tách bạch từ cú gọi.
  * @param signingSecret Credential ký cho path Account↔Mail — đúng secret mà
  *   receiver nhận diện là principal `svc.account` trong registry của nó
  *   (`MAIL_INTERNAL_AUTH_SECRET_SVC_ACCOUNT`). Rỗng/`undefined` ⇒
@@ -164,6 +193,7 @@ export function otpMailIdempotencyKey(correlationId: string | undefined): string
 export async function sendMail(
   mailServiceUrl: string | undefined,
   request: PostMessagesRequest | null,
+  idempotencyKey: string,
   signingSecret: string | undefined,
 ): Promise<MailSendResult> {
   if (request === null) {
@@ -208,16 +238,16 @@ export async function sendMail(
   const timer = setTimeout(() => controller.abort(), MAIL_TIMEOUT_MS);
   try {
     // ⚠️ `Idempotency-Key` bắt buộc bởi contract receiver (FR-001 bước 3 — thiếu ⇒
-    // `400 invalid_request`, request không bao giờ tới được hàng SEND). Key từ
-    // attempt cấu tử (correlationId per-challenge) — không phải recipient/template,
-    // vì hai attempt khác nhau cùng địa chỉ phải không va nhau ở bước 5 (FR-002).
+    // `400 invalid_request`, request không bao giờ tới được hàng SEND). Key do caller
+    // truyền tường minh (identity của challenge) — không suy từ body: correlation
+    // (body) và idempotency (header) là hai khái niệm, xem {@link otpMailIdempotencyKey}.
     //
     // `Idempotency-Key` KHÔNG nằm trong envelope ký (receiver không băm header
     // này vào bodyHash — `01-architecture.md` §7.4, mục "giới hạn đã nhận biết"):
     // đổi key trên cùng payload không đổi chữ ký, đúng hợp đồng.
     const headers = new Headers({
       'content-type': 'application/json',
-      'idempotency-key': otpMailIdempotencyKey(request.correlation_id),
+      'idempotency-key': idempotencyKey,
     });
     for (const [name, value] of Object.entries(envelope)) {
       headers.set(name, value);

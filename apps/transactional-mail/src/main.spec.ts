@@ -22,7 +22,7 @@ import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { signRequest } from '@ecoma-io/identity-auth-contracts';
+import { signRequest } from '@ecoma-io/internal-auth-contracts';
 
 import worker from './main';
 import { FINGERPRINT_KEYRING_ENV, type TransactionalMailEnv } from './config';
@@ -43,14 +43,18 @@ const wranglerCli = requireFromSpec.resolve('wrangler');
 const NOW_MS = 1_790_000_000_000;
 
 const SECRET_ACCOUNT = 'secret-svc-account-main-spec';
+const SECRET_PAYMENT = 'secret-svc-payment-main-spec';
 const SECRET_MAILER_JOB = 'secret-svc-mailer-job-main-spec';
 const KEY_A = 'b'.repeat(64);
 
-/** Thân POST /v1/messages canonical — OTP hợp lệ theo schema của template seed. */
+/**
+ * Thân POST /v1/messages canonical — template `account.login-otp` duy nhất được approve cho
+ * `svc.account` (SR-001, seed migration `0009`), biến `code` 8 chữ số đúng schema.
+ */
 const TEMPLATE_BODY = JSON.stringify({
-  template: 'welcome',
+  template: 'account.login-otp',
   recipient: 'user@example.test',
-  variables: { otp: '123456' },
+  variables: { code: '12345678' },
 });
 
 type MailEnv = { readonly mail: unknown; readonly QUEUE: unknown };
@@ -154,18 +158,19 @@ async function mjFetch(
   return await worker.fetch(request, env, executionContext);
 }
 
-/** Ký bằng secret của principal `svc.account` và POST /v1/messages. */
+/** Ký bằng secret của một principal tuỳ ý và POST /v1/messages. */
 async function accountPost(
   env: TransactionalMailEnv,
   body: string,
   idempotencyKey: string,
+  secret: string = SECRET_ACCOUNT,
 ): Promise<Response> {
   const encoded = new TextEncoder().encode(body);
   const headers = await signRequest({
     method: 'POST',
     path: '/v1/messages',
     body: encoded,
-    secret: SECRET_ACCOUNT,
+    secret,
     timestamp: String(Math.floor(Date.now() / 1000)),
   });
   const request = new Request('https://mail.internal/v1/messages', {
@@ -256,8 +261,11 @@ beforeAll(async () => {
     throw new Error(`expected migrations applied under ${persistDir}`);
   }
 
-  // Template seed — active en v1, schema hai biến cùng hình `templateRecord` của application
-  // spec dùng (otp bắt buộc max 8, cta_url tuỳ chọn format url).
+  // Migration `0009` đã seed template production `account.login-otp` — template duy nhất
+  // được approve cho `svc.account` (SR-001) và là template toàn bộ suite chính dùng.
+  // Suite chỉ tự seed thêm `welcome`: row active trong catalog nhưng KHÔNG được approve
+  // cho principal nào — fixture cho ca 403 "template tồn tại mà chưa approve" (khác 404
+  // "không có row active").
   const db = proxy.env['mail'] as {
     prepare(sql: string): { bind(...v: unknown[]): { run(): Promise<unknown> } };
   };
@@ -362,9 +370,9 @@ describe('POST /v1/messages (FR-001 end to end on real D1)', () => {
   it('returns 409 for the same key with a different payload', async () => {
     const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
     const conflictBody = JSON.stringify({
-      template: 'welcome',
+      template: 'account.login-otp',
       recipient: 'other@example.test',
-      variables: { otp: '654321' },
+      variables: { code: '65432178' },
     });
     const conflict = await accountPost(env, conflictBody, 'main-spec-key-2');
     expect(conflict.status).toBe(409);
@@ -527,16 +535,38 @@ describe('POST /v1/messages (FR-001 end to end on real D1)', () => {
     expect(body.error.code).toBe('forbidden');
   });
 
-  it('returns 404 template_not_found when no active template matches', async () => {
+  it('returns 404 template_not_found only after authorization admits the template', async () => {
+    // Route order SR-001: bước 3b chặn template chưa approve bằng `403` TRƯỚC use case,
+    // nên `404 template_not_found` chỉ xảy ra khi template đã ở trong allowlist mà catalog
+    // không còn row active nào khớp `(name, locale)` (locale lạ fallback default một lần
+    // rồi vẫn 404). Disable row duy nhất của `account.login-otp` rồi khôi phục trong
+    // finally — D1 dùng chung, suite chạy tuần tự nhưng một test fail không được kéo theo.
     const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
-    const response = await accountPost(
-      env,
-      JSON.stringify({ template: 'missing-template', recipient: 'u@example.test', variables: {} }),
-      'template-missing-key',
-    );
-    expect(response.status).toBe(404);
-    const body = (await response.json()) as { readonly error: { readonly code: string } };
-    expect(body.error.code).toBe('template_not_found');
+    const db = proxy?.env['mail'] as {
+      prepare(sql: string): { run(): Promise<unknown> };
+    };
+    await db
+      .prepare("UPDATE mail_templates SET status = 'disabled' WHERE name = 'account.login-otp'")
+      .run();
+    try {
+      const response = await accountPost(
+        env,
+        JSON.stringify({
+          template: 'account.login-otp',
+          recipient: 'u@example.test',
+          locale: 'vi',
+          variables: { code: '12345678' },
+        }),
+        'template-missing-key',
+      );
+      expect(response.status).toBe(404);
+      const body = (await response.json()) as { readonly error: { readonly code: string } };
+      expect(body.error.code).toBe('template_not_found');
+    } finally {
+      await db
+        .prepare("UPDATE mail_templates SET status = 'active' WHERE name = 'account.login-otp'")
+        .run();
+    }
   });
 
   it('creates a message for the seeded account.login-otp template (issue #132)', async () => {
@@ -563,14 +593,144 @@ describe('POST /v1/messages (FR-001 end to end on real D1)', () => {
     const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
     // 64 KiB là trần render (`MAIL_RENDER_MAX_BYTES`); body 70 KiB vượt trước khi chạm use case.
     const huge = JSON.stringify({
-      template: 'welcome',
+      template: 'account.login-otp',
       recipient: 'user@example.test',
-      variables: { otp: '1'.repeat(70_000) },
+      variables: { code: '1'.repeat(70_000) },
     });
     const response = await accountPost(env, huge, 'payload-too-large-key');
     expect(response.status).toBe(413);
     const body = (await response.json()) as { readonly error: { readonly code: string } };
     expect(body.error.code).toBe('payload_too_large');
+  });
+});
+
+describe('template authorization (SR-001, route step 3b)', () => {
+  it('returns 403 before persistence when the template exists in the catalog but is not approved for the caller', async () => {
+    // `welcome` có row active trong catalog nhưng KHÔNG nằm trong allowlist của principal
+    // nào: authorization phải chặn bằng `403` trước khi chạm template lookup (404) hay
+    // persistence. Mã lỗi dùng chung một message hằng — không phân biệt "template của
+    // principal khác" với "chưa approve" để tránh oracle liệt kê catalog.
+    const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
+    const response = await accountPost(
+      env,
+      JSON.stringify({
+        template: 'welcome',
+        recipient: 'user@example.test',
+        variables: { otp: '123456' },
+      }),
+      'template-not-allowed-key',
+    );
+    expect(response.status).toBe(403);
+    const body = (await response.json()) as { readonly error: { readonly code: string } };
+    expect(body.error.code).toBe('forbidden');
+    const rows = await rawRows<{ n: number }>(
+      env,
+      "SELECT COUNT(*) AS n FROM mail_messages WHERE idempotency_key = 'template-not-allowed-key'",
+    );
+    expect(rows).toEqual([{ n: 0 }]);
+  });
+
+  it('returns 403 for a template approved only for another principal when the caller has an empty allowlist', async () => {
+    // `svc.payment` có `message.create` nhưng `allowedTemplates` rỗng — mọi template đều 403.
+    // Dùng `account.login-otp` (đã approve cho `svc.account` VÀ có row active trong catalog)
+    // để chứng minh 403 đến từ bước 3b theo danh tính caller chứ không phải theo catalog:
+    // nếu lookup chạy trước thì kết quả sẽ là 201 chứ không phải 403.
+    const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
+    const response = await accountPost(
+      env,
+      JSON.stringify({
+        template: 'account.login-otp',
+        recipient: 'user@example.test',
+        variables: { code: '12345678' },
+      }),
+      'empty-allowlist-key',
+      SECRET_PAYMENT,
+    );
+    expect(response.status).toBe(403);
+    const body = (await response.json()) as { readonly error: { readonly code: string } };
+    expect(body.error.code).toBe('forbidden');
+    const rows = await rawRows<{ n: number }>(
+      env,
+      "SELECT COUNT(*) AS n FROM mail_messages WHERE idempotency_key = 'empty-allowlist-key'",
+    );
+    expect(rows).toEqual([{ n: 0 }]);
+  });
+
+  it('returns the same 403 for an unknown template and never creates a row', async () => {
+    // Template không tồn tại: nếu route dừng ở bước 3b thì verdict phải là 403 (authorization
+    // trước use case); 404 chỉ dành cho template ĐÃ được approve nhưng không còn row active.
+    const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
+    const response = await accountPost(
+      env,
+      JSON.stringify({
+        template: 'missing-template',
+        recipient: 'u@example.test',
+        variables: {},
+      }),
+      'unknown-template-key',
+    );
+    expect(response.status).toBe(403);
+    const body = (await response.json()) as { readonly error: { readonly code: string } };
+    expect(body.error.code).toBe('forbidden');
+    const rows = await rawRows<{ n: number }>(
+      env,
+      "SELECT COUNT(*) AS n FROM mail_messages WHERE idempotency_key = 'unknown-template-key'",
+    );
+    expect(rows).toEqual([{ n: 0 }]);
+  });
+
+  it('cannot be self-granted via the payload — unknown body fields are 400, `app` is ignored', async () => {
+    // Payload không có đường nào nạp grant: field lạ (`allowed_templates`) bị contract
+    // validator từ chối 400 ở bước 3; `app` (được validator bỏ qua) cũng không đổi verdict —
+    // allowlist chỉ đọc từ config boot-time, không merge từ request.
+    const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
+    const grantAttempt = await accountPost(
+      env,
+      JSON.stringify({
+        template: 'welcome',
+        recipient: 'user@example.test',
+        variables: { otp: '123456' },
+        allowed_templates: ['welcome'],
+      }),
+      'self-grant-unknown-field-key',
+    );
+    expect(grantAttempt.status).toBe(400);
+    const grantBody = (await grantAttempt.json()) as {
+      readonly error: { readonly code: string };
+    };
+    expect(grantBody.error.code).toBe('invalid_request');
+
+    const appSpoof = await accountPost(
+      env,
+      JSON.stringify({
+        app: 'svc.account',
+        template: 'welcome',
+        recipient: 'user@example.test',
+        variables: { otp: '123456' },
+      }),
+      'self-grant-app-field-key',
+    );
+    expect(appSpoof.status).toBe(403);
+    const appBody = (await appSpoof.json()) as { readonly error: { readonly code: string } };
+    expect(appBody.error.code).toBe('forbidden');
+  });
+
+  it('keeps authorization per-request — a revoked template no longer replays a prior accepted request', async () => {
+    // Authorization là điều kiện của TỪNG request, không chỉ của lần tạo đầu: cùng key +
+    // cùng payload nhưng request thứ hai ký bằng principal KHÁC (allowlist rỗng) thì phải
+    // 403 chứ không 200-replay verdict của request cũ. Bước 3b nằm trước idempotency
+    // lookup nên principal mất grant không được tiếp tục nhận kết quả cũ.
+    const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
+    const body = JSON.stringify({
+      template: 'account.login-otp',
+      recipient: 'user@example.test',
+      variables: { code: '12345678' },
+    });
+    const first = await accountPost(env, body, 'per-request-authz-key');
+    expect(first.status).toBe(201);
+
+    const replayAsPayment = await accountPost(env, body, 'per-request-authz-key', SECRET_PAYMENT);
+    expect(replayAsPayment.status).toBe(403);
   });
 });
 
@@ -613,7 +773,7 @@ describe('internal delivery routes on real D1 (§7.2, §6.2.2)', () => {
     );
     expect(body.message.content_type).toBe('text/html');
     expect(body.message.recipient).toBe('user@example.test');
-    expect(body.message.subject).toBe('Reset code 123456');
+    expect(body.message.subject).toBe('Your login code 12345678');
     expect(body.message.status).toBe('accepted');
     expect(body.dispatch_generation).toBe(1);
   });

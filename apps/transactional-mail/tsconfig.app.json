@@ -35,13 +35,13 @@
       "path": "../../libs/transactional-mail-infrastructure/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/transactional-mail-application/tsconfig.lib.json"
-    },
-    {
       "path": "../../libs/transactional-mail-contracts/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/identity-auth-contracts"
+      "path": "../../libs/transactional-mail-application/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/internal-auth-contracts/tsconfig.lib.json"
     }
   ]
 }

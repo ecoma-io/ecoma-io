@@ -8,7 +8,14 @@
  * thay vì import union của tầng domain.
  *
  * Project cũng không chứa domain logic: chỉ shape của message, validator hình thức và
- * envelope HMAC dùng chung cho cả caller lẫn callee.
+ * re-export của envelope HMAC dùng chung cho cả caller lẫn callee.
+ *
+ * ⚠️ **Bản cài đặt giao thức `ecoma-internal-v1` nằm ở `@ecoma-io/internal-auth-contracts`**
+ * (`scope:platform`) — package này chỉ re-export để đường import `@ecoma-io/identity-contracts`
+ * của consumer hiện tại (`apps/account`, `libs/identity-auth-contracts`) tiếp tục chạy mà
+ * không đổi một byte nào trên wire. Giao thức không mang khái niệm identity (không principal,
+ * không user), nên nơi canonical của nó là tầng platform; giữ một bản cài đặt thứ hai ở đây
+ * là tạo lại đúng thứ hai envelope trôi lệch mà lần hợp nhất trước đã dẹp.
  */
 
 export {
@@ -42,7 +49,7 @@ export {
   type VerifyFailureReason,
   type VerifyRequestInput,
   type VerifyResult,
-} from './internal-auth';
+} from '@ecoma-io/internal-auth-contracts';
 export {
   ACR_URN_VALUES,
   FORBIDDEN_SESSION_VERIFIED_FIELDS,

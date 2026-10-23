@@ -16,7 +16,7 @@ import {
   DEFAULT_SKEW_SECONDS,
   MAX_SKEW_SECONDS,
   MIN_SKEW_SECONDS,
-} from '@ecoma-io/identity-auth-contracts';
+} from '@ecoma-io/internal-auth-contracts';
 
 import {
   FINGERPRINT_KEYRING_ENV,
@@ -314,6 +314,19 @@ describe('credential registry', () => {
     expect(config.permissionsByPrincipal.get('svc.account')).not.toContain(
       PERMISSION_DELIVERY_READ,
     );
+  });
+
+  it('maps template allowlists per principal — evidence-based, default empty', async () => {
+    // SR-001: chỉ principal có bằng chứng dùng thật mới được grant. `svc.account` dùng
+    // `account.login-otp` (`OTP_LOGIN_TEMPLATE` + seed migration `0009`); ba principal còn
+    // lại chưa có đường gọi nào trong repo ⇒ explicit empty, mọi template của họ đều 403
+    // cho tới khi có template được approve. Nhầm "rỗng" thành "được tất cả" là lỗi fail-open
+    // — assertion này ghim chiều fail-closed.
+    const config = await load(makeEnv());
+    expect(config.templatesByPrincipal.get('svc.account')).toEqual(['account.login-otp']);
+    expect(config.templatesByPrincipal.get('svc.auth')).toEqual([]);
+    expect(config.templatesByPrincipal.get('svc.payment')).toEqual([]);
+    expect(config.templatesByPrincipal.get('svc.transactional-mailer-job')).toEqual([]);
   });
 });
 

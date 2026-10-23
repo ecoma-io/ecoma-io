@@ -1,8 +1,14 @@
 /**
  * Barrel re-export cho internal HMAC contract canonical.
  *
- * Giữ lại dưới dạng file riêng (thay vì re-export thẳng từ `@ecoma-io/identity-contracts`
- * trong `index.ts`) để một lần grep tên symbol cũ vẫn rơi vào một chỗ có chủ ý.
+ * ⚠️ **Bản cài đặt canonical nằm ở `@ecoma-io/internal-auth-contracts`** (`scope:platform`)
+ * — giao thức `ecoma-internal-v1` là protocol nền tảng, không mang khái niệm identity, nên
+ * nguồn sự thật của nó thuộc tầng platform. File này chỉ giữ đường import
+ * `@ecoma-io/identity-auth-contracts` tiếp tục chạy cho `apps/auth` và mọi consumer đang
+ * dùng — không duy trì một envelope thứ hai đã trôi khỏi bản chính.
+ *
+ * Giữ lại dưới dạng file riêng (thay vì re-export thẳng trong `index.ts`) để một lần grep
+ * tên symbol cũ vẫn rơi vào một chỗ có chủ ý.
  *
  * ⚠️ **Đường import thật là `@ecoma-io/identity-auth-contracts`** (tức qua `index.ts`, file
  * này nằm sau `./internal-auth`). `package.json` của package chỉ khai `exports` với key
@@ -40,4 +46,4 @@ export {
   type VerifyFailureReason,
   type VerifyRequestInput,
   type VerifyResult,
-} from '@ecoma-io/identity-contracts';
+} from '@ecoma-io/internal-auth-contracts';

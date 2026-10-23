@@ -33,7 +33,7 @@ import {
   DEFAULT_SKEW_SECONDS,
   MAX_SKEW_SECONDS,
   MIN_SKEW_SECONDS,
-} from '@ecoma-io/identity-auth-contracts';
+} from '@ecoma-io/internal-auth-contracts';
 
 import {
   PERMISSION_DELIVERY_OUTCOME,
@@ -117,6 +117,16 @@ export interface MailRateLimitConfig {
   readonly idempotencyKey: { readonly limit: number; readonly windowMs: number };
 }
 
+/**
+ * Allowlist logical template của một principal (SR-001 authorization table): principal
+ * chỉ được `POST /v1/messages` với template nằm trong danh sách này.
+ *
+ * ⚠️ **Rỗng là trạng thái hợp lệ và chặt nhất** — một principal không có template nào được
+ * approve thì không gửi được mail nào. Không có giá trị "cho phép tất cả": một allowlist
+ * mở là bỏ authorization.
+ */
+export type MailTemplateAllowlist = readonly string[];
+
 /** Ngân sách của publish loop: lease, batch, số lần thử, backoff. */
 export interface MailPublishConfig {
   readonly leaseMs: number;
@@ -172,6 +182,18 @@ export interface TransactionalMailConfig {
    * luôn có cùng tập quyền, và nhân bản nó vào từng entry là một nguồn lệch im lặng.
    */
   readonly permissionsByPrincipal: ReadonlyMap<string, readonly string[]>;
+  /**
+   * Logical template mà từng principal được phép dùng (`POST /v1/messages` — SR-001
+   * authorization table: "Chỉ những logical template đã approve cho principal đó").
+   *
+   * Tách khỏi permission `message.create` vì hai trục quyền khác nhau: permission là
+   * **operation** (được tạo message hay không), allowlist là **tài nguyên** (template nào).
+   * Một principal có thể có `message.create` mà allowlist rỗng — nó authenticate được,
+   * `403` ngay khi gọi, và không gửi được mail nào tới khi có template được approve.
+   * Cùng principal ⇒ cùng allowlist cho mọi entry credential (`current` lẫn `previous`),
+   * cùng lý do với {@link permissionsByPrincipal}.
+   */
+  readonly templatesByPrincipal: ReadonlyMap<string, MailTemplateAllowlist>;
   /** Cửa sổ skew (giây) — đã nằm trong `[MIN_SKEW_SECONDS, MAX_SKEW_SECONDS]`. */
   readonly skewSeconds: number;
   readonly rateLimits: MailRateLimitConfig;
@@ -189,7 +211,8 @@ export interface TransactionalMailConfig {
 }
 
 /**
- * Một slot của credential registry: principal, hậu tố tên Worker Secret, và tập quyền.
+ * Một slot của credential registry: principal, hậu tố tên Worker Secret, tập quyền, và
+ * allowlist template.
  *
  * ⚠️ **Thứ tự mảng này là thứ tự duyệt của receiver**, không phải thứ tự trình bày. Nó
  * được giữ ở đúng một chỗ (module scope, không truy cập được từ ngoài) để loader và tài
@@ -198,27 +221,39 @@ export interface TransactionalMailConfig {
  *
  * ⚠️ Tập quyền ở đây là **allowlist**, không phải nguồn duy nhất: route vẫn enforce quyền
  * của chính nó (`01-architecture.md` §7.4 — authentication không thay thế authorization).
+ *
+ * ⚠️ `allowedTemplates` là **evidence-based** (SR-001): chỉ principal có bằng chứng dùng
+ * thật mới được grant. V1: `svc.account` dùng `account.login-otp` (`OTP_LOGIN_TEMPLATE`
+ * của `apps/account/server/lib/mail.ts`; template được seed ở migration `0009` của service
+ * này). `svc.auth`/`svc.payment` chưa có đường gọi nào trong repo ⇒ explicit empty — nhận
+ * credential nhưng `403` mọi template cho tới khi có template được approve cho chúng.
+ * Mọi principal mới thêm vào registry đều phải khai `allowedTemplates` tường minh: thiếu
+ * là lỗi compile (thuộc tính bắt buộc), không phải default "được tất cả".
  */
 const CREDENTIAL_SLOTS: readonly MailCredentialSlot[] = [
   {
     principal: 'svc.account',
     secretSuffix: 'SVC_ACCOUNT',
     permissions: [PERMISSION_MESSAGE_CREATE],
+    allowedTemplates: ['account.login-otp'],
   },
   {
     principal: 'svc.auth',
     secretSuffix: 'SVC_AUTH',
     permissions: [PERMISSION_MESSAGE_CREATE],
+    allowedTemplates: [],
   },
   {
     principal: 'svc.payment',
     secretSuffix: 'SVC_PAYMENT',
     permissions: [PERMISSION_MESSAGE_CREATE],
+    allowedTemplates: [],
   },
   {
     principal: 'svc.transactional-mailer-job',
     secretSuffix: 'SVC_TRANSACTIONAL_MAILER_JOB',
     permissions: [PERMISSION_DELIVERY_READ, PERMISSION_DELIVERY_OUTCOME],
+    allowedTemplates: [],
   },
 ];
 
@@ -227,6 +262,8 @@ interface MailCredentialSlot {
   readonly principal: string;
   readonly secretSuffix: string;
   readonly permissions: readonly string[];
+  /** Logical template được approve cho principal — SR-001. Rỗng = không gửi được mail nào. */
+  readonly allowedTemplates: MailTemplateAllowlist;
 }
 
 /** Tiền tố chung của tên Worker Secret credential registry. */
@@ -301,6 +338,7 @@ function buildTransactionalMailConfig(env: TransactionalMailEnv): TransactionalM
     fingerprintKeyring: parseFingerprintKeyring(env[FINGERPRINT_KEYRING_ENV]),
     credentialRegistry: credentials.entries,
     permissionsByPrincipal: credentials.permissionsByPrincipal,
+    templatesByPrincipal: credentials.templatesByPrincipal,
     skewSeconds: parseSkewSeconds(env[INTERNAL_AUTH_SKEW_ENV]),
     rateLimits: {
       principal: {
@@ -426,9 +464,11 @@ function containsLoneSurrogate(value: string): boolean {
 function loadCredentialRegistry(env: TransactionalMailEnv): {
   readonly entries: readonly MailInternalCredential[];
   readonly permissionsByPrincipal: ReadonlyMap<string, readonly string[]>;
+  readonly templatesByPrincipal: ReadonlyMap<string, MailTemplateAllowlist>;
 } {
   const entries: MailInternalCredential[] = [];
   const permissionsByPrincipal = new Map<string, readonly string[]>();
+  const templatesByPrincipal = new Map<string, MailTemplateAllowlist>();
   // secret (giá trị, KHÔNG đưa vào message) → tên biến đã dùng nó lần đầu.
   const firstOwnerOfSecret = new Map<string, string>();
   const duplicatedVariableNames = new Set<string>();
@@ -443,6 +483,7 @@ function loadCredentialRegistry(env: TransactionalMailEnv): {
     const previous = env[previousName];
 
     permissionsByPrincipal.set(slot.principal, slot.permissions);
+    templatesByPrincipal.set(slot.principal, slot.allowedTemplates);
     registerSecret(current, currentName);
     entries.push({ principal: slot.principal, secret: current, kind: 'current' });
 
@@ -465,7 +506,7 @@ function loadCredentialRegistry(env: TransactionalMailEnv): {
     );
   }
 
-  return { entries, permissionsByPrincipal };
+  return { entries, permissionsByPrincipal, templatesByPrincipal };
 
   function registerSecret(secret: string, variableName: string): void {
     const owner = firstOwnerOfSecret.get(secret);

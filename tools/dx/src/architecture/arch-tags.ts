@@ -139,6 +139,7 @@ export interface ArchTagViolation {
     | 'deploy-graph-cycle'
     | 'misplaced-deployment-project'
     | 'cross-unit-deploy-dependency'
+    | 'cross-context-contract-edge'
     | 'graph-inconsistent';
   detail: string;
 }
@@ -381,6 +382,61 @@ export const DEPLOYMENT_TYPE = 'type:deployment';
  */
 export const DEPLOYMENT_DIR = 'deploys';
 
+/**
+ * Bất biến contract-edge theo scope nguồn: scope nguồn chỉ được phụ thuộc
+ * `type:contracts` của các scope được liệt kê ở value.
+ *
+ * ⚠️ Đây là lượt bổ sung cho constraint `onlyDependOnLibsWithTags` của
+ * `.oxlintrc.json`, KHÔNG thay thế: constraint lint là OR-match trên tag của
+ * target (target chỉ cần MỘT tag khớp là qua), nên `scope:messaging` có
+ * `type:contracts` trong allowlist thì target `scope:identity` + `type:contracts`
+ * cũng đi qua — chéo BC đúng điều cấm mà task yêu cầu chặn. Lượt này đọc CẢ HAI
+ * tag trên mỗi node của graph thật nên nói được "contract của scope NÀO".
+ *
+ * Ghi chú lịch sử: trước đây messaging (transactional-mail) import
+ * `identity-auth-contracts` của scope identity để dùng protocol HMAC nội bộ —
+ * protocol đó là tài sản nền tảng, đã được tách về `internal-auth-contracts`
+ * (`scope:platform`), và messaging được siết về `{ self, platform }`.
+ */
+export const CONTRACT_EDGE_OWNERSHIP: Readonly<Record<string, readonly string[]>> = {
+  messaging: ['messaging', 'platform'],
+};
+
+/**
+ * Lượt kiểm contract-edge theo scope nguồn: một edge `source → target` với
+ * target mang `type:contracts` phải có scope của target nằm trong danh sách
+ * được phép của scope nguồn ({@link CONTRACT_EDGE_OWNERSHIP}).
+ *
+ * Scope nguồn không có entry trong bản đồ không bị lượt này kiểm (chưa có
+ * chính sách riêng — policy của từng scope bổ sung dần, không bắt mọi scope
+ * phải khai); scope nguồn entry với value rỗng nghĩa là không được phụ thuộc
+ * contract của scope nào kể cả chính nó.
+ */
+export function validateContractEdgeOwnership(
+  projects: Map<string, ArchProjectNode>,
+): ArchTagViolation[] {
+  const violations: ArchTagViolation[] = [];
+  for (const project of projects.values()) {
+    const sourceScope = project.tags.find((t) => t.startsWith('scope:'))?.slice('scope:'.length);
+    if (sourceScope === undefined) continue; // lượt 1 đã báo missing-dimension
+    const allowedScopes = CONTRACT_EDGE_OWNERSHIP[sourceScope];
+    if (allowedScopes === undefined) continue;
+    for (const dep of project.dependencies) {
+      const target = projects.get(dep);
+      if (!target?.tags.includes('type:contracts')) continue;
+      const targetScope = target.tags.find((t) => t.startsWith('scope:'))?.slice('scope:'.length);
+      if (!allowedScopes.includes(targetScope ?? '')) {
+        violations.push({
+          project: project.name,
+          kind: 'cross-context-contract-edge',
+          detail: `scope:${sourceScope} depends on contracts of scope:${targetScope ?? 'unknown'} (${dep}); allowed: ${allowedScopes.map((s) => `scope:${s}`).join(', ')}`,
+        });
+      }
+    }
+  }
+  return violations;
+}
+
 /** Project `type:deployment` = consumer của tầng deployment trừ chính nó. */
 function deploymentConsumerNodes(projects: Map<string, ArchProjectNode>): ArchProjectNode[] {
   return [...projects.values()].filter(
@@ -601,7 +657,7 @@ function findCycles(edges: ReadonlyMap<string, readonly string[]>): string[][] {
   return cycles;
 }
 
-/** Chạy đủ ba lượt trên toàn workspace, trả mọi vi phạm (rỗng = sạch). */
+/** Chạy đủ các lượt trên toàn workspace, trả mọi vi phạm (rỗng = sạch). */
 export function validateArchitecture(state: ArchWorkspaceState): ArchTagViolation[] {
   const violations: ArchTagViolation[] = [];
   for (const project of state.projects.values()) {
@@ -609,6 +665,7 @@ export function validateArchitecture(state: ArchWorkspaceState): ArchTagViolatio
     violations.push(...validateRuntimeCompat(project, state.projects));
   }
   violations.push(...validateDeploymentGraph(state));
+  violations.push(...validateContractEdgeOwnership(state.projects));
   return violations;
 }
 
