@@ -10,6 +10,7 @@ import { HalBuilder, getBaseUrl } from '../domain/hal';
 import { environmentNameSchema } from '../domain/validation';
 import { readJsonBodyWithLimit, validateParam } from '../middleware/validate';
 import { PgEnvironmentRepo } from '../repo/environment-repo';
+import { insertAuditEvent } from '../repo/token-repo';
 
 export function environmentRoutes(
   readAuth: () => MiddlewareHandler<AppEnv>,
@@ -66,13 +67,34 @@ export function environmentRoutes(
     );
     if (!nameResult.valid) return nameResult.errorResponse;
 
+    const tenantId = currentTenantId(c);
+    const callerTokenId = c.get('tokenId') ?? null;
     const repo = new PgEnvironmentRepo(c.get('pool'));
-    const { environment } = await repo.getOrCreate(
-      currentTenantId(c),
+    const { environment, created } = await repo.getOrCreate(
+      tenantId,
       nameResult.value,
       typeof body.displayName === 'string' ? body.displayName : undefined,
       typeof body.production === 'boolean' ? body.production : undefined,
     );
+
+    const auditClient = await c.get('pool').connect();
+    try {
+      await auditClient.query('BEGIN');
+      await insertAuditEvent(auditClient, {
+        tenantId,
+        actorSub: null,
+        actorTokenId: callerTokenId,
+        action: created ? 'environment.create' : 'environment.update',
+        outcome: 'success',
+        detail: { name: environment.name },
+      });
+      await auditClient.query('COMMIT');
+    } catch (error) {
+      await auditClient.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      auditClient.release();
+    }
 
     const hal = new HalBuilder(getBaseUrl(c.req.raw));
     return c.json(
@@ -129,8 +151,9 @@ export function environmentRoutes(
       return bodyResult.errorResponse;
     }
 
-    const repo = new PgEnvironmentRepo(c.get('pool'));
     const tenantId = currentTenantId(c);
+    const callerTokenId = c.get('tokenId') ?? null;
+    const repo = new PgEnvironmentRepo(c.get('pool'));
 
     let targetName: string;
     if (UUID_RE.test(raw)) {
@@ -145,12 +168,31 @@ export function environmentRoutes(
       targetName = nameResult.value;
     }
 
-    const { environment } = await repo.getOrCreate(
+    const { environment, created } = await repo.getOrCreate(
       tenantId,
       targetName,
       typeof body.displayName === 'string' ? body.displayName : undefined,
       typeof body.production === 'boolean' ? body.production : undefined,
     );
+
+    const auditClient = await c.get('pool').connect();
+    try {
+      await auditClient.query('BEGIN');
+      await insertAuditEvent(auditClient, {
+        tenantId,
+        actorSub: null,
+        actorTokenId: callerTokenId,
+        action: created ? 'environment.create' : 'environment.update',
+        outcome: 'success',
+        detail: { name: environment.name },
+      });
+      await auditClient.query('COMMIT');
+    } catch (error) {
+      await auditClient.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      auditClient.release();
+    }
 
     const hal = new HalBuilder(getBaseUrl(c.req.raw));
     return c.json(
