@@ -469,6 +469,42 @@ describe('BFF handoff and consent routes end-to-end', () => {
     );
   });
 
+  it('returns ok:true with already_processed when consume fails after push ok', async () => {
+    authStub = installAuthBindingStub();
+    authStub.running = { status: 200, body: () => sessionVerifiedBody() };
+    setRuntimeConfig(fullRuntimeConfig(connectionString, authStub.binding));
+
+    const cookies = await loginAndGetCookies();
+    const init = {
+      cookie: authCookieHeader(cookies),
+      headers: { 'x-ecoma-csrf': cookies.csrfToken },
+    };
+
+    // Mô phỏng DB hiccup ở nhánh consume sau push thành công: binding giữ
+    // nguyên `bound`/`session_rotated` thay vì chuyển `consumed`.
+    const handoffModule = await import('../../server/lib/handoff');
+    const spy = vi.spyOn(handoffModule, 'consumeHandoff').mockRejectedValue(new Error('db hiccup'));
+
+    const first = await post('/api/auth/handoff', { handle: HANDLE }, init);
+    expect(await first.json()).toEqual({
+      ok: true,
+      outcome: 'consent_required',
+      continueUrl: CONTINUE_URL,
+    });
+
+    // Lần retry thứ hai đi qua auth (binding còn nguyên) và auth trả
+    // `already_processed` vì transaction đã hoàn tất.
+    authStub.running = {
+      status: 200,
+      body: () => ({ outcome: 'already_processed', transaction_state: 'completed' }),
+    };
+    const second = await post('/api/auth/handoff', { handle: HANDLE }, init);
+    expect(await second.json()).toEqual({ ok: true, outcome: 'already_processed' });
+
+    expect(authStub.calls).toHaveLength(2);
+    spy.mockRestore();
+  });
+
   it('returns ok:false with a stable reason when auth rejects the handle (404)', async () => {
     authStub = installAuthBindingStub();
     authStub.running = {
