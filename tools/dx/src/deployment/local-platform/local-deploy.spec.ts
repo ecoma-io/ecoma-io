@@ -158,23 +158,23 @@ describe('upsertLocalEnv', () => {
 });
 
 describe('localDeploy previewOnly', () => {
-  it('previewOnly không bao giờ ghi .env — dù preview thành công hay thất bại', () => {
+  it('previewOnly không bao giờ ghi .env — dù preview thành công hay thất bại', async () => {
     const root = tempWorktree();
     // Exit code của preview tuỳ prerequisite (worktree mới → fail read-only,
     // worktree đã deploy → xanh), nhưng bất biến phải giữ ở CẢ HAI: port do
     // Docker cấp chỉ tồn tại sau up thật, nên `.env` không bao giờ được ghi
     // trong preview mode.
-    localDeploy({ worktreeRoot: root, previewOnly: true });
+    await localDeploy({ worktreeRoot: root, previewOnly: true });
     expect(existsSync(join(root, '.env'))).toBe(false);
   });
 
-  it('missing passphrase → exit 1 TRƯỚC khi chạm Pulumi, không tạo state dir', () => {
+  it('missing passphrase → exit 1 TRƯỚC khi chạm Pulumi, không tạo state dir', async () => {
     const root = tempWorktree();
     const saved = process.env.PULUMI_CONFIG_PASSPHRASE;
     delete process.env.PULUMI_CONFIG_PASSPHRASE;
     delete process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
     try {
-      const exit = localDeploy({ worktreeRoot: root, previewOnly: true });
+      const exit = await localDeploy({ worktreeRoot: root, previewOnly: true });
       expect(exit).toBe(1);
       // Fail-early nghĩa là KHÔNG có thư mục state nào được tạo ra — mutation
       // chưa bắt đầu thì không để lại dấu vết nửa chừng.
@@ -188,10 +188,10 @@ describe('localDeploy previewOnly', () => {
     }
   });
 
-  it('fresh worktree preview → exit 1, no state dir, no .env, NO command dispatched (no init/config/up/destroy)', () => {
+  it('fresh worktree preview → exit 1, no state dir, no .env, NO command dispatched (no init/config/up/destroy)', async () => {
     const root = tempWorktree();
     process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
-    const exit = localDeploy({ worktreeRoot: root, previewOnly: true });
+    const exit = await localDeploy({ worktreeRoot: root, previewOnly: true });
     expect(exit).toBe(1);
     // Không mutation nào được tạo ra…
     expect(existsSync(join(root, '.pulumi-local-state'))).toBe(false);
@@ -203,7 +203,7 @@ describe('localDeploy previewOnly', () => {
     expect(vi.mocked(ensureStack)).not.toHaveBeenCalled();
   });
 
-  it('existing deployment → only read/preview ops: both previews, no --config, no prepareStack', () => {
+  it('existing deployment → only read/preview ops: both previews, no --config, no prepareStack', async () => {
     const root = tempWorktree();
     process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
     // State dir tồn tại = worktree đã apply (prerequisite 1). `queryPlatformStatus`
@@ -223,7 +223,7 @@ describe('localDeploy previewOnly', () => {
     });
     pulumiRunMock.mockReturnValue(undefined);
 
-    const exit = localDeploy({ worktreeRoot: root, previewOnly: true });
+    const exit = await localDeploy({ worktreeRoot: root, previewOnly: true });
     expect(exit).toBe(0);
 
     // exec CHỈ dùng cho đọc: mọi lệnh là `stack output --json` — không có
@@ -256,7 +256,7 @@ describe('localDeploy previewOnly', () => {
     expect(existsSync(join(root, '.pulumi-local-state'))).toBe(true);
   });
 
-  it('existing platform but missing home stack → exit 1, clear error, no preview command at all', () => {
+  it('existing platform but missing home stack → exit 1, clear error, no preview command at all', async () => {
     const root = tempWorktree();
     process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
     mkdirSync(join(root, '.pulumi-local-state'), { recursive: true });
@@ -277,7 +277,7 @@ describe('localDeploy previewOnly', () => {
       } satisfies ExecResult;
     });
 
-    const exit = localDeploy({ worktreeRoot: root, previewOnly: true });
+    const exit = await localDeploy({ worktreeRoot: root, previewOnly: true });
     expect(exit).toBe(1);
     // Kiểm prerequisite là read-only: KHÔNG lệnh preview/up/destroy nào chạy
     // khi prerequisite thiếu (không partial run).
@@ -285,14 +285,14 @@ describe('localDeploy previewOnly', () => {
     expect(existsSync(join(root, '.env'))).toBe(false);
   });
 
-  it('missing platform outputs (init, chưa up) → exit 1 với hướng dẫn chạy apply, không preview', () => {
+  it('missing platform outputs (init, chưa up) → exit 1 với hướng dẫn chạy apply, không preview', async () => {
     const root = tempWorktree();
     process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
     // State dir có (stack đã init) nhưng `stack output` trả `{}` = chưa up.
     mkdirSync(join(root, '.pulumi-local-state'), { recursive: true });
     execMock.mockReturnValue({ status: 0, stdout: '{}\n', stderr: '' } satisfies ExecResult);
 
-    const exit = localDeploy({ worktreeRoot: root, previewOnly: true });
+    const exit = await localDeploy({ worktreeRoot: root, previewOnly: true });
     expect(exit).toBe(1);
     expect(pulumiRunMock).not.toHaveBeenCalled();
     expect(execMock).not.toHaveBeenCalledWith(
@@ -306,7 +306,7 @@ describe('localDeploy previewOnly', () => {
 });
 
 describe('localDeploy apply (non-preview) retains initialization behavior', () => {
-  it('no passphrase env needed → apply still succeeds on a fresh stack (tool-managed passphrase)', () => {
+  it('no passphrase env needed → apply still succeeds on a fresh stack (tool-managed passphrase)', async () => {
     const root = tempWorktree();
     const savedPass = process.env.PULUMI_CONFIG_PASSPHRASE;
     const savedFile = process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
@@ -335,7 +335,7 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
       return undefined;
     });
     try {
-      const exit = localDeploy({ worktreeRoot: root, skipSmoke: true });
+      const exit = await localDeploy({ worktreeRoot: root, skipSmoke: true });
       expect(exit).toBe(0);
       // Passphrase do công cụ sinh và lưu ngoài Git — không cần developer đặt.
       expect(existsSync(join(root, '.pulumi-local-passphrase'))).toBe(true);
@@ -347,7 +347,7 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
     }
   });
 
-  it('apply on fresh stack: ensureStack → config get → config set (generate) → up → outputs → .env → home up', () => {
+  it('apply on fresh stack: ensureStack → config get → config set (generate) → up → outputs → .env → home up', async () => {
     const root = tempWorktree();
     process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
 
@@ -376,7 +376,7 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
       return undefined;
     });
 
-    const exit = localDeploy({ worktreeRoot: root, skipSmoke: true });
+    const exit = await localDeploy({ worktreeRoot: root, skipSmoke: true });
     expect(exit).toBe(0);
 
     // ensureStack (stack init) được gọi cho platform, backoffice, account và
@@ -420,8 +420,10 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
     expect(upCalls[4][1]).toBe('auth-deploy');
 
     // Hai stack identity nhận đúng bộ key mật khẩu/secret qua stdin (không argv):
-    // account có ownerPassword (nó sở hữu ecoma_owner) + hai secret HMAC của app,
-    // auth không có cái nào trong số đó.
+    // account có ownerPassword (nó sở hữu ecoma_owner) + hai secret HMAC của app;
+    // auth có secrets Worker của WIC (PR #183). `internalHmacSecret` của account
+    // và `internalSecret` của auth phải là CÙNG MỘT giá trị — bất invariant
+    // envelope HMAC hai chiều auth <-> account thuộc về orchestration.
     const identityConfigSets = execMock.mock.calls.filter(([, args]) => {
       if (args[0] !== 'config' || args[1] !== 'set') return false;
       const stackRef = args[args.indexOf('--stack') + 1] ?? '';
@@ -445,7 +447,34 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
       'namespace:runtimePassword',
       'namespace:migratorPassword',
       'namespace:prunerPassword',
+      'namespace:signingKeyPem',
+      'namespace:signingKeyId',
+      'namespace:handleKey',
+      'namespace:internalSecret',
+      'namespace:issuer',
+      'namespace:audience',
+      'namespace:cookieKeys',
     ]);
+    // Cùng giá trị cho hai nửa của secret HMAC internal (stdin input của hai
+    // lần `config set` — exec mock ghi lại options.input).
+    const accountInternalSet = identityConfigSets.find(
+      ([, args]) => args[2] === 'namespace:internalHmacSecret',
+    );
+    const authInternalSet = identityConfigSets.find(
+      ([, args]) => args[2] === 'namespace:internalSecret',
+    );
+    const accountInternalInput = accountInternalSet?.[4]?.['input'];
+    const authInternalInput = authInternalSet?.[4]?.['input'];
+    expect(typeof accountInternalInput).toBe('string');
+    expect(accountInternalInput).toBe(authInternalInput);
+    expect(accountInternalInput?.length ?? 0).toBeGreaterThanOrEqual(32);
+    // Khoá ký là PEM PKCS#8 thật (SigningKeyProvider.fromPem parse được) —
+    // header/hình dạng đúng, không đụng tới giá trị.
+    const signingPemInput = identityConfigSets.find(
+      ([, args]) => args[2] === 'namespace:signingKeyPem',
+    )?.[4]?.['input'];
+    expect(signingPemInput).toMatch(/^-----BEGIN PRIVATE KEY-----/u);
+    expect(signingPemInput?.endsWith('-----END PRIVATE KEY-----\n')).toBe(true);
     for (const [, args, , , options] of identityConfigSets) {
       expect(args).toContain('--plaintext');
       expect(args).not.toContain('--secret');

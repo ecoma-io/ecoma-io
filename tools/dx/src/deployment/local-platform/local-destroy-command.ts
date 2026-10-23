@@ -33,8 +33,8 @@ export default defineCommand({
     'worktree-root': worktreeRootArg,
   },
 
-  run({ args }) {
-    process.exitCode = runLocalCommand('destroy', () =>
+  async run({ args }) {
+    process.exitCode = await runLocalCommand('destroy', () =>
       localDestroy({
         worktreeRoot: requireDirectoryRoot(args['worktree-root']),
         removeData: args['remove-data'],

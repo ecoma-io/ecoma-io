@@ -240,9 +240,54 @@ export function resolveWranglerInvocationArgv(wranglerBin?: string): string[] {
  * persist dir) — OCR PR #36 security high: hai bản copy dễ drift và đường
  * `wrangler dev` (process sống lâu nhất, outbound network) phải áp cùng cơ
  * chế không thấy cached OAuth token `~/.wrangler` của developer.
+ *
+ * `injected` là env BỔ SUNG theo entry (Hyperdrive local connection string,
+ * `BRIDGE_TARGET_ORIGIN` của shim) — sinh bởi `localWorkerEnvInjections`
+ * bên dưới, KHÔNG bao giờ lấy từ `process.env` của CLI (allowlist trước tiên,
+ * inject sau với giá trị do orchestration tự dựng).
  */
-function buildWranglerEnv(persistTo: string): NodeJS.ProcessEnv {
-  return sanitizedWranglerEnv(persistTo);
+function buildWranglerEnv(persistTo: string, injected?: Record<string, string>): NodeJS.ProcessEnv {
+  const env = sanitizedWranglerEnv(persistTo);
+  for (const [key, value] of Object.entries(injected ?? {})) {
+    env[key] = value;
+  }
+  return env;
+}
+
+/**
+ * Account container alias trong platform network (02-identity.md §Service
+ * bindings): auth-deploy dựng container account dưới alias `ecoma-<ns>-account`
+ * nghe port nội bộ 3000 (preset Nitro `node-server`, cùng hằng số với
+ * `home-deploy`). Shim bridge upstream trỏ đúng alias đó — một nguồn duy nhất
+ * cho hình dạng tên ở đây và ở Pulumi program (deploy unit auth).
+ */
+export const ACCOUNT_CONTAINER_INTERNAL_PORT = 3000;
+
+/**
+ * Env BỔ SUNG của MỘT entry khi spawn `wrangler dev` — injection DO
+ * ORCHESTRATION TỰ DỰNG (không đọc `process.env` của CLI), theo contract
+ * service của từng worker name đã biết trong topology local:
+ *
+ * - `ecoma-account-bridge` (shim mặt trước service-binding của account):
+ *   `BRIDGE_TARGET_ORIGIN` = `http://ecoma-<ns>-account:3000`. Thiếu biến này
+ *   shim vẫn boot nhưng trả 503 fail-closed cho MỌI request qua binding
+ *   (src/main.ts của bridge) — inject ở đây là điều kiện để chuỗi
+ *   auth → shim → account sống ngay khi up.
+ *
+ * Worker khác (transactional-mail pair...) nhận `{}` — không injection ngầm:
+ * một worker mới cần env local là một quyết định tường minh ở đây, không phải
+ * hiệu ứng lẻ của một allowlist chung.
+ */
+export function localWorkerEnvInjections(
+  workerName: string,
+  namespace: string,
+): Record<string, string> {
+  if (workerName === 'ecoma-account-bridge') {
+    return {
+      BRIDGE_TARGET_ORIGIN: `http://ecoma-${namespace}-account:${ACCOUNT_CONTAINER_INTERNAL_PORT}`,
+    };
+  }
+  return {};
 }
 
 /**
@@ -606,7 +651,10 @@ export async function startWorkerRuntime(
       name: entry.entryName,
       argv,
       cwd: entry.appDir,
-      env: buildWranglerEnv(generated.persistTo),
+      env: buildWranglerEnv(
+        generated.persistTo,
+        localWorkerEnvInjections(generated.config.name, namespace),
+      ),
       stateDir,
       spawnImpl: options.spawnImpl,
     });

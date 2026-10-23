@@ -611,6 +611,22 @@ const WRANGLER_ENV_ALLOWLIST = [
 ] as const;
 
 /**
+ * Prefix allowlist — biến pass theo TIỀN TỐ thay vì exact-match.
+ *
+ * `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_<BINDING>` (platform facts
+ * PF3, wrangler 4.x): biến môi trường duy nhất cấp connection string cho
+ * Hyperdrive binding khi chạy local — wrangler đọc nó từ `process.env` của
+ * PROCESS wrangler (đo thật: applyHyperdriveEnvVars đọc process.env trực tiếp,
+ * KHÔNG qua `.dev.vars` của worker env), và thiếu nó khi config khai hyperdrive
+ * binding là lỗi boot tường minh. Matching theo prefix là bắt buộc: phần đuôi
+ * là TÊN BINDING (`_HYPERDRIVE`, `_HD2`...) do committed config của từng app
+ * quyết định — allowlist exact-match không thể biết trước tên binding nào sẽ
+ * xuất hiện. Phần prefix được ghim nguyên vẹn ở đây nên không mở cửa rộng:
+ * biến nào không bắt đầu bằng prefix này vẫn không pass.
+ */
+const WRANGLER_ENV_PREFIX_ALLOWLIST = ['CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_'] as const;
+
+/**
  * HOME cô lập của wrangler subprocess — một thư mục rỗng theo persist dir,
  * cached OAuth token tại `~/.wrangler/config/default.toml` của máy developer
  * không được nhìn thấy (OCR security finding: token cache không phải env var
@@ -641,6 +657,17 @@ export function sanitizedWranglerEnv(persistTo: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const key of WRANGLER_ENV_ALLOWLIST) {
     if (process.env[key] !== undefined) env[key] = process.env[key];
+  }
+  // Prefix rule: Hyperdrive local connection string theo binding (xem
+  // WRANGLER_ENV_PREFIX_ALLOWLIST). Chỉ pass biến có giá trị non-empty —
+  // biến đặt nhưng rỗng thì wrangler xử lý như "chưa cấp connection string"
+  // và fail-closed lúc boot đúng như thiếu hẳn.
+  for (const prefix of WRANGLER_ENV_PREFIX_ALLOWLIST) {
+    for (const key of Object.keys(process.env)) {
+      if (key.startsWith(prefix) && process.env[key] !== undefined && process.env[key] !== '') {
+        env[key] = process.env[key];
+      }
+    }
   }
   // HOME/USERPROFILE cô lập — CachedCredentials của wrangler nằm dưới home dir
   // của user; trỏ cả hai về thư mục trống theo worktree.

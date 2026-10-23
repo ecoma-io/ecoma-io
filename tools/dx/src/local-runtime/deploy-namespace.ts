@@ -93,7 +93,15 @@ export type DeployResourceKind =
   | 'account'
   | 'auth'
   /** Image `node-server` của app account (PR #182 — container + Traefik local). */
-  | 'account-image';
+  | 'account-image'
+  /** WIC container của auth-deploy (auth + shim bridge, 02-identity.md §Database access). */
+  | 'auth-wic'
+  /** Image của WIC container. */
+  | 'auth-wic-image'
+  /** Volume state wrangler của WIC (persist D1/KV/queue + dev registry). */
+  | 'auth-wic-state'
+  /** Container init một-shot chown volume state cho uid node. */
+  | 'auth-wic-state-init';
 
 /**
  * Tên Docker resource hợp lệ và nhất quán cho một namespace.

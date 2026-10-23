@@ -19,11 +19,13 @@
 #
 # Input bắt buộc của build — đối chiếu từng dòng COPY trong
 # `deploys/home-deploy/Dockerfile`, `deploys/backoffice-deploy/Dockerfile`,
-# `deploys/account-deploy/Dockerfile` và `pnpm install` của workspace:
-# `pnpm-workspace.yaml`, `package.json`, `pnpm-lock.yaml`, `patches/`,
-# `tools/dx/package.json`, `apps/home/**`, `libs/ui-ecoma-logo/**`,
-# `tsconfig.base.json`. Spec `tools/dx/src/docker-context.spec.ts` đọc trực tiếp
-# file này để chốt các path đó; sửa file là spec tự chạy lại.
+# `deploys/account-deploy/Dockerfile`, `deploys/auth-deploy/Dockerfile` và
+# `pnpm install` của workspace: `pnpm-workspace.yaml`, `package.json`,
+# `pnpm-lock.yaml`, `patches/`, `tools/dx/package.json`, `apps/home/**`,
+# `libs/ui-ecoma-logo/**`, `tsconfig.base.json`,
+# `deploys/auth-deploy/wic-entrypoint.sh`. Spec
+# `tools/dx/src/docker-context.spec.ts` đọc trực tiếp file này để chốt các path
+# đó; sửa file là spec tự chạy lại.
 #
 # Với mỗi path, pattern CUỐI CÙNG khớp path đó quyết định include/exclude.
 
@@ -55,6 +57,13 @@ tools/*
 !tools/dx
 tools/dx/*
 !tools/dx/package.json
+
+# Image WIC (auth-deploy) COPY đúng MỘT file của thư mục `deploys/` — entrypoint
+# script của container wrangler dev. Cùng trình tự mở-lại-đúng-file như
+# `tools/dx` phía trên: `deploys/*` chặn phần còn lại của thư mục (Pulumi
+# program, Pulumi.yaml... không thuộc build context).
+deploys/*
+!deploys/auth-deploy/wic-entrypoint.sh
 
 # Blacklist bên trong các subtree đã mở: dependency, kết quả build trung gian
 # và cache dev không bao giờ là input — copy vào context chỉ làm chậm và có

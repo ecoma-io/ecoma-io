@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { worktreeNamespace } from './../local-runtime/deploy-namespace.js';
 import {
@@ -22,6 +22,7 @@ import {
   generatedConfigDir,
   generateWorkerConfig,
   parseJsonc,
+  sanitizedWranglerEnv,
   stripJsonc,
 } from './worker-config.js';
 import { WORKER_STATE_DIR_NAME } from './worker-process.js';
@@ -75,6 +76,63 @@ function writeCommittedConfig(dir: string, overrides: Record<string, unknown> = 
   writeFileSync(path, `${lines.join('\n')}\n`, 'utf8');
   return path;
 }
+
+describe('sanitizedWranglerEnv — Hyperdrive local connection string prefix rule', () => {
+  /** Snapshot process.env keys liên quan, khôi phục sau mỗi ca — env là global. */
+  const ENV_KEYS = [
+    'CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE',
+    'CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HD2',
+    'CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_',
+    'SOME_SECRET_TOKEN',
+  ];
+
+  afterEach(() => {
+    for (const key of ENV_KEYS) {
+      // `no-dynamic-delete` chặn `delete process.env[key]` — khởi lại bằng
+      // `undefined` là đường hợp lệ của Node: xoá key khỏi `process.env` và
+      // không đụng chỉ mục động nào.
+      process.env[key] = undefined;
+    }
+    vi.restoreAllMocks();
+  });
+
+  it('passes CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_<BINDING> through to the wrangler env', () => {
+    process.env.CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE =
+      'postgresql://ecoma_auth_runtime:pw@ecoma-postgres:5432/db-auth?sslmode=disable';
+
+    const env = sanitizedWranglerEnv(tmpdir());
+
+    expect(env.CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE).toBe(
+      'postgresql://ecoma_auth_runtime:pw@ecoma-postgres:5432/db-auth?sslmode=disable',
+    );
+  });
+
+  it('matches ANY binding suffix — the tail is owned by each app config, not the allowlist', () => {
+    process.env.CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HD2 = 'postgresql://u:p@h:5432/d';
+
+    const env = sanitizedWranglerEnv(tmpdir());
+
+    expect(env.CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HD2).toBe('postgresql://u:p@h:5432/d');
+  });
+
+  it('drops an empty-valued hyperdrive variable — empty is treated as not-provided (fail-closed boot)', () => {
+    process.env.CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE = '';
+
+    const env = sanitizedWranglerEnv(tmpdir());
+
+    expect(env.CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE).toBeUndefined();
+  });
+
+  it('still blocks env vars outside the allowlist and the hyperdrive prefix', () => {
+    process.env.SOME_SECRET_TOKEN = 'should-not-pass';
+    process.env.CLOUDFLARE_HYPERDRIVE_UNRELATED_SUFFIX = 'not-this-prefix';
+
+    const env = sanitizedWranglerEnv(tmpdir());
+
+    expect(env.SOME_SECRET_TOKEN).toBeUndefined();
+    expect(env.CLOUDFLARE_HYPERDRIVE_UNRELATED_SUFFIX).toBeUndefined();
+  });
+});
 
 describe('stripJsonc', () => {
   it('removes line comments and block comments while preserving strings', () => {

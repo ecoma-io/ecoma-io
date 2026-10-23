@@ -84,6 +84,21 @@ export function generatePostgresPassword(): string {
   return randomBytes(24).toString('base64url');
 }
 
+/**
+ * Sinh secret HMAC cho envelope internal `ecoma-internal-v1` hai chiều
+ * auth <-> account.
+ *
+ * Cùng hình dạng giá trị với `generatePostgresPassword` (base64url 24 byte =
+ * 32 ký tự — đủ độ dài tối thiểu 32 ký tự mà `config-validation.ts` của
+ * account đòi). Tách tên riêng vì NGHĨA khác: đây là secret HMAC ứng dụng
+ * (không phải credential database), và orchestration là nơi giữ bất biến
+ * "auth và account nhận CÙNG giá trị" — sinh hai lần độc lập là mọi envelope
+ * internal chết `bad_signature` lúc runtime.
+ */
+export function generateInternalHmacSecret(): string {
+  return randomBytes(24).toString('base64url');
+}
+
 /** Kết quả đọc mật khẩu PostgreSQL từ stack config (nguồn sự thật canonical). */
 export type PostgresPasswordLookup =
   | { state: 'found'; password: string }
@@ -451,13 +466,38 @@ export function resolvePostgresPassword(
 }
 
 /**
+ * Sinh PEM PKCS#8 cho khoá ký ES256 của auth (Worker Secret `AUTH_SIGNING_KEY`).
+ *
+ * WebCrypto ở runtime local Node: `crypto.subtle.generateKey({ name:
+ * 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])` rồi
+ * `exportKey('pkcs8')` — đúng spec PKCS#8 mà `SigningKeyProvider.fromPem`
+ * parse (`BEGIN PRIVATE KEY`). Khóa sinh MỖI LẦN GỌI; caller quyết định khi
+ * nào gọi (một lần cho mỗi lần up auth trên namespace mới) và stack config
+ * là nơi giữ nó ổn định giữa các lần deploy — JWKS đổi giữa chừng là mọi
+ * token đã cấp không còn verify được.
+ *
+ * `forge` không được dùng; `node:crypto` là dependency duy nhất — cùng nguồn
+ * với `generatePostgresPassword`.
+ */
+export async function generateEs256SigningKeyPem(): Promise<string> {
+  const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+    'sign',
+    'verify',
+  ]);
+  const pkcs8 = await crypto.subtle.exportKey('pkcs8', pair.privateKey);
+  const derBase64 = Buffer.from(pkcs8).toString('base64');
+  const lines = derBase64.match(/.{1,64}/gu) ?? [];
+  return ['-----BEGIN PRIVATE KEY-----', ...lines, '-----END PRIVATE KEY-----', ''].join('\n');
+}
+
+/**
  * Luồng đầy đủ: platform → outputs → .env → home → smoke.
  *
  * Cả hai project được truyền `namespace:worktreeRoot` qua `--config` tại lúc
  * chạy — chương trình Pulumi không đọc `.env` do chính luồng này sinh ra
  * (không dependency cycle).
  */
-export function localDeploy(options: LocalDeployOptions = {}): number {
+export async function localDeploy(options: LocalDeployOptions = {}): Promise<number> {
   const ctx = resolveContext(options.worktreeRoot);
 
   console.log(`[local-deploy] worktree=${ctx.worktreeRoot} namespace=${ctx.namespace}`);
@@ -485,7 +525,7 @@ export function localDeploy(options: LocalDeployOptions = {}): number {
   // read-only, không cần lock.
   const lock = acquireLocalDeployLock();
   try {
-    return runApply(ctx, env, options);
+    return await runApply(ctx, env, options);
   } finally {
     lock();
   }
@@ -495,11 +535,11 @@ export function localDeploy(options: LocalDeployOptions = {}): number {
  * Phần APPLY của `localDeploy` — tách khỏi nhánh preview để lock bao đúng phần
  * mutate Docker, không bao phần read-only.
  */
-function runApply(
+async function runApply(
   ctx: LocalDeployContext,
   env: NodeJS.ProcessEnv,
   options: LocalDeployOptions = {},
-): number {
+): Promise<number> {
   const sharedConfigArgs = [
     '--config',
     `namespace:worktreeRoot=${ctx.worktreeRoot}`,
@@ -672,20 +712,37 @@ function runApply(
   );
   if (!backofficeOk) return 1;
 
-  // 4c/4d. Account + auth up — DB isolation provisioning + migration (PR #181).
+  // 4c/4d. Account + auth up — DB isolation provisioning + migration (PR #181)
+  //        + WIC container với secrets Worker của auth (PR #183).
+  //
+  // Secret HMAC hai chiều auth <-> account: sinh MỘT lần, trước vòng for, vì
+  // vòng for xử lý account TRƯỚC auth mà cả hai stack đều cần CÙNG giá trị
+  // (account: `NUXT_INTERNAL_HMAC_SECRET`; auth: `AUTH_INTERNAL_SECRET`) —
+  // xem JSDoc chi tiết trong vòng for.
+  const identityInternalSecret = generateInternalHmacSecret();
   //
   // Thứ tự account TRƯỚC auth là bất biến: cả hai stack guard-create role owner
   // dùng chung `ecoma_owner`, nhưng CHỈ account stack ALTER password của nó —
   // up auth trước trên cluster mới vẫn đúng (auth chỉ tạo khi thiếu), nhưng giữ
   // account trước làm chủ sở hữu password xuất hiện sớm nhất, và chiều revoke
-  // chéo được đo lường trên cluster thật theo đúng thứ tự này.
+  // chéo được đo lường trên cluster thật theo đúng thứ tự này. Với PR #183, thứ
+  // tự này còn bảo đảm container account tồn tại trước khi WIC boot — shim
+  // bridge trỏ alias DNS `ecoma-<ns>-account`, và readiness của auth đỏ một
+  // cách fail-closed (không crash) nếu upstream chưa sẵn sàng trong cửa sổ up.
   for (const [stepLabel, project] of [
     ['account up', ACCOUNT_PROJECT],
     ['auth up', AUTH_PROJECT],
   ] as const) {
     // Mật khẩu role của từng stack — sinh ngẫu nhiên bằng API mật mã an toàn.
-    // Account stack có mật khẩu owner (nó SỞ HỘI `ecoma_owner`); auth stack
+    // Account stack có mật khẩu owner (nó SỞ HỮU `ecoma_owner`); auth stack
     // guard-create owner khi thiếu nhưng không bao giờ ALTER password.
+    //
+    // Secret HMAC hai chiều auth <-> account (PR #183): sinh MỘT giá trị
+    // TRƯỚC vòng for, rồi set cho CẢ HAI stack — account nhận làm
+    // `NUXT_INTERNAL_HMAC_SECRET`, auth nhận làm `AUTH_INTERNAL_SECRET`. Hai
+    // stack nhận hai giá trị khác nhau là mọi envelope internal bị từ chối
+    // `bad_signature` lúc runtime — bất biến "cùng secret" thuộc về
+    // orchestration, không stack nào tự kiểm được.
     //
     // ⚠️ Mảng literal NỘI TUYẾN trong for-of, không tách biến: CodeQL
     // `js/clear-text-logging` coi mọi dữ liệu phái sinh từ một biến tên
@@ -705,13 +762,32 @@ function runApply(
           // Secret HMAC của app account (container local #182): cùng độ dài tối
           // thiểu 32 ký tự mà `config-validation.ts` đòi (validateAccountConfig
           // fail-closed ở request đầu nếu ngắn hơn) — base64url 24 bytes đủ dài.
-          ['namespace:internalHmacSecret', generatePostgresPassword()],
+          // CÙNG giá trị với `namespace:internalSecret` của auth stack ở nhánh
+          // kia — xem JSDoc của khối này.
+          ['namespace:internalHmacSecret', identityInternalSecret],
           ['namespace:otpHmacSecret', generatePostgresPassword()],
         ] as const)
       : ([
           ['namespace:runtimePassword', generatePostgresPassword()],
           ['namespace:migratorPassword', generatePostgresPassword()],
           ['namespace:prunerPassword', generatePostgresPassword()],
+          // Secrets Worker của auth (WIC #183) — cùng TÊN BIẾN với Worker
+          // Secrets production; wrangler dev map env process vào secrets của
+          // worker. `signingKeyPem`: PKCS#8 ES256 sinh lúc deploy, giữ ổn định
+          // qua các lần deploy trong đời namespace (JWKS đổi là mọi token đã
+          // cấp chết); `handleKey`: 32 byte base64url (domain lib bắt chính xác
+          // 32 byte); `cookieKeys`: một key base64url 32 byte (keygrip — key
+          // đầu ký, spin sau thêm key verify ở cuối chuỗi). Không set
+          // `AUTH_INTERNAL_KID`/`AUTH_INTERNAL_PREVIOUS_*`: local không xoay
+          // secret — thiếu các biến này là trạng thái hợp lệ (envelope không
+          // kid; config.ts chấp nhận tường minh).
+          ['namespace:signingKeyPem', await generateEs256SigningKeyPem()],
+          ['namespace:signingKeyId', 'local-identity-1'],
+          ['namespace:handleKey', generatePostgresPassword()],
+          ['namespace:internalSecret', identityInternalSecret],
+          ['namespace:issuer', `https://auth.${outputs.rootHost}`],
+          ['namespace:audience', `https://api.${outputs.rootHost}`],
+          ['namespace:cookieKeys', generatePostgresPassword()],
         ] as const)) {
       const setResult = exec(
         'pulumi',

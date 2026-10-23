@@ -70,7 +70,9 @@ export interface AuthEnv {
    */
   AUTH_ACCOUNT_BASE_URL?: string;
   /** Cổng dịch vụ `account`. Bắt buộc — thiếu thì không có fail-closed point. */
-  ACCOUNT_SERVICE?: { fetch: (request: Request) => Promise<Response> };
+  ACCOUNT_SERVICE?: {
+    fetch: (request: Request, init?: RequestInit) => Promise<Response>;
+  };
 }
 
 /** Cấu hình đã kiểm, dùng bởi composition root. */

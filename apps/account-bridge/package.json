@@ -1,0 +1,44 @@
+{
+  "name": "@ecoma-io/account-bridge",
+  "version": "0.0.1",
+  "private": true,
+  "nx": {
+    "tags": [
+      "type:composition",
+      "scope:identity",
+      "runtime:edge"
+    ],
+    "targets": {
+      "build": {
+        "executor": "@nx/esbuild:esbuild",
+        "outputs": [
+          "{options.outputPath}"
+        ],
+        "defaultConfiguration": "production",
+        "options": {
+          "platform": "neutral",
+          "outputPath": "apps/account-bridge/dist",
+          "format": [
+            "esm"
+          ],
+          "bundle": true,
+          "main": "apps/account-bridge/src/main.ts",
+          "tsConfig": "apps/account-bridge/tsconfig.app.json",
+          "esbuildOptions": {
+            "sourcemap": true,
+            "outExtension": {
+              ".js": ".js"
+            },
+            "conditions": [
+              "workerd",
+              "worker",
+              "browser"
+            ]
+          },
+          "skipTypeCheck": true,
+          "declaration": false
+        }
+      }
+    }
+  }
+}

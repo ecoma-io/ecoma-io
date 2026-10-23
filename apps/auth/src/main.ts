@@ -61,6 +61,17 @@ const INTERNAL_DB_UNAVAILABLE_RETRY_AFTER_SECONDS = '5';
 const READY_PROBE_CONNECT_TIMEOUT_SECONDS = 3;
 
 /**
+ * Ngân sách thời gian của probe ACCOUNT_SERVICE trong readiness (mili-giây).
+ *
+ * Cùng triết lý với `READY_PROBE_CONNECT_TIMEOUT_SECONDS`: một dependency không
+ * trả lời trong vài giây là dependency không phục vụ được request thật — readiness
+ * trả 200 thì request kế tiếp cũng chết sau đó. Fetch qua service binding là
+ * in-process hop (không TCP handshake thật), nên ngân sách ngắn hơn probe DB là
+ * đủ; timeout vẫn cần vì binding chết có thể treo ở tầng runtime.
+ */
+const READY_ACCOUNT_PROBE_TIMEOUT_MS = 3_000;
+
+/**
  * Cấu hình đã nạp, cache theo isolate.
  *
  * ⚠️ Không cache thì mỗi request sẽ import lại PKCS#8 và tạo handle khoá mới —
@@ -154,6 +165,25 @@ app.get('/ready', async (c) => {
     });
   }
 
+  // Signing config — `loadAuthConfig` là ĐƯỜNG NẠP duy nhất và fail-closed với
+  // mọi secret thiếu/sai shape (PKCS#8 không parse được, kid rỗng, cookie keys
+  // rỗng...). Thử nạp ở đây biến "signing config có thể dùng để phát hành" thành
+  // điều kiện readiness: một Worker không ký được token thì không phục vụ được
+  // request nào, bất kể binding và DB có xanh. KHÔNG cache aside ngoài
+  // `getConfig` — cache promise của nó đã xử lý dùng lại + không cache lỗi.
+  try {
+    await getConfig(env);
+  } catch {
+    // KHÔNG nối `error` vào log: message của `AuthConfigurationError` nêu TÊN
+    // biến thiếu — tên cấu hình không thuộc response công khai cũng như log của
+    // readiness (log cấu hình là việc của boot, không phải của probe).
+    // oxlint-disable-next-line no-console
+    console.log(JSON.stringify({ event: 'ready.failed', status: 503, reason: 'config_invalid' }));
+    return c.json({ error: 'service_unavailable' }, 503, {
+      'Retry-After': INTERNAL_DB_UNAVAILABLE_RETRY_AFTER_SECONDS,
+    });
+  }
+
   try {
     await probeDatabase(env.HYPERDRIVE);
   } catch {
@@ -161,6 +191,29 @@ app.get('/ready', async (c) => {
     // Chỉ ghi mã ổn định, đủ để phân loại sự cố.
     // oxlint-disable-next-line no-console
     console.log(JSON.stringify({ event: 'ready.failed', status: 503, reason: 'db_unreachable' }));
+    return c.json({ error: 'service_unavailable' }, 503, {
+      'Retry-After': INTERNAL_DB_UNAVAILABLE_RETRY_AFTER_SECONDS,
+    });
+  }
+
+  // Account contract — probe reachability QUA BINDING (đúng đường mà mọi request
+  // thật đi): GET `/ready` của account không cần envelope HMAC và tự probe
+  // db-account của nó, nên một 2xx ở đây chứng minh chuỗi
+  // auth → ACCOUNT_SERVICE → account → db-account sống.
+  //
+  // ⚠️ "Reachable" nghĩa là CÓ RESPONSE — status nào cũng tính: account đỏ
+  // (503 vì db-account chết) vẫn là account SỐNG và trả lời đúng hợp đồng; readiness
+  // chi tiết của account là việc của account, không phải probe này đếm hộ. Chỉ
+  // "không trả lời được" (throw: binding chết, timeout) là fail-closed.
+  try {
+    await env.ACCOUNT_SERVICE.fetch(new Request('https://account-service.internal/ready'), {
+      signal: AbortSignal.timeout(READY_ACCOUNT_PROBE_TIMEOUT_MS),
+    });
+  } catch {
+    // oxlint-disable-next-line no-console
+    console.log(
+      JSON.stringify({ event: 'ready.failed', status: 503, reason: 'account_unreachable' }),
+    );
     return c.json({ error: 'service_unavailable' }, 503, {
       'Retry-After': INTERNAL_DB_UNAVAILABLE_RETRY_AFTER_SECONDS,
     });
