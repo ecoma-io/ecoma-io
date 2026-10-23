@@ -34,6 +34,7 @@ export function environmentRoutes(
       },
       _embedded: {
         environments: envs.map((e) => ({
+          uuid: e.uuid,
           name: e.name,
           displayName: e.displayName,
           production: e.production,
@@ -76,6 +77,7 @@ export function environmentRoutes(
     const hal = new HalBuilder(getBaseUrl(c.req.raw));
     return c.json(
       {
+        uuid: environment.uuid,
         name: environment.name,
         displayName: environment.displayName,
         production: environment.production,
@@ -88,18 +90,26 @@ export function environmentRoutes(
   });
 
   // Get một environment.
-  app.get('/:name', readAuth(), async (c) => {
-    const nameResult = validateParam(c, environmentNameSchema, c.req.param('name'), 'name');
-    if (!nameResult.valid) return nameResult.errorResponse;
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
+  app.get('/:id', readAuth(), async (c) => {
+    const raw = c.req.param('id');
     const repo = new PgEnvironmentRepo(c.get('pool'));
-    const environment = await repo.getEnvironment(currentTenantId(c), nameResult.value);
+    const tenantId = currentTenantId(c);
+    const environment = UUID_RE.test(raw)
+      ? await repo.getEnvironmentByUuid(tenantId, raw)
+      : await (async (): Promise<import('../repo/environment-repo').EnvironmentRecord | null> => {
+          const r = validateParam(c, environmentNameSchema, raw, 'name');
+          if (!r.valid) return null;
+          return repo.getEnvironment(tenantId, r.value);
+        })();
     if (environment === null) {
       return c.json({ error: 'Not Found', message: 'Environment not found' }, 404);
     }
 
     const hal = new HalBuilder(getBaseUrl(c.req.raw));
     return c.json({
+      uuid: environment.uuid,
       name: environment.name,
       displayName: environment.displayName,
       production: environment.production,
@@ -109,12 +119,10 @@ export function environmentRoutes(
   });
 
   // Create or update — upstream PUT luôn 201, body rỗng hợp lệ.
-  app.put('/:name', writeAuth(), async (c) => {
-    const nameResult = validateParam(c, environmentNameSchema, c.req.param('name'), 'name');
-    if (!nameResult.valid) return nameResult.errorResponse;
-
+  app.put('/:id', writeAuth(), async (c) => {
+    const raw = c.req.param('id');
     const bodyResult = await readJsonBodyWithLimit(c, 1 * 1024 * 1024, 'Environment body');
-    let body: { displayName?: unknown; production?: unknown } = {};
+    let body: { displayName?: unknown; production?: unknown; name?: unknown } = {};
     if (bodyResult.ok) {
       body = (bodyResult.value ?? {}) as typeof body;
     } else if (bodyResult.errorResponse.status === 413) {
@@ -122,9 +130,24 @@ export function environmentRoutes(
     }
 
     const repo = new PgEnvironmentRepo(c.get('pool'));
+    const tenantId = currentTenantId(c);
+
+    let targetName: string;
+    if (UUID_RE.test(raw)) {
+      const existing = await repo.getEnvironmentByUuid(tenantId, raw);
+      if (existing === null) {
+        return c.json({ error: 'Not Found', message: 'Environment not found' }, 404);
+      }
+      targetName = existing.name;
+    } else {
+      const nameResult = validateParam(c, environmentNameSchema, raw, 'name');
+      if (!nameResult.valid) return nameResult.errorResponse;
+      targetName = nameResult.value;
+    }
+
     const { environment } = await repo.getOrCreate(
-      currentTenantId(c),
-      nameResult.value,
+      tenantId,
+      targetName,
       typeof body.displayName === 'string' ? body.displayName : undefined,
       typeof body.production === 'boolean' ? body.production : undefined,
     );
@@ -132,6 +155,7 @@ export function environmentRoutes(
     const hal = new HalBuilder(getBaseUrl(c.req.raw));
     return c.json(
       {
+        uuid: environment.uuid,
         name: environment.name,
         displayName: environment.displayName,
         production: environment.production,
@@ -140,6 +164,25 @@ export function environmentRoutes(
       },
       201,
     );
+  });
+
+  // DELETE environment — Pact CLI `delete-environment`.
+  app.delete('/:id', writeAuth(), async (c) => {
+    const raw = c.req.param('id');
+    const repo = new PgEnvironmentRepo(c.get('pool'));
+    const tenantId = currentTenantId(c);
+    let ok: boolean;
+    if (UUID_RE.test(raw)) {
+      ok = await repo.deleteEnvironment(tenantId, raw, true);
+    } else {
+      const nameResult = validateParam(c, environmentNameSchema, raw, 'name');
+      if (!nameResult.valid) return nameResult.errorResponse;
+      ok = await repo.deleteEnvironment(tenantId, nameResult.value, false);
+    }
+    if (!ok) {
+      return c.json({ error: 'Not Found', message: 'Environment not found' }, 404);
+    }
+    return c.body(null, 204);
   });
 
   return app;
