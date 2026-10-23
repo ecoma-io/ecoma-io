@@ -266,8 +266,8 @@ importers:
         specifier: 0.0.22
         version: 0.0.22(supports-color@10.2.2)(typescript@6.0.3)
       '@pulumi/pulumi':
-        specifier: 3.271.0
-        version: 3.271.0(supports-color@10.2.2)(typescript@6.0.3)
+        specifier: 3.272.0
+        version: 3.272.0(supports-color@10.2.2)(typescript@6.0.3)
       '@swc/helpers':
         specifier: ~0.5.18
         version: 0.5.23
@@ -341,8 +341,8 @@ importers:
         specifier: ^1.87.0
         version: 1.88.0
       pulumi:
-        specifier: 3.271.0
-        version: 3.271.0
+        specifier: 3.272.0
+        version: 3.272.0
       rehype-katex:
         specifier: ^7.0.1
         version: 7.0.1
@@ -4507,8 +4507,8 @@ packages:
   '@pulumi/docker@5.2.0':
     resolution: {integrity: sha512-1H0UGH6TN16jzq8tjwxCLwytXvnTXmxLW27EiGuaP+aueXk+AgswTBCKFERMhhJYkc4EQxTyzJo37tLDIxf0wA==}
 
-  '@pulumi/pulumi@3.271.0':
-    resolution: {integrity: sha512-5Ol0JIf0vCbiFj1j3r0hvdaCSCbCURhfOxpNvTsE1qhjJS3m665UG1qO3HKrB6T9mD7OzgcD1y4PbL6EGl0gjg==}
+  '@pulumi/pulumi@3.272.0':
+    resolution: {integrity: sha512-DepbT+tA3HnNo5+OtEMEevK1pC45PD/71sQh3tlWYFtW4tjuZijAQprvgCYcQUKNwRP3/Y3z83Kbvxn7y9HR2w==}
     engines: {node: '>=22'}
     peerDependencies:
       ts-node: '>= 7.0.1 < 12'
@@ -9367,8 +9367,8 @@ packages:
     resolution: {integrity: sha512-cJ+oHTW1VAEa8cJslgmUZrc+sjRKgAKl3Zyse6+PV38hZe/V6Z14TbCuXcan9F9ghlz4QrFr2c92TNF82UkYHA==}
     engines: {node: '>=10'}
 
-  pulumi@3.271.0:
-    resolution: {integrity: sha512-bT2eRNuhdZ8zuJsrR8P/Z+oSU4GGTALXkYXyW4vDZSijWLc68khCGh6bheJV+kDxLR3hU7682Sa186JYTrGTWQ==}
+  pulumi@3.272.0:
+    resolution: {integrity: sha512-186Xblr3C0kqxp678fzRhctTw0/VZVUwU0h2G4G9bBvaelSIGbocD+VK2dnDB7fkb6KVEf7cQIMy2Z2UpWECzg==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -15451,7 +15451,7 @@ snapshots:
 
   '@pulumi/cloudflare@6.22.1(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
-      '@pulumi/pulumi': 3.271.0(supports-color@10.2.2)(typescript@6.0.3)
+      '@pulumi/pulumi': 3.272.0(supports-color@10.2.2)(typescript@6.0.3)
     transitivePeerDependencies:
       - supports-color
       - ts-node
@@ -15459,7 +15459,7 @@ snapshots:
 
   '@pulumi/command@1.2.1(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
-      '@pulumi/pulumi': 3.271.0(supports-color@10.2.2)(typescript@6.0.3)
+      '@pulumi/pulumi': 3.272.0(supports-color@10.2.2)(typescript@6.0.3)
     transitivePeerDependencies:
       - supports-color
       - ts-node
@@ -15467,7 +15467,7 @@ snapshots:
 
   '@pulumi/docker-build@0.0.22(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
-      '@pulumi/pulumi': 3.271.0(supports-color@10.2.2)(typescript@6.0.3)
+      '@pulumi/pulumi': 3.272.0(supports-color@10.2.2)(typescript@6.0.3)
     transitivePeerDependencies:
       - supports-color
       - ts-node
@@ -15475,14 +15475,14 @@ snapshots:
 
   '@pulumi/docker@5.2.0(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
-      '@pulumi/pulumi': 3.271.0(supports-color@10.2.2)(typescript@6.0.3)
+      '@pulumi/pulumi': 3.272.0(supports-color@10.2.2)(typescript@6.0.3)
       semver: 7.8.5
     transitivePeerDependencies:
       - supports-color
       - ts-node
       - typescript
 
-  '@pulumi/pulumi@3.271.0(supports-color@10.2.2)(typescript@6.0.3)':
+  '@pulumi/pulumi@3.272.0(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
       '@grpc/grpc-js': 1.14.6
       '@logdna/tail-file': 2.2.0
@@ -21455,7 +21455,7 @@ snapshots:
 
   proxy-from-env@2.1.0: {}
 
-  pulumi@3.271.0: {}
+  pulumi@3.272.0: {}
 
   pump@3.0.4:
     dependencies:
