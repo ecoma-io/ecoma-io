@@ -696,18 +696,18 @@ function runApply(
     // không bị flag đúng vì mảng của nó là literal inline. Giữ nguyên hình dạng
     // đó; giá trị vẫn CHỈ đi qua stdin.
     ensureStack(projectDir(project), project, ctx, env);
-    for (const [configKey, configValue] of (project === ACCOUNT_PROJECT
-      ? [
+    for (const [configKey, configValue] of project === ACCOUNT_PROJECT
+      ? ([
           ['namespace:ownerPassword', generatePostgresPassword()],
           ['namespace:runtimePassword', generatePostgresPassword()],
           ['namespace:migratorPassword', generatePostgresPassword()],
           ['namespace:prunerPassword', generatePostgresPassword()],
-        ]
-      : [
+        ] as const)
+      : ([
           ['namespace:runtimePassword', generatePostgresPassword()],
           ['namespace:migratorPassword', generatePostgresPassword()],
           ['namespace:prunerPassword', generatePostgresPassword()],
-        ]) as const) {
+        ] as const)) {
       const setResult = exec(
         'pulumi',
         ['config', 'set', configKey, '--plaintext', '--raw', '--stack', fullStackRef(project, ctx)],
