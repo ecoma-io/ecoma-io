@@ -14,6 +14,14 @@
       "type:tooling",
       "runtime:native",
       "scope:local"
-    ]
+    ],
+    "namedInputs": {
+      "default": [
+        "{projectRoot}/**/*",
+        "sharedGlobals",
+        "{workspaceRoot}/.github/workflows/code-analysis.yml",
+        "{workspaceRoot}/lefthook.yml"
+      ]
+    }
   }
 }
