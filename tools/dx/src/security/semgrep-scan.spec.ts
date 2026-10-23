@@ -393,6 +393,36 @@ describe('wiring', () => {
     expect(hook).toContain('pnpm dx semgrep-scan');
   });
 
+  it('declares the workflow files it reads as Nx inputs so a workflow-only change still runs these tests', () => {
+    // Các test wiring đọc `code-analysis.yml` và `lefthook.yml` qua
+    // `fs.readFileSync` — dependency runtime vô hình với project graph, nên
+    // trước khi có `namedInputs` này, một PR chỉ sửa workflow file cho
+    // `nx affected` 0 task (tái hiện thật: `nx show projects --affected` trả
+    // `[]` trên main) và test dưới đây không hề chạy ở CI. Assert này đọc lại
+    // chính `package.json` của project: nếu ai xoá input (hoặc Nx đổi cách kế
+    // thừa `default` ở project level) thì test đỏ ngay trong lần chạy còn lại.
+    // Một test chỉ assert bản thân nó chạy được là ít — nhưng kết hợp với input
+    // khai trên, invariant "workflow-only change ⇒ test wiring chạy" được giữ
+    // bởi chính Nx, còn assert này chặn việc cấu hình bị gỡ bỏ âm thầm.
+    const project = JSON.parse(readFileSync(join(DX_ROOT, 'package.json'), 'utf8')) as {
+      nx?: { namedInputs?: { default?: string[] } };
+    };
+    const inputs = project.nx?.namedInputs?.default ?? [];
+
+    for (const required of [
+      '{workspaceRoot}/.github/workflows/code-analysis.yml',
+      '{workspaceRoot}/lefthook.yml',
+      // `shell-quote.spec.ts` ghim caller `deploys/backoffice-deploy/index.ts`
+      // qua `fs.readFileSync` — cũng vô hình với graph nếu không khai.
+      '{workspaceRoot}/deploys/backoffice-deploy/index.ts',
+    ]) {
+      expect(inputs).toContain(required);
+    }
+    // `{projectRoot}/**/*` phải còn ở đầu: xoá nó là mất toàn bộ source files
+    // khỏi hash — test/lint/typecheck sẽ cache-hit sai trên mọi thay đổi code.
+    expect(inputs).toContain('{projectRoot}/**/*');
+  });
+
   it('uses the same pinned image as CI', () => {
     // Nâng version ở workflow mà quên ở DX là một trong hai bên kiểm bộ rule
     // cũ — đúng loại im lặng mà assert này chặn.
