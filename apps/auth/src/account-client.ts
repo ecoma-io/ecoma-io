@@ -295,6 +295,20 @@ export function makeNonceGuard(
   };
 }
 
+/**
+ * Lỗi hạ tầng khi gọi `account` (binding chết, timeout, HTTP non-OK, body sai hợp đồng).
+ *
+ * Dùng class riêng để `isInfrastructureError` ở `main.ts` không phải đoán theo
+ * `Error.name === 'PostgresError'` (chỉ đúng cho driver postgres.js) hay theo
+ * nội dung message — đây là dependency adapter khác, không tạo `PostgresError`.
+ */
+export class AccountDependencyError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'AccountDependencyError';
+  }
+}
+
 /** Client `auth → account`. */
 export class AccountClient {
   readonly #binding: AccountServiceBinding;
@@ -397,25 +411,39 @@ export class AccountClient {
       headers: init.headers,
       body: init.body === undefined ? undefined : new Uint8Array(init.body),
     });
-    const response = await this.#binding.fetch(
-      request,
-      // ⚠️ Timeout phải đi qua `init.signal`: Service Binding không có socket
-      // timeout mặc định, nên đây là giới hạn duy nhất. Không có nó thì một
-      // Account unreachable treo request tới hết thời hạn Worker, và
-      // fail-closed lúc đó thành "chậm" thay vì "dừng".
-      { signal: AbortSignal.timeout(ACCOUNT_TIMEOUT_MS) },
-    );
+    let response: Response;
+    try {
+      response = await this.#binding.fetch(
+        request,
+        // ⚠️ Timeout phải đi qua `init.signal`: Service Binding không có socket
+        // timeout mặc định, nên đây là giới hạn duy nhất. Không có nó thì một
+        // Account unreachable treo request tới hết thời hạn Worker, và
+        // fail-closed lúc đó thành "chậm" thay vì "dừng".
+        { signal: AbortSignal.timeout(ACCOUNT_TIMEOUT_MS) },
+      );
+    } catch (error) {
+      // Binding chết / timeout / mạng — fail-closed, nhưng là hạ tầng, không phải bug.
+      const cause = error instanceof Error ? error : undefined;
+      throw new AccountDependencyError(
+        `Account khong goi duoc cho ${path}: ${cause?.message ?? String(error)}`,
+        cause !== undefined ? { cause } : undefined,
+      );
+    }
 
     if (!response.ok) {
-      throw new Error(
+      throw new AccountDependencyError(
         `Account tra ve ${response.status} cho ${path}; auth fail-closed khong phat hanh token`,
       );
     }
 
     try {
       return (await response.json()) as T;
-    } catch {
-      throw new Error(`Account tra ve body khong phai JSON cho ${path}; auth fail-closed`);
+    } catch (error) {
+      const cause = error instanceof Error ? error : undefined;
+      throw new AccountDependencyError(
+        `Account tra ve body khong phai JSON cho ${path}; auth fail-closed`,
+        cause !== undefined ? { cause } : undefined,
+      );
     }
   }
 }

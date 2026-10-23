@@ -20,7 +20,11 @@ import {
 } from '@ecoma-io/identity-auth-contracts';
 import { createPostgresClient } from '@ecoma-io/identity-auth-infrastructure';
 import { createAuthorizationStore } from './authorization-store';
-import { AccountClient, isAuthenticatedInternalRequest } from './account-client';
+import {
+  AccountClient,
+  AccountDependencyError,
+  isAuthenticatedInternalRequest,
+} from './account-client';
 import { type AuthConfig, type AuthEnv, loadAuthConfig, resolveInternalSecret } from './config';
 import { PROVIDER_ROUTES } from './oidc/provider';
 import { dispatchToNode, getRuntime } from './oidc/runtime';
@@ -81,10 +85,12 @@ async function getConfig(env: AuthEnv): Promise<AuthConfig> {
  */
 function isInfrastructureError(error: unknown): boolean {
   if (error instanceof Error) {
-    // postgres.js ném `PostgresError`; AccountClient ném Error thường kèm
-    // message tiếng Việt. Kiểm theo nguồn gốc: tên class của driver là tín
-    // hiệu duy nhất đáng tin, còn message là dữ liệu biến đổi — không so message.
-    if (error.name === 'PostgresError') {
+    // postgres.js ném `PostgresError`; AccountClient ném `AccountDependencyError`
+    // cho mọi lỗi hạ tầng của dependency account (binding chết, timeout, HTTP
+    // non-OK, body sai hợp đồng). Kiểm theo **class**, không theo message hay
+    // `Error.name` — vì `AccountClient` trước đây chỉ ném `Error` thường, tên
+    // class là `Error` thì không phân biệt được với bug nội bộ.
+    if (error.name === 'PostgresError' || error instanceof AccountDependencyError) {
       return true;
     }
   }
