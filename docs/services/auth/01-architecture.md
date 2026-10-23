@@ -550,7 +550,7 @@ Consumer `Browser`, provider `auth`. Đây là endpoint **public** của `auth`,
 
 ### 5.1.8 Envelope nội bộ — một giao thức canonical, chống replay bền vững
 
-Cả bốn contract ở §5.1.7 dùng **một** envelope HMAC duy nhất, và giao thức đó có **một** bản cài đặt: `libs/identity-contracts` (`internal-auth.ts`), tag `type:contracts` + `runtime:universal` nên import được từ cả `auth` (Workers) lẫn `account` (Nitro). `libs/identity-auth-contracts` **re-export** từ đó, không giữ bản thứ hai. Hai bên test với chính mình thì một bất tương thích không bao giờ đỏ — nên việc chỉ có một bản là điều kiện của tính đúng, không phải chuyện gọn gàng.
+Cả bốn contract ở §5.1.7 dùng **một** envelope HMAC duy nhất, và giao thức đó có **một** bản cài đặt: `libs/internal-auth-contracts` (`internal-auth.ts`, `scope:platform` — protocol nền tảng dùng chung giữa các BC, không thuộc riêng identity), tag `type:contracts` + `runtime:universal` nên import được từ cả `auth` (Workers) lẫn `account` (Nitro). `libs/identity-contracts` và `libs/identity-auth-contracts` **re-export** từ đó, không giữ bản thứ hai. Hai bên test với chính mình thì một bất tương thích không bao giờ đỏ — nên việc chỉ có một bản là điều kiện của tính đúng, không phải chuyện gọn gàng.
 
 #### Định dạng trên đường truyền
 
@@ -589,7 +589,7 @@ Có **hai** chữ "v1" trong envelope này và chúng trả lời hai câu hỏi
 
 ⚠️ **`v1=` KHÔNG phải số phiên bản của giao thức.** Nó chỉ nói định dạng của giá trị trong header. PR hợp nhất này đổi canonicalization (thêm dòng `PROTOCOL_ID`, đổi length prefix từ UTF-16 sang byte UTF-8) mà **giữ nguyên** `v1=` — nên một envelope của bản cũ vẫn mang header `v1=…` và không có gì trong header cho biết nó không tương thích. Đọc `v1=` thành "envelope phiên bản 1" là suy sai.
 
-⚠️ **Không có dual-accept.** `PROTOCOL_ID` nằm trong chuỗi ký, nên verifier của bản mới **từ chối** envelope do bản cũ ký (`bad_signature`), và tiền tố chữ ký không được dùng để quyết định chấp nhận hay không. Điều kiện triển khai vì vậy là: **hai Worker phải deploy cùng phiên bản giao thức.** Không có cửa sổ nào để một bên chạy bản cũ giao tiếp với bên chạy bản mới; thứ tự deploy không cứu được, chỉ có deploy cùng nhau. `libs/identity-contracts/src/internal-auth.spec.ts` có test dựng lại **chính xác** canonicalization của bản cũ và khẳng định verifier từ chối nó, cùng một test khẳng định tiền tố chữ ký lạ (`v2=…`) bị từ chối dù payload HMAC hợp lệ.
+⚠️ **Không có dual-accept.** `PROTOCOL_ID` nằm trong chuỗi ký, nên verifier của bản mới **từ chối** envelope do bản cũ ký (`bad_signature`), và tiền tố chữ ký không được dùng để quyết định chấp nhận hay không. Điều kiện triển khai vì vậy là: **hai Worker phải deploy cùng phiên bản giao thức.** Không có cửa sổ nào để một bên chạy bản cũ giao tiếp với bên chạy bản mới; thứ tự deploy không cứu được, chỉ có deploy cùng nhau. `libs/internal-auth-contracts/src/internal-auth.spec.ts` (vị trí canonical mới sau khi tách khỏi identity BC) có test dựng lại **chính xác** canonicalization của bản cũ và khẳng định verifier từ chối nó, cùng một test khẳng định tiền tố chữ ký lạ (`v2=…`) bị từ chối dù payload HMAC hợp lệ.
 
 #### `kid` — chỉ dẫn chọn khoá, KHÔNG phải trường đã ký
 

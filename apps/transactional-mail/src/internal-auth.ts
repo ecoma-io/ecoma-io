@@ -5,7 +5,7 @@
  * ## Vì sao receiver phải tự có credential registry
  *
  * ⚠️ **Envelope không mang caller, principal hay key id** (`01-architecture.md` §7.4;
- * `libs/identity-contracts/src/internal-auth.ts` — `SignRequestInput` nhận đúng
+ * `libs/internal-auth-contracts/src/internal-auth.ts` — `SignRequestInput` nhận đúng
  * `một` `secret`, `VerifyResult.ok` chỉ trả `{ nonce, timestamp }`). Hệ quả: **chỉ phía
  * nhận** phân biệt được consumer nào đã ký. Vì vậy `transactional-mail` — tư cách bên
  * nhận — sở hữu registry `principal → credential`, và principal của một request là
@@ -31,7 +31,7 @@ import {
   NONCE_TTL_BUFFER_SECONDS,
   resolveSkewSeconds,
   verifyRequest,
-} from '@ecoma-io/identity-auth-contracts';
+} from '@ecoma-io/internal-auth-contracts';
 import type { InternalNonceStore } from '@ecoma-io/transactional-mail-application';
 
 import type { TransactionalMailConfig } from './config';

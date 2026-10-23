@@ -9,7 +9,7 @@
  * ## Giao thức ký
  *
  * Client **không** tự dựng canonical string, không tự băm thân và không tự định dạng chữ
- * ký: cả ba việc đó thuộc `signRequest`/`verifyRequest` trong `@ecoma-io/identity-auth-contracts`
+ * ký: cả ba việc đó thuộc `signRequest`/`verifyRequest` trong `@ecoma-io/internal-auth-contracts`
  * (bản canonical nằm ở `@ecoma-io/identity-contracts`, lib này chỉ re-export). Việc chép lại
  * bất kỳ tầng nào trong ba tầng đó là tạo ra một giao thức thứ hai lệch phiên bản — đúng thứ
  * PR hợp nhất envelope đã dẹp.
@@ -44,7 +44,7 @@
  *   (`transactional-mail`, D1 `mail`). Không có `scheduled()`/prune nào ở đây.
  */
 
-import { signRequest, type InternalAuthHeaders } from '@ecoma-io/identity-auth-contracts';
+import { signRequest, type InternalAuthHeaders } from '@ecoma-io/internal-auth-contracts';
 import {
   validatePostDeliveryOutcomeRequest,
   type PostDeliveryOutcomeRequest,

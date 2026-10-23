@@ -11,7 +11,15 @@
 export const PROTOCOL_ID = 'ecoma-internal-v1';
 
 /**
- * Internal HMAC contract canonical — dùng chung cho `auth` và `account`.
+ * Internal HMAC contract canonical — protocol nền tảng, platform-neutral (`scope:platform`).
+ *
+ * Mọi cặp service nội bộ ký/verify qua envelope này — hiện tại `auth`, `account`,
+ * `transactional-mail`, `transactional-mailer-job`. Giao thức chỉ là cơ chế xác thực
+ * request-to-request: nó **không** mang khái niệm của một bounded context nào (không
+ * principal, không user, không permission — receiver tự suy consumer từ credential),
+ * nên nó thuộc tầng nền `scope:platform`, không thuộc `scope:identity`. Đặt nhầm chỗ
+ * biến một platform service thành consumer của contracts BC khác — đúng hướng phụ thuộc
+ * ngược mà `docs/overview/05-code-architecture.md` cấm.
  *
  * ## Vì sao chỉ có một bản cài đặt
  *
@@ -28,12 +36,13 @@ export const PROTOCOL_ID = 'ecoma-internal-v1';
  * mật (xử lý payload chưa xác thực) lẫn về tính đúng đắn (parse + serialize lại đổi byte).
  *
  * ⚠️ **File này là nguồn sự thật duy nhất của giao thức.** Trước đây `auth` và
- * `account` ship hai envelope không tương thích (`libs/identity-contracts` và
- * `libs/identity-auth-contracts`) trùng tên header nhưng lệch nhau ở chữ hoa/thường của
- * method, đơn vị của length prefix, đơn vị của timestamp và định dạng nonce — và `auth`
- * hoàn toàn không có kho nonce bền, nên `/internal/session/verified` của nó phát lại
- * được trong cửa sổ skew. Hai bên chỉ test với chính mình, nên sự không tương thích
- * không hiện ra. File này hợp nhất chúng.
+ * `account` ship hai envelope không tương thích (hai đường import của
+ * `libs/identity-contracts` và `libs/identity-auth-contracts`) trùng tên header nhưng
+ * lệch nhau ở chữ hoa/thường của method, đơn vị của length prefix, đơn vị của timestamp
+ * và định dạng nonce — và `auth` hoàn toàn không có kho nonce bền, nên
+ * `/internal/session/verified` của nó phát lại được trong cửa sổ skew. Hai bên chỉ test
+ * với chính mình, nên sự không tương thích không hiện ra. File này hợp nhất chúng; hai
+ * package identity kia giờ re-export lại từ đây.
  *
  * ## Tính chất của envelope
  *

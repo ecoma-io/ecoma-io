@@ -18,7 +18,7 @@ import {
   INTERNAL_TIMESTAMP_HEADER,
   isStrongNonce,
   verifyRequest,
-} from '@ecoma-io/identity-auth-contracts';
+} from '@ecoma-io/internal-auth-contracts';
 import {
   validatePostDeliveryOutcomeRequest,
   validatePostDeliveryOutcomeResponse,
@@ -671,7 +671,12 @@ describe('E — other contracts: invalid input, routes, and runtime boundaries',
     // WebCrypto nằm trong lib contract; client tự gọi `crypto.subtle` nghĩa là tự dựng
     // canonical string hoặc tự định dạng chữ ký — chính là giao thức thứ hai.
     expect(source).not.toMatch(/crypto\.subtle/u);
-    expect(source).toMatch(/from '@ecoma-io\/identity-auth-contracts'/u);
+    // Import qua package platform-neutral canonical, không qua barrel re-export của
+    // identity BC — ranh giới BC của issue #203.
+    expect(source).toMatch(/from '@ecoma-io\/internal-auth-contracts'/u);
+    expect(source).not.toMatch(
+      /from '@ecoma-io\/identity-auth-contracts'|from '@ecoma-io\/identity-contracts'/u,
+    );
   });
 
   it('the nonce store does not live in this worker: the client takes no D1 and does not persist nonces itself', () => {

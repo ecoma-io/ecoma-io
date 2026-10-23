@@ -410,12 +410,7 @@
           },
           {
             "sourceTag": "scope:messaging",
-            "onlyDependOnLibsWithTags": [
-              "scope:messaging",
-              "scope:shared",
-              "scope:platform",
-              "type:contracts"
-            ]
+            "onlyDependOnLibsWithTags": ["scope:messaging", "scope:shared", "scope:platform"]
           },
           {
             "sourceTag": "scope:notifications",

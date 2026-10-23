@@ -19,7 +19,7 @@ import {
   INTERNAL_TIMESTAMP_HEADER,
   NONCE_TTL_BUFFER_SECONDS,
   signRequest,
-} from '@ecoma-io/identity-auth-contracts';
+} from '@ecoma-io/internal-auth-contracts';
 import type {
   ClaimMailNonceInput,
   InternalNonceStore,

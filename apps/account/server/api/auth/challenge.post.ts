@@ -70,7 +70,12 @@ import {
 import { accountHyperdrive } from '../../utils/bindings';
 import { writeLog } from '../../utils/logger';
 import { withRequestPool } from '../../utils/db';
-import { sendMail, buildOtpMailRequest } from '../../lib/mail';
+import {
+  sendMail,
+  buildOtpMailRequest,
+  otpMailCorrelationId,
+  otpMailIdempotencyKey,
+} from '../../lib/mail';
 import {
   countChallengesSince,
   createOtpChallenge,
@@ -347,8 +352,9 @@ export default defineEventHandler(async (event) => {
       // Tra cứu địa chỉ — quyết định gửi mail hay không, KHÔNG quyết định response.
       const target = resolveOtpTarget(await lookupVerifiedAddress(pool, hash));
 
+      let inserted: { id: string; expiresAt: Date } | undefined;
       try {
-        const inserted = await insertChallenge(pool, {
+        inserted = await insertChallenge(pool, {
           addressHash: hash,
           digest: material.digest,
           purpose: OTP_PURPOSE_LOGIN,
@@ -357,7 +363,7 @@ export default defineEventHandler(async (event) => {
           rateLimitShortWindowSeconds: OTP_RATE_LIMIT_SHORT_WINDOW_SECONDS,
           rateLimitHourWindowSeconds: OTP_RATE_LIMIT_HOUR_WINDOW_SECONDS,
         });
-        if (inserted === null) {
+        if (inserted === undefined) {
           // Bị chặn **trong** transaction — cửa sổ trượt đã tràn hoặc request
           // song song vừa commit một challenge còn trong 60s cooldown. Cả hai
           // cùng họ nhánh bị chặn bình thường, về `silently_rejected` (204): KHÔNG
@@ -382,11 +388,17 @@ export default defineEventHandler(async (event) => {
         return 'silently_rejected' as const;
       }
 
-      const correlationId = material.digest.slice(0, 16);
+      // ⚠️ Mail đi ra CHỈ SAU khi `insertChallenge` đã cấp `id` (UUID của DB):
+      // id là identity duy nhất per challenge — nguồn của `Idempotency-Key` lẫn
+      // `correlation_id`. Derive khoá từ digest HMAC của mã là sai: digest tất định
+      // theo (key, purpose, code) và mã chỉ có 10^8 giá trị, nên hai challenge trùng
+      // mã ⇒ cùng khoá ⇒ receiver trả `200` replay thay vì gửi mail thứ hai — user
+      // thứ hai không nhận được mã, một lỗi im lặng. UUID không thể va: PRIMARY KEY
+      // của DB là ràng buộc cuối cùng. Xem `otpMailIdempotencyKey` (lib/mail.ts).
       const mailResult = await sendConfigured(config, {
         recipient: body.email,
         code: material.code,
-        correlationId,
+        challengeId: inserted.id,
       });
 
       // Mail lỗi không đổi response (anti-enumeration) — chỉ log mã lý do.
@@ -428,10 +440,13 @@ export default defineEventHandler(async (event) => {
  * Gửi mail với URL + credential ký từ config — tách hàm để route ngắn và để test
  * mock được `sendMail` qua module mock mà không dựng runtime config.
  *
- * ⚠️ Contract receiver bắt buộc `Idempotency-Key` per-attempt: `sendMail` tự đặt
- * header từ `correlationId` ({@link otpMailIdempotencyKey} trong lib/mail.ts), với
- * correlationId = 16 hex đầu của digest HMAC của attempt tại route này — per-challenge
- * unique (mỗi attempt sinh digest riêng), deterministic cho retry cùng attempt.
+ * ⚠️ `Idempotency-Key` per-challenge: `sendMail` nhận khoá **tường minh** từ
+ * `otpMailIdempotencyKey(challengeId)` — `challengeId` là UUID mà `insertChallenge`
+ * vừa ghi (identity duy nhất per challenge, stable cho retry). Không derive từ digest
+ * HMAC của mã: digest tất định theo (key, purpose, code), hai challenge trùng mã 8
+ * chữ số ⇒ cùng digest ⇒ cùng khoá ⇒ mail thứ hai bị receiver coi là replay — đúng
+ * lỗi mà cách derive cũ đã có. `correlation_id` đi vào body dùng cùng challengeId
+ * (quan sát), tách bạch với khoá (an toàn) — xem lib/mail.ts.
  *
  * ⚠️ Credential ký là của riêng path Account↔Mail (`NUXT_MAIL_INTERNAL_AUTH_SECRET`),
  * và thiếu nó là một reason riêng của `sendMail` (`credential_missing`) — không
@@ -440,7 +455,7 @@ export default defineEventHandler(async (event) => {
  */
 function sendConfigured(
   config: { mailServiceUrl?: unknown; mailInternalAuthSecret?: unknown },
-  params: { recipient: string; code: string; correlationId: string },
+  params: { recipient: string; code: string; challengeId: string },
 ): ReturnType<typeof sendMail> {
   const url = typeof config.mailServiceUrl === 'string' ? config.mailServiceUrl : undefined;
   const signingSecret =
@@ -448,7 +463,7 @@ function sendConfigured(
   const request = buildOtpMailRequest({
     recipient: params.recipient,
     code: params.code,
-    correlationId: params.correlationId,
+    correlationId: otpMailCorrelationId(params.challengeId),
   });
-  return sendMail(url, request, signingSecret);
+  return sendMail(url, request, otpMailIdempotencyKey(params.challengeId), signingSecret);
 }

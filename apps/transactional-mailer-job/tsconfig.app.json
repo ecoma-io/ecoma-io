@@ -41,7 +41,7 @@
       "path": "../../libs/transactional-mail-contracts/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/identity-auth-contracts"
+      "path": "../../libs/internal-auth-contracts/tsconfig.lib.json"
     }
   ]
 }

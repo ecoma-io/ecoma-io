@@ -7,7 +7,7 @@
  *
  * ⚠️ Khác với các port khác, port này **không** nhận epoch milligiây. `expiresAtEpochSeconds`
  * là epoch **giây** vì nó được tính ra từ timestamp của envelope theo hằng của giao thức
- * (`timestamp + skew + NONCE_TTL_BUFFER_SECONDS`, `libs/identity-contracts/src/internal-auth.ts`)
+ * (`timestamp + skew + NONCE_TTL_BUFFER_SECONDS`, `libs/internal-auth-contracts/src/internal-auth.ts`)
  * — việc đổi sang đơn vị bảng (`*_at` = epoch ms) là việc của implementation, tại một chỗ duy
  * nhất. Neo theo `now` của receiver thì trôi: nonce sẽ hết hạn trước khi envelope thôi phát
  * lại được, mở cửa sổ replay thay vì đóng nó.
@@ -22,7 +22,7 @@ export interface InternalNonceStore {
    * - Có hàng = claim thành công → trả `false`.
    *
    * Giá trị trả về chính là hợp đồng của `VerifyRequestInput.claimNonce`
-   * (`libs/identity-contracts/src/internal-auth.ts`): **`true` = replay** — `verifyRequest`
+   * (`libs/internal-auth-contracts/src/internal-auth.ts`): **`true` = replay** — `verifyRequest`
    * từ chối khi callback trả `true`. Hai request mang cùng nonce thì chỉ một cái claim được,
    * bất kể tải.
    *

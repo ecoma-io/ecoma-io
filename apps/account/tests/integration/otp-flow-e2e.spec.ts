@@ -941,7 +941,7 @@ describe('email OTP flow end-to-end', () => {
           rateLimitShortWindowSeconds: 900,
           rateLimitHourWindowSeconds: 3600,
         });
-        expect(outcome).toBeNull();
+        expect(outcome).toBeUndefined();
       } finally {
         await pool.end();
       }
@@ -1038,7 +1038,7 @@ describe('email OTP flow end-to-end', () => {
       // đếm — chạy SAU khoá nên thấy đủ 3 hàng ⇒ trần ⇒ `null`. Với thứ tự ĐẢO
       // (đếm trước khoá), T2 thấy 2 hàng (≤3) và INSERT thành công ⇒ tổng 4
       // hàng — sai OCR-3. Hai assert dưới phân biệt hai thứ tự:
-      expect(await waiter).toBeNull();
+      expect(await waiter).toBeUndefined();
       const after = await db.connect().then(async (c2) => {
         try {
           const { rows } = await c2.query<{ count: number }>(

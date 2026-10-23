@@ -571,9 +571,9 @@ importers:
 
   apps/transactional-mail:
     dependencies:
-      '@ecoma-io/identity-auth-contracts':
+      '@ecoma-io/internal-auth-contracts':
         specifier: workspace:*
-        version: link:../../libs/identity-auth-contracts
+        version: link:../../libs/internal-auth-contracts
       '@ecoma-io/transactional-mail-application':
         specifier: workspace:*
         version: link:../../libs/transactional-mail-application
@@ -586,9 +586,9 @@ importers:
 
   apps/transactional-mailer-job:
     dependencies:
-      '@ecoma-io/identity-auth-contracts':
+      '@ecoma-io/internal-auth-contracts':
         specifier: workspace:*
-        version: link:../../libs/identity-auth-contracts
+        version: link:../../libs/internal-auth-contracts
       '@ecoma-io/transactional-mail-contracts':
         specifier: workspace:*
         version: link:../../libs/transactional-mail-contracts
@@ -655,6 +655,9 @@ importers:
       '@ecoma-io/identity-contracts':
         specifier: workspace:*
         version: link:../identity-contracts
+      '@ecoma-io/internal-auth-contracts':
+        specifier: workspace:*
+        version: link:../internal-auth-contracts
 
   libs/identity-auth-domain:
     dependencies:
@@ -684,9 +687,15 @@ importers:
         specifier: 12.2.1
         version: 12.2.1(supports-color@10.2.2)
 
-  libs/identity-contracts: {}
+  libs/identity-contracts:
+    dependencies:
+      '@ecoma-io/internal-auth-contracts':
+        specifier: workspace:*
+        version: link:../internal-auth-contracts
 
   libs/identity-domain: {}
+
+  libs/internal-auth-contracts: {}
 
   libs/push-notification-application:
     dependencies:

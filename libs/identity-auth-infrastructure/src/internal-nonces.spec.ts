@@ -187,7 +187,7 @@ function skewAndBuffer(): { skew: number; buffer: number } {
   // mà `apps/account/tests/integration/internal-nonces.spec.ts` cross-check bản lặp
   // lại của hằng này.
   const source = readFileSync(
-    join(MIGRATIONS_DIR, '../../../libs/identity-contracts/src/internal-auth.ts'),
+    join(MIGRATIONS_DIR, '../../../libs/internal-auth-contracts/src/internal-auth.ts'),
     'utf8',
   );
   const skew = /DEFAULT_SKEW_SECONDS = (\d+)/u.exec(source);
