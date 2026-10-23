@@ -8,7 +8,7 @@
     "@ecoma-io/identity-auth-domain": "workspace:*",
     "@ecoma-io/identity-auth-infrastructure": "workspace:*",
     "@ecoma-io/identity-contracts": "workspace:*",
-    "oidc-provider": "9.12.2",
+    "oidc-provider": "9.13.0",
     "pg": "^8.23.1"
   },
   "devDependencies": {
