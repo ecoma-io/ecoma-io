@@ -272,7 +272,13 @@ export function validateTagSchema(project: ArchProjectNode): ArchTagViolation[] 
       violations.push({ project: project.name, kind: 'legacy-value', detail: tag });
       continue;
     }
-    if (!(dim in ARCH_TAG_DIMENSIONS)) continue;
+    // `Object.hasOwn` chứ KHÔNG phải `in`: `in` đi qua prototype chain, nên
+    // tag dạng `toString:x` / `constructor:x` đi qua guard, rồi lookup
+    // `ARCH_TAG_DIMENSIONS[dim]` bên dưới trả về hàm thừa kế từ
+    // `Object.prototype` — `allowed.includes` nổ TypeError giữa chừng thay vì
+    // báo `unknown-dimension` có kiểm. Dimension của record literal chỉ được
+    // nhận từ own property.
+    if (!Object.hasOwn(ARCH_TAG_DIMENSIONS, dim)) continue;
 
     const list = seen.get(dim) ?? [];
     list.push(value);
@@ -318,8 +324,14 @@ export function validateRuntimeCompat(
   const violations: ArchTagViolation[] = [];
   const runtimeTag = project.tags.find((t) => t.startsWith('runtime:'));
   if (!runtimeTag) return violations; // lượt 1 đã báo missing — không nhân đôi lỗi
+  // `Object.hasOwn` để key như `constructor` (từ tag `runtime:constructor`)
+  // không resolve ra `Object.prototype.constructor` — lookup qua prototype
+  // chain biến hàm thừa kế thành `allowed` và `allowed.includes` nổ TypeError.
+  // Guard chặt này cũng vô hiệu hoá cạnh lỗ hổng dạng prototype pollution.
+  if (!Object.hasOwn(RUNTIME_COMPAT, runtimeTag.slice('runtime:'.length))) {
+    return violations; // lượt 1 đã báo invalid-value
+  }
   const allowed = RUNTIME_COMPAT[runtimeTag.slice('runtime:'.length)];
-  if (!allowed) return violations; // lượt 1 đã báo invalid-value
 
   for (const dep of project.dependencies) {
     const depNode = projects.get(dep);

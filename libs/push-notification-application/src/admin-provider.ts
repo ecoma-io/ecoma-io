@@ -1364,7 +1364,7 @@ function checkProviderScopeSupport(
  * predicate, nên nó bắt nhầm cả khi hàm **không** trả gì ra ngoài.
  *
  * ⚠️ **Cách chữa này KHÔNG làm mù rule** — đã đo bằng probe trên đúng image
- * ghim của repo (`semgrep/semgrep:1.182.0@sha256:4a34048c…`), trên bản sao của
+ * ghim của repo (`semgrep/semgrep:1.182.1@sha256:451b3d875c…`), trên bản sao của
  * chính file này:
  *
  *   | Hình dạng                             | finding (bình thường) | finding (rò rỉ) |
