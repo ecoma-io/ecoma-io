@@ -19,6 +19,8 @@
  * `order` mặc định là đủ: không plugin nào khác của app phụ thuộc config, nên
  * không cần sắp thứ tự với chúng.
  */
+import { createError } from 'h3';
+
 import { lazyConfigValidator } from '../utils/config-validation';
 
 export default defineNitroPlugin((nitroApp) => {
@@ -26,6 +28,14 @@ export default defineNitroPlugin((nitroApp) => {
   // của request đến từ env của Worker và Nitro nối vào runtime config theo event.
   const ensureConfigValid = lazyConfigValidator((event) => useRuntimeConfig(event));
   nitroApp.hooks.hook('request', (event) => {
-    ensureConfigValid(event);
+    try {
+      ensureConfigValid(event);
+    } catch (error) {
+      // Surface lỗi config thật (vd. secret còn thiếu) thay vì để nó lan qua chuỗi
+      // hook Nitro và bị hook i18n che mất bằng message không liên quan. Status 503
+      // vì đây là lỗi cấu hình phía server, không phải lỗi client.
+      const message = error instanceof Error ? error.message : 'Internal service misconfigured';
+      throw createError({ statusCode: 503, statusMessage: message });
+    }
   });
 });
