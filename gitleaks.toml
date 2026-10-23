@@ -39,4 +39,19 @@ paths = [
   # lịch sử Git; nếu `.dev.vars` bị commit nhầm qua `git add -f`, scan sẽ im lặng —
   # biện pháp bù chưa triển khai tại thời điểm PR này (theo dõi issue #48).
   '''^(\.claude/worktrees/[^/]+/)?apps/[^/]+/\.dev\.vars$''',
+  # `.env` ở root worktree — artifact orchestration ghi `ROOT_HOST` +
+  # `POSTGRES_PASSWORD` sau khi đọc platform outputs (đúng hai key này, mode 0600,
+  # gitignored `.env*`, không chương trình Pulumi nào đọc nó). `gitleaks dir` quét
+  # cả file gitignored nên không allowlist thì mọi push từ worktree đã dựng local
+  # stack bị chặn bởi chính artifact của công cụ — cùng lớp false positive với
+  # hai mục ở trên. Neo đúng filename `.env` ở root (hoặc worktree lồng nhau);
+  # biến thể `.env.<gì khác>` không khớp vẫn giữ độ phủ scan.
+  '''^(\.claude/worktrees/[^/]+/)?\.env$''',
+  # History file của Pulumi CLI dưới state backend cục bộ — CLI ghi toàn bộ
+  # config mỗi lệnh (gồm secret plaintext của stack local) vào
+  # `.pulumi-local-state/.pulumi/history/<project>/<stack>/*.history.json`
+  # (đo được, chặn push thật). Toàn thư mục state nằm trong .gitignore
+  # (`.pulumi-local-state/`) và là state máy developer — allowlist đúng
+  # thư mục history, phần khác của state vẫn giữ độ phủ scan.
+  '''^(\.claude/worktrees/[^/]+/)?\.pulumi-local-state/\.pulumi/history/''',
 ]
