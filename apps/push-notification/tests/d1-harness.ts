@@ -64,7 +64,7 @@ const WRANGLER_CONFIG_PATH = join(APP_DIR, 'wrangler.jsonc');
  * hơn parser thật: nó bỏ sót **đúng** những cấu hình hợp lệ mà production dùng.
  *
  * ⚠️ **Không thêm dependency mới.** `jsonc-parser` là dependency gián tiếp của `nx`, và
- * `tools/dx/src/arch-tags.spec.ts` đã dùng đúng cách này để đọc `.oxlintrc.json` (JSONC).
+ * `tools/dx/src/architecture/arch-tags.spec.ts` đã dùng đúng cách này để đọc `.oxlintrc.json` (JSONC).
  * Truy qua `createRequire` từ context của `nx` giữ đúng precedent đó.
  */
 function parseJsonc(text: string): unknown {

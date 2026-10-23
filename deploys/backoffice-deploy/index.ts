@@ -17,11 +17,11 @@ import {
   dockerResourceName,
   normalizeWorktreeRoot,
   worktreeNamespace,
-} from '../../tools/dx/src/deploy-namespace';
+} from '../../tools/dx/src/local-runtime/deploy-namespace';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import { ownershipLabels } from '../../tools/dx/src/deploy-labels';
+import { ownershipLabels } from '../../tools/dx/src/deployment/local-platform/deploy-labels';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import type { PlatformOutputs } from '../../tools/dx/src/platform-outputs-contract';
+import type { PlatformOutputs } from '../../tools/dx/src/deployment/local-platform/platform-outputs-contract';
 
 const BACKOFFICE_INTERNAL_PORT = 3000;
 

@@ -74,7 +74,7 @@ ownership tách biệt → bảng sở hữu từng loại resource ở `02-deli
 được phép duy nhất giữa các deployment project. `platform-deploy` **không** được phụ thuộc ngược lại bất kỳ
 `deploys/<unit>-deploy` nào — nếu không, tầng platform sẽ kéo theo vòng đời của từng deploy unit và platform prerequisite
 biến thành cycle. Cấm luôn cả edge giữa hai deployment unit khác nhau: một deploy unit phụ thuộc deploy unit khác là cách duy
-nhất để hai stack Pulumi trở thành một chu trình lifecycle, nên `validateDeploymentGraph` (`tools/dx/src/arch-tags.ts`) báo
+nhất để hai stack Pulumi trở thành một chu trình lifecycle, nên `validateDeploymentGraph` (`tools/dx/src/architecture/arch-tags.ts`) báo
 `cross-unit-deploy-dependency`.
 
 ⚠️ **Bất biến vị trí ⇔ tag.** Một project đặt trong `deploys/` phải mang `type:deployment`, và một project mang
@@ -128,7 +128,7 @@ import theo hướng trên.
 import) để dùng chung một định nghĩa namespace và contract outputs — lý do và ràng buộc ts-node ghi ở `tsconfig.json` của
 từng deploy project. Nx ghi nhận cạnh này trên project graph dưới dạng `static` (plugin `@nx/js/typescript` suy từ import),
 nên cache cả `typecheck` lẫn `lint` của deploy project vẫn phụ thuộc đúng file `tools/dx/src` được import — **đo thực
-nghiệm** (CLI 3.x, `platform-deploy:lint`): thêm một dòng vào `tools/dx/src/pulumi-context.ts` là task lint cache-miss
+nghiệm** (CLI 3.x, `platform-deploy:lint`): thêm một dòng vào `tools/dx/src/deployment/local-platform/pulumi-context.ts` là task lint cache-miss
 chạy lại thật, revert là cache hit, vì fileset `dependencies: True` của target lint kéo file dependency vào tập input.
 KHÔNG thêm `implicitDependencies` cho cạnh này: nó chỉ thêm cạnh trùng lặp vào graph, không đổi tập input cache. Cạnh đó
 **không** nằm
@@ -223,7 +223,7 @@ chỉ được phụ thuộc qua `type:contracts` của provider, không bao gi�
 
 Scope hiện dùng: `public`, `shared`, `platform`, `identity`, `backoffice`, `llm`, `payment`, `messaging`, `notifications`,
 `local`. Scope mới thêm vào phải được khai báo trong constraint của `.oxlintrc.json` và `KNOWN_SCOPES` của
-`tools/dx/src/arch-tags.ts` — hai nguồn này được test ràng buộc đồng bộ hai chiều: scope nào thiếu constraint, constraint
+`tools/dx/src/architecture/arch-tags.ts` — hai nguồn này được test ràng buộc đồng bộ hai chiều: scope nào thiếu constraint, constraint
 nào nhắm scope lạ, hay runtime constraint lệch ma trận compatibility đều bị test bắt.
 
 **Một scope có thể có nhiều app.** Scope là trục **ownership**, không phải trục deploy unit: `identity` là bounded

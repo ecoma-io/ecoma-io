@@ -9,7 +9,7 @@
  * Ranh giới ownership: `home-deploy` KHÔNG tự tạo network, Traefik hay
  * PostgreSQL. Nó đọc chúng qua Pulumi stack reference tới `platform-deploy`
  * (producer của contract `PlatformOutputs` ở
- * `tools/dx/src/platform-outputs-contract.ts`) rồi join vào network đó. Không có
+ * `tools/dx/src/deployment/local-platform/platform-outputs-contract.ts`) rồi join vào network đó. Không có
  * shared database access và không có resource dùng chung nào ở đây.
  *
  * Mọi tên resource đều đi qua `dockerResourceName(ns, kind)` để hai worktree
@@ -40,11 +40,11 @@ import {
   dockerResourceName,
   normalizeWorktreeRoot,
   worktreeNamespace,
-} from '../../tools/dx/src/deploy-namespace';
+} from '../../tools/dx/src/local-runtime/deploy-namespace';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do dòng trên
-import { ownershipLabels } from '../../tools/dx/src/deploy-labels';
+import { ownershipLabels } from '../../tools/dx/src/deployment/local-platform/deploy-labels';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do dòng trên
-import type { PlatformOutputs } from '../../tools/dx/src/platform-outputs-contract';
+import type { PlatformOutputs } from '../../tools/dx/src/deployment/local-platform/platform-outputs-contract';
 
 /** Cổng nội bộ mà Nitro preset `node-server` nghe (khớp `EXPOSE`/`ENV PORT` của image). */
 const HOME_INTERNAL_PORT = 3000;
@@ -80,7 +80,7 @@ const ns = worktreeNamespace(worktreeRoot);
 const labels = ownershipLabels(normalizeWorktreeRoot(worktreeRoot), ns);
 
 // Stack reference **đầy đủ** tới stack platform của chính worktree này, do
-// orchestration (`tools/dx/src/local-deploy.ts`) ghép và truyền qua
+// orchestration (`tools/dx/src/deployment/local-platform/local-deploy.ts`) ghép và truyền qua
 // `--config`. Đọc từ config thay vì tự dựng `file://<dir>/local-<ns>`: backend
 // `file://` và cách Pulumi resolve stack reference là chi tiết của
 // orchestration; tự ghép chuỗi ở đây tạo ra một đường suy đoán thứ hai cho
