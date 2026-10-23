@@ -11,7 +11,7 @@
  *    undeploy thì INSERT hàng mới (re-record).
  *  * recordUndeployment: chỉ hàng đang chạy được đóng; không có → false.
  */
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 
 export interface PacticipantRecord {
   name: string;
@@ -49,10 +49,13 @@ interface VersionRow {
 }
 
 export class PgVersionRepo {
-  constructor(private readonly pool: Pool) {}
+  private readonly db: Pool | PoolClient;
+  constructor(db: Pool | PoolClient) {
+    this.db = db;
+  }
 
   async getAllPacticipants(tenantId: string): Promise<PacticipantRecord[]> {
-    const { rows } = await this.pool.query<PacticipantRow>(
+    const { rows } = await this.db.query<PacticipantRow>(
       `SELECT name, created_at FROM pact.pacticipants
         WHERE tenant_id = $1 ORDER BY created_at ASC, id ASC`,
       [tenantId],
@@ -61,7 +64,7 @@ export class PgVersionRepo {
   }
 
   async getPacticipant(tenantId: string, name: string): Promise<PacticipantRecord | null> {
-    const { rows } = await this.pool.query<PacticipantRow>(
+    const { rows } = await this.db.query<PacticipantRow>(
       `SELECT name, created_at FROM pact.pacticipants WHERE tenant_id = $1 AND name = $2`,
       [tenantId, name],
     );
@@ -74,7 +77,7 @@ export class PgVersionRepo {
    * bên thua đọc hàng của bên thắng (default tenant pattern).
    */
   async getOrCreatePacticipant(tenantId: string, name: string): Promise<PacticipantRecord> {
-    await this.pool.query(
+    await this.db.query(
       `INSERT INTO pact.pacticipants (tenant_id, name)
        VALUES ($1, $2)
        ON CONFLICT (tenant_id, name) DO NOTHING`,
@@ -92,7 +95,7 @@ export class PgVersionRepo {
     pacticipantName: string,
     versionNumber: string,
   ): Promise<VersionRecord | null> {
-    const { rows } = await this.pool.query<VersionRow>(
+    const { rows } = await this.db.query<VersionRow>(
       `SELECT v.number, v.branch, v.build_url, v.created_at
          FROM pact.versions v
          JOIN pact.pacticipants p ON p.tenant_id = v.tenant_id AND p.id = v.pacticipant_id
@@ -106,7 +109,7 @@ export class PgVersionRepo {
     tenantId: string,
     pacticipantName: string,
   ): Promise<VersionRecord[]> {
-    const { rows } = await this.pool.query<VersionRow>(
+    const { rows } = await this.db.query<VersionRow>(
       `SELECT v.number, v.branch, v.build_url, v.created_at
          FROM pact.versions v
          JOIN pact.pacticipants p ON p.tenant_id = v.tenant_id AND p.id = v.pacticipant_id
@@ -130,7 +133,7 @@ export class PgVersionRepo {
   ): Promise<{ version: VersionRecord }> {
     await this.getOrCreatePacticipant(tenantId, pacticipantName);
 
-    const existing = await this.pool.query<VersionRow>(
+    const existing = await this.db.query<VersionRow>(
       `SELECT v.number, v.branch, v.build_url, v.created_at
          FROM pact.versions v
          JOIN pact.pacticipants p ON p.tenant_id = v.tenant_id AND p.id = v.pacticipant_id
@@ -144,7 +147,7 @@ export class PgVersionRepo {
       const backfillBranch = branch !== undefined && row.branch === null ? branch : null;
       const backfillBuildUrl = buildUrl !== undefined && row.build_url === null ? buildUrl : null;
       if (backfillBranch !== null || backfillBuildUrl !== null) {
-        await this.pool.query(
+        await this.db.query(
           `UPDATE pact.versions
               SET branch = COALESCE($2, branch),
                   build_url = COALESCE($3, build_url)
@@ -158,7 +161,7 @@ export class PgVersionRepo {
       return { version: toVersion(row) };
     }
 
-    const inserted = await this.pool.query<VersionRow>(
+    const inserted = await this.db.query<VersionRow>(
       `INSERT INTO pact.versions (tenant_id, pacticipant_id, number, branch, build_url)
        VALUES ($1,
                (SELECT id FROM pact.pacticipants WHERE tenant_id = $1 AND name = $2),
@@ -193,7 +196,7 @@ export class PgVersionRepo {
   ): Promise<VersionRecord> {
     await this.getOrCreatePacticipant(tenantId, pacticipantName);
 
-    const updated = await this.pool.query<VersionRow>(
+    const updated = await this.db.query<VersionRow>(
       `UPDATE pact.versions v
           SET branch = $4
          FROM pact.pacticipants p
@@ -223,7 +226,7 @@ export class PgVersionRepo {
     versionNumber: string,
     buildUrl: string,
   ): Promise<VersionRecord | null> {
-    const { rows } = await this.pool.query<VersionRow>(
+    const { rows } = await this.db.query<VersionRow>(
       `UPDATE pact.versions v
           SET build_url = $4
          FROM pact.pacticipants p
@@ -242,7 +245,7 @@ export class PgVersionRepo {
     pacticipantName: string,
     versionNumber: string,
   ): Promise<TagRecord[]> {
-    const { rows } = await this.pool.query<{ name: string; created_at: Date }>(
+    const { rows } = await this.db.query<{ name: string; created_at: Date }>(
       `SELECT t.name, t.created_at
          FROM pact.tags t
          JOIN pact.versions v ON v.tenant_id = t.tenant_id AND v.id = t.version_id
@@ -260,7 +263,7 @@ export class PgVersionRepo {
     versionNumber: string,
     tagName: string,
   ): Promise<TagRecord | null> {
-    const { rows } = await this.pool.query<{ name: string; created_at: Date }>(
+    const { rows } = await this.db.query<{ name: string; created_at: Date }>(
       `SELECT t.name, t.created_at
          FROM pact.tags t
          JOIN pact.versions v ON v.tenant_id = t.tenant_id AND v.id = t.version_id
@@ -280,7 +283,7 @@ export class PgVersionRepo {
     const version = await this.getVersion(tenantId, pacticipantName, versionNumber);
     if (version === null) return null;
 
-    const versionId = await this.pool.query<{ id: string }>(
+    const versionId = await this.db.query<{ id: string }>(
       `SELECT v.id FROM pact.versions v
          JOIN pact.pacticipants p ON p.tenant_id = v.tenant_id AND p.id = v.pacticipant_id
         WHERE v.tenant_id = $1 AND p.name = $2 AND v.number = $3`,
@@ -289,7 +292,7 @@ export class PgVersionRepo {
     const vid = versionId.rows[0]?.id;
     if (vid === undefined) return null;
 
-    await this.pool.query(
+    await this.db.query(
       `INSERT INTO pact.tags (tenant_id, version_id, name)
        VALUES ($1, $2, $3)
        ON CONFLICT (tenant_id, version_id, name) DO NOTHING`,
@@ -311,66 +314,68 @@ export class PgVersionRepo {
     versionNumber: string,
     environmentName: string,
   ): Promise<DeploymentRecord | null> {
-    return this.pool.connect().then(async (client) => {
-      try {
-        await client.query('BEGIN');
-        const version = await this.getVersion(tenantId, pacticipantName, versionNumber);
-        if (version === null) {
-          await client.query('ROLLBACK');
-          return null;
-        }
-        // Environment tự tạo khi thiếu (upstream recordDeployment gọi
-        // getOrCreateEnvironment).
-        const env = await new PgEnvironmentRepoForClient(client).getOrCreate(
-          tenantId,
-          environmentName,
-        );
+    const db = this.db;
+    const isClient = typeof (db as { release?: unknown }).release === 'function';
+    const client: PoolClient = isClient ? (db as PoolClient) : await (db as Pool).connect();
+    const ownsTx = !isClient;
+    try {
+      if (ownsTx) await client.query('BEGIN');
+      const version = await this.getVersion(tenantId, pacticipantName, versionNumber);
+      if (version === null) {
+        if (ownsTx) await client.query('ROLLBACK');
+        return null;
+      }
+      // Environment tự tạo khi thiếu (upstream recordDeployment gọi
+      // getOrCreateEnvironment).
+      const env = await new PgEnvironmentRepoForClient(client).getOrCreate(
+        tenantId,
+        environmentName,
+      );
 
-        const existing = await client.query<{ deployed_at: Date }>(
-          `SELECT dv.deployed_at
+      const existing = await client.query<{ deployed_at: Date }>(
+        `SELECT dv.deployed_at
              FROM pact.deployed_versions dv
              JOIN pact.environments e ON e.tenant_id = dv.tenant_id AND e.id = dv.environment_id
             WHERE dv.tenant_id = $1 AND dv.version_id = $2 AND e.name = $3
               AND dv.undeployed_at IS NULL`,
-          [
-            tenantId,
-            await versionIdFor(client, tenantId, pacticipantName, versionNumber),
-            env.environment.name,
-          ],
-        );
-        if (existing.rows[0]) {
-          await client.query('COMMIT');
-          return {
-            environment: env.environment.name,
-            deployedAt: existing.rows[0].deployed_at.toISOString(),
-            undeployedAt: null,
-          };
-        }
+        [
+          tenantId,
+          await versionIdFor(client, tenantId, pacticipantName, versionNumber),
+          env.environment.name,
+        ],
+      );
+      if (existing.rows[0]) {
+        if (ownsTx) await client.query('COMMIT');
+        return {
+          environment: env.environment.name,
+          deployedAt: existing.rows[0].deployed_at.toISOString(),
+          undeployedAt: null,
+        };
+      }
 
-        const inserted = await client.query<{ deployed_at: Date }>(
-          `INSERT INTO pact.deployed_versions (tenant_id, version_id, environment_id)
+      const inserted = await client.query<{ deployed_at: Date }>(
+        `INSERT INTO pact.deployed_versions (tenant_id, version_id, environment_id)
            VALUES ($1, $2,
                    (SELECT id FROM pact.environments WHERE tenant_id = $1 AND name = $3))
            RETURNING deployed_at`,
-          [
-            tenantId,
-            await versionIdFor(client, tenantId, pacticipantName, versionNumber),
-            env.environment.name,
-          ],
-        );
-        await client.query('COMMIT');
-        return {
-          environment: env.environment.name,
-          deployedAt: inserted.rows[0].deployed_at.toISOString(),
-          undeployedAt: null,
-        };
-      } catch (error) {
-        await client.query('ROLLBACK').catch(() => undefined);
-        throw error;
-      } finally {
-        client.release();
-      }
-    });
+        [
+          tenantId,
+          await versionIdFor(client, tenantId, pacticipantName, versionNumber),
+          env.environment.name,
+        ],
+      );
+      if (ownsTx) await client.query('COMMIT');
+      return {
+        environment: env.environment.name,
+        deployedAt: inserted.rows[0].deployed_at.toISOString(),
+        undeployedAt: null,
+      };
+    } catch (error) {
+      if (ownsTx) await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      if (ownsTx) client.release();
+    }
   }
 
   /** Đóng hàng đang chạy; không có → null. */
@@ -380,7 +385,7 @@ export class PgVersionRepo {
     versionNumber: string,
     environmentName: string,
   ): Promise<DeploymentRecord | null> {
-    const { rows } = await this.pool.query<{ deployed_at: Date; undeployed_at: Date }>(
+    const { rows } = await this.db.query<{ deployed_at: Date; undeployed_at: Date }>(
       `UPDATE pact.deployed_versions dv
           SET undeployed_at = now()
         WHERE dv.id IN (
@@ -410,7 +415,7 @@ export class PgVersionRepo {
     pacticipantName: string,
     versionNumber: string,
   ): Promise<DeploymentRecord[]> {
-    const { rows } = await this.pool.query<{
+    const { rows } = await this.db.query<{
       environment: string;
       deployed_at: Date;
       undeployed_at: Date | null;
