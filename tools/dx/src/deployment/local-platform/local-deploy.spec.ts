@@ -81,13 +81,15 @@ afterEach(() => {
 });
 
 describe('DEPLOY_STEPS', () => {
-  it('thứ tự contract: platform → outputs → env → home → backoffice → smoke', () => {
+  it('thứ tự contract: platform → outputs → env → home → backoffice → account → auth → smoke', () => {
     expect(DEPLOY_STEPS).toEqual([
       'platform-up',
       'read-outputs',
       'update-env',
       'home-up',
       'backoffice-up',
+      'account-up',
+      'auth-up',
       'smoke-https',
     ]);
   });
@@ -377,10 +379,13 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
     const exit = localDeploy({ worktreeRoot: root, skipSmoke: true });
     expect(exit).toBe(0);
 
-    // ensureStack (stack init) được gọi cho platform và backoffice — apply GIỮ hành vi khởi tạo.
-    expect(vi.mocked(ensureStack)).toHaveBeenCalledTimes(2);
+    // ensureStack (stack init) được gọi cho platform, backoffice, account và
+    // auth — apply GIỮ hành vi khởi tạo, mở rộng cho hai stack identity mới.
+    expect(vi.mocked(ensureStack)).toHaveBeenCalledTimes(4);
     expect(vi.mocked(ensureStack).mock.calls[0][1]).toBe('platform-deploy');
     expect(vi.mocked(ensureStack).mock.calls[1][1]).toBe('backoffice-deploy');
+    expect(vi.mocked(ensureStack).mock.calls[2][1]).toBe('account-deploy');
+    expect(vi.mocked(ensureStack).mock.calls[3][1]).toBe('auth-deploy');
 
     // config get rồi config set (generate password) — apply vẫn sinh password.
     const configGetCall = execMock.mock.calls.find(
@@ -401,14 +406,65 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
     // `/proc/<pid>/cmdline` và `ps`. execMock nhận `input` ở options (arg thứ 5).
     expect(configSetCall?.[4]).toEqual({ input: expect.any(String) });
 
-    // pulumiRun: platform up (prepareStack: true, có --config) rồi home up.
+    // pulumiRun: platform up (prepareStack: true, có --config) rồi home,
+    // backoffice, account, auth up — thứ tự account TRƯỚC auth (account sở hữu
+    // password của role owner dùng chung ecoma_owner).
     const upCalls = pulumiRunMock.mock.calls.filter(([, , args]) => args[0] === 'up');
-    expect(upCalls.length).toBe(3);
+    expect(upCalls.length).toBe(5);
     expect(upCalls[0][1]).toBe('platform-deploy');
     expect(upCalls[0][5]?.prepareStack).toBe(true);
     expect(upCalls[0][2]).toContain('--config');
     expect(upCalls[1][1]).toBe('home-deploy');
     expect(upCalls[2][1]).toBe('backoffice-deploy');
+    expect(upCalls[3][1]).toBe('account-deploy');
+    expect(upCalls[4][1]).toBe('auth-deploy');
+
+    // Hai stack identity nhận đúng bộ key mật khẩu qua stdin (không argv):
+    // account có ownerPassword (nó sở hữu ecoma_owner), auth không.
+    const identityConfigSets = execMock.mock.calls.filter(([, args]) => {
+      if (args[0] !== 'config' || args[1] !== 'set') return false;
+      const stackRef = args[args.indexOf('--stack') + 1] ?? '';
+      return stackRef.includes('account-deploy') || stackRef.includes('auth-deploy');
+    });
+    const accountKeys = identityConfigSets
+      .filter(([, args]) => (args[args.indexOf('--stack') + 1] ?? '').includes('account-deploy'))
+      .map(([, args]) => args[2]);
+    const authKeys = identityConfigSets
+      .filter(([, args]) => (args[args.indexOf('--stack') + 1] ?? '').includes('auth-deploy'))
+      .map(([, args]) => args[2]);
+    expect(accountKeys).toEqual([
+      'namespace:ownerPassword',
+      'namespace:runtimePassword',
+      'namespace:migratorPassword',
+      'namespace:prunerPassword',
+    ]);
+    expect(authKeys).toEqual([
+      'namespace:runtimePassword',
+      'namespace:migratorPassword',
+      'namespace:prunerPassword',
+    ]);
+    for (const [, args, , , options] of identityConfigSets) {
+      expect(args).toContain('--plaintext');
+      expect(args).not.toContain('--secret');
+      // Giá trị đi qua STDIN, không qua argv (exec nhận options ở arg thứ 5).
+      expect(options).toEqual({ input: expect.any(String) });
+    }
+    // Mỗi stack identity up với platformStackRef trỏ đúng platform stack
+    // (stack name là của worktree test — chỉ cần đúng shape project/stack).
+    for (const [index, project] of [
+      [3, 'account-deploy'],
+      [4, 'auth-deploy'],
+    ] as const) {
+      expect(upCalls[index][1]).toBe(project);
+      expect(upCalls[index][5]?.prepareStack).toBe(true);
+      expect(upCalls[index][2]).toContain('--config');
+      const stackRefArg = upCalls[index][2].find((arg) =>
+        arg.startsWith('namespace:platformStackRef='),
+      );
+      expect(stackRefArg).toMatch(
+        /^namespace:platformStackRef=organization\/platform-deploy\/local-w/u,
+      );
+    }
 
     // .env được ghi với port từ outputs — apply GIỮ hành vi ghi .env.
     const envContent = readFileSync(join(root, '.env'), 'utf8');

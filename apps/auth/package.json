@@ -8,10 +8,12 @@
     "@ecoma-io/identity-auth-domain": "workspace:*",
     "@ecoma-io/identity-auth-infrastructure": "workspace:*",
     "@ecoma-io/identity-contracts": "workspace:*",
-    "oidc-provider": "9.12.2"
+    "oidc-provider": "9.12.2",
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@testcontainers/postgresql": "12.2.1",
+    "@types/pg": "^8.23.1",
     "testcontainers": "12.2.1"
   },
   "nx": {
@@ -129,6 +131,21 @@
           "copy-workspace-modules"
         ],
         "executor": "nx:noop"
+      },
+      "db:migrate": {
+        "executor": "nx:run-commands",
+        "cache": false,
+        "options": {
+          "cwd": "apps/auth",
+          "command": "npx tsx --tsconfig tsconfig.db.json db/apply.mts"
+        }
+      },
+      "typecheck-db": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "apps/auth",
+          "command": "npx tsc --noEmit -p tsconfig.db.json"
+        }
       },
       "serve": {
         "continuous": true,

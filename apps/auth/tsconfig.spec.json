@@ -19,6 +19,11 @@
     "vite.config.mts",
     "vitest.config.ts",
     "vitest.config.mts",
+    // Source runner DB của unit được spec integration import trực tiếp — phải
+    // nằm trong file list của project này (composite + files cứng) hoặc tsc
+    // TS6307. `db/**` không thuộc `tsconfig.app.json` (edge runtime), nên thêm
+    // ở đây thay vì mở include của app.
+    "db/**/*.mts",
     "tests/**/*.ts",
     "src/**/*.test.ts",
     "src/**/*.spec.ts",
