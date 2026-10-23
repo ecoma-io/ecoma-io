@@ -34,20 +34,12 @@ import {
   countChallengesSince,
   insertChallenge,
 } from '../../server/lib/otp';
-import {
-  ACCOUNT_DATABASE,
-  type AccountDatabase,
-  probeDocker,
-  startAccountDatabase,
-} from './harness.ts';
+import { ACCOUNT_DATABASE, type AccountDatabase, startAccountDatabase } from './harness.ts';
 import { installRuntimeConfigStub, type AccountTestRuntimeConfig } from './nuxt-globals.ts';
 
 vi.mock('../../server/utils/logger', () => ({
   writeLog: vi.fn<(entry: Record<string, unknown>) => void>(),
 }));
-
-const dockerAvailable = await probeDocker();
-
 /** Secret OTP của test — đủ dài theo validation, không phải secret thật. */
 const OTP_SECRET = 'test-otp-hmac-secret-0123456789abcdef';
 
@@ -141,7 +133,7 @@ function cookieValue(cookies: string[], name: string): string | undefined {
   return found.slice(name.length + 1).split(';')[0];
 }
 
-describe.skipIf(!dockerAvailable)('email OTP flow end-to-end', () => {
+describe('email OTP flow end-to-end', () => {
   let db: AccountDatabase;
   let handler: WebHandler;
   let setRuntimeConfig: ReturnType<typeof installRuntimeConfigStub>;

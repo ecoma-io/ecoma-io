@@ -17,16 +17,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { recordNonce, selectAccountStatus } from '../../server/utils/db';
-import { type AccountDatabase, probeDocker, startAccountDatabase } from './harness.ts';
-
-const dockerAvailable = await probeDocker();
-
+import { type AccountDatabase, startAccountDatabase } from './harness.ts';
 /** Sub hợp lệ theo định dạng `sub_` + 32 ký tự; giá trị cụ thể không quan trọng. */
 const SUB_ACTIVE = 'sub_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const SUB_SUSPENDED = 'sub_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const SUB_MISSING = 'sub_cccccccccccccccccccccccccccccccc';
 
-describe.skipIf(!dockerAvailable)('server/utils/db on real PostgreSQL', () => {
+describe('server/utils/db on real PostgreSQL', () => {
   let db: AccountDatabase;
 
   beforeAll(async () => {

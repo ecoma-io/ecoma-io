@@ -16,20 +16,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 import challengeRoute from '../../server/api/auth/challenge.post';
 import verifyRoute from '../../server/api/auth/verify.post';
-import {
-  ACCOUNT_DATABASE,
-  type AccountDatabase,
-  probeDocker,
-  startAccountDatabase,
-} from './harness.ts';
+import { ACCOUNT_DATABASE, type AccountDatabase, startAccountDatabase } from './harness.ts';
 import { installRuntimeConfigStub, type AccountTestRuntimeConfig } from './nuxt-globals.ts';
 
 vi.mock('../../server/utils/logger', () => ({
   writeLog: vi.fn<(entry: Record<string, unknown>) => void>(),
 }));
-
-const dockerAvailable = await probeDocker();
-
 const OTP_SECRET = 'test-otp-hmac-secret-0123456789abcdef';
 const SUB_MAIN = 'sub_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const EMAIL_MAIN = 'user@example.com';
@@ -85,7 +77,7 @@ function installMailStub(): {
   };
 }
 
-describe.skipIf(!dockerAvailable)('OTP TTL expiry and concurrent verify', () => {
+describe('OTP TTL expiry and concurrent verify', () => {
   let db: AccountDatabase;
   let handler: WebHandler;
   let setRuntimeConfig: ReturnType<typeof installRuntimeConfigStub>;

@@ -42,14 +42,11 @@ import {
 
 import {
   MIGRATIONS_DIR,
-  probeDocker,
   startAuthDatabase,
   type AuthDatabase,
 } from '../tests/integration/harness.ts';
 
 /** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
-const dockerAvailable = await probeDocker();
-
 let db: AuthDatabase;
 
 /** Schema của bảng giả dùng để chứng minh adapter tự qualify `auth.`. */
@@ -289,9 +286,6 @@ describe('recordNonce — auth.internal_nonces on real PostgreSQL', () => {
   // suite sở hữu schema, và container riêng là điều khiến điều đó thành đúng thay
   // vì một giả định về lịch chạy.
   beforeAll(async () => {
-    if (!dockerAvailable) {
-      return;
-    }
     db = await startAuthDatabase();
   }, 180_000);
 
@@ -299,7 +293,7 @@ describe('recordNonce — auth.internal_nonces on real PostgreSQL', () => {
     await db?.stop();
   });
 
-  describe.skipIf(!dockerAvailable)('schema and adapter', () => {
+  describe('schema and adapter', () => {
     it('the adapter matches the migration: a claim writes a new nonce and records the change on retry', async () => {
       // ⚠️ Test này chốt đúng lớp lỗi đã gặp ở `authorization-code-cas.spec.ts`:
       // câu SQL của adapter tham chiếu một cột mà migration không có, và mọi test
@@ -365,7 +359,7 @@ describe('recordNonce — auth.internal_nonces on real PostgreSQL', () => {
     });
   });
 
-  describe.skipIf(!dockerAvailable)('replay protection', () => {
+  describe('replay protection', () => {
     it('the first attempt is accepted, and every later attempt is rejected', async () => {
       await withStore(async (runtime, migrator) => {
         await clearNonces(migrator);
@@ -600,7 +594,7 @@ describe('recordNonce — auth.internal_nonces on real PostgreSQL', () => {
     });
   });
 
-  describe.skipIf(!dockerAvailable)('prune', () => {
+  describe('prune', () => {
     it('prune deletes expired nonces and keeps live ones', async () => {
       await withStore(async (runtime, migrator) => {
         await clearNonces(migrator);
@@ -818,7 +812,7 @@ describe('recordNonce — auth.internal_nonces on real PostgreSQL', () => {
     });
   });
 
-  describe.skipIf(!dockerAvailable)('fail closed', () => {
+  describe('fail closed', () => {
     it('if the nonce key is unreachable, recordNonce THROWS and never returns false', async () => {
       // ⚠️ Đây là tính chất bảo mật quan trọng nhất của cả file. `recordNonce` trả
       // `false` nghĩa là "nonce chưa từng thấy" — và `verifyRequest` coi đó là
@@ -861,7 +855,7 @@ describe('recordNonce — auth.internal_nonces on real PostgreSQL', () => {
     });
   });
 
-  describe.skipIf(!dockerAvailable)('permission grants', () => {
+  describe('permission grants', () => {
     it('the runtime role has exactly the table privileges the migrations grant', async () => {
       // Thay cho marker test cũ của hình thức chia sẻ database qua biến môi
       // trường ("set … to run the replay tests") — marker ấy hết ý nghĩa khi

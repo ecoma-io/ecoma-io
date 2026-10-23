@@ -41,20 +41,12 @@ import {
   OTP_PURPOSE_LOGIN,
   otpDigest,
 } from '../../server/lib/otp';
-import {
-  ACCOUNT_DATABASE,
-  type AccountDatabase,
-  probeDocker,
-  startAccountDatabase,
-} from './harness.ts';
+import { ACCOUNT_DATABASE, type AccountDatabase, startAccountDatabase } from './harness.ts';
 import { installRuntimeConfigStub, type AccountTestRuntimeConfig } from './nuxt-globals.ts';
 
 vi.mock('../../server/utils/logger', () => ({
   writeLog: vi.fn<(entry: Record<string, unknown>) => void>(),
 }));
-
-const dockerAvailable = await probeDocker();
-
 /** Secret OTP của test — phải khớp giữa config và phép tính digest của seed. */
 const OTP_SECRET = 'test-otp-hmac-secret-0123456789abcdef';
 
@@ -74,7 +66,7 @@ function fullRuntimeConfig(connectionString: string): AccountTestRuntimeConfig {
   };
 }
 
-describe.skipIf(!dockerAvailable)('otp challenge lifecycle invariants', () => {
+describe('otp challenge lifecycle invariants', () => {
   let db: AccountDatabase;
   let handler: WebHandler;
   let setRuntimeConfig: ReturnType<typeof installRuntimeConfigStub>;

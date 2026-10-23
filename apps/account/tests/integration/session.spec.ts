@@ -13,16 +13,12 @@ import {
   type AccountDatabase,
   futureInstant,
   hashIdentifier,
-  probeDocker,
   startAccountDatabase,
 } from './harness.ts';
-
-const dockerAvailable = await probeDocker();
-
 /** Cookie chỉ tồn tại ở trình duyệt; database chỉ thấy hash của nó. */
 const COOKIE_VALUE = 'a4f1c0de9b27-sufficiently-long-random-session-identifier';
 
-describe.skipIf(!dockerAvailable)('account_sessions', () => {
+describe('account_sessions', () => {
   let db: AccountDatabase;
 
   beforeAll(async () => {

@@ -55,15 +55,13 @@ import { bytesToBase64Url } from '@ecoma-io/identity-auth-domain';
 
 import { loadAuthConfig, type AuthEnv } from '../../src/config';
 import { createPostgresClient } from '@ecoma-io/identity-auth-infrastructure';
-import { probeDocker, startAuthDatabase, type AuthDatabase } from './harness';
+import { startAuthDatabase, type AuthDatabase } from './harness';
 
 /* ------------------------------------------------------------------ */
 /* PostgreSQL harness — cùng luật với các suite hàng xóm              */
 /* ------------------------------------------------------------------ */
 
 /** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
-const dockerAvailable = await probeDocker();
-
 /** Container riêng của file này, dựng một lần trong `beforeAll`. */
 let db: AuthDatabase;
 
@@ -200,7 +198,6 @@ async function bootProvider(pem: string): Promise<void> {
 /* ------------------------------------------------------------------ */
 
 beforeAll(async () => {
-  if (!dockerAvailable) return;
   db = await startAuthDatabase();
   runtimeSql = connectRuntime();
 }, 180_000);
@@ -225,178 +222,175 @@ afterAll(async () => {
   await db?.stop();
 });
 
-describe.skipIf(!dockerAvailable)(
-  'OIDC Discovery — the advertised authorization_endpoint is the entrypoint that works',
-  () => {
-    it('drives the authorization flow through the endpoint taken from the discovery document', async () => {
-      // ── Dựng: khoá ES256 thật + client thật + provider thật ──────────────
-      const { privateKey } = await generateKeyPair('ES256', { extractable: true });
-      const pem = await exportPKCS8(privateKey);
-      // Client PHẢI seed TRƯỚC bootProvider: `createProvider` load clients tĩnh
-      // từ DB lúc dựng và ném sớm nếu không có client public nào.
-      await runtimeSql`
+describe('OIDC Discovery — the advertised authorization_endpoint is the entrypoint that works', () => {
+  it('drives the authorization flow through the endpoint taken from the discovery document', async () => {
+    // ── Dựng: khoá ES256 thật + client thật + provider thật ──────────────
+    const { privateKey } = await generateKeyPair('ES256', { extractable: true });
+    const pem = await exportPKCS8(privateKey);
+    // Client PHẢI seed TRƯỚC bootProvider: `createProvider` load clients tĩnh
+    // từ DB lúc dựng và ném sớm nếu không có client public nào.
+    await runtimeSql`
         INSERT INTO auth.oauth_clients (client_id, client_name, client_type, allowed_scopes)
         VALUES (${CLIENT_ID}, 'discovery pg test client', 'public',
                 ARRAY['openid', 'offline_access', 'profile']::text[])
         ON CONFLICT (client_id) DO UPDATE SET allowed_scopes = EXCLUDED.allowed_scopes
       `;
-      await runtimeSql`
+    await runtimeSql`
         INSERT INTO auth.client_redirect_uris (client_id, redirect_uri)
         VALUES (${CLIENT_ID}, ${CLIENT_REDIRECT})
         ON CONFLICT DO NOTHING
       `;
-      await bootProvider(pem);
-      const env = makeEnv(pem);
-      const { default: app } = await import('../../src/main');
+    await bootProvider(pem);
+    const env = makeEnv(pem);
+    const { default: app } = await import('../../src/main');
 
-      // ── Bước 1: đọc Discovery ───────────────────────────────────────────
-      // ⚠️ Đây là nguồn sự thật của endpoint — KHÔNG hardcode path ở đây.
-      const discoveryResponse = await app.request('/.well-known/openid-configuration', {}, env);
-      expect(discoveryResponse.status).toBe(200);
-      const discovery = (await discoveryResponse.json()) as Record<string, unknown>;
-      const authorizationEndpoint = discovery['authorization_endpoint'];
-      expect(typeof authorizationEndpoint).toBe('string');
+    // ── Bước 1: đọc Discovery ───────────────────────────────────────────
+    // ⚠️ Đây là nguồn sự thật của endpoint — KHÔNG hardcode path ở đây.
+    const discoveryResponse = await app.request('/.well-known/openid-configuration', {}, env);
+    expect(discoveryResponse.status).toBe(200);
+    const discovery = (await discoveryResponse.json()) as Record<string, unknown>;
+    const authorizationEndpoint = discovery['authorization_endpoint'];
+    expect(typeof authorizationEndpoint).toBe('string');
 
-      // Endpoint được quảng bá phải là của GLUE — `/authorize`. Route `/auth` là
-      // route NỘI BỘ của provider: gọi nó không tạo transaction.
-      expect(new URL(authorizationEndpoint as string).pathname).toBe('/authorize');
+    // Endpoint được quảng bá phải là của GLUE — `/authorize`. Route `/auth` là
+    // route NỘI BỘ của provider: gọi nó không tạo transaction.
+    expect(new URL(authorizationEndpoint as string).pathname).toBe('/authorize');
 
-      // ── Bước 2: gọi đúng endpoint được quảng bá ────────────────────────
-      const verifier = 'discovery-pkce-verifier-0000000000000000000000';
-      const challenge = Buffer.from(
-        await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)),
-      ).toString('base64url');
-      const authorizeUrl = new URL(authorizationEndpoint as string);
-      authorizeUrl.searchParams.set('client_id', CLIENT_ID);
-      authorizeUrl.searchParams.set('redirect_uri', CLIENT_REDIRECT);
-      authorizeUrl.searchParams.set('response_type', 'code');
-      authorizeUrl.searchParams.set('scope', 'openid offline_access');
-      authorizeUrl.searchParams.set('state', 'st-discovery-1');
-      authorizeUrl.searchParams.set('nonce', 'n-discovery-1');
-      authorizeUrl.searchParams.set('code_challenge', challenge);
-      authorizeUrl.searchParams.set('code_challenge_method', 'S256');
+    // ── Bước 2: gọi đúng endpoint được quảng bá ────────────────────────
+    const verifier = 'discovery-pkce-verifier-0000000000000000000000';
+    const challenge = Buffer.from(
+      await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)),
+    ).toString('base64url');
+    const authorizeUrl = new URL(authorizationEndpoint as string);
+    authorizeUrl.searchParams.set('client_id', CLIENT_ID);
+    authorizeUrl.searchParams.set('redirect_uri', CLIENT_REDIRECT);
+    authorizeUrl.searchParams.set('response_type', 'code');
+    authorizeUrl.searchParams.set('scope', 'openid offline_access');
+    authorizeUrl.searchParams.set('state', 'st-discovery-1');
+    authorizeUrl.searchParams.set('nonce', 'n-discovery-1');
+    authorizeUrl.searchParams.set('code_challenge', challenge);
+    authorizeUrl.searchParams.set('code_challenge_method', 'S256');
 
-      const authorizeResponse = await app.request(authorizeUrl.href, { redirect: 'manual' }, env);
-      expect(authorizeResponse.status).toBe(302);
+    const authorizeResponse = await app.request(authorizeUrl.href, { redirect: 'manual' }, env);
+    expect(authorizeResponse.status).toBe(302);
 
-      // ── Bước 3: cookie browser binding được set ─────────────────────────
-      const setCookie = authorizeResponse.headers.get('set-cookie') ?? '';
-      expect(setCookie).toContain('__Host-auth-browser=');
-      // Cookie binding phải là `Secure` + `Path=/` + `HttpOnly` + `SameSite=Lax`
-      // (prefix `__Host-` chỉ được browser chấp nhận khi đủ ba điều kiện đầu).
-      expect(setCookie).toContain('Secure');
-      expect(setCookie).toContain('Path=/');
-      expect(setCookie).toContain('HttpOnly');
-      expect(setCookie).toContain('SameSite=Lax');
-      expect(setCookie).not.toContain('Domain=');
-      const browserBinding = setCookie.split(';')[0]?.split('=')[1];
-      expect(typeof browserBinding).toBe('string');
-      expect(browserBinding?.length).toBeGreaterThanOrEqual(43);
+    // ── Bước 3: cookie browser binding được set ─────────────────────────
+    const setCookie = authorizeResponse.headers.get('set-cookie') ?? '';
+    expect(setCookie).toContain('__Host-auth-browser=');
+    // Cookie binding phải là `Secure` + `Path=/` + `HttpOnly` + `SameSite=Lax`
+    // (prefix `__Host-` chỉ được browser chấp nhận khi đủ ba điều kiện đầu).
+    expect(setCookie).toContain('Secure');
+    expect(setCookie).toContain('Path=/');
+    expect(setCookie).toContain('HttpOnly');
+    expect(setCookie).toContain('SameSite=Lax');
+    expect(setCookie).not.toContain('Domain=');
+    const browserBinding = setCookie.split(';')[0]?.split('=')[1];
+    expect(typeof browserBinding).toBe('string');
+    expect(browserBinding?.length).toBeGreaterThanOrEqual(43);
 
-      // ── Bước 4: redirect tới route authorization CỦA PROVIDER ──────────
-      // Đây là bước mà `/auth` trở thành hợp đồng: glue 302 sang đó kèm
-      // `ecoma_x` (handle X) và `resource`.
-      const providerAuthUrl = new URL(authorizeResponse.headers.get('location') as string);
-      expect(providerAuthUrl.origin + providerAuthUrl.pathname).toBe(`${ISSUER}/auth`);
-      const handleX = providerAuthUrl.searchParams.get('ecoma_x');
-      expect(typeof handleX).toBe('string');
-      expect(handleX?.length).toBeGreaterThanOrEqual(43);
-      expect(providerAuthUrl.searchParams.get('resource')).toBe(TEST_AUDIENCE);
-      // Scope có `offline_access` ⇒ glue phải thêm `prompt=consent` (provider cắt
-      // `offline_access` khỏi params trừ khi request mang `prompt=consent`).
-      expect(providerAuthUrl.searchParams.get('prompt')).toBe('consent');
+    // ── Bước 4: redirect tới route authorization CỦA PROVIDER ──────────
+    // Đây là bước mà `/auth` trở thành hợp đồng: glue 302 sang đó kèm
+    // `ecoma_x` (handle X) và `resource`.
+    const providerAuthUrl = new URL(authorizeResponse.headers.get('location') as string);
+    expect(providerAuthUrl.origin + providerAuthUrl.pathname).toBe(`${ISSUER}/auth`);
+    const handleX = providerAuthUrl.searchParams.get('ecoma_x');
+    expect(typeof handleX).toBe('string');
+    expect(handleX?.length).toBeGreaterThanOrEqual(43);
+    expect(providerAuthUrl.searchParams.get('resource')).toBe(TEST_AUDIENCE);
+    // Scope có `offline_access` ⇒ glue phải thêm `prompt=consent` (provider cắt
+    // `offline_access` khỏi params trừ khi request mang `prompt=consent`).
+    expect(providerAuthUrl.searchParams.get('prompt')).toBe('consent');
 
-      // ── Bước 5: TRANSACTION thật được tạo trong `db-auth` ───────────────
-      // Đây là phần đáng tin cậy nhất: hàng trong bảng thật, với CHECK thật.
-      const transactions = await runtimeSql<
-        {
-          transaction_id: string;
-          state: string;
-          client_id: string;
-          redirect_uri: string;
-          requested_scopes: string[];
-          code_challenge: string;
-          code_challenge_method: string;
-          client_state: string | null;
-          nonce: string | null;
-          browser_binding_hash: Uint8Array;
-          handle_hash_x: Uint8Array;
-        }[]
-      >`
+    // ── Bước 5: TRANSACTION thật được tạo trong `db-auth` ───────────────
+    // Đây là phần đáng tin cậy nhất: hàng trong bảng thật, với CHECK thật.
+    const transactions = await runtimeSql<
+      {
+        transaction_id: string;
+        state: string;
+        client_id: string;
+        redirect_uri: string;
+        requested_scopes: string[];
+        code_challenge: string;
+        code_challenge_method: string;
+        client_state: string | null;
+        nonce: string | null;
+        browser_binding_hash: Uint8Array;
+        handle_hash_x: Uint8Array;
+      }[]
+    >`
         SELECT transaction_id, state, client_id, redirect_uri, requested_scopes,
                code_challenge, code_challenge_method, client_state, nonce,
                browser_binding_hash, handle_hash_x
           FROM auth.authorization_transactions
          WHERE client_id = ${CLIENT_ID}
       `;
-      expect(transactions).toHaveLength(1);
-      const transaction = transactions[0];
-      // Trạng thái sau `/authorize` là `pending_browser` — chờ cookie khớp ở
-      // `/authorize/confirm`.
-      expect(transaction?.state).toBe('pending_browser');
-      // Mọi trường bind từ CHÍNH request `/authorize` (FR-005).
-      expect(transaction?.redirect_uri).toBe(CLIENT_REDIRECT);
-      expect(transaction?.requested_scopes).toEqual(['openid', 'offline_access']);
-      expect(transaction?.code_challenge).toBe(challenge);
-      expect(transaction?.code_challenge_method).toBe('S256');
-      expect(transaction?.client_state).toBe('st-discovery-1');
-      expect(transaction?.nonce).toBe('n-discovery-1');
+    expect(transactions).toHaveLength(1);
+    const transaction = transactions[0];
+    // Trạng thái sau `/authorize` là `pending_browser` — chờ cookie khớp ở
+    // `/authorize/confirm`.
+    expect(transaction?.state).toBe('pending_browser');
+    // Mọi trường bind từ CHÍNH request `/authorize` (FR-005).
+    expect(transaction?.redirect_uri).toBe(CLIENT_REDIRECT);
+    expect(transaction?.requested_scopes).toEqual(['openid', 'offline_access']);
+    expect(transaction?.code_challenge).toBe(challenge);
+    expect(transaction?.code_challenge_method).toBe('S256');
+    expect(transaction?.client_state).toBe('st-discovery-1');
+    expect(transaction?.nonce).toBe('n-discovery-1');
 
-      // Browser binding được LƯU DẠNG BĂM, không phải bản rõ: hash của giá trị
-      // cookie phải bằng SHA-256 của chính giá trị đó (SR-006 / FR-009u).
-      const bindingHash = bytesToBase64Url(transaction?.browser_binding_hash as Uint8Array);
-      const expectedBindingHash = Buffer.from(
-        await crypto.subtle.digest('SHA-256', new TextEncoder().encode(browserBinding as string)),
-      ).toString('base64url');
-      expect(bindingHash).toBe(expectedBindingHash);
-      // Handle X cũng chỉ lưu dạng băm — bản rõ chỉ nằm trong URL.
-      const handleHash = bytesToBase64Url(transaction?.handle_hash_x as Uint8Array);
-      const expectedHandleHash = Buffer.from(
-        await crypto.subtle.digest('SHA-256', new TextEncoder().encode(handleX as string)),
-      ).toString('base64url');
-      expect(handleHash).toBe(expectedHandleHash);
+    // Browser binding được LƯU DẠNG BĂM, không phải bản rõ: hash của giá trị
+    // cookie phải bằng SHA-256 của chính giá trị đó (SR-006 / FR-009u).
+    const bindingHash = bytesToBase64Url(transaction?.browser_binding_hash as Uint8Array);
+    const expectedBindingHash = Buffer.from(
+      await crypto.subtle.digest('SHA-256', new TextEncoder().encode(browserBinding as string)),
+    ).toString('base64url');
+    expect(bindingHash).toBe(expectedBindingHash);
+    // Handle X cũng chỉ lưu dạng băm — bản rõ chỉ nằm trong URL.
+    const handleHash = bytesToBase64Url(transaction?.handle_hash_x as Uint8Array);
+    const expectedHandleHash = Buffer.from(
+      await crypto.subtle.digest('SHA-256', new TextEncoder().encode(handleX as string)),
+    ).toString('base64url');
+    expect(handleHash).toBe(expectedHandleHash);
 
-      // ── Bước 6: provider nhận request và tạo Interaction ────────────────
-      // Chứng minh luồng đi được TỪ endpoint được quảng bá tới chỗ provider
-      // nhận: Interaction của provider tồn tại trong `auth.oidc_state` (adapter
-      // thật), và browser bị đẩy sang trang login của `account` mang handle X.
-      const providerAuthResponse = await localFetch(
-        `${providerAuthUrl.pathname}${providerAuthUrl.search}`,
-        { headers: { cookie: `__Host-auth-browser=${browserBinding}` } },
-      );
-      expect(providerAuthResponse.status).toBe(303);
-      const interactionUrl = new URL(providerAuthResponse.headers.get('location') as string);
-      expect(interactionUrl.origin).toBe(ACCOUNT_BASE_URL);
-      expect(interactionUrl.pathname).toBe('/login');
-      expect(interactionUrl.searchParams.get('handle')).toBe(handleX);
+    // ── Bước 6: provider nhận request và tạo Interaction ────────────────
+    // Chứng minh luồng đi được TỪ endpoint được quảng bá tới chỗ provider
+    // nhận: Interaction của provider tồn tại trong `auth.oidc_state` (adapter
+    // thật), và browser bị đẩy sang trang login của `account` mang handle X.
+    const providerAuthResponse = await localFetch(
+      `${providerAuthUrl.pathname}${providerAuthUrl.search}`,
+      { headers: { cookie: `__Host-auth-browser=${browserBinding}` } },
+    );
+    expect(providerAuthResponse.status).toBe(303);
+    const interactionUrl = new URL(providerAuthResponse.headers.get('location') as string);
+    expect(interactionUrl.origin).toBe(ACCOUNT_BASE_URL);
+    expect(interactionUrl.pathname).toBe('/login');
+    expect(interactionUrl.searchParams.get('handle')).toBe(handleX);
 
-      const interactionRows = await runtimeSql<{ id: string }[]>`
+    const interactionRows = await runtimeSql<{ id: string }[]>`
         SELECT id FROM auth.oidc_state
          WHERE kind = 'Interaction' AND payload->'params'->>'ecoma_x' = ${handleX}
       `;
-      expect(interactionRows).toHaveLength(1);
-    });
+    expect(interactionRows).toHaveLength(1);
+  });
 
-    it('the RFC 8414 document advertises the same entrypoint as the OIDC one', async () => {
-      // ⚠️ Hai well-known dùng CHUNG một document (`discoveryDocument`), nên
-      // chúng không được lệch nhau: client đọc bản RFC 8414 phải tới cùng một
-      // entrypoint. Hàm `discoveryDocument` dựng từ MỘT nguồn, nhưng test ghim
-      // điều đó lại — một bản copy-paste trong tương lai sẽ phá bộ luật.
-      const { privateKey } = await generateKeyPair('ES256', { extractable: true });
-      const pem = await exportPKCS8(privateKey);
-      const env = makeEnv(pem);
-      const { default: app } = await import('../../src/main');
+  it('the RFC 8414 document advertises the same entrypoint as the OIDC one', async () => {
+    // ⚠️ Hai well-known dùng CHUNG một document (`discoveryDocument`), nên
+    // chúng không được lệch nhau: client đọc bản RFC 8414 phải tới cùng một
+    // entrypoint. Hàm `discoveryDocument` dựng từ MỘT nguồn, nhưng test ghim
+    // điều đó lại — một bản copy-paste trong tương lai sẽ phá bộ luật.
+    const { privateKey } = await generateKeyPair('ES256', { extractable: true });
+    const pem = await exportPKCS8(privateKey);
+    const env = makeEnv(pem);
+    const { default: app } = await import('../../src/main');
 
-      const oidc = (await (
-        await app.request('/.well-known/openid-configuration', {}, env)
-      ).json()) as Record<string, unknown>;
-      const rfc8414 = (await (
-        await app.request('/.well-known/oauth-authorization-server', {}, env)
-      ).json()) as Record<string, unknown>;
+    const oidc = (await (
+      await app.request('/.well-known/openid-configuration', {}, env)
+    ).json()) as Record<string, unknown>;
+    const rfc8414 = (await (
+      await app.request('/.well-known/oauth-authorization-server', {}, env)
+    ).json()) as Record<string, unknown>;
 
-      expect(rfc8414['authorization_endpoint']).toBe(oidc['authorization_endpoint']);
-      expect(rfc8414['claims_supported']).toEqual(oidc['claims_supported']);
-      expect(rfc8414['token_endpoint']).toBe(oidc['token_endpoint']);
-    });
-  },
-);
+    expect(rfc8414['authorization_endpoint']).toBe(oidc['authorization_endpoint']);
+    expect(rfc8414['claims_supported']).toEqual(oidc['claims_supported']);
+    expect(rfc8414['token_endpoint']).toBe(oidc['token_endpoint']);
+  });
+});

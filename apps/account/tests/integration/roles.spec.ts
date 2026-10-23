@@ -10,10 +10,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { AUTH_DATABASE, listMigrations } from '../../db/migrate.mts';
-import { type AccountDatabase, probeDocker, startAccountDatabase } from './harness.ts';
-
-const dockerAvailable = await probeDocker();
-
+import { type AccountDatabase, startAccountDatabase } from './harness.ts';
 const RUNTIME = 'ecoma_account_runtime';
 
 /**
@@ -67,7 +64,7 @@ function executableSql(sql: string): string {
     .join('\n');
 }
 
-describe.skipIf(!dockerAvailable)('roles and grants on db-account', () => {
+describe('roles and grants on db-account', () => {
   let db: AccountDatabase;
 
   beforeAll(async () => {

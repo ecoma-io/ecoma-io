@@ -3,7 +3,7 @@ import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { redeemAuthorizationCode } from './authorization-code-cas';
-import { probeDocker, startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
+import { startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
 
 /**
  * CAS của authorization code trên PostgreSQL THẬT.
@@ -37,9 +37,6 @@ import { probeDocker, startAuthDatabase, type AuthDatabase } from '../tests/inte
  * chung qua biến môi trường, nên advisory lock của hình thức cũ không còn gì để
  * bảo vệ và đã bị xoá.
  */
-
-const dockerAvailable = await probeDocker();
-
 let db: AuthDatabase;
 
 function base() {
@@ -176,9 +173,6 @@ describe('redeemAuthorizationCode — on real PostgreSQL', () => {
   // Container riêng của file này, dựng một lần cho cả suite; các test tự mở
   // cặp client qua `setup()` và tự đóng trong `finally`.
   beforeAll(async () => {
-    if (!dockerAvailable) {
-      return;
-    }
     db = await startAuthDatabase();
   }, 180_000);
 
@@ -186,7 +180,7 @@ describe('redeemAuthorizationCode — on real PostgreSQL', () => {
     await db?.stop();
   });
 
-  describe.skipIf(!dockerAvailable)('schema', () => {
+  describe('schema', () => {
     it('the adapter matches the migration: it has every column the migration declares', async () => {
       // ⚠️ Test này chốt lại chính lớp lỗi đã gặp: câu SQL của adapter tham
       // chiếu một cột mà migration không có, và mọi test khác vẫn có thể xanh
@@ -210,7 +204,7 @@ describe('redeemAuthorizationCode — on real PostgreSQL', () => {
     });
   });
 
-  describe.skipIf(!dockerAvailable)('single-winner under contention', () => {
+  describe('single-winner under contention', () => {
     it('TWO requests hit the same code — exactly ONE wins', async () => {
       const { runtime, migrator } = await setup();
       try {
@@ -347,7 +341,7 @@ describe('redeemAuthorizationCode — on real PostgreSQL', () => {
     });
   });
 
-  describe.skipIf(!dockerAvailable)('permission grants', () => {
+  describe('permission grants', () => {
     it('the runtime cannot CREATE a table in the auth schema', async () => {
       // Thay cho marker test cũ của hình thức chia sẻ database qua biến môi
       // trường ("set … to run the single-winner tests") — marker ấy hết ý nghĩa

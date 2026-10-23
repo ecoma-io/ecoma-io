@@ -58,15 +58,13 @@ import type { IssuanceGate } from './oidc/adapter';
 import { AccountClient } from './account-client';
 import { checkRevocationAtIssuance, insertAuditEvent } from './authorization-store';
 import { loadAuthConfig, type AuthEnv } from './config';
-import { probeDocker, startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
+import { startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
 
 /* ------------------------------------------------------------------ */
 /* PostgreSQL harness — cùng luật với oidc-fullflow.spec.ts            */
 /* ------------------------------------------------------------------ */
 
 /** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
-const dockerAvailable = await probeDocker();
-
 /** Container riêng của file này, dựng một lần trong `beforeAll`. */
 let db: AuthDatabase;
 
@@ -315,7 +313,6 @@ function makeEnv(pem: string): AuthEnv {
 /* ------------------------------------------------------------------ */
 
 beforeAll(async () => {
-  if (!dockerAvailable) return;
   // Schema đã sẵn sàng bên trong `startAuthDatabase` (migration chạy một lần lúc
   // container lên, bằng credential migrator thật).
   db = await startAuthDatabase();
@@ -502,148 +499,145 @@ async function walkUpToApproved(params: {
   return { resumeUrl, cookieHeader };
 }
 
-describe.skipIf(!dockerAvailable)(
-  'issuance gate at provider level — account suspended mid-flow, between approve and resume (acceptance)',
-  () => {
-    it('blocks code issuance at resume when the account is suspended after consent approve', async () => {
-      // Client PHẢI seed TRƯỚC bootProvider: createProvider load clients tĩnh
-      // từ DB lúc dựng và ném sớm nếu không có client public nào.
-      await runtimeSql`
+describe('issuance gate at provider level — account suspended mid-flow, between approve and resume (acceptance)', () => {
+  it('blocks code issuance at resume when the account is suspended after consent approve', async () => {
+    // Client PHẢI seed TRƯỚC bootProvider: createProvider load clients tĩnh
+    // từ DB lúc dựng và ném sớm nếu không có client public nào.
+    await runtimeSql`
       INSERT INTO auth.oauth_clients (client_id, client_name, client_type, allowed_scopes)
       VALUES (${CLIENT_ID}, 'issgate pg test client', 'public',
               ARRAY['openid', 'offline_access']::text[])
       ON CONFLICT (client_id) DO UPDATE SET allowed_scopes = EXCLUDED.allowed_scopes
     `;
-      await runtimeSql`
+    await runtimeSql`
       INSERT INTO auth.client_redirect_uris (client_id, redirect_uri)
       VALUES (${CLIENT_ID}, ${CLIENT_REDIRECT})
       ON CONFLICT DO NOTHING
     `;
 
-      const keypair = await generateKeyPair('ES256', { extractable: true });
-      const pem = await exportPKCS8(keypair.privateKey);
+    const keypair = await generateKeyPair('ES256', { extractable: true });
+    const pem = await exportPKCS8(keypair.privateKey);
 
-      // Trước resume: account active — mọi step trước resume thành công.
-      statusStub = 'active';
-      await bootProvider(pem);
+    // Trước resume: account active — mọi step trước resume thành công.
+    statusStub = 'active';
+    await bootProvider(pem);
 
-      const preResume = await walkUpToApproved({
-        scopes: 'openid%20offline_access',
-        state: 'st-issgate-1',
-        nonce: 'n-issgate-1',
-        eventId: 'evt-issgate-approved-1',
-        keypairPem: pem,
-        subject: SUB_SUSPENDED,
-      });
+    const preResume = await walkUpToApproved({
+      scopes: 'openid%20offline_access',
+      state: 'st-issgate-1',
+      nonce: 'n-issgate-1',
+      eventId: 'evt-issgate-approved-1',
+      keypairPem: pem,
+      subject: SUB_SUSPENDED,
+    });
 
-      // ── Treo account GIỮA LUỒNG: sau decide, trước resume ─────────────
-      statusStub = 'suspended';
+    // ── Treo account GIỮA LUỒNG: sau decide, trước resume ─────────────
+    statusStub = 'suspended';
 
-      // ── 6. GET resume (browser thật) → gate throw, KHÔNG code ────────
-      const resumeResponse = await localFetch(
-        preResume.resumeUrl.pathname + preResume.resumeUrl.search,
-        { headers: { cookie: preResume.cookieHeader }, redirect: 'manual' },
-      );
-      // `error_handler` + `err_out` của oidc-provider 9.12.2: generic Error không
-      // expose ⇒ 500 + JSON `server_error` (khi client không accept html) hoặc HTML
-      // render. Body có thể là JSON hoặc HTML — assert status + KHÔNG có code
-      // trong mọi redirect location (response phải là error, không phải redirect).
-      expect(resumeResponse.status).toBe(500);
-      const location = resumeResponse.headers.get('location');
-      expect(location).toBeNull();
+    // ── 6. GET resume (browser thật) → gate throw, KHÔNG code ────────
+    const resumeResponse = await localFetch(
+      preResume.resumeUrl.pathname + preResume.resumeUrl.search,
+      { headers: { cookie: preResume.cookieHeader }, redirect: 'manual' },
+    );
+    // `error_handler` + `err_out` của oidc-provider 9.12.2: generic Error không
+    // expose ⇒ 500 + JSON `server_error` (khi client không accept html) hoặc HTML
+    // render. Body có thể là JSON hoặc HTML — assert status + KHÔNG có code
+    // trong mọi redirect location (response phải là error, không phải redirect).
+    expect(resumeResponse.status).toBe(500);
+    const location = resumeResponse.headers.get('location');
+    expect(location).toBeNull();
 
-      // Audit: đúng một hàng `token_issue_denied`, đúng reason.
-      // ⚠️ PHÁT HIỆN LỆCH (FINDING, không vá trong PR này): `insertAuditEvent`
-      // bind `JSON.stringify(event.details)` vào `$10::jsonb` — tôi đo bằng
-      // probe (postgres.js + $N::jsonb): truyền STRING cho một tham số có
-      // ::jsonb cast khiến Postgres nhận CHUỖI làm một giá trị jsonb-scalar,
-      // tức `details` bị double-encoded (`jsonb_typeof(details) === 'string'`,
-      // `details->>'reason'` trả NULL). Bind OBJECT trực tiếp (hoặc object cast)
-      // cho jsonb_typeof đúng 'object'. Đây LÀ lệch comment của `adapter.upsert`
-      // đã cảnh báo cho payload oidc_state, nhưng nằm ở `authorization-store.ts`
-      // (store khác, caller khác) — gap này cần một fix production riêng, ngoài
-      // phạm vi test-only của workstream này. Spec đọc qua `details::text` rồi
-      // parse HAI LẦN để khẳng định đúng invariant "details mang reason", không
-      // phụ thuộc cách encode nào production dùng trong tương lai.
-      const auditRows = await runtimeSql<{ error_code: string | null; details_text: string }[]>`
+    // Audit: đúng một hàng `token_issue_denied`, đúng reason.
+    // ⚠️ PHÁT HIỆN LỆCH (FINDING, không vá trong PR này): `insertAuditEvent`
+    // bind `JSON.stringify(event.details)` vào `$10::jsonb` — tôi đo bằng
+    // probe (postgres.js + $N::jsonb): truyền STRING cho một tham số có
+    // ::jsonb cast khiến Postgres nhận CHUỖI làm một giá trị jsonb-scalar,
+    // tức `details` bị double-encoded (`jsonb_typeof(details) === 'string'`,
+    // `details->>'reason'` trả NULL). Bind OBJECT trực tiếp (hoặc object cast)
+    // cho jsonb_typeof đúng 'object'. Đây LÀ lệch comment của `adapter.upsert`
+    // đã cảnh báo cho payload oidc_state, nhưng nằm ở `authorization-store.ts`
+    // (store khác, caller khác) — gap này cần một fix production riêng, ngoài
+    // phạm vi test-only của workstream này. Spec đọc qua `details::text` rồi
+    // parse HAI LẦN để khẳng định đúng invariant "details mang reason", không
+    // phụ thuộc cách encode nào production dùng trong tương lai.
+    const auditRows = await runtimeSql<{ error_code: string | null; details_text: string }[]>`
       SELECT error_code, details::text AS details_text FROM auth.authorization_audit_events
        WHERE event_type = 'token_issue_denied' AND subject_ref = ${SUB_SUSPENDED}
     `;
-      expect(auditRows).toHaveLength(1);
-      expect(auditRows[0]?.error_code).toBe('access_denied');
-      // ⚠️ Double-encoded: details_text là một chuỗi JSON vấn có chuỗi JSON bên
-      // trong — parse HAI LẦN. Phát hiện này đi vào report; spec không chỉnh
-      // hành vi production (chỉ test-only).
-      const first = JSON.parse(auditRows[0]?.details_text ?? 'null') as unknown;
-      const details = (typeof first === 'string' ? JSON.parse(first) : first) as {
-        reason?: string;
-      };
-      expect(details['reason']).toBe('account_status');
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]?.error_code).toBe('access_denied');
+    // ⚠️ Double-encoded: details_text là một chuỗi JSON vấn có chuỗi JSON bên
+    // trong — parse HAI LẦN. Phát hiện này đi vào report; spec không chỉnh
+    // hành vi production (chỉ test-only).
+    const first = JSON.parse(auditRows[0]?.details_text ?? 'null') as unknown;
+    const details = (typeof first === 'string' ? JSON.parse(first) : first) as {
+      reason?: string;
+    };
+    expect(details['reason']).toBe('account_status');
 
-      // Không AuthorizationCode nào của sub này được persist: gate chặn TRƯỚC lúc
-      // `upsert` ghi hàng (adapter chạy gate trước phần ghi — xem `adapter.ts`).
-      const codeRows = await runtimeSql<{ count: string }[]>`
+    // Không AuthorizationCode nào của sub này được persist: gate chặn TRƯỚC lúc
+    // `upsert` ghi hàng (adapter chạy gate trước phần ghi — xem `adapter.ts`).
+    const codeRows = await runtimeSql<{ count: string }[]>`
       SELECT count(*) AS count FROM auth.oidc_state
        WHERE kind = 'AuthorizationCode' AND payload->>'accountId' = ${SUB_SUSPENDED}
     `;
-      expect(Number(codeRows[0]?.count)).toBe(0);
+    expect(Number(codeRows[0]?.count)).toBe(0);
 
-      // Token endpoint không thể đổi code thành token (code chưa từng tồn tại):
-      // assert thứ hai khẳng định phản xạ protocol — POST /token với code không có
-      // trong DB PHẢI trả protocol-level error, KHÔNG token.
-      const tokenAttempt = await localFetch(PROVIDER_ROUTES.tokenRoute, {
-        method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'authorization_code',
-          code: 'fake-code-never-issued-by-this-flow',
-          redirect_uri: CLIENT_REDIRECT,
-          client_id: CLIENT_ID,
-          code_verifier: 'd'.repeat(43),
-          resource: TEST_AUDIENCE,
-        }).toString(),
-        redirect: 'manual',
-      });
-      expect(tokenAttempt.status).toBe(400);
-      const tokenAttemptBody = (await tokenAttempt.json()) as { error?: string };
-      expect(tokenAttemptBody['error']).toBe('invalid_grant');
+    // Token endpoint không thể đổi code thành token (code chưa từng tồn tại):
+    // assert thứ hai khẳng định phản xạ protocol — POST /token với code không có
+    // trong DB PHẢI trả protocol-level error, KHÔNG token.
+    const tokenAttempt = await localFetch(PROVIDER_ROUTES.tokenRoute, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: 'fake-code-never-issued-by-this-flow',
+        redirect_uri: CLIENT_REDIRECT,
+        client_id: CLIENT_ID,
+        code_verifier: 'd'.repeat(43),
+        resource: TEST_AUDIENCE,
+      }).toString(),
+      redirect: 'manual',
+    });
+    expect(tokenAttempt.status).toBe(400);
+    const tokenAttemptBody = (await tokenAttempt.json()) as { error?: string };
+    expect(tokenAttemptBody['error']).toBe('invalid_grant');
+  });
+
+  it('still completes a full flow when the account stays active the whole way (control)', async () => {
+    // Test kỷ luật: cùng luồng với test trên nhưng status active — phải cấp code
+    // bình thường. Phòng trường hợp gate hỏng theo hướng "nuốt mọi thứ"
+    // (fail-closed quá mức) — test trên sẽ pass kể cả khi gate chặn cả Account active.
+    statusStub = 'active';
+    const pem = await exportPKCS8(
+      (await generateKeyPair('ES256', { extractable: true })).privateKey,
+    );
+    const preResume = await walkUpToApproved({
+      scopes: 'openid%20offline_access',
+      state: 'st-issgate-2',
+      nonce: 'n-issgate-2',
+      eventId: 'evt-issgate-approved-2',
+      keypairPem: pem,
+      subject: SUB_ACTIVE,
     });
 
-    it('still completes a full flow when the account stays active the whole way (control)', async () => {
-      // Test kỷ luật: cùng luồng với test trên nhưng status active — phải cấp code
-      // bình thường. Phòng trường hợp gate hỏng theo hướng "nuốt mọi thứ"
-      // (fail-closed quá mức) — test trên sẽ pass kể cả khi gate chặn cả Account active.
-      statusStub = 'active';
-      const pem = await exportPKCS8(
-        (await generateKeyPair('ES256', { extractable: true })).privateKey,
-      );
-      const preResume = await walkUpToApproved({
-        scopes: 'openid%20offline_access',
-        state: 'st-issgate-2',
-        nonce: 'n-issgate-2',
-        eventId: 'evt-issgate-approved-2',
-        keypairPem: pem,
-        subject: SUB_ACTIVE,
-      });
+    const resumeResponse = await localFetch(
+      preResume.resumeUrl.pathname + preResume.resumeUrl.search,
+      { headers: { cookie: preResume.cookieHeader }, redirect: 'manual' },
+    );
+    // Resume cũng qua pipeline Koa — 303 như bước /auth, không phải 302 của glue.
+    expect(resumeResponse.status).toBe(303);
+    const clientCallback = new URL(resumeResponse.headers.get('location') as string);
+    expect(clientCallback.origin).toBe('https://rp.example.com');
+    expect(clientCallback.pathname).toBe('/cb');
+    const code = clientCallback.searchParams.get('code');
+    expect(typeof code).toBe('string');
 
-      const resumeResponse = await localFetch(
-        preResume.resumeUrl.pathname + preResume.resumeUrl.search,
-        { headers: { cookie: preResume.cookieHeader }, redirect: 'manual' },
-      );
-      // Resume cũng qua pipeline Koa — 303 như bước /auth, không phải 302 của glue.
-      expect(resumeResponse.status).toBe(303);
-      const clientCallback = new URL(resumeResponse.headers.get('location') as string);
-      expect(clientCallback.origin).toBe('https://rp.example.com');
-      expect(clientCallback.pathname).toBe('/cb');
-      const code = clientCallback.searchParams.get('code');
-      expect(typeof code).toBe('string');
-
-      // token_issue_denied KHÔNG sinh thêm hàng cho subject control này — 0.
-      const denyRows = await runtimeSql<{ count: string }[]>`
+    // token_issue_denied KHÔNG sinh thêm hàng cho subject control này — 0.
+    const denyRows = await runtimeSql<{ count: string }[]>`
       SELECT count(*) AS count FROM auth.authorization_audit_events
        WHERE event_type = 'token_issue_denied' AND subject_ref = ${SUB_ACTIVE}
     `;
-      expect(Number(denyRows[0]?.count)).toBe(0);
-    });
-  },
-);
+    expect(Number(denyRows[0]?.count)).toBe(0);
+  });
+});

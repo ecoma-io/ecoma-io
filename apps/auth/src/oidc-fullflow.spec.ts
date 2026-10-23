@@ -52,15 +52,13 @@ import { createPostgresClient } from '@ecoma-io/identity-auth-infrastructure';
 
 import { PROVIDER_ROUTES } from './oidc/provider';
 import { loadAuthConfig, type AuthEnv } from './config';
-import { probeDocker, startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
+import { startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
 
 /* ------------------------------------------------------------------ */
 /* PostgreSQL harness — cùng luật với internal-handlers.spec.ts        */
 /* ------------------------------------------------------------------ */
 
 /** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
-const dockerAvailable = await probeDocker();
-
 /** Container riêng của file này, dựng một lần trong `beforeAll`. */
 let db: AuthDatabase;
 
@@ -245,7 +243,6 @@ function makeEnv(pem: string): AuthEnv {
 /* ------------------------------------------------------------------ */
 
 beforeAll(async () => {
-  if (!dockerAvailable) return;
   // Schema đã sẵn sàng bên trong `startAuthDatabase` (migration chạy một lần
   // lúc container lên, bằng credential migrator thật).
   db = await startAuthDatabase();
@@ -305,403 +302,397 @@ afterAll(async () => {
   await db?.stop();
 });
 
-describe.skipIf(!dockerAvailable)(
-  'oidc-provider full flow — against a real PostgreSQL (acceptance)',
-  () => {
-    it('walks the whole §5.1.2: authorize → provider → confirm → verified → decide → resume → token', async () => {
-      // ── Dựng: khoá ES256 thật + env thật + provider thật trên server Node ─
-      const { privateKey } = await generateKeyPair('ES256', { extractable: true });
-      const pem = await exportPKCS8(privateKey);
-      // Client thử nghiệm PHẢI seed TRƯỚC bootProvider: createProvider load clients
-      // tĩnh từ DB lúc dựng và ném sớm nếu không có client public nào.
-      await runtimeSql`
+describe('oidc-provider full flow — against a real PostgreSQL (acceptance)', () => {
+  it('walks the whole §5.1.2: authorize → provider → confirm → verified → decide → resume → token', async () => {
+    // ── Dựng: khoá ES256 thật + env thật + provider thật trên server Node ─
+    const { privateKey } = await generateKeyPair('ES256', { extractable: true });
+    const pem = await exportPKCS8(privateKey);
+    // Client thử nghiệm PHẢI seed TRƯỚC bootProvider: createProvider load clients
+    // tĩnh từ DB lúc dựng và ném sớm nếu không có client public nào.
+    await runtimeSql`
       INSERT INTO auth.oauth_clients (client_id, client_name, client_type, allowed_scopes)
       VALUES (${CLIENT_ID}, 'fullflow pg test client', 'public',
               ARRAY['openid', 'offline_access', 'profile']::text[])
       ON CONFLICT (client_id) DO UPDATE SET allowed_scopes = EXCLUDED.allowed_scopes
     `;
-      await runtimeSql`
+    await runtimeSql`
       INSERT INTO auth.client_redirect_uris (client_id, redirect_uri)
       VALUES (${CLIENT_ID}, ${CLIENT_REDIRECT})
       ON CONFLICT DO NOTHING
     `;
-      await bootProvider(pem);
-      const env = makeEnv(pem);
+    await bootProvider(pem);
+    const env = makeEnv(pem);
 
-      // ── 1. GET /authorize (glue ECOMA, qua app Hono thật) ────────────────
-      // Dùng `app.request` cho glue Hono (không cần server thứ hai) và fetch thật
-      // cho pipeline provider. Glue + provider chia cùng PostgreSQL.
-      const { default: app } = await import('./main');
+    // ── 1. GET /authorize (glue ECOMA, qua app Hono thật) ────────────────
+    // Dùng `app.request` cho glue Hono (không cần server thứ hai) và fetch thật
+    // cho pipeline provider. Glue + provider chia cùng PostgreSQL.
+    const { default: app } = await import('./main');
 
-      // PKCE thật: verifier + challenge S256.
-      const verifierBytes = new Uint8Array(32);
-      crypto.getRandomValues(verifierBytes);
-      const verifier = Buffer.from(verifierBytes).toString('base64url');
-      const challenge = Buffer.from(
-        await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)),
-      ).toString('base64url');
+    // PKCE thật: verifier + challenge S256.
+    const verifierBytes = new Uint8Array(32);
+    crypto.getRandomValues(verifierBytes);
+    const verifier = Buffer.from(verifierBytes).toString('base64url');
+    const challenge = Buffer.from(
+      await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)),
+    ).toString('base64url');
 
-      const authorizeUrl =
-        `/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(CLIENT_REDIRECT)}` +
-        `&response_type=code&scope=openid%20offline_access&state=st-fullflow-1` +
-        `&nonce=n-fullflow-1&code_challenge=${challenge}&code_challenge_method=S256`;
-      const authorizeResponse = await app.request(authorizeUrl, { redirect: 'manual' }, env);
-      expect(authorizeResponse.status).toBe(302);
-      const providerAuthUrl = new URL(authorizeResponse.headers.get('location') as string);
-      expect(providerAuthUrl.origin + providerAuthUrl.pathname).toBe(
-        `${ISSUER}${PROVIDER_ROUTES.authorizationRoute}`,
-      );
-      const handleX = providerAuthUrl.searchParams.get('ecoma_x');
-      expect(typeof handleX).toBe('string');
-      expect(handleX?.length).toBeGreaterThanOrEqual(43);
-      const setCookie = authorizeResponse.headers.get('set-cookie') ?? '';
-      expect(setCookie).toContain('__Host-auth-browser=');
-      const browserBinding = setCookie.split(';')[0]?.split('=')[1];
-      expect(typeof browserBinding).toBe('string');
+    const authorizeUrl =
+      `/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(CLIENT_REDIRECT)}` +
+      `&response_type=code&scope=openid%20offline_access&state=st-fullflow-1` +
+      `&nonce=n-fullflow-1&code_challenge=${challenge}&code_challenge_method=S256`;
+    const authorizeResponse = await app.request(authorizeUrl, { redirect: 'manual' }, env);
+    expect(authorizeResponse.status).toBe(302);
+    const providerAuthUrl = new URL(authorizeResponse.headers.get('location') as string);
+    expect(providerAuthUrl.origin + providerAuthUrl.pathname).toBe(
+      `${ISSUER}${PROVIDER_ROUTES.authorizationRoute}`,
+    );
+    const handleX = providerAuthUrl.searchParams.get('ecoma_x');
+    expect(typeof handleX).toBe('string');
+    expect(handleX?.length).toBeGreaterThanOrEqual(43);
+    const setCookie = authorizeResponse.headers.get('set-cookie') ?? '';
+    expect(setCookie).toContain('__Host-auth-browser=');
+    const browserBinding = setCookie.split(';')[0]?.split('=')[1];
+    expect(typeof browserBinding).toBe('string');
 
-      // ── 2. GET /auth (provider thật, pipeline Koa thật qua server Node) ──
-      // Cookie browser phải đi cùng để request giống browser thật (provider không
-      // đọc nó — cookie B chỉ glue dùng — nhưng độ trung thực của luồng là mục tiêu).
-      const providerAuthResponse = await localFetch(
-        `${providerAuthUrl.pathname}${providerAuthUrl.search}`,
-        { headers: { cookie: `__Host-auth-browser=${browserBinding}` } },
-      );
-      // Provider redirect bằng 303 (See Other — mặc định koa/provider cho GET);
-      // glue Hono ở bước 1 mới là 302 — hai đường redirect khác nhau là chủ đích.
-      expect(providerAuthResponse.status).toBe(303);
-      const interactionUrl = new URL(providerAuthResponse.headers.get('location') as string);
-      expect(interactionUrl.origin).toBe(ACCOUNT_BASE_URL);
-      expect(interactionUrl.pathname).toBe('/login');
-      expect(interactionUrl.searchParams.get('handle')).toBe(handleX);
+    // ── 2. GET /auth (provider thật, pipeline Koa thật qua server Node) ──
+    // Cookie browser phải đi cùng để request giống browser thật (provider không
+    // đọc nó — cookie B chỉ glue dùng — nhưng độ trung thực của luồng là mục tiêu).
+    const providerAuthResponse = await localFetch(
+      `${providerAuthUrl.pathname}${providerAuthUrl.search}`,
+      { headers: { cookie: `__Host-auth-browser=${browserBinding}` } },
+    );
+    // Provider redirect bằng 303 (See Other — mặc định koa/provider cho GET);
+    // glue Hono ở bước 1 mới là 302 — hai đường redirect khác nhau là chủ đích.
+    expect(providerAuthResponse.status).toBe(303);
+    const interactionUrl = new URL(providerAuthResponse.headers.get('location') as string);
+    expect(interactionUrl.origin).toBe(ACCOUNT_BASE_URL);
+    expect(interactionUrl.pathname).toBe('/login');
+    expect(interactionUrl.searchParams.get('handle')).toBe(handleX);
 
-      // Interaction nằm trong auth.oidc_state (adapter thật) với correlator ecoma_x.
-      const interactionRows = await runtimeSql<{ id: string; return_to: string | null }[]>`
+    // Interaction nằm trong auth.oidc_state (adapter thật) với correlator ecoma_x.
+    const interactionRows = await runtimeSql<{ id: string; return_to: string | null }[]>`
       SELECT id, payload->>'returnTo' AS return_to FROM auth.oidc_state
        WHERE kind = 'Interaction' AND payload->'params'->>'ecoma_x' = ${handleX}
     `;
-      expect(interactionRows).toHaveLength(1);
+    expect(interactionRows).toHaveLength(1);
 
-      // ── 3. GET /authorize/confirm (glue — CAS pending_browser → confirmed) ─
-      const confirmResponse = await app.request(
-        `/authorize/confirm?handle=${handleX}`,
-        {
-          redirect: 'manual',
-          headers: { cookie: `__Host-auth-browser=${browserBinding}` },
-        },
-        env,
-      );
-      expect(confirmResponse.status).toBe(302);
-      expect(confirmResponse.headers.get('location')).toBe(
-        `${ACCOUNT_BASE_URL}/login/continue?handle=${encodeURIComponent(handleX ?? '')}`,
-      );
+    // ── 3. GET /authorize/confirm (glue — CAS pending_browser → confirmed) ─
+    const confirmResponse = await app.request(
+      `/authorize/confirm?handle=${handleX}`,
+      {
+        redirect: 'manual',
+        headers: { cookie: `__Host-auth-browser=${browserBinding}` },
+      },
+      env,
+    );
+    expect(confirmResponse.status).toBe(302);
+    expect(confirmResponse.headers.get('location')).toBe(
+      `${ACCOUNT_BASE_URL}/login/continue?handle=${encodeURIComponent(handleX ?? '')}`,
+    );
 
-      // ── 4. POST /internal/session/verified → consent_required ────────────
-      const verifiedBody = {
-        handle: handleX,
-        sub: SUB,
-        acr: 'urn:ecoma:acr:email-otp',
-        authn_at: Date.now(),
-        account_session_ref: 'asr-fullflow-1',
-        event_id: 'evt-fullflow-verified-1',
-      };
-      const verified = await internalPost(app, '/internal/session/verified', verifiedBody, env);
-      expect(verified.status).toBe(200);
-      expect(verified.body['outcome']).toBe('consent_required');
-      const consentUrl = new URL(verified.body['continue_url'] as string);
-      expect(consentUrl.origin).toBe(ACCOUNT_BASE_URL);
-      expect(consentUrl.pathname).toBe('/consent');
-      const handleY = consentUrl.searchParams.get('handle');
-      expect(typeof handleY).toBe('string');
+    // ── 4. POST /internal/session/verified → consent_required ────────────
+    const verifiedBody = {
+      handle: handleX,
+      sub: SUB,
+      acr: 'urn:ecoma:acr:email-otp',
+      authn_at: Date.now(),
+      account_session_ref: 'asr-fullflow-1',
+      event_id: 'evt-fullflow-verified-1',
+    };
+    const verified = await internalPost(app, '/internal/session/verified', verifiedBody, env);
+    expect(verified.status).toBe(200);
+    expect(verified.body['outcome']).toBe('consent_required');
+    const consentUrl = new URL(verified.body['continue_url'] as string);
+    expect(consentUrl.origin).toBe(ACCOUNT_BASE_URL);
+    expect(consentUrl.pathname).toBe('/consent');
+    const handleY = consentUrl.searchParams.get('handle');
+    expect(typeof handleY).toBe('string');
 
-      // result.login đã nằm trong Interaction (adapter thật, đọc qua DB).
-      const withLogin = await runtimeSql<{ payload: Record<string, unknown> }[]>`
+    // result.login đã nằm trong Interaction (adapter thật, đọc qua DB).
+    const withLogin = await runtimeSql<{ payload: Record<string, unknown> }[]>`
       SELECT payload FROM auth.oidc_state WHERE kind = 'Interaction'
        AND payload->'params'->>'ecoma_x' = ${handleX}
     `;
-      const loginResult = withLogin[0]?.payload['result'] as
-        | { login?: { accountId?: string; acr?: string } }
-        | undefined;
-      expect(loginResult?.login?.accountId).toBe(SUB);
-      expect(loginResult?.login?.acr).toBe('urn:ecoma:acr:email-otp');
+    const loginResult = withLogin[0]?.payload['result'] as
+      | { login?: { accountId?: string; acr?: string } }
+      | undefined;
+    expect(loginResult?.login?.accountId).toBe(SUB);
+    expect(loginResult?.login?.acr).toBe('urn:ecoma:acr:email-otp');
 
-      // ── 5. POST /internal/consent/decide (approve) → resume URL ──────────
-      const decide = await internalPost(
-        app,
-        '/internal/consent/decide',
-        {
-          handle: handleY,
-          decision: 'approve',
-          account_session_ref: 'asr-fullflow-1',
-        },
-        env,
-      );
-      expect(decide.status).toBe(200);
-      expect(decide.body['outcome']).toBe('approved');
-      const resumeUrl = new URL(decide.body['continue_url'] as string);
-      // Continue URL là resume URL của PROVIDER — tuyệt đối, cùng issuer.
-      expect(resumeUrl.origin).toBe(ISSUER);
+    // ── 5. POST /internal/consent/decide (approve) → resume URL ──────────
+    const decide = await internalPost(
+      app,
+      '/internal/consent/decide',
+      {
+        handle: handleY,
+        decision: 'approve',
+        account_session_ref: 'asr-fullflow-1',
+      },
+      env,
+    );
+    expect(decide.status).toBe(200);
+    expect(decide.body['outcome']).toBe('approved');
+    const resumeUrl = new URL(decide.body['continue_url'] as string);
+    // Continue URL là resume URL của PROVIDER — tuyệt đối, cùng issuer.
+    expect(resumeUrl.origin).toBe(ISSUER);
 
-      // Provider Grant tồn tại với jti = id của oauth_grants.
-      const grantRows = await runtimeSql<{ id: string; jti: string | null }[]>`
+    // Provider Grant tồn tại với jti = id của oauth_grants.
+    const grantRows = await runtimeSql<{ id: string; jti: string | null }[]>`
       SELECT g.id, p.id AS jti FROM auth.oauth_grants g
        JOIN auth.oidc_state p ON p.id = g.id::text
        WHERE g.sub = ${SUB} AND g.client_id = ${CLIENT_ID} AND g.status = 'active'
     `;
-      expect(grantRows).toHaveLength(1);
+    expect(grantRows).toHaveLength(1);
 
-      // ── 6. GET resume (browser thật — pipeline Koa thật cấp code) ────────
-      // Browser giữ cookie `_interaction_resume` từ bước 2 (set bởi provider);
-      // request này chứng minh đường resume + result áp + respond() cấp code.
-      const resumeCookies: string[] = [];
-      for (const [name, value] of providerAuthResponse.headers as unknown as Iterable<
-        [string, string]
-      >) {
-        if (name === 'set-cookie') resumeCookies.push(value);
-      }
-      // `headers` của fetch là iterator lowercase tên — gom mọi set-cookie thực tế.
-      const rawResumeCookieHeaders = providerAuthResponse.headers.getSetCookie?.() ?? [];
-      const interactionResumeCookies = rawResumeCookieHeaders
-        .map((c) => c.split(';')[0])
-        .filter((c) => c.startsWith('_interaction'));
-      const cookieHeader = [
-        ...interactionResumeCookies,
-        ...resumeCookies.map((c) => c.split(';')[0]),
-      ]
-        .filter((c) => c.startsWith('_interaction'))
-        .join('; ');
-      expect(cookieHeader).not.toBe('');
+    // ── 6. GET resume (browser thật — pipeline Koa thật cấp code) ────────
+    // Browser giữ cookie `_interaction_resume` từ bước 2 (set bởi provider);
+    // request này chứng minh đường resume + result áp + respond() cấp code.
+    const resumeCookies: string[] = [];
+    for (const [name, value] of providerAuthResponse.headers as unknown as Iterable<
+      [string, string]
+    >) {
+      if (name === 'set-cookie') resumeCookies.push(value);
+    }
+    // `headers` của fetch là iterator lowercase tên — gom mọi set-cookie thực tế.
+    const rawResumeCookieHeaders = providerAuthResponse.headers.getSetCookie?.() ?? [];
+    const interactionResumeCookies = rawResumeCookieHeaders
+      .map((c) => c.split(';')[0])
+      .filter((c) => c.startsWith('_interaction'));
+    const cookieHeader = [...interactionResumeCookies, ...resumeCookies.map((c) => c.split(';')[0])]
+      .filter((c) => c.startsWith('_interaction'))
+      .join('; ');
+    expect(cookieHeader).not.toBe('');
 
-      const resumeResponse = await localFetch(resumeUrl.pathname + resumeUrl.search, {
-        headers: { cookie: cookieHeader },
-        redirect: 'manual',
-      });
-      // Resume cũng qua pipeline Koa — 303 như bước 2, không phải 302 của glue.
-      expect(resumeResponse.status).toBe(303);
-      const clientCallback = new URL(resumeResponse.headers.get('location') as string);
-      expect(clientCallback.origin).toBe('https://rp.example.com');
-      expect(clientCallback.pathname).toBe('/cb');
-      expect(clientCallback.searchParams.get('state')).toBe('st-fullflow-1');
-      const code = clientCallback.searchParams.get('code');
-      expect(typeof code).toBe('string');
+    const resumeResponse = await localFetch(resumeUrl.pathname + resumeUrl.search, {
+      headers: { cookie: cookieHeader },
+      redirect: 'manual',
+    });
+    // Resume cũng qua pipeline Koa — 303 như bước 2, không phải 302 của glue.
+    expect(resumeResponse.status).toBe(303);
+    const clientCallback = new URL(resumeResponse.headers.get('location') as string);
+    expect(clientCallback.origin).toBe('https://rp.example.com');
+    expect(clientCallback.pathname).toBe('/cb');
+    expect(clientCallback.searchParams.get('state')).toBe('st-fullflow-1');
+    const code = clientCallback.searchParams.get('code');
+    expect(typeof code).toBe('string');
 
-      // ── 7. POST /token — token thật, verify bằng JWKS công bố ────────────
-      const tokenRequest = new URLSearchParams({
-        grant_type: 'authorization_code',
-        code: code as string,
-        redirect_uri: CLIENT_REDIRECT,
+    // ── 7. POST /token — token thật, verify bằng JWKS công bố ────────────
+    const tokenRequest = new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: code as string,
+      redirect_uri: CLIENT_REDIRECT,
+      client_id: CLIENT_ID,
+      code_verifier: verifier,
+      resource: TEST_AUDIENCE,
+    });
+    const tokenResponse = await localFetch(PROVIDER_ROUTES.tokenRoute, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: tokenRequest.toString(),
+      redirect: 'manual',
+    });
+    expect(tokenResponse.status).toBe(200);
+    const tokens = (await tokenResponse.json()) as {
+      access_token: string;
+      id_token: string;
+      refresh_token?: string;
+      token_type: string;
+    };
+    expect(tokens.token_type).toBe('Bearer');
+    expect(typeof tokens.access_token).toBe('string');
+    // `offline_access` được yêu cầu ⇒ refresh token phải được cấp.
+    expect(typeof tokens.refresh_token).toBe('string');
+
+    // ── 8. JWKS công bố không chứa khoá riêng; ID token verify được ──────
+    const jwksResponse = await localFetch(PROVIDER_ROUTES.jwks);
+    expect(jwksResponse.status).toBe(200);
+    const jwks = (await jwksResponse.json()) as { keys: Record<string, unknown>[] };
+    expect(jwks.keys.length).toBeGreaterThan(0);
+    for (const key of jwks.keys) {
+      expect(key['d']).toBeUndefined();
+    }
+    const idClaims = (
+      await jwtVerify(
+        tokens.id_token,
+        (await importJWK({ ...jwks.keys[0], alg: 'ES256' }, 'ES256')) as never,
+        {
+          issuer: ISSUER,
+          audience: CLIENT_ID,
+        },
+      )
+    ).payload as Record<string, unknown>;
+    expect(idClaims['sub']).toBe(SUB);
+    expect(idClaims['acr']).toBe('urn:ecoma:acr:email-otp');
+    expect(typeof idClaims['auth_time']).toBe('number');
+
+    // Access token: ES256, aud = resource indicator.
+    const accessClaims = (
+      await jwtVerify(
+        tokens.access_token,
+        (await importJWK({ ...jwks.keys[0], alg: 'ES256' }, 'ES256')) as never,
+        {
+          issuer: ISSUER,
+          audience: TEST_AUDIENCE,
+        },
+      )
+    ).payload as Record<string, unknown>;
+    expect(accessClaims['sub']).toBe(SUB);
+
+    // ── 9. Replay session/verified cùng event — §5.1.5a ──────────────────
+    const replay = await internalPost(app, '/internal/session/verified', verifiedBody, env);
+    expect(replay.status).toBe(200);
+    // Transaction đã qua resume (bước 6 destroy Interaction) ⇒ luồng ĐÃ hoàn
+    // tất qua provider ⇒ `already_processed` — KHÔNG phải `granted` giả
+    // (không còn continuation hợp lệ nào) và không phải `invalid_grant`
+    // (ngược §5.1.6: retry không dẫn tới trạng thái không thể tiếp tục).
+    expect(replay.body['outcome']).toBe('already_processed');
+
+    // ── 10. FR-018a: reuse RT cũ ⇒ InvalidGrant + THU HỒI TOÀN FAMILY ────
+    // Rotate một lần nữa để có RT mới (RT đầu đã bị consume lúc rotate đầu);
+    // rồi dùng lại RT cũ — provider phải ném `refresh token already used`
+    // (actions/grants/refresh_token.js:107-112) và revoke(ctx, grantId) xoá MỌI
+    // artifact của grant qua adapter thật — khẳng định của 02-requirements.md:159:
+    // "dùng lại token cũ → toàn family hết hiệu lực".
+    const rt1 = tokens.refresh_token as string;
+    const refreshRotate = await localFetch(PROVIDER_ROUTES.tokenRoute, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: rt1,
         client_id: CLIENT_ID,
-        code_verifier: verifier,
         resource: TEST_AUDIENCE,
-      });
-      const tokenResponse = await localFetch(PROVIDER_ROUTES.tokenRoute, {
-        method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: tokenRequest.toString(),
-        redirect: 'manual',
-      });
-      expect(tokenResponse.status).toBe(200);
-      const tokens = (await tokenResponse.json()) as {
-        access_token: string;
-        id_token: string;
-        refresh_token?: string;
-        token_type: string;
-      };
-      expect(tokens.token_type).toBe('Bearer');
-      expect(typeof tokens.access_token).toBe('string');
-      // `offline_access` được yêu cầu ⇒ refresh token phải được cấp.
-      expect(typeof tokens.refresh_token).toBe('string');
+      }).toString(),
+      redirect: 'manual',
+    });
+    expect(refreshRotate.status).toBe(200);
+    const rotated = (await refreshRotate.json()) as { refresh_token?: string };
+    expect(typeof rotated.refresh_token).toBe('string');
+    const rt2 = rotated.refresh_token as string;
 
-      // ── 8. JWKS công bố không chứa khoá riêng; ID token verify được ──────
-      const jwksResponse = await localFetch(PROVIDER_ROUTES.jwks);
-      expect(jwksResponse.status).toBe(200);
-      const jwks = (await jwksResponse.json()) as { keys: Record<string, unknown>[] };
-      expect(jwks.keys.length).toBeGreaterThan(0);
-      for (const key of jwks.keys) {
-        expect(key['d']).toBeUndefined();
-      }
-      const idClaims = (
-        await jwtVerify(
-          tokens.id_token,
-          (await importJWK({ ...jwks.keys[0], alg: 'ES256' }, 'ES256')) as never,
-          {
-            issuer: ISSUER,
-            audience: CLIENT_ID,
-          },
-        )
-      ).payload as Record<string, unknown>;
-      expect(idClaims['sub']).toBe(SUB);
-      expect(idClaims['acr']).toBe('urn:ecoma:acr:email-otp');
-      expect(typeof idClaims['auth_time']).toBe('number');
+    const reuse = await localFetch(PROVIDER_ROUTES.tokenRoute, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: rt1,
+        client_id: CLIENT_ID,
+        resource: TEST_AUDIENCE,
+      }).toString(),
+      redirect: 'manual',
+    });
+    // Provider trả 400 invalid_grant — KHÔNG token nào được cấp từ RT đã consume.
+    // ⚠️ `error_description` của InvalidGrant là hằng 'grant request is invalid'
+    // (errors.js:97); message chi tiết nằm trong `error_detail` (errors.js:100-103),
+    // chỉ lộ khi `features.cookies`/detail expose — do đó assert đúng nghĩa: code
+    // invalid_grant và — quan trọng hơn — HẬU QUẢ thu hồi family ở dưới là bằng
+    // chứng thật, không phải chuỗi lỗi.
+    expect(reuse.status).toBe(400);
+    const reuseBody = (await reuse.json()) as { error?: string };
+    expect(reuseBody.error).toBe('invalid_grant');
 
-      // Access token: ES256, aud = resource indicator.
-      const accessClaims = (
-        await jwtVerify(
-          tokens.access_token,
-          (await importJWK({ ...jwks.keys[0], alg: 'ES256' }, 'ES256')) as never,
-          {
-            issuer: ISSUER,
-            audience: TEST_AUDIENCE,
-          },
-        )
-      ).payload as Record<string, unknown>;
-      expect(accessClaims['sub']).toBe(SUB);
-
-      // ── 9. Replay session/verified cùng event — §5.1.5a ──────────────────
-      const replay = await internalPost(app, '/internal/session/verified', verifiedBody, env);
-      expect(replay.status).toBe(200);
-      // Transaction đã qua resume (bước 6 destroy Interaction) ⇒ luồng ĐÃ hoàn
-      // tất qua provider ⇒ `already_processed` — KHÔNG phải `granted` giả
-      // (không còn continuation hợp lệ nào) và không phải `invalid_grant`
-      // (ngược §5.1.6: retry không dẫn tới trạng thái không thể tiếp tục).
-      expect(replay.body['outcome']).toBe('already_processed');
-
-      // ── 10. FR-018a: reuse RT cũ ⇒ InvalidGrant + THU HỒI TOÀN FAMILY ────
-      // Rotate một lần nữa để có RT mới (RT đầu đã bị consume lúc rotate đầu);
-      // rồi dùng lại RT cũ — provider phải ném `refresh token already used`
-      // (actions/grants/refresh_token.js:107-112) và revoke(ctx, grantId) xoá MỌI
-      // artifact của grant qua adapter thật — khẳng định của 02-requirements.md:159:
-      // "dùng lại token cũ → toàn family hết hiệu lực".
-      const rt1 = tokens.refresh_token as string;
-      const refreshRotate = await localFetch(PROVIDER_ROUTES.tokenRoute, {
-        method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'refresh_token',
-          refresh_token: rt1,
-          client_id: CLIENT_ID,
-          resource: TEST_AUDIENCE,
-        }).toString(),
-        redirect: 'manual',
-      });
-      expect(refreshRotate.status).toBe(200);
-      const rotated = (await refreshRotate.json()) as { refresh_token?: string };
-      expect(typeof rotated.refresh_token).toBe('string');
-      const rt2 = rotated.refresh_token as string;
-
-      const reuse = await localFetch(PROVIDER_ROUTES.tokenRoute, {
-        method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'refresh_token',
-          refresh_token: rt1,
-          client_id: CLIENT_ID,
-          resource: TEST_AUDIENCE,
-        }).toString(),
-        redirect: 'manual',
-      });
-      // Provider trả 400 invalid_grant — KHÔNG token nào được cấp từ RT đã consume.
-      // ⚠️ `error_description` của InvalidGrant là hằng 'grant request is invalid'
-      // (errors.js:97); message chi tiết nằm trong `error_detail` (errors.js:100-103),
-      // chỉ lộ khi `features.cookies`/detail expose — do đó assert đúng nghĩa: code
-      // invalid_grant và — quan trọng hơn — HẬU QUẢ thu hồi family ở dưới là bằng
-      // chứng thật, không phải chuỗi lỗi.
-      expect(reuse.status).toBe(400);
-      const reuseBody = (await reuse.json()) as { error?: string };
-      expect(reuseBody.error).toBe('invalid_grant');
-
-      // ⚠️ Family hết hiệu lực là HÀNH VI ĐO ĐƯỢC, không phải lời hứa: RT vừa rotate
-      // (rt2 — sinh SAU reuse, cùng grant) phải chết theo revokeByGrantId của adapter,
-      // và MỌI hàng oidc_state của grant phải biến mất.
-      const reuseRt2 = await localFetch(PROVIDER_ROUTES.tokenRoute, {
-        method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'refresh_token',
-          refresh_token: rt2,
-          client_id: CLIENT_ID,
-          resource: TEST_AUDIENCE,
-        }).toString(),
-        redirect: 'manual',
-      });
-      expect(reuseRt2.status).toBe(400);
-      const grantRowsAfter = await runtimeSql<{ kind: string; id: string }[]>`
+    // ⚠️ Family hết hiệu lực là HÀNH VI ĐO ĐƯỢC, không phải lời hứa: RT vừa rotate
+    // (rt2 — sinh SAU reuse, cùng grant) phải chết theo revokeByGrantId của adapter,
+    // và MỌI hàng oidc_state của grant phải biến mất.
+    const reuseRt2 = await localFetch(PROVIDER_ROUTES.tokenRoute, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: rt2,
+        client_id: CLIENT_ID,
+        resource: TEST_AUDIENCE,
+      }).toString(),
+      redirect: 'manual',
+    });
+    expect(reuseRt2.status).toBe(400);
+    const grantRowsAfter = await runtimeSql<{ kind: string; id: string }[]>`
       SELECT kind, id FROM auth.oidc_state
        WHERE kind IN ('RefreshToken', 'AccessToken')
          AND payload->>'clientId' = ${CLIENT_ID}
          AND payload->>'accountId' = ${SUB}
     `;
-      // Toàn bộ token của grant đã bị revoke(ctx, grantId) xoá — không còn hàng nào
-      // sống sót (bảng audit vẫn giữ bằng chứng cấp, đúng thiết kế append-only).
-      expect(grantRowsAfter).toHaveLength(0);
+    // Toàn bộ token của grant đã bị revoke(ctx, grantId) xoá — không còn hàng nào
+    // sống sót (bảng audit vẫn giữ bằng chứng cấp, đúng thiết kế append-only).
+    expect(grantRowsAfter).toHaveLength(0);
+  });
+
+  it('decide deny — result.error access_denied, NO grant created', async () => {
+    // Provider đã chạy từ test trước (server Node cùng process) — env khớp issuer đó.
+    // Key riêng cho test này chỉ phục vụ makeEnv; provider không dựng lại.
+    const { privateKey } = await generateKeyPair('ES256', { extractable: true });
+    const pem = await exportPKCS8(privateKey);
+    const env = makeEnv(pem);
+    const { default: app } = await import('./main');
+
+    const challenge = Buffer.from(
+      await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode('deny-verifier-0000000000000000000'),
+      ),
+    ).toString('base64url');
+    const authorizeResponse = await app.request(
+      `/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(CLIENT_REDIRECT)}` +
+        // Scope 'profile' chưa có trong grant active từ test trước ⇒ needsConsent
+        // trả true ⇒ mới có đường awaiting_consent + handle Y để decide deny.
+        // (scope=openid thuần đã được grant phủ ⇒ grantedPath — không có consent.)
+        `&response_type=code&scope=openid%20profile&state=st-deny&nonce=n-deny` +
+        `&code_challenge=${challenge}&code_challenge_method=S256`,
+      { redirect: 'manual' },
+      env,
+    );
+    expect(authorizeResponse.status).toBe(302);
+    const providerAuthUrl = new URL(authorizeResponse.headers.get('location') as string);
+    const handleX = providerAuthUrl.searchParams.get('ecoma_x');
+    const setCookie = authorizeResponse.headers.get('set-cookie') ?? '';
+    const browserBinding = setCookie.split(';')[0]?.split('=')[1];
+
+    await localFetch(providerAuthUrl.pathname + providerAuthUrl.search, {
+      headers: { cookie: `__Host-auth-browser=${browserBinding}` },
     });
+    await app.request(
+      `/authorize/confirm?handle=${handleX}`,
+      { redirect: 'manual', headers: { cookie: `__Host-auth-browser=${browserBinding}` } },
+      env,
+    );
+    const verified = await internalPost(
+      app,
+      '/internal/session/verified',
+      {
+        handle: handleX,
+        sub: SUB,
+        acr: 'urn:ecoma:acr:email-otp',
+        authn_at: Date.now(),
+        account_session_ref: 'asr-fullflow-deny',
+        event_id: 'evt-fullflow-verified-deny',
+      },
+      env,
+    );
+    expect(verified.status).toBe(200);
+    const handleY = new URL(verified.body['continue_url'] as string).searchParams.get('handle');
 
-    it('decide deny — result.error access_denied, NO grant created', async () => {
-      // Provider đã chạy từ test trước (server Node cùng process) — env khớp issuer đó.
-      // Key riêng cho test này chỉ phục vụ makeEnv; provider không dựng lại.
-      const { privateKey } = await generateKeyPair('ES256', { extractable: true });
-      const pem = await exportPKCS8(privateKey);
-      const env = makeEnv(pem);
-      const { default: app } = await import('./main');
+    const decide = await internalPost(
+      app,
+      '/internal/consent/decide',
+      {
+        handle: handleY,
+        decision: 'deny',
+        account_session_ref: 'asr-fullflow-deny',
+      },
+      env,
+    );
+    expect(decide.status).toBe(200);
+    expect(decide.body['outcome']).toBe('denied');
+    // Continue URL là resume URL — browser quay lại provider để nhận
+    // `error=access_denied` qua authError redirect của provider.
+    const resumeUrl = new URL(decide.body['continue_url'] as string);
+    expect(resumeUrl.origin).toBe(ISSUER);
 
-      const challenge = Buffer.from(
-        await crypto.subtle.digest(
-          'SHA-256',
-          new TextEncoder().encode('deny-verifier-0000000000000000000'),
-        ),
-      ).toString('base64url');
-      const authorizeResponse = await app.request(
-        `/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(CLIENT_REDIRECT)}` +
-          // Scope 'profile' chưa có trong grant active từ test trước ⇒ needsConsent
-          // trả true ⇒ mới có đường awaiting_consent + handle Y để decide deny.
-          // (scope=openid thuần đã được grant phủ ⇒ grantedPath — không có consent.)
-          `&response_type=code&scope=openid%20profile&state=st-deny&nonce=n-deny` +
-          `&code_challenge=${challenge}&code_challenge_method=S256`,
-        { redirect: 'manual' },
-        env,
-      );
-      expect(authorizeResponse.status).toBe(302);
-      const providerAuthUrl = new URL(authorizeResponse.headers.get('location') as string);
-      const handleX = providerAuthUrl.searchParams.get('ecoma_x');
-      const setCookie = authorizeResponse.headers.get('set-cookie') ?? '';
-      const browserBinding = setCookie.split(';')[0]?.split('=')[1];
-
-      await localFetch(providerAuthUrl.pathname + providerAuthUrl.search, {
-        headers: { cookie: `__Host-auth-browser=${browserBinding}` },
-      });
-      await app.request(
-        `/authorize/confirm?handle=${handleX}`,
-        { redirect: 'manual', headers: { cookie: `__Host-auth-browser=${browserBinding}` } },
-        env,
-      );
-      const verified = await internalPost(
-        app,
-        '/internal/session/verified',
-        {
-          handle: handleX,
-          sub: SUB,
-          acr: 'urn:ecoma:acr:email-otp',
-          authn_at: Date.now(),
-          account_session_ref: 'asr-fullflow-deny',
-          event_id: 'evt-fullflow-verified-deny',
-        },
-        env,
-      );
-      expect(verified.status).toBe(200);
-      const handleY = new URL(verified.body['continue_url'] as string).searchParams.get('handle');
-
-      const decide = await internalPost(
-        app,
-        '/internal/consent/decide',
-        {
-          handle: handleY,
-          decision: 'deny',
-          account_session_ref: 'asr-fullflow-deny',
-        },
-        env,
-      );
-      expect(decide.status).toBe(200);
-      expect(decide.body['outcome']).toBe('denied');
-      // Continue URL là resume URL — browser quay lại provider để nhận
-      // `error=access_denied` qua authError redirect của provider.
-      const resumeUrl = new URL(decide.body['continue_url'] as string);
-      expect(resumeUrl.origin).toBe(ISSUER);
-
-      // Không grant nào được tạo cho transaction này.
-      const grants = await runtimeSql<{ id: string }[]>`
+    // Không grant nào được tạo cho transaction này.
+    const grants = await runtimeSql<{ id: string }[]>`
       SELECT id FROM auth.oauth_grants WHERE sub = ${SUB} AND client_id = ${CLIENT_ID}
     `;
-      // Test approve trước đã tạo một grant active; deny KHÔNG được tạo thêm.
-      expect(grants.length).toBe(1);
-    });
-  },
-);
+    // Test approve trước đã tạo một grant active; deny KHÔNG được tạo thêm.
+    expect(grants.length).toBe(1);
+  });
+});
