@@ -33,6 +33,6 @@ Ranh giới system-level, data ownership và các quyết định kiến trúc t
 | `README.md`                                  | Index — trang bạn đang đọc                                                        |
 | [`01-architecture.md`](./01-architecture.md) | Ranh giới, domain model khái niệm, authorization model và nơi enforce, invariants |
 | [`02-requirements.md`](./02-requirements.md) | Yêu cầu bảo mật, threat model, acceptance matrix, non-goals, tham chiếu           |
-| [`adr/`](./adr/README.md)                    | Architectural decision record — mười một quyết định §10 đã chốt (ADR-0001…0011)   |
+| [`adr/`](./adr/README.md)                    | Architectural decision record — mười hai quyết định §10 đã chốt (ADR-0001…0012)   |
 
 **Chưa có** `03-operations.md`: ứng dụng hiện tại là **UI prototype** với dữ liệu mẫu, chưa có runtime vận hành thật (chưa database binding, chưa authentication, chưa RBAC) nên không có runbook thật để phản ánh. App cũng **không** đi qua pipeline release — xem [`02-delivery.md` §7.5](../../overview/02-delivery.md) — nên không có lane vận hành nào để viết runbook. Theo [`docs/AGENTS.md`](../../AGENTS.md) §5 và §7, README phải phản ánh trạng thái thật và không được giữ scaffold rỗng.
