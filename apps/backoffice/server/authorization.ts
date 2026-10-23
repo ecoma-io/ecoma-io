@@ -7,8 +7,8 @@
  * ## Hình thức lớp modular — KHÔNG đụng handler nghiệp vụ
  *
  * Cố ý KHÔNG import bất kỳ handler trong `server/api/**`: module này là
- * checkpoint enforcement riêng — business handler (hiện chỉ `greet`) và
- * các route tương lai đi qua {@link requirePermission} trước khi chạm dữ
+ * checkpoint enforcement riêng — business handler (read routes của J1 và
+ * các route tương lai) đi qua {@link requirePermission} trước khi chạm dữ
  * liệu. Task này không sửa business handler nào; một route được "phủ" bằng
  * cách gọi {@link requirePermission} ở đầu handler, và route nào gọi là
  * route đó được bảo vệ — không có khối middleware tự động phủ theo path

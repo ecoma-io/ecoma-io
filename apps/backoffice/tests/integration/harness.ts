@@ -329,7 +329,8 @@ export async function startBackofficeDatabase(): Promise<BackofficeDatabase> {
       const client = await connect();
       try {
         await client.query(
-          `TRUNCATE backoffice.authorization_audit, backoffice.role_assignments,
+          `TRUNCATE backoffice.bff_login_flows, backoffice.bff_sessions,
+                  backoffice.authorization_audit, backoffice.role_assignments,
                   backoffice.role_permissions, backoffice.roles, backoffice.permissions,
                   backoffice.staff`,
         );

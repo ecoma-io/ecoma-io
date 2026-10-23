@@ -20,6 +20,8 @@ const dockerAvailable = await probeDocker();
 
 const EXPECTED_TABLES = [
   'authorization_audit',
+  'bff_login_flows',
+  'bff_sessions',
   'permissions',
   'role_assignments',
   'role_permissions',

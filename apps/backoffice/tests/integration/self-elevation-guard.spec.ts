@@ -892,8 +892,14 @@ describe.skipIf(!dockerAvailable)('self-elevation guard on db-backoffice (0004)'
       );
 
       // Đúng như grant của `0002` — migration `0004` không đổi một quyền nào.
+      // Hai bảng BFF của `0006` có grant riêng của migration đó (phiên là state
+      // ứng dụng sống động: SELECT/INSERT/UPDATE/DELETE; luồng login:
+      // SELECT/INSERT/DELETE — consume bằng DELETE, không UPDATE) — sweep này
+      // vẫn ghim rằng `0004`+guard không **nới** gì so với bộ grant đã chốt.
       expect(actual).toEqual({
         authorization_audit: ['INSERT', 'SELECT'],
+        bff_login_flows: ['DELETE', 'INSERT', 'SELECT'],
+        bff_sessions: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
         permissions: ['SELECT'],
         role_assignments: ['INSERT', 'SELECT', 'UPDATE'],
         role_permissions: ['DELETE', 'INSERT', 'SELECT'],

@@ -1,7 +1,8 @@
 /**
  * Unit test cho lớp đọc principal của `apps/backoffice` — principal chỉ đến
- * từ **server-side context**, và context vắng thì fail closed với `503`
- * (ADR-0010 — không phải `401`).
+ * từ **server-side context**, và context vắng thì fail closed với `401`
+ * (ADR-0011 §3 — middleware authn là nguồn principal; 503 dành cho JWKS/DB
+ * outage, không cho "credential vắng").
  *
  * ⚠️ Test này ghim đúng ranh giới T-10 (confused deputy): route **không** được
  * đọc danh tính từ header/query/body do client kiểm soát. Ở đây chỉ chứng
@@ -22,7 +23,7 @@ import { PRINCIPAL_CONTEXT_KEY, readPrincipal, requirePrincipal } from './princi
  * ⚠️ Độ dài lấy từ hằng `BACKOFFICE_ACCOUNT_ID_ENTROPY_CHARS` chứ không viết
  * literal: `isBackofficeAccountId` từ chối mọi `sub` khác độ dài, nên một
  * literal lệch (52 ký tự — format local cũ đã bị gỡ ở F1, issue #101) làm
- * `readPrincipal` trả `null` ⇒ `requirePrincipal` ném `503` ⇒ mọi test ở đây
+ * `readPrincipal` trả `null` ⇒ `requirePrincipal` ném `401` ⇒ mọi test ở đây
  * đỏ **vì lý do sai**.
  */
 const VALID_SUB = `sub_${'a'.repeat(BACKOFFICE_ACCOUNT_ID_ENTROPY_CHARS)}`;
@@ -56,12 +57,13 @@ describe('readPrincipal', () => {
 });
 
 describe('requirePrincipal', () => {
-  it('fails closed with 503 when the principal cannot be verified (ADR-0010)', () => {
-    // ADR-0010: giai đoạn này, principal không verify được ⇒ **503**, không
-    // phải 401 — 401 là khẳng định về danh tính, còn đây là "hệ thống chưa dựng
-    // được đường xác thực".
+  it('fails closed with 401 when the context carries no principal (ADR-0011 §3)', () => {
+    // ADR-0011 §3: middleware authn là nguồn principal duy nhất; context vắng
+    // nghĩa là request không có credential hợp lệ ⇒ **401** (credential
+    // missing/invalid), không phải 503 — 503 chỉ cho "không verify được lúc
+    // này" (JWKS/DB outage) và đã được middleware xử lý trước khi tới route.
     expect(() => requirePrincipal(fakeEvent({}))).toThrowError(
-      expect.objectContaining({ statusCode: 503 }),
+      expect.objectContaining({ statusCode: 401 }),
     );
   });
 
@@ -70,7 +72,7 @@ describe('requirePrincipal', () => {
     // là fail closed, không phải "đọc sub ở đâu đó rồi đi tiếp".
     const event = fakeEvent({});
     expect(() => requirePrincipal(event)).toThrowError(
-      expect.objectContaining({ statusCode: 503 }),
+      expect.objectContaining({ statusCode: 401 }),
     );
   });
 });

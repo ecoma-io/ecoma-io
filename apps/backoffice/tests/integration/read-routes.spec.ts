@@ -21,8 +21,9 @@
  * 2. **Denied path** — staff không có permission ⇒ `403` **và** một dòng
  *    audit `denied` trong `backoffice.authorization_audit` (audit trước khi
  *    throw — quy tắc của workstream B).
- * 3. **Unavailable path** — `503` khi không verify được principal (ADR-0010:
- *    503, **không** phải 401) và `503` khi binding `DB_BACKOFFICE` vắng.
+ * 3. **Unavailable path** — `401` khi request không có principal (ADR-0011 §3:
+ *    thiếu/invalid credential là 401 — middleware authn của PR J2 flip từ 503;
+ *    route giữ `503` cho binding `DB_BACKOFFICE` vắng hay DB không trả lời).
  *
  * ⚠️ Docker **không** phải phụ thuộc cứng: không có Docker thì suite skip
  * (như `harness.ts` chốt) — nhưng `ECOMA_REQUIRE_DOCKER=1` biến skip thành
@@ -55,7 +56,7 @@ const dockerAvailable = await probeDocker();
  * ⚠️ Độ dài lấy từ hằng `BACKOFFICE_ACCOUNT_ID_ENTROPY_CHARS` chứ không viết
  * literal: `isBackofficeAccountId` từ chối mọi `sub` khác độ dài, nên một
  * literal lệch (52 ký tự — format local cũ đã bị gỡ ở F1, issue #101) làm
- * `readPrincipal` trả `null` ⇒ `requirePrincipal` ném `503` ⇒ mọi test ở đây
+ * `readPrincipal` trả `null` ⇒ `requirePrincipal` ném `401` ⇒ mọi test ở đây
  * đỏ **vì lý do sai**.
  */
 function accountId(char: string): string {
@@ -227,12 +228,12 @@ describe.skipIf(!dockerAvailable)('read routes /api/staff, /api/roles, /api/perm
   });
 
   describe('unavailable path', () => {
-    it('answers 503 when the principal cannot be verified (ADR-0010, not 401)', async () => {
+    it('answers 401 when the request carries no principal (ADR-0011 §3, was 503)', async () => {
       const { status } = await get('/api/permissions', {
         env: { DB_BACKOFFICE: { connectionString: runtimeConnectionString() } },
       });
 
-      expect(status).toBe(503);
+      expect(status).toBe(401);
     });
 
     it('answers 503 when the DB binding is absent', async () => {

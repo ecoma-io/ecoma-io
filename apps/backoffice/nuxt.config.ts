@@ -37,6 +37,15 @@ export default defineNuxtConfig({
     // Connection string PostgreSQL local (Node container) — **private**, không vào
     // `public`/client bundle/log. Workers dùng Hyperdrive binding, không dùng key này.
     backofficeDatabaseUrl: '',
+    // Cấu hình OIDC của backoffice (ADR-0012) — **private**, cùng luật
+    // `NUXT_*` của `account`: `backofficeAuthIssuer` ← `NUXT_BACKOFFICE_AUTH_ISSUER`.
+    // Workers đọc ba giá trị này từ `env` của Worker (`BACKOFFICE_AUTH_*`),
+    // Node container local đọc từ đây. KHÔNG default: thiếu biến là fail-closed
+    // 503 ở middleware authn (`server/auth/config.ts`), không phải "chạy với
+    // giá trị rỗng".
+    backofficeAuthIssuer: '',
+    backofficeAuthAudience: '',
+    backofficeAuthClientId: '',
     public: {
       backofficeDataMode: BACKOFFICE_DATA_MODE_DISABLED,
     },
