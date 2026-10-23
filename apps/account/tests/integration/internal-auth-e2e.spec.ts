@@ -31,20 +31,12 @@ import { createNonce, signRequest } from '@ecoma-io/identity-contracts';
 
 import internalAuthMiddleware from '../../server/middleware/internal-auth';
 import { writeLog } from '../../server/utils/logger';
-import {
-  ACCOUNT_DATABASE,
-  type AccountDatabase,
-  probeDocker,
-  startAccountDatabase,
-} from './harness.ts';
+import { ACCOUNT_DATABASE, type AccountDatabase, startAccountDatabase } from './harness.ts';
 import { installRuntimeConfigStub } from './nuxt-globals.ts';
 
 vi.mock('../../server/utils/logger', () => ({
   writeLog: vi.fn<(entry: Record<string, unknown>) => void>(),
 }));
-
-const dockerAvailable = await probeDocker();
-
 /** Secret hợp lệ cho test — độ dài >= 32 như validation của app. */
 const SECRET = 'test-internal-hmac-secret-0123456789abcdef';
 
@@ -85,7 +77,7 @@ async function signedHeaders(
   return { headers, nonce };
 }
 
-describe.skipIf(!dockerAvailable)('internal-auth middleware end-to-end', () => {
+describe('internal-auth middleware end-to-end', () => {
   let db: AccountDatabase;
   let handler: WebHandler;
   let setRuntimeConfig: ReturnType<typeof installRuntimeConfigStub>;

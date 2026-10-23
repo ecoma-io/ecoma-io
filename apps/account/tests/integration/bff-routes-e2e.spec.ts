@@ -37,12 +37,7 @@ import handoffRoute from '../../server/api/auth/handoff.post';
 import challengeRoute from '../../server/api/auth/challenge.post';
 import verifyRoute from '../../server/api/auth/verify.post';
 
-import {
-  ACCOUNT_DATABASE,
-  type AccountDatabase,
-  probeDocker,
-  startAccountDatabase,
-} from './harness.ts';
+import { ACCOUNT_DATABASE, type AccountDatabase, startAccountDatabase } from './harness.ts';
 import { INTERNAL_TIMESTAMP_HEADER, verifyRequest } from '@ecoma-io/identity-contracts';
 import { OTP_ACR, type AccountSessionRow } from '../../server/lib/session';
 import { installRuntimeConfigStub, type AccountTestRuntimeConfig } from './nuxt-globals.ts';
@@ -50,9 +45,6 @@ import { installRuntimeConfigStub, type AccountTestRuntimeConfig } from './nuxt-
 vi.mock('../../server/utils/logger', () => ({
   writeLog: vi.fn<(entry: Record<string, unknown>) => void>(),
 }));
-
-const dockerAvailable = await probeDocker();
-
 const OTP_SECRET = 'test-otp-hmac-secret-0123456789abcdef';
 const INTERNAL_SECRET = 'test-internal-hmac-secret-0123456789abcdef';
 
@@ -203,7 +195,7 @@ function authCookieHeader(cookies: { sessionCookie: string; csrfCookie: string }
 
 // ── suite ────────────────────────────────────────────────────────────────────
 
-describe.skipIf(!dockerAvailable)('BFF handoff and consent routes end-to-end', () => {
+describe('BFF handoff and consent routes end-to-end', () => {
   let db: AccountDatabase;
   let handler: WebHandler;
   let setRuntimeConfig: ReturnType<typeof installRuntimeConfigStub>;

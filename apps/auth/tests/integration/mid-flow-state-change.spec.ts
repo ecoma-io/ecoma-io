@@ -39,11 +39,9 @@ import { runConsentContext, runConsentDecide } from '../../src/consent-handler';
 import { runSessionVerified } from '../../src/session-verified-handler';
 import { createIssuanceGateFromDeps } from '../../src/oidc/issuance-gate';
 import type { IssuanceGate } from '../../src/oidc/adapter';
-import { probeDocker, startAuthDatabase, type AuthDatabase } from './harness';
+import { startAuthDatabase, type AuthDatabase } from './harness';
 
 /** Probe Docker một lần ở tầng module — kết quả do globalSetup đăng ký qua env. */
-const dockerAvailable = await probeDocker();
-
 /** Container riêng của file này, dựng một lần trong `beforeAll`. */
 let db: AuthDatabase;
 
@@ -219,7 +217,6 @@ function stubProvider(): Provider {
 /* ------------------------------------------------------------------ */
 
 beforeAll(async () => {
-  if (!dockerAvailable) return;
   db = await startAuthDatabase();
 }, 180_000);
 
@@ -227,7 +224,7 @@ afterAll(async () => {
   await db?.stop();
 });
 
-describe.skipIf(!dockerAvailable)('mid-flow state changes — issuance controls stay closed', () => {
+describe('mid-flow state changes — issuance controls stay closed', () => {
   it('suspend committed between push and decide: decide still commits the user decision, the gate blocks the next issuance on account status', async () => {
     const { runtime, migrator } = await setup();
     try {

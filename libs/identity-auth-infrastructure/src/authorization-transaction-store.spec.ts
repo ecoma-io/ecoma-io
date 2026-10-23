@@ -13,7 +13,6 @@ import {
 } from './authorization-transaction-store';
 import {
   MIGRATIONS_DIR,
-  probeDocker,
   startAuthDatabase,
   type AuthDatabase,
 } from '../tests/integration/harness.ts';
@@ -32,9 +31,6 @@ import {
  * chạy DML. Nếu adapter chạy được bằng superuser thì test không chứng minh gì
  * về quyền production.
  */
-
-const dockerAvailable = await probeDocker();
-
 let db: AuthDatabase;
 
 function base() {
@@ -131,9 +127,6 @@ describe('authorization-transaction-store — on real PostgreSQL', () => {
   // Container riêng của file này, dựng một lần cho cả suite; các test tự mở
   // cặp client qua `setup()` và tự đóng trong `finally`.
   beforeAll(async () => {
-    if (!dockerAvailable) {
-      return;
-    }
     db = await startAuthDatabase();
   }, 180_000);
 
@@ -178,7 +171,7 @@ describe('authorization-transaction-store — on real PostgreSQL', () => {
     });
   });
 
-  describe.skipIf(!dockerAvailable)('schema catalog after migration 0011', () => {
+  describe('schema catalog after migration 0011', () => {
     it('transaction_id is TEXT, no longer UUID — the column type is read from the database', async () => {
       const { migrator } = await setup();
       try {
@@ -288,7 +281,7 @@ describe('authorization-transaction-store — on real PostgreSQL', () => {
     });
   });
 
-  describe.skipIf(!dockerAvailable)('CRUD and transition through the adapter', () => {
+  describe('CRUD and transition through the adapter', () => {
     it('write then scan — a full round-trip of every column, bytea down to base64url', async () => {
       const { runtime, migrator } = await setup();
       try {
@@ -553,7 +546,7 @@ describe('authorization-transaction-store — on real PostgreSQL', () => {
     });
   });
 
-  describe.skipIf(!dockerAvailable)('insertAuthorizationCode matches schema 0004', () => {
+  describe('insertAuthorizationCode matches schema 0004', () => {
     it('writing a code satisfies the FK — sub, granted_scopes text[] and a nullable nonce are all accepted', async () => {
       const { runtime, migrator } = await setup();
       try {
@@ -638,7 +631,7 @@ describe('authorization-transaction-store — on real PostgreSQL', () => {
     });
   });
 
-  describe.skipIf(!dockerAvailable)('permission grants', () => {
+  describe('permission grants', () => {
     it('the runtime cannot CREATE a table in the auth schema', async () => {
       // Thay cho marker test cũ của hình thức chia sẻ database qua biến môi
       // trường ("set … to run the persistence-contract tests") — marker ấy hết

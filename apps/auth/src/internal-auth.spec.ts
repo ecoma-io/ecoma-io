@@ -41,7 +41,7 @@ import {
   verifyRequest,
 } from '@ecoma-io/identity-auth-contracts';
 import { createPostgresClient } from '@ecoma-io/identity-auth-infrastructure';
-import { probeDocker, startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
+import { startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
 
 import {
   NONCE_CLAIM_CONNECT_TIMEOUT_SECONDS,
@@ -51,8 +51,6 @@ import {
 } from './account-client';
 
 /** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
-const dockerAvailable = await probeDocker();
-
 let db: AuthDatabase;
 
 /** Secret HMAC dùng chung trong test — không phải secret thật, chỉ để ký/verify. */
@@ -365,14 +363,11 @@ describe('fail closed when the nonce store cannot be reached', () => {
   });
 });
 
-describe.skipIf(!dockerAvailable)('makeNonceGuard against a real PostgreSQL', () => {
+describe('makeNonceGuard against a real PostgreSQL', () => {
   // Container riêng của file này, dựng một lần cho cả suite. Spec bên lib dọn và
   // đếm **toàn bảng** `auth.internal_nonces` — container riêng bảo đảm nó không bao
   // giờ nhìn thấy hàng của suite này (và ngược lại) mà không cần khoá nào.
   beforeAll(async () => {
-    if (!dockerAvailable) {
-      return;
-    }
     db = await startAuthDatabase();
   }, 180_000);
 

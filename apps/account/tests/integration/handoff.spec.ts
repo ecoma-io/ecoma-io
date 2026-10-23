@@ -19,7 +19,6 @@ import {
   type AccountDatabase,
   futureInstant,
   hashIdentifier,
-  probeDocker,
   startAccountDatabase,
 } from './harness.ts';
 import { installRuntimeConfigStub, type AccountTestRuntimeConfig } from './nuxt-globals.ts';
@@ -27,13 +26,10 @@ import { installRuntimeConfigStub, type AccountTestRuntimeConfig } from './nuxt-
 vi.mock('../../server/utils/logger', () => ({
   writeLog: vi.fn<(entry: Record<string, unknown>) => void>(),
 }));
-
-const dockerAvailable = await probeDocker();
-
 /** Handle X đến từ query string; database chỉ lưu hash của nó. */
 const RAW_HANDLE = 'X-stolen-from-a-log-or-referrer';
 
-describe.skipIf(!dockerAvailable)('login_handoffs', () => {
+describe('login_handoffs', () => {
   let db: AccountDatabase;
 
   beforeAll(async () => {
@@ -770,7 +766,7 @@ function authCookieHeader(cookies: { sessionCookie: string; csrfCookie: string }
   return `__Host-account-session=${cookies.sessionCookie}; __Host-account-csrf=${cookies.csrfCookie}`;
 }
 
-describe.skipIf(!dockerAvailable)('login_handoffs routes', () => {
+describe('login_handoffs routes', () => {
   let db: AccountDatabase;
   let handler: WebHandler;
   let setRuntimeConfig: ReturnType<typeof installRuntimeConfigStub>;

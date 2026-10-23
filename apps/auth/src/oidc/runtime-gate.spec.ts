@@ -9,11 +9,7 @@ import { createProvider } from './provider';
 import { createIssuanceGate } from './runtime';
 import { loadAuthConfig, type AuthEnv } from '../config';
 import { exportPKCS8, generateKeyPair } from 'jose';
-import {
-  probeDocker,
-  startAuthDatabase,
-  type AuthDatabase,
-} from '../../tests/integration/harness.ts';
+import { startAuthDatabase, type AuthDatabase } from '../../tests/integration/harness.ts';
 
 /**
  * Anchor test cho đường gate cấp phát PRODUCTION: composition `oidc/runtime.ts`
@@ -40,8 +36,6 @@ import {
  */
 
 /** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
-const dockerAvailable = await probeDocker();
-
 /** Container riêng của file này, dựng một lần trong `beforeAll`. */
 let db: AuthDatabase;
 
@@ -130,99 +124,96 @@ const PAYLOAD = {
   grantId: null,
 };
 
-describe.skipIf(!dockerAvailable)(
-  'runtime composition — the production gate path via createIssuanceGateFromDeps',
-  () => {
-    let runtime: postgres.Sql;
-    let migrator: postgres.Sql;
-    let pem: string;
+describe('runtime composition — the production gate path via createIssuanceGateFromDeps', () => {
+  let runtime: postgres.Sql;
+  let migrator: postgres.Sql;
+  let pem: string;
 
-    beforeAll(async () => {
-      if (!dockerAvailable) return;
-      // Schema đã sẵn sàng bên trong `startAuthDatabase` (migration chạy một
-      // lần lúc container lên, bằng credential migrator thật).
-      db = await startAuthDatabase();
-      runtime = connectRuntime();
-      migrator = connectMigrator();
-      const { privateKey } = await generateKeyPair('ES256', { extractable: true });
-      pem = await exportPKCS8(privateKey);
-      // Gán connection string thật sau khi container lên — pool PostgresClient
-      // của `loadAuthConfig` dùng nó như production dùng Hyperdrive.
-      BASE_ENV.HYPERDRIVE = {
-        connectionString: `postgres://${db.runtimeUser}:${db.runtimePassword}@${db.host}:${db.port}/${db.database}`,
-      };
-      BASE_ENV.AUTH_SIGNING_KEY = pem;
-      // Client public cho provider thật — createProvider ném sớm khi không có
-      // client nào trong `auth.oauth_clients`.
-      await migrator`
+  beforeAll(async () => {
+    // Schema đã sẵn sàng bên trong `startAuthDatabase` (migration chạy một
+    // lần lúc container lên, bằng credential migrator thật).
+    db = await startAuthDatabase();
+    runtime = connectRuntime();
+    migrator = connectMigrator();
+    const { privateKey } = await generateKeyPair('ES256', { extractable: true });
+    pem = await exportPKCS8(privateKey);
+    // Gán connection string thật sau khi container lên — pool PostgresClient
+    // của `loadAuthConfig` dùng nó như production dùng Hyperdrive.
+    BASE_ENV.HYPERDRIVE = {
+      connectionString: `postgres://${db.runtimeUser}:${db.runtimePassword}@${db.host}:${db.port}/${db.database}`,
+    };
+    BASE_ENV.AUTH_SIGNING_KEY = pem;
+    // Client public cho provider thật — createProvider ném sớm khi không có
+    // client nào trong `auth.oauth_clients`.
+    await migrator`
         INSERT INTO auth.oauth_clients (client_id, client_name, client_type, allowed_scopes)
         VALUES (${CLIENT_ID}, 'runtime gate spec client', 'public', ARRAY['openid']::text[])
         ON CONFLICT (client_id) DO NOTHING
       `;
-      await migrator`
+    await migrator`
         INSERT INTO auth.client_redirect_uris (client_id, redirect_uri)
         VALUES (${CLIENT_ID}, ${CLIENT_REDIRECT})
         ON CONFLICT DO NOTHING
       `;
-    }, 180_000);
+  }, 180_000);
 
-    afterAll(async () => {
-      await runtime?.end({ timeout: 1 });
-      await migrator?.end({ timeout: 1 });
-      await db?.stop();
+  afterAll(async () => {
+    await runtime?.end({ timeout: 1 });
+    await migrator?.end({ timeout: 1 });
+    await db?.stop();
+  });
+
+  afterEach(async () => {
+    await cleanup(migrator);
+  });
+
+  it('the composition gate mounts on the real provider and blocks issuance for a suspended account before any oidc_state write', async () => {
+    // Config + gate dựng từ composition — chính lời gọi mà `buildRuntime` thực.
+    const config = await loadAuthConfig(envWithStatus('suspended'));
+    const gate = createIssuanceGate(
+      envWithStatus('suspended'),
+      config,
+      runtime as unknown as PostgresClientLike,
+    );
+
+    // Provider thật với gate của composition — instance này khẳng định
+    // option `issuanceGate` đi đúng vào adapter factory (`createAdapterFactory`).
+    const provider = await createProvider({
+      config,
+      postgresClient: runtime as unknown as PostgresClientLike,
+      signingPem: pem,
+      issuanceGate: gate,
     });
+    expect(provider).toBeDefined();
 
-    afterEach(async () => {
-      await cleanup(migrator);
-    });
+    // `PostgresAdapter(kind, client, gate)` với CÙNG gate composition là
+    // cách adapter factory dựng adapter của provider — gọi hạt nhân "gate
+    // chặn trước khi ghi" trực tiếp, không cần đi toàn bộ protocol
+    // (protocol-level phủ bởi `oidc-fullflow.spec` qua chính pipeline này).
+    const adapter = new PostgresAdapter(
+      'AuthorizationCode',
+      runtime as unknown as PostgresClientLike,
+      gate,
+    );
 
-    it('the composition gate mounts on the real provider and blocks issuance for a suspended account before any oidc_state write', async () => {
-      // Config + gate dựng từ composition — chính lời gọi mà `buildRuntime` thực.
-      const config = await loadAuthConfig(envWithStatus('suspended'));
-      const gate = createIssuanceGate(
-        envWithStatus('suspended'),
-        config,
-        runtime as unknown as PostgresClientLike,
-      );
+    // Gate NÉM ngay trên checkStatus: AccountClient thật nhận 'suspended' từ
+    // binding, `allowsIssuance` từ chối, factory deny-audit rồi throw.
+    await expect(adapter.upsert(trackId('rgt-ac-deny-suspended'), PAYLOAD, 600)).rejects.toThrow(
+      'account status',
+    );
 
-      // Provider thật với gate của composition — instance này khẳng định
-      // option `issuanceGate` đi đúng vào adapter factory (`createAdapterFactory`).
-      const provider = await createProvider({
-        config,
-        postgresClient: runtime as unknown as PostgresClientLike,
-        signingPem: pem,
-        issuanceGate: gate,
-      });
-      expect(provider).toBeDefined();
-
-      // `PostgresAdapter(kind, client, gate)` với CÙNG gate composition là
-      // cách adapter factory dựng adapter của provider — gọi hạt nhân "gate
-      // chặn trước khi ghi" trực tiếp, không cần đi toàn bộ protocol
-      // (protocol-level phủ bởi `oidc-fullflow.spec` qua chính pipeline này).
-      const adapter = new PostgresAdapter(
-        'AuthorizationCode',
-        runtime as unknown as PostgresClientLike,
-        gate,
-      );
-
-      // Gate NÉM ngay trên checkStatus: AccountClient thật nhận 'suspended' từ
-      // binding, `allowsIssuance` từ chối, factory deny-audit rồi throw.
-      await expect(adapter.upsert(trackId('rgt-ac-deny-suspended'), PAYLOAD, 600)).rejects.toThrow(
-        'account status',
-      );
-
-      // ⚠️ Throw xảy ra TRƯỚC khi ghi: không một hàng `oidc_state` nào mang id
-      // này — fail-closed đo được trên bảng thật, không phải trên một stub.
-      const rows = await runtime<{ id: string }[]>`
+    // ⚠️ Throw xảy ra TRƯỚC khi ghi: không một hàng `oidc_state` nào mang id
+    // này — fail-closed đo được trên bảng thật, không phải trên một stub.
+    const rows = await runtime<{ id: string }[]>`
         SELECT id FROM auth.oidc_state WHERE id = ${'rgt-ac-deny-suspended'}
       `;
-      expect(rows).toHaveLength(0);
+    expect(rows).toHaveLength(0);
 
-      // ⚠️ Audit hàng chặn VẪN được ghi qua swap (fire-and-forget riêng của
-      // `denyAudit` trong factory): `token_issue_denied` với
-      // `reason: 'account_status'` — chi tiết jsonb đi qua driver dạng
-      // double-encoded string, unwrap một lần trước khi đọc.
-      const denyRows = await runtime<{ details: unknown; outcome: string | null }[]>`
+    // ⚠️ Audit hàng chặn VẪN được ghi qua swap (fire-and-forget riêng của
+    // `denyAudit` trong factory): `token_issue_denied` với
+    // `reason: 'account_status'` — chi tiết jsonb đi qua driver dạng
+    // double-encoded string, unwrap một lần trước khi đọc.
+    const denyRows = await runtime<{ details: unknown; outcome: string | null }[]>`
         SELECT details AS details, outcome
           FROM auth.authorization_audit_events
          WHERE subject_ref = ${PAYLOAD.accountId}
@@ -230,55 +221,54 @@ describe.skipIf(!dockerAvailable)(
          ORDER BY occurred_at DESC
          LIMIT 1
       `;
-      const denialPayload = JSON.parse(denyRows[0]?.details as unknown as string) as {
-        reason: string;
-      };
-      expect(denialPayload.reason).toBe('account_status');
-      expect(denyRows[0]?.outcome).toBe('denied');
+    const denialPayload = JSON.parse(denyRows[0]?.details as unknown as string) as {
+      reason: string;
+    };
+    expect(denialPayload.reason).toBe('account_status');
+    expect(denyRows[0]?.outcome).toBe('denied');
+  });
+
+  it('the composition gate lets an active-account issuance through and writes the oidc_state row on the real path', async () => {
+    // Suspend chỉ là 1 nhánh; nhánh còn lại ghim "cấp vẫn sống" khi account
+    // active — chính sức sống mà composition phải giữ nguyên sau swap.
+    const config = await loadAuthConfig(envWithStatus('active'));
+    const gate = createIssuanceGate(
+      envWithStatus('active'),
+      config,
+      runtime as unknown as PostgresClientLike,
+    );
+    const provider = await createProvider({
+      config,
+      postgresClient: runtime as unknown as PostgresClientLike,
+      signingPem: pem,
+      issuanceGate: gate,
     });
+    expect(provider).toBeDefined();
 
-    it('the composition gate lets an active-account issuance through and writes the oidc_state row on the real path', async () => {
-      // Suspend chỉ là 1 nhánh; nhánh còn lại ghim "cấp vẫn sống" khi account
-      // active — chính sức sống mà composition phải giữ nguyên sau swap.
-      const config = await loadAuthConfig(envWithStatus('active'));
-      const gate = createIssuanceGate(
-        envWithStatus('active'),
-        config,
-        runtime as unknown as PostgresClientLike,
-      );
-      const provider = await createProvider({
-        config,
-        postgresClient: runtime as unknown as PostgresClientLike,
-        signingPem: pem,
-        issuanceGate: gate,
-      });
-      expect(provider).toBeDefined();
+    const adapter = new PostgresAdapter(
+      'AuthorizationCode',
+      runtime as unknown as PostgresClientLike,
+      gate,
+    );
 
-      const adapter = new PostgresAdapter(
-        'AuthorizationCode',
-        runtime as unknown as PostgresClientLike,
-        gate,
-      );
+    // Gate CHẤP NHẬN (không throw) — và vì nó đi qua `findActiveGrant` +
+    // `checkRevocationAtIssuance` rồi mới tới ghi, đường này cũng tự xác nhận
+    // các SELECT của factory chạy được bằng credential runtime.
+    const id = trackId('rgt-ac-issue-ok');
+    await expect(adapter.upsert(id, PAYLOAD, 600)).resolves.toBeUndefined();
 
-      // Gate CHẤP NHẬN (không throw) — và vì nó đi qua `findActiveGrant` +
-      // `checkRevocationAtIssuance` rồi mới tới ghi, đường này cũng tự xác nhận
-      // các SELECT của factory chạy được bằng credential runtime.
-      const id = trackId('rgt-ac-issue-ok');
-      await expect(adapter.upsert(id, PAYLOAD, 600)).resolves.toBeUndefined();
-
-      const rows = await runtime<{ id: string }[]>`
+    const rows = await runtime<{ id: string }[]>`
         SELECT id FROM auth.oidc_state WHERE id = ${id}
       `;
-      expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(1);
 
-      // Bằng chứng cấp: audit `token_issued` nằm lại ở bảng append-only —
-      // fire-and-forget trong factory, đọc lại cho khớp đường production.
-      const issuedRows = await runtime<{ count: string }[]>`
+    // Bằng chứng cấp: audit `token_issued` nằm lại ở bảng append-only —
+    // fire-and-forget trong factory, đọc lại cho khớp đường production.
+    const issuedRows = await runtime<{ count: string }[]>`
         SELECT count(*)::text AS count FROM auth.authorization_audit_events
          WHERE subject_ref = ${PAYLOAD.accountId}
            AND event_type = 'token_issued'
       `;
-      expect(issuedRows[0]?.count).toBe('1');
-    });
-  },
-);
+    expect(issuedRows[0]?.count).toBe('1');
+  });
+});

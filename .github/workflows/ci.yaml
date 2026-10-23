@@ -107,15 +107,6 @@ jobs:
         with:
           targets: test
           affected: ${{ !inputs.force }}
-        env:
-          # Cả ba project có suite integration PostgreSQL (`apps/account`,
-          # `identity-auth-infrastructure`, `apps/auth`) đều chạy bằng
-          # testcontainers, và `probeDocker()` mặc định chỉ CẢNH BÁO rồi để suite
-          # skip với exit 0. Đặt cờ này biến một runner vắng Docker thành lỗi
-          # thật: một suite bị skip vì hạ tầng không được phép trông giống một
-          # suite đã pass. Đo được trên runner `ubuntu-26.04`: Docker có sẵn,
-          # nên cờ này không thêm việc gì mới — nó chỉ đổi cách thất bại.
-          ECOMA_REQUIRE_DOCKER: '1'
 
   build:
     name: build

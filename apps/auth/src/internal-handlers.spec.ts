@@ -16,7 +16,7 @@ import type { Provider } from 'oidc-provider';
 import { createAuthorizationStore } from './authorization-store';
 import { runSessionVerified } from './session-verified-handler';
 import { runConsentContext, runConsentDecide } from './consent-handler';
-import { probeDocker, startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
+import { startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
 
 // `consumeHandleY` gọi TRỰC TIẾP cho test ASR-khác của issue #57 — như một
 // caller tương lai có thể làm (bỏ qua kiểm app-layer), để assert rằng bind SQL
@@ -45,8 +45,6 @@ import { consumeHandleY } from '@ecoma-io/identity-auth-infrastructure';
  */
 
 /** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
-const dockerAvailable = await probeDocker();
-
 /** Container riêng của file này, dựng một lần trong `beforeAll`. */
 let db: AuthDatabase;
 
@@ -334,9 +332,6 @@ describe('back-channel handlers — against a real PostgreSQL', () => {
   // (bên trong `startAuthDatabase`, bằng credential migrator thật), các test
   // tự mở cặp client qua `setup()` và tự đóng trong `finally`.
   beforeAll(async () => {
-    if (!dockerAvailable) {
-      return;
-    }
     db = await startAuthDatabase();
   }, 180_000);
 
@@ -344,7 +339,7 @@ describe('back-channel handlers — against a real PostgreSQL', () => {
     await db?.stop();
   });
 
-  describe.skipIf(!dockerAvailable)('POST /internal/session/verified', () => {
+  describe('POST /internal/session/verified', () => {
     it('CAS loses: pending_browser cannot be consumed — §5.1.0 condition 2 enforced by the DB', async () => {
       // ⚠️ `consumeHandleXAndBindIdentity` có `state = 'browser_confirmed'` trong
       // WHERE. Transaction đang `pending_browser` ⇒ CAS thua ⇒ handler phải trả
@@ -848,7 +843,7 @@ describe('back-channel handlers — against a real PostgreSQL', () => {
     });
   });
 
-  describe.skipIf(!dockerAvailable)('POST /internal/consent/*', () => {
+  describe('POST /internal/consent/*', () => {
     it('context: returns client_name/scope/risk_level, NO side effect', async () => {
       const { runtime, migrator } = await setup();
       try {

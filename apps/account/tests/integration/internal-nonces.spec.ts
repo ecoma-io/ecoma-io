@@ -22,11 +22,8 @@ import {
   nonceExpiry,
 } from '../../db/migrate.mts';
 import { makeNonceGuard } from '../../server/middleware/internal-auth';
-import { type AccountDatabase, probeDocker, startAccountDatabase } from './harness.ts';
-
-const dockerAvailable = await probeDocker();
-
-describe.skipIf(!dockerAvailable)('internal_nonces', () => {
+import { type AccountDatabase, startAccountDatabase } from './harness.ts';
+describe('internal_nonces', () => {
   let db: AccountDatabase;
 
   beforeAll(async () => {

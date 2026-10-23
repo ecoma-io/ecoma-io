@@ -46,20 +46,12 @@ import {
 import internalAuthMiddleware from '../../server/middleware/internal-auth';
 import statusRoute from '../../server/routes/internal/account/status.get';
 import { writeLog } from '../../server/utils/logger';
-import {
-  ACCOUNT_DATABASE,
-  type AccountDatabase,
-  probeDocker,
-  startAccountDatabase,
-} from './harness.ts';
+import { ACCOUNT_DATABASE, type AccountDatabase, startAccountDatabase } from './harness.ts';
 import { installRuntimeConfigStub } from './nuxt-globals.ts';
 
 vi.mock('../../server/utils/logger', () => ({
   writeLog: vi.fn<(entry: Record<string, unknown>) => void>(),
 }));
-
-const dockerAvailable = await probeDocker();
-
 /** Secret hợp lệ cho test — không phải secret thật, chỉ để ký/verify. */
 const SECRET = 'test-internal-hmac-secret-0123456789abcdef';
 
@@ -129,7 +121,7 @@ function unreachableRuntimeConfig(): AccountRuntimeConfig {
   };
 }
 
-describe.skipIf(!dockerAvailable)('GET /internal/account/status end-to-end', () => {
+describe('GET /internal/account/status end-to-end', () => {
   let db: AccountDatabase;
   let handler: WebHandler;
   let setRuntimeConfig: ReturnType<typeof installRuntimeConfigStub>;

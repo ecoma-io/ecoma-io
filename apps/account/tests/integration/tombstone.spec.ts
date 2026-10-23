@@ -9,11 +9,8 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { type AccountDatabase, probeDocker, startAccountDatabase } from './harness.ts';
-
-const dockerAvailable = await probeDocker();
-
-describe.skipIf(!dockerAvailable)('users and the tombstone', () => {
+import { type AccountDatabase, startAccountDatabase } from './harness.ts';
+describe('users and the tombstone', () => {
   let db: AccountDatabase;
 
   beforeAll(async () => {

@@ -8,11 +8,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { PostgresClientLike } from '@ecoma-io/identity-auth-infrastructure';
 
 import { PostgresAdapter } from './adapter';
-import {
-  probeDocker,
-  startAuthDatabase,
-  type AuthDatabase,
-} from '../../tests/integration/harness.ts';
+import { startAuthDatabase, type AuthDatabase } from '../../tests/integration/harness.ts';
 
 /**
  * Spec cho PostgresAdapter (`src/oidc/adapter.ts`) — phần test không được phủ bởi
@@ -29,8 +25,6 @@ import {
  */
 
 /** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
-const dockerAvailable = await probeDocker();
-
 /** Container riêng của file này, dựng một lần trong `beforeAll`. */
 let db: AuthDatabase;
 
@@ -113,7 +107,7 @@ function asClient(runtime: postgres.Sql): PostgresClientLike {
   return runtime as unknown as PostgresClientLike;
 }
 
-describe.skipIf(!dockerAvailable)('PostgresAdapter', () => {
+describe('PostgresAdapter', () => {
   const PAYLOAD = {
     accountId: 'sub-adapter-spec-00000000000000000000000000',
     clientId: 'client-adapter-spec',

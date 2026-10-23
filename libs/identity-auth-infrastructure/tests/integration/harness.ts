@@ -102,13 +102,15 @@ const DOCKER_PROBE_ENV = 'ECOMA_IDENTITY_AUTH_DOCKER_PROBE';
  *   `false`: runner REQUIRE Docker thì vắng Docker là sự cố, không phải lý do
  *   để bỏ qua một nửa suite.
  */
-export function probeDocker(): Promise<boolean> {
+export function probeDocker(): Promise<void> {
   const flag = process.env[DOCKER_PROBE_ENV];
   if (flag === 'available') {
-    return Promise.resolve(true);
+    return Promise.resolve();
   }
   if (flag === 'unavailable') {
-    return Promise.resolve(false);
+    throw new Error(
+      'Docker is unavailable: PostgreSQL integration suites require a running Docker daemon; refusing to skip.',
+    );
   }
   // Fallback khi được gọi ngoài pipeline vitest có `globalSetup` (chạy tay,
   // vitest khác config): probe tại chỗ và cache trên globalThis cho caller sau.
@@ -118,7 +120,7 @@ export function probeDocker(): Promise<boolean> {
 }
 
 interface DockerProbeCache {
-  ecomaIdentityAuthDockerProbe?: Promise<boolean>;
+  ecomaIdentityAuthDockerProbe?: Promise<void>;
 }
 
 /**
@@ -161,7 +163,7 @@ async function startPostgresContainer(
   throw lastError;
 }
 
-async function runDockerProbe(): Promise<boolean> {
+async function runDockerProbe(): Promise<void> {
   let container: { stop(): Promise<unknown> } | undefined;
   let available = false;
   try {
@@ -176,25 +178,11 @@ async function runDockerProbe(): Promise<boolean> {
   }
 
   process.env[DOCKER_PROBE_ENV] = available ? 'available' : 'unavailable';
-  if (available) {
-    return true;
-  }
-
-  // Cảnh báo tiếng Anh vì nó là output của tooling trên CI, không phải prose
-  // trong code (xem AGENTS.md — console output giữ tiếng Anh). Số suite đếm từ
-  // nguồn: ba spec PG của thư viện, cộng bốn của `apps/auth` dùng chung hạ tầng
-  // này qua cùng biến cờ.
-  const suiteCount = 7;
-  console.warn(
-    `Docker is unavailable: ${suiteCount} PostgreSQL integration suite(s) guarded by probeDocker will be SKIPPED and this run still exits 0. ` +
-      'Set ECOMA_REQUIRE_DOCKER=1 to turn the skipped suites into a hard failure.',
-  );
-  if (process.env['ECOMA_REQUIRE_DOCKER'] === '1') {
+  if (!available) {
     throw new Error(
-      'ECOMA_REQUIRE_DOCKER=1 but the Docker probe failed; refusing to skip the PostgreSQL integration suites.',
+      'Docker is unavailable: PostgreSQL integration suites require a running Docker daemon; refusing to skip.',
     );
   }
-  return false;
 }
 
 /**

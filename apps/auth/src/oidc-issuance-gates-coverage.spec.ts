@@ -38,10 +38,7 @@ import type { IssuanceGate } from './oidc/adapter';
 import { AccountClient } from './account-client';
 import { checkRevocationAtIssuance, insertAuditEvent } from './authorization-store';
 import { loadAuthConfig, type AuthEnv } from './config';
-import { probeDocker, startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
-
-const dockerAvailable = await probeDocker();
-
+import { startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
 let db: AuthDatabase;
 
 function base() {
@@ -291,7 +288,6 @@ async function walkUpToApproved(params: {
 }
 
 beforeAll(async () => {
-  if (!dockerAvailable) return;
   db = await startAuthDatabase();
   runtimeSql = connectRuntime();
   await runtimeSql`
@@ -333,7 +329,7 @@ afterAll(async () => {
   await db?.stop();
 });
 
-describe.skipIf(!dockerAvailable)('issuance gates coverage — uncovered windows (#126)', () => {
+describe('issuance gates coverage — uncovered windows (#126)', () => {
   it('subject-level revocation before resume ⇒ gate throws, no code issued', async () => {
     const keypair = await generateKeyPair('ES256', { extractable: true });
     const pem = await exportPKCS8(keypair.privateKey);

@@ -10,15 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { applyAllMigrations } from '../../db/apply.mts';
 import { ACCOUNT_DATABASE, AUTH_DATABASE } from '../../db/migrate.mts';
-import {
-  type AccountDatabase,
-  applyMigrations,
-  probeDocker,
-  startAccountDatabase,
-} from './harness.ts';
-
-const dockerAvailable = await probeDocker();
-
+import { type AccountDatabase, applyMigrations, startAccountDatabase } from './harness.ts';
 const EXPECTED_TABLES = [
   'account_outbox_events',
   'account_sessions',
@@ -43,7 +35,7 @@ async function tableNames(db: AccountDatabase): Promise<string[]> {
   }
 }
 
-describe.skipIf(!dockerAvailable)('db-account migrations on a real PostgreSQL', () => {
+describe('db-account migrations on a real PostgreSQL', () => {
   let db: AccountDatabase;
 
   beforeAll(async () => {

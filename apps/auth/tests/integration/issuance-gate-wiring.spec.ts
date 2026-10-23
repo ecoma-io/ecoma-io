@@ -46,11 +46,9 @@ import { checkRevocationAtIssuance } from '../../src/authorization-store';
 import type { PostgresAdapter } from '../../src/oidc/adapter';
 import { createAdapterFactory } from '../../src/oidc/adapter';
 import { createIssuanceGateFromDeps } from '../../src/oidc/issuance-gate';
-import { probeDocker, startAuthDatabase, type AuthDatabase } from './harness';
+import { startAuthDatabase, type AuthDatabase } from './harness';
 
 /** Probe Docker một lần ở tầng module — kết quả do globalSetup đăng ký qua env. */
-const dockerAvailable = await probeDocker();
-
 /** Container riêng của file này, dựng một lần trong `beforeAll`. */
 let db: AuthDatabase;
 
@@ -203,7 +201,6 @@ function authorizationCodePayload(params: {
 /* ------------------------------------------------------------------ */
 
 beforeAll(async () => {
-  if (!dockerAvailable) return;
   db = await startAuthDatabase();
 }, 180_000);
 
@@ -211,58 +208,56 @@ afterAll(async () => {
   await db?.stop();
 });
 
-describe.skipIf(!dockerAvailable)(
-  'issuance gate via adapter.upsert wiring — provider-resume anchor',
-  () => {
-    it('account suspended between a granted pass and resume: adapter.upsert(AuthorizationCode) throws, records no row, and the token_issue_denied audit carries reason account_status', async () => {
-      const { runtime, migrator } = await setup();
-      try {
-        const sub = `${SUB_PREFIX}susp-0000000000000000000000000000`;
-        await seedClient(migrator);
-        const grantId = await seedGrant(migrator, sub);
+describe('issuance gate via adapter.upsert wiring — provider-resume anchor', () => {
+  it('account suspended between a granted pass and resume: adapter.upsert(AuthorizationCode) throws, records no row, and the token_issue_denied audit carries reason account_status', async () => {
+    const { runtime, migrator } = await setup();
+    try {
+      const sub = `${SUB_PREFIX}susp-0000000000000000000000000000`;
+      await seedClient(migrator);
+      const grantId = await seedGrant(migrator, sub);
 
-        // (1) Pass #1 — resume cấp code THÀNH CÔNG: status 'active' ⇒ gate cho
-        //     phép, hàng oidc_state được ghi. Đây là "gate pass #1 với grant
-        //     existing" mà pin của issue #61 yêu cầu phải hoàn tất trước.
-        const passing = wiredAdapter(runtime, async () => 'active');
-        const okId = `ac-ok${CODE_SUFFIX}`;
-        await passing.upsert(okId, authorizationCodePayload({ sub, grantId }), 60);
-        const okRows = await runtime<{ id: string }[]>`
+      // (1) Pass #1 — resume cấp code THÀNH CÔNG: status 'active' ⇒ gate cho
+      //     phép, hàng oidc_state được ghi. Đây là "gate pass #1 với grant
+      //     existing" mà pin của issue #61 yêu cầu phải hoàn tất trước.
+      const passing = wiredAdapter(runtime, async () => 'active');
+      const okId = `ac-ok${CODE_SUFFIX}`;
+      await passing.upsert(okId, authorizationCodePayload({ sub, grantId }), 60);
+      const okRows = await runtime<{ id: string }[]>`
           SELECT id FROM auth.oidc_state
            WHERE kind = 'AuthorizationCode' AND id = ${okId}
         `;
-        expect(okRows).toHaveLength(1);
+      expect(okRows).toHaveLength(1);
 
-        // (2) Suspend commit phía account (projection §7): auth không ghi hàng
-        //     nào. Negative control: `token_revocations` sạch — chặn sau này
-        //     phải đến từ account status, không từ một kiện revocation nào
-        //     (cùng anti-drift với kịch본 1 của mid-flow suite).
-        const preResumeRevocation = await checkRevocationAtIssuance(
-          runtime as unknown as PostgresClientLike,
-          { sub, clientId: CLIENT_ID, grantId },
-        );
-        expect(preResumeRevocation).toBe('not_revoked');
+      // (2) Suspend commit phía account (projection §7): auth không ghi hàng
+      //     nào. Negative control: `token_revocations` sạch — chặn sau này
+      //     phải đến từ account status, không từ một kiện revocation nào
+      //     (cùng anti-drift với kịch본 1 của mid-flow suite).
+      const preResumeRevocation = await checkRevocationAtIssuance(
+        runtime as unknown as PostgresClientLike,
+        { sub, clientId: CLIENT_ID, grantId },
+      );
+      expect(preResumeRevocation).toBe('not_revoked');
 
-        // (3) Resume — adapter.upsert(AuthorizationCode) đúng cách provider
-        //     gọi: gate NÉM (§5.1.0 điều kiện 3), code KHÔNG được cấp — không
-        //     có hàng oidc_state nào với jti của pass này.
-        const blocking = wiredAdapter(runtime, async () => 'suspended');
-        const blockedId = `ac-blocked${CODE_SUFFIX}`;
-        await expect(
-          blocking.upsert(blockedId, authorizationCodePayload({ sub, grantId }), 60),
-        ).rejects.toThrow('account status');
-        const blockedRows = await runtime<{ id: string }[]>`
+      // (3) Resume — adapter.upsert(AuthorizationCode) đúng cách provider
+      //     gọi: gate NÉM (§5.1.0 điều kiện 3), code KHÔNG được cấp — không
+      //     có hàng oidc_state nào với jti của pass này.
+      const blocking = wiredAdapter(runtime, async () => 'suspended');
+      const blockedId = `ac-blocked${CODE_SUFFIX}`;
+      await expect(
+        blocking.upsert(blockedId, authorizationCodePayload({ sub, grantId }), 60),
+      ).rejects.toThrow('account status');
+      const blockedRows = await runtime<{ id: string }[]>`
           SELECT id FROM auth.oidc_state
            WHERE kind = 'AuthorizationCode' AND id = ${blockedId}
         `;
-        expect(blockedRows).toHaveLength(0);
+      expect(blockedRows).toHaveLength(0);
 
-        // (4) Audit giữ bằng chứng: hàng `token_issue_denied` với reason
-        //     'account_status' — cùng quy ước unwrapping jsonb của mid-flow
-        //     suite (details đi qua postgres.js là một chuỗi JSON string).
-        const denyRows = await runtime<
-          { details: unknown; outcome: string | null; grant_id: string | null }[]
-        >`
+      // (4) Audit giữ bằng chứng: hàng `token_issue_denied` với reason
+      //     'account_status' — cùng quy ước unwrapping jsonb của mid-flow
+      //     suite (details đi qua postgres.js là một chuỗi JSON string).
+      const denyRows = await runtime<
+        { details: unknown; outcome: string | null; grant_id: string | null }[]
+      >`
           SELECT details AS details, outcome, grant_id
             FROM auth.authorization_audit_events
            WHERE subject_ref = ${sub}
@@ -270,111 +265,110 @@ describe.skipIf(!dockerAvailable)(
            ORDER BY occurred_at DESC
            LIMIT 1
         `;
-        expect(denyRows).toHaveLength(1);
-        const denialPayload = JSON.parse(denyRows[0]?.details as unknown as string) as {
-          reason: string;
-        };
-        expect(denialPayload.reason).toBe('account_status');
-        expect(denyRows[0]?.outcome).toBe('denied');
-        expect(denyRows[0]?.grant_id).toBe(grantId);
+      expect(denyRows).toHaveLength(1);
+      const denialPayload = JSON.parse(denyRows[0]?.details as unknown as string) as {
+        reason: string;
+      };
+      expect(denialPayload.reason).toBe('account_status');
+      expect(denyRows[0]?.outcome).toBe('denied');
+      expect(denyRows[0]?.grant_id).toBe(grantId);
 
-        // (5) Đếm audit theo loại: đúng MỘT hàng `token_issued` (pass #1) và
-        //     đúng MỘT hàng `token_issue_denied` (pass #2) — chặn và cấp được
-        //     phân biệt bằng chính audit, không lẫn.
-        const issuedCount = await runtime<{ count: string }[]>`
+      // (5) Đếm audit theo loại: đúng MỘT hàng `token_issued` (pass #1) và
+      //     đúng MỘT hàng `token_issue_denied` (pass #2) — chặn và cấp được
+      //     phân biệt bằng chính audit, không lẫn.
+      const issuedCount = await runtime<{ count: string }[]>`
           SELECT count(*)::text AS count FROM auth.authorization_audit_events
            WHERE subject_ref = ${sub}
              AND event_type = 'token_issued'
         `;
-        expect(issuedCount[0]?.count).toBe('1');
-        const deniedCount = await runtime<{ count: string }[]>`
+      expect(issuedCount[0]?.count).toBe('1');
+      const deniedCount = await runtime<{ count: string }[]>`
           SELECT count(*)::text AS count FROM auth.authorization_audit_events
            WHERE subject_ref = ${sub}
              AND event_type = 'token_issue_denied'
         `;
-        expect(deniedCount[0]?.count).toBe('1');
-      } finally {
-        await cleanup(migrator);
-        await runtime.end({ timeout: 1 });
-        await migrator.end({ timeout: 1 });
-      }
-    });
+      expect(deniedCount[0]?.count).toBe('1');
+    } finally {
+      await cleanup(migrator);
+      await runtime.end({ timeout: 1 });
+      await migrator.end({ timeout: 1 });
+    }
+  });
 
-    it('pin: a second resume after suspension stays blocked until status returns to active, every denial its own audit row', async () => {
-      const { runtime, migrator } = await setup();
-      try {
-        const sub = `${SUB_PREFIX}pin-0000000000000000000000000000`;
-        await seedClient(migrator);
-        const grantId = await seedGrant(migrator, sub);
+  it('pin: a second resume after suspension stays blocked until status returns to active, every denial its own audit row', async () => {
+    const { runtime, migrator } = await setup();
+    try {
+      const sub = `${SUB_PREFIX}pin-0000000000000000000000000000`;
+      await seedClient(migrator);
+      const grantId = await seedGrant(migrator, sub);
 
-        // Pass #1 — một code được cấp (grant existing, gate pass thật).
-        const passing = wiredAdapter(runtime, async () => 'active');
-        const firstId = `ac-pass1${CODE_SUFFIX}`;
-        await passing.upsert(firstId, authorizationCodePayload({ sub, grantId }), 60);
-        const firstRows = await runtime<{ id: string }[]>`
+      // Pass #1 — một code được cấp (grant existing, gate pass thật).
+      const passing = wiredAdapter(runtime, async () => 'active');
+      const firstId = `ac-pass1${CODE_SUFFIX}`;
+      await passing.upsert(firstId, authorizationCodePayload({ sub, grantId }), 60);
+      const firstRows = await runtime<{ id: string }[]>`
           SELECT id FROM auth.oidc_state
            WHERE kind = 'AuthorizationCode' AND id = ${firstId}
         `;
-        expect(firstRows).toHaveLength(1);
+      expect(firstRows).toHaveLength(1);
 
-        // Pass #2 — suspend: chặn, không hàng oidc_state nào.
-        const blocking = wiredAdapter(runtime, async () => 'suspended');
-        const secondId = `ac-pass2${CODE_SUFFIX}`;
-        await expect(
-          blocking.upsert(secondId, authorizationCodePayload({ sub, grantId }), 60),
-        ).rejects.toThrow('account status');
-        const secondRows = await runtime<{ id: string }[]>`
+      // Pass #2 — suspend: chặn, không hàng oidc_state nào.
+      const blocking = wiredAdapter(runtime, async () => 'suspended');
+      const secondId = `ac-pass2${CODE_SUFFIX}`;
+      await expect(
+        blocking.upsert(secondId, authorizationCodePayload({ sub, grantId }), 60),
+      ).rejects.toThrow('account status');
+      const secondRows = await runtime<{ id: string }[]>`
           SELECT id FROM auth.oidc_state
            WHERE kind = 'AuthorizationCode' AND id = ${secondId}
         `;
-        expect(secondRows).toHaveLength(0);
+      expect(secondRows).toHaveLength(0);
 
-        // Pass #3 — GHIM (pin của issue #61): resume TIẾP sau một lần chặn
-        //     vẫn chặn. Một grant existing + "đã từng cấp code" không mở lại
-        //     đường phát hành — chỉ status trở lại 'active' mới mở được.
-        const thirdId = `ac-pass3${CODE_SUFFIX}`;
-        await expect(
-          blocking.upsert(thirdId, authorizationCodePayload({ sub, grantId }), 60),
-        ).rejects.toThrow('account status');
-        const thirdRows = await runtime<{ id: string }[]>`
+      // Pass #3 — GHIM (pin của issue #61): resume TIẾP sau một lần chặn
+      //     vẫn chặn. Một grant existing + "đã từng cấp code" không mở lại
+      //     đường phát hành — chỉ status trở lại 'active' mới mở được.
+      const thirdId = `ac-pass3${CODE_SUFFIX}`;
+      await expect(
+        blocking.upsert(thirdId, authorizationCodePayload({ sub, grantId }), 60),
+      ).rejects.toThrow('account status');
+      const thirdRows = await runtime<{ id: string }[]>`
           SELECT id FROM auth.oidc_state
            WHERE kind = 'AuthorizationCode' AND id = ${thirdId}
         `;
-        expect(thirdRows).toHaveLength(0);
+      expect(thirdRows).toHaveLength(0);
 
-        // Pass #4 — khôi phục (account unsuspend): gate lại cho phép. Chặn là
-        //     fail-closed theo trạng thái, KHÔNG vĩnh viễn: pass này chứng minh
-        //     "chỉ status quyết định" chứ không phải "một lần chặn là kẹt".
-        const recovered = wiredAdapter(runtime, async () => 'active');
-        const fourthId = `ac-pass4${CODE_SUFFIX}`;
-        await recovered.upsert(fourthId, authorizationCodePayload({ sub, grantId }), 60);
-        const fourthRows = await runtime<{ id: string }[]>`
+      // Pass #4 — khôi phục (account unsuspend): gate lại cho phép. Chặn là
+      //     fail-closed theo trạng thái, KHÔNG vĩnh viễn: pass này chứng minh
+      //     "chỉ status quyết định" chứ không phải "một lần chặn là kẹt".
+      const recovered = wiredAdapter(runtime, async () => 'active');
+      const fourthId = `ac-pass4${CODE_SUFFIX}`;
+      await recovered.upsert(fourthId, authorizationCodePayload({ sub, grantId }), 60);
+      const fourthRows = await runtime<{ id: string }[]>`
           SELECT id FROM auth.oidc_state
            WHERE kind = 'AuthorizationCode' AND id = ${fourthId}
         `;
-        expect(fourthRows).toHaveLength(1);
+      expect(fourthRows).toHaveLength(1);
 
-        // Hai lần chặn là hai hàng audit riêng (append-only — hai lần thử là
-        // hai hàng bằng chứng), và CẢ HAI đều đúng reason `account_status`:
-        // grant vẫn active, revocation sạch, không có lý do khác nào lọt vào.
-        const denyRows = await runtime<{ details: unknown }[]>`
+      // Hai lần chặn là hai hàng audit riêng (append-only — hai lần thử là
+      // hai hàng bằng chứng), và CẢ HAI đều đúng reason `account_status`:
+      // grant vẫn active, revocation sạch, không có lý do khác nào lọt vào.
+      const denyRows = await runtime<{ details: unknown }[]>`
           SELECT details FROM auth.authorization_audit_events
            WHERE subject_ref = ${sub}
              AND event_type = 'token_issue_denied'
            ORDER BY occurred_at ASC
         `;
-        expect(denyRows).toHaveLength(2);
-        for (const row of denyRows) {
-          const payload = JSON.parse(row.details as unknown as string) as {
-            reason: string;
-          };
-          expect(payload.reason).toBe('account_status');
-        }
-      } finally {
-        await cleanup(migrator);
-        await runtime.end({ timeout: 1 });
-        await migrator.end({ timeout: 1 });
+      expect(denyRows).toHaveLength(2);
+      for (const row of denyRows) {
+        const payload = JSON.parse(row.details as unknown as string) as {
+          reason: string;
+        };
+        expect(payload.reason).toBe('account_status');
       }
-    });
-  },
-);
+    } finally {
+      await cleanup(migrator);
+      await runtime.end({ timeout: 1 });
+      await migrator.end({ timeout: 1 });
+    }
+  });
+});
