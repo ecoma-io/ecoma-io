@@ -40,16 +40,19 @@ export default defineEventHandler(async (event) => {
   const csrfCookieValue = getCookie(event, CSRF_COOKIE_NAME);
   const csrfHeader = getHeader(event, CSRF_HEADER_NAME);
 
-  // Không có session → không có gì để thu hồi; 204 idempotent. CSRF khi đó là
-  // vô nghĩa (không có state để đổi) nên không chặn — route này không cấp quyền.
-  if (cookieValue === undefined || csrfCookieValue === undefined) {
+  // Không có session cookie → không có gì để thu hồi; 204 idempotent. CSRF khi đó
+  // là vô nghĩa (không có state để đổi) nên không chặn — route này không cấp quyền.
+  if (cookieValue === undefined) {
     setResponseHeader(event, 'Set-Cookie', [clearSessionCookie(), clearCsrfCookie()]);
     event.node.res.statusCode = 204;
     return null;
   }
 
-  // Có session: CSRF double-submit phải khớp trước khi chạm DB.
-  if (!csrfMatches(csrfCookieValue, csrfHeader)) {
+  // Có session cookie nhưng CSRF cookie bị thiếu: không còn double-submit token để
+  // kiểm, nhưng session vẫn còn tồn tại và có thể nhận diện an toàn qua session
+  // cookie — revoke server-side session để không bỏ sót logout. CSRF mismatch
+  // chỉ áp khi CSRF cookie có mặt (double-submit đầy đủ).
+  if (csrfCookieValue !== undefined && !csrfMatches(csrfCookieValue, csrfHeader)) {
     writeLog({ event: 'logout.rejected', status: 403, reason: 'csrf_mismatch' });
     throw createError({ statusCode: 403, statusMessage: 'Forbidden' });
   }
