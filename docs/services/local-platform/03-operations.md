@@ -12,7 +12,7 @@
 
 ## Cách ly worktree (Pulumi CLI/backend)
 
-Mọi lệnh Pulumi của luồng này chạy với `PULUMI_BACKEND_URL=file://<worktree>/.pulumi-local-state` và `--stack organization/<project>/<stack>` tường minh (`tools/dx/src/pulumi-context.ts`) — không `pulumi login`, nên không backend toàn cục nào bị chọn. `stack init`/`stack select` của `ensureStack` vẫn ghi stack hiện tại vào workspace file `~/.pulumi/workspaces/<project>-<sha1(Pulumi.yaml)>-workspace.json`, nhưng file đó key theo đường dẫn project (PU13) nên hai worktree không đụng file của nhau; các lệnh đọc/ghi state khác đều truyền `--stack` tường minh nên không phụ thuộc giá trị được ghi đó. `~/.pulumi` còn dùng chung cho plugin cache. Chi tiết platform đã đo: `04-platform-facts.md` §2.16 PU12–PU13.
+Mọi lệnh Pulumi của luồng này chạy với `PULUMI_BACKEND_URL=file://<worktree>/.pulumi-local-state` và `--stack organization/<project>/<stack>` tường minh (`tools/dx/src/deployment/local-platform/pulumi-context.ts`) — không `pulumi login`, nên không backend toàn cục nào bị chọn. `stack init`/`stack select` của `ensureStack` vẫn ghi stack hiện tại vào workspace file `~/.pulumi/workspaces/<project>-<sha1(Pulumi.yaml)>-workspace.json`, nhưng file đó key theo đường dẫn project (PU13) nên hai worktree không đụng file của nhau; các lệnh đọc/ghi state khác đều truyền `--stack` tường minh nên không phụ thuộc giá trị được ghi đó. `~/.pulumi` còn dùng chung cho plugin cache. Chi tiết platform đã đo: `04-platform-facts.md` §2.16 PU12–PU13.
 
 ## Luồng deploy
 
@@ -55,7 +55,7 @@ Read-only. Phân biệt năm trạng thái, mỗi trạng thái một dòng:
 Port thật nằm trong `.env` (`ROOT_HOST=fbi.com:<port>`) và trong output `traefikHostPort` của platform stack. Kiểm thử nhanh không cần trust certificate:
 
 ```bash
-node tools/dx/src/local-smoke.mjs fbi.com:<port>
+node tools/dx/src/deployment/local-platform/local-smoke.mjs fbi.com:<port>
 ```
 
 Smoke xác nhận đúng hành vi ứng dụng qua Traefik, không chỉ "server còn sống": `GET /` (kèm header `Accept: text/html`) phải **302 → `/en`**, sau đó `GET /en` phải **200 HTML** chứa title của home. Retry chỉ áp dụng cho dấu hiệu "chưa sẵn sàng" (`ECONNREFUSED`, `ECONNRESET`, `EPIPE`, `ETIMEDOUT`, 404/502/503/504 — 404 là cửa sổ registration router khi container bị recreate) trong budget mặc định 90s; 4xx còn lại/500, lỗi TLS/cert, redirect sai đích hay thiếu title là fail ngay. TLS bắt buộc hợp lệ — script chỉ trust certificate local **cho đúng request này** (tham số `ca` scoped), không đụng trust store hệ điều hành, không tắt verification. Cờ tuỳ chọn cho test: `--connect <host:port>` (dial địa chỉ khác hostname), `--budget-ms`, `--request-timeout-ms`.
@@ -153,11 +153,11 @@ pnpm dx local-cleanup --dry-run             # chỉ báo cáo, không có lệnh
 pnpm dx local-cleanup --worktree-root <dir> # lọc báo cáo theo worktree (diagnostics, không nới ràng buộc)
 ```
 
-**Cleanup phát hiện và xoá những gì**: resource Docker mà luồng local deployment tạo — network platform, container Traefik, container PostgreSQL, container home, home image (`ecoma-home-<namespace>:local`), volume PostgreSQL (`CLEANUP_KINDS` trong `tools/dx/src/local-cleanup.ts`). Cleanup KHÔNG có teardown theo thứ tự phụ thuộc: worktree biến mất thì không resource nào còn phụ thuộc vòng sống vào nhau; Docker chấp nhận lệnh `rm` trực tiếp từng resource.
+**Cleanup phát hiện và xoá những gì**: resource Docker mà luồng local deployment tạo — network platform, container Traefik, container PostgreSQL, container home, home image (`ecoma-home-<namespace>:local`), volume PostgreSQL (`CLEANUP_KINDS` trong `tools/dx/src/deployment/local-platform/local-cleanup.ts`). Cleanup KHÔNG có teardown theo thứ tự phụ thuộc: worktree biến mất thì không resource nào còn phụ thuộc vòng sống vào nhau; Docker chấp nhận lệnh `rm` trực tiếp từng resource.
 
 ### Labels ownership — bằng chứng "của ai"
 
-Mọi resource local deployment được gắn bốn label kể từ thay đổi này (`deploys/platform-deploy`, `deploys/home-deploy`; định nghĩa một bản duy nhất ở `tools/dx/src/deploy-labels.ts`):
+Mọi resource local deployment được gắn bốn label kể từ thay đổi này (`deploys/platform-deploy`, `deploys/home-deploy`; định nghĩa một bản duy nhất ở `tools/dx/src/deployment/local-platform/deploy-labels.ts`):
 
 | Label                       | Ý nghĩa                                                                                                                                                          |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -176,7 +176,7 @@ Resource thiếu bất kỳ label trong bốn, `worktree-id` sai pattern namespa
 - **Docker daemon không phản hồi** (`docker info` fail): cleanup trả lỗi ở stderr với chi tiết, exit 1, **không quét và không xoá gì**.
 - **Lỗi `ls` per-kind** (daemon lỗi giữa chừng): kind đó được bỏ với lỗi trong output; các kind khác vẫn xử lý — lệnh exit 1 khi có bất kỳ lỗi nào, không `return 0` nói dối.
 - **Worktree filter** (`--worktree-root`) chỉ dành cho diagnostics — nó lọc báo cáo, không thay check ownership/liveness; resource ngoài filter vẫn phải qua đủ check như thường.
-- **Phối hợp với deploy đang chạy**: cleanup và `local-deploy` apply chia sẻ một lock host-wide (`tools/dx/src/local-lock.ts`, file lock đối chiếu PID; lock stale chỉ khi PID chủ đã chết — lock sống bao lâu cũng không bị steal, release được ràng buộc ownership bằng PID + token nên không xoá được lock của process khác). Deploy đang apply hoặc cleanup đang quét thì lệnh thứ hai báo `lock bị giữ` và thoát — không race vào Docker daemon.
+- **Phối hợp với deploy đang chạy**: cleanup và `local-deploy` apply chia sẻ một lock host-wide (`tools/dx/src/local-runtime/local-lock.ts`, file lock đối chiếu PID; lock stale chỉ khi PID chủ đã chết — lock sống bao lâu cũng không bị steal, release được ràng buộc ownership bằng PID + token nên không xoá được lock của process khác). Deploy đang apply hoặc cleanup đang quét thì lệnh thứ hai báo `lock bị giữ` và thoát — không race vào Docker daemon.
 - Cleanup chạy không đòi checkout cũ hay thao tác Pulumi nào: nó chỉ nói chuyện Docker + filesystem của worktree path được ghi trong label.
 
 ## Giới hạn đã biết

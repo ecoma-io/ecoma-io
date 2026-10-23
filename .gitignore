@@ -83,7 +83,8 @@ tsconfig.tsbuildinfo
 # đưa state vào Git.
 .pulumi-local-state/
 # Passphrase do `pnpm dx local-deploy` sinh cho local stack của worktree
-# (xem `resolveLocalPassphrase` trong `tools/dx/src/pulumi-context.ts`).
+# (xem `resolveLocalPassphrase` trong
+# `tools/dx/src/deployment/local-platform/pulumi-context.ts`).
 # Entry tường minh: đổi tên file không được âm thầm đưa passphrase vào Git.
 .pulumi-local-passphrase
 Pulumi.*.yaml

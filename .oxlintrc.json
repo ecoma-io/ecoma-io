@@ -316,7 +316,7 @@
             // `a-deploy → b-deploy` cũng được phép ở đây. Bất biến "chỉ được
             // phụ thuộc `platform-deploy`" là existential (phải có MỘT edge này),
             // và nó được thực thi bởi `validateDeploymentGraph` trong
-            // `tools/dx/src/arch-tags.ts` — xem `05-code-architecture.md` §2.1.
+            // `tools/dx/src/architecture/arch-tags.ts` — xem `05-code-architecture.md` §2.1.
             "onlyDependOnLibsWithTags": [
               "type:deployment",
               "type:contracts",

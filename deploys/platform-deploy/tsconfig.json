@@ -45,8 +45,8 @@
   },
   "files": [
     "index.ts",
-    "../../tools/dx/src/deploy-namespace.ts",
-    "../../tools/dx/src/deploy-labels.ts",
-    "../../tools/dx/src/platform-outputs-contract.ts"
+    "../../tools/dx/src/local-runtime/deploy-namespace.ts",
+    "../../tools/dx/src/deployment/local-platform/deploy-labels.ts",
+    "../../tools/dx/src/deployment/local-platform/platform-outputs-contract.ts"
   ]
 }

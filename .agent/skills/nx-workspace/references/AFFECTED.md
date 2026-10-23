@@ -15,7 +15,7 @@ pnpm nx show projects --affected --base=origin/main
 pnpm nx show projects --affected --base=abc123 --head=def456
 
 # Affected by specific files
-pnpm nx show projects --affected --files=tools/dx/src/sync-agent-config.ts
+pnpm nx show projects --affected --files=tools/dx/src/repository/sync-agent-config.ts
 
 # Affected by uncommitted changes
 pnpm nx show projects --affected --uncommitted

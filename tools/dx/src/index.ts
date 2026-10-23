@@ -12,20 +12,26 @@ export const app = defineCommand({
   subCommands: {
     // `import()` resolve ra module namespace, nhưng citty cần chính định nghĩa
     // command, nên phải bóc default export ra.
-    'repo-prepare': () => import('./repo-prepare.js').then((m) => m.default),
-    'sync-agent-config': () => import('./sync-agent-config.js').then((m) => m.default),
-    'pr-check': () => import('./pr-check.js').then((m) => m.default),
-    'arch-check': () => import('./arch-check.js').then((m) => m.default),
-    'gitleaks-scope': () => import('./gitleaks-scope.js').then((m) => m.default),
-    'semgrep-scan': () => import('./semgrep-scan.js').then((m) => m.default),
-    'commit-signing': () => import('./commit-signing-command.js').then((m) => m.default),
-    'provision-gate': () => import('./provision-gate-command.js').then((m) => m.default),
-    'local-deploy': () => import('./local-deploy-command.js').then((m) => m.default),
-    'local-status': () => import('./local-status-command.js').then((m) => m.default),
-    'local-destroy': () => import('./local-destroy-command.js').then((m) => m.default),
-    'local-cleanup': () => import('./local-cleanup-command.js').then((m) => m.default),
-    'local-worker-up': () => import('./local-worker-up-command.js').then((m) => m.default),
-    'local-worker-status': () => import('./local-worker-status-command.js').then((m) => m.default),
-    'local-worker-down': () => import('./local-worker-down-command.js').then((m) => m.default),
+    'repo-prepare': () => import('./repository/repo-prepare.js').then((m) => m.default),
+    'sync-agent-config': () => import('./repository/sync-agent-config.js').then((m) => m.default),
+    'pr-check': () => import('./pull-request/pr-check.js').then((m) => m.default),
+    'arch-check': () => import('./architecture/arch-check.js').then((m) => m.default),
+    'gitleaks-scope': () => import('./security/gitleaks-scope.js').then((m) => m.default),
+    'semgrep-scan': () => import('./security/semgrep-scan.js').then((m) => m.default),
+    'commit-signing': () => import('./security/commit-signing-command.js').then((m) => m.default),
+    'provision-gate': () => import('./deployment/provision-gate-command.js').then((m) => m.default),
+    'local-deploy': () =>
+      import('./deployment/local-platform/local-deploy-command.js').then((m) => m.default),
+    'local-status': () =>
+      import('./deployment/local-platform/local-status-command.js').then((m) => m.default),
+    'local-destroy': () =>
+      import('./deployment/local-platform/local-destroy-command.js').then((m) => m.default),
+    'local-cleanup': () =>
+      import('./deployment/local-platform/local-cleanup-command.js').then((m) => m.default),
+    'local-worker-up': () => import('./workers/local-worker-up-command.js').then((m) => m.default),
+    'local-worker-status': () =>
+      import('./workers/local-worker-status-command.js').then((m) => m.default),
+    'local-worker-down': () =>
+      import('./workers/local-worker-down-command.js').then((m) => m.default),
   },
 });
