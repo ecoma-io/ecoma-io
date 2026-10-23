@@ -27,6 +27,33 @@ const BACKOFFICE_INTERNAL_PORT = 3000;
 
 const traefikPrefix = (ns: string): string => `backoffice-${ns}`;
 
+/**
+ * Escape một giá trị để đặt an toàn bên trong SQL literal nháy đơn.
+ *
+ * Trong chuỗi SQL, một dấu nháy đơn được escape thành hai dấu nháy đơn
+ * (chuẩn SQL, đúng hành vi với `standard_conforming_strings = on` mặc định của
+ * PostgreSQL). Mọi giá trị đi vào `ALTER ROLE ... PASSWORD '<giá trị>'` đều
+ * phải qua hàm này: password do orchestration sinh (`base64url`, không chứa
+ * nháy đơn) vẫn an toàn như cũ, nhưng đoạn nối chuỗi được miễn nhiễm với giá
+ * trị tương lai thay đổi bảng chữ cái — một password chứa `'` ngày nào đó
+ * không còn phá SQL literal nữa.
+ *
+ * Dùng `replace` với regex global chứ không phải `replaceAll`: tsconfig của
+ * deploy unit đặt `target: es2020`, thiếu `String.prototype.replaceAll`
+ * (ES2021) — typecheck fail-loud đã bắt đúng điều đó.
+ */
+const sqlQuote = (value: string): string => `'${value.replace(/'/gu, "''")}'`;
+
+/**
+ * Quote một giá trị để dùng an toàn bên trong double quotes của POSIX shell.
+ *
+ * Bọc trong nháy đơn và escape nháy đơn theo công thức `'...'` → `'\''`.
+ * `worktreeRoot` đến từ `--config namespace:worktreeRoot=` do người dùng gõ,
+ * không phải giá trị kiểm soát — một path chứa `$`, backtick hay nháy đơn
+ * phải là path thật, không phải mã shell được chạy.
+ */
+const shellQuote = (value: string): string => `'${value.replace(/'/gu, `'\\''`)}'`;
+
 const conf = new pulumi.Config('namespace');
 
 const worktreeRoot = conf.require('worktreeRoot');
@@ -96,13 +123,14 @@ if ! docker exec "$PG" psql -U ecoma_local -d postgres -tAc "SELECT 1 FROM pg_da
 # 2. Tạo hai role nếu chưa có.
 if ! docker exec "$PG" psql -U ecoma_local -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='ecoma_backoffice_migrator'" | grep -q 1; then docker exec "$PG" psql -U ecoma_local -d postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE ecoma_backoffice_migrator LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;"; fi
 if ! docker exec "$PG" psql -U ecoma_local -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='ecoma_backoffice_runtime'" | grep -q 1; then docker exec "$PG" psql -U ecoma_local -d postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE ecoma_backoffice_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;"; fi
-# 3. Mật khẩu role.
-docker exec "$PG" psql -U ecoma_local -d postgres -v ON_ERROR_STOP=1 -c "ALTER ROLE ecoma_backoffice_migrator WITH PASSWORD '${migratorPassword}';"
-docker exec "$PG" psql -U ecoma_local -d postgres -v ON_ERROR_STOP=1 -c "ALTER ROLE ecoma_backoffice_runtime WITH PASSWORD '${runtimePassword}';"
+# 3. Mật khẩu role — giá trị qua sqlQuote, không nối chuỗi trần.
+docker exec "$PG" psql -U ecoma_local -d postgres -v ON_ERROR_STOP=1 -c "ALTER ROLE ecoma_backoffice_migrator WITH PASSWORD ${sqlQuote(migratorPassword)};"
+docker exec "$PG" psql -U ecoma_local -d postgres -v ON_ERROR_STOP=1 -c "ALTER ROLE ecoma_backoffice_runtime WITH PASSWORD ${sqlQuote(runtimePassword)};"
 # 4. Grant migrator.
 docker exec "$PG" psql -U ecoma_local -d postgres -v ON_ERROR_STOP=1 -c 'GRANT CONNECT, CREATE, TEMPORARY ON DATABASE "db-backoffice" TO ecoma_backoffice_migrator;'
 # 5. Migration qua socket trong container (trust local) — dùng runner SQL thật.
-{ echo "SELECT pg_advisory_lock(hashtext('db-backoffice'));"; cat ${worktreeRoot}/apps/backoffice/db/migrations/*.sql; echo "SELECT pg_advisory_unlock(hashtext('db-backoffice'));"; } | docker exec -i "$PG" psql -U ecoma_backoffice_migrator -d db-backoffice -v ON_ERROR_STOP=1
+#    worktreeRoot do người dùng truyền — shellQuote, không nối trần vào script.
+{ echo "SELECT pg_advisory_lock(hashtext('db-backoffice'));"; cat ${shellQuote(worktreeRoot)}/apps/backoffice/db/migrations/*.sql; echo "SELECT pg_advisory_unlock(hashtext('db-backoffice'));"; } | docker exec -i "$PG" psql -U ecoma_backoffice_migrator -d db-backoffice -v ON_ERROR_STOP=1
 `;
 
 const provision = new command.local.Command(

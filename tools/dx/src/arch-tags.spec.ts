@@ -179,6 +179,34 @@ describe('validateTagSchema', () => {
     expect(violations).toHaveLength(1);
     expect(violations[0]).toMatchObject({ project: 'bad', kind: 'legacy-value' });
   });
+
+  it.each(['toString', 'constructor', 'hasOwnProperty'])(
+    'ignores prototype key %s like any non-architecture tag, never a TypeError',
+    (prototypeKey) => {
+      // `dim:value` với dim là tên property của `Object.prototype`: guard
+      // dimension phải dùng own-property check. Với `in`, tag này đi QUA guard
+      // (key có trên prototype chain), rồi lookup allowlist trả về hàm thừa kế
+      // từ `Object.prototype` — `allowed.includes` nổ TypeError giữa chừng thay
+      // vì bỏ qua có kiểm như `npm:private`. Sau fix, hành vi đúng thiết kế:
+      // tag ngoài ba dimension bị bỏ qua lặng lẽ, arch-check không sập.
+      const violations = validateTagSchema(
+        node('a', ['scope:public', 'type:domain', 'runtime:universal', `${prototypeKey}:x`]),
+      );
+      expect(violations).toEqual([]);
+    },
+  );
+
+  it('ignores prototype key toString through validateArchitecture end to end', () => {
+    const bad = node('bad', ['scope:public', 'type:domain', 'runtime:universal', 'toString:x']);
+    const good = node('good', ['scope:public', 'type:domain', 'runtime:universal']);
+    const violations = validateArchitecture({
+      projects: new Map([
+        [bad.name, bad],
+        [good.name, good],
+      ]),
+    });
+    expect(violations).toEqual([]);
+  });
 });
 
 describe('validateRuntimeCompat', () => {
@@ -252,6 +280,28 @@ describe('validateRuntimeCompat', () => {
     );
     expect(validateRuntimeCompat(orphan, projects)).toEqual([]);
   });
+
+  it.each(['constructor', 'toString'])(
+    'skips runtime-compat for prototype key runtime:%s without throwing',
+    (prototypeKey) => {
+      // `runtime:<prototype-key>` không thuộc allowlist (lượt 1 báo
+      // invalid-value); lượt 2 phải bỏ qua bằng own-property check — lookup
+      // qua prototype chain trả về hàm thừa kế làm `allowed` rồi
+      // `allowed.includes` nổ TypeError giữa vòng validate.
+      const app = node(
+        'app',
+        ['scope:public', 'type:composition', `runtime:${prototypeKey}`],
+        ['u'],
+      );
+      const projects = new Map(
+        [app, node('u', ['scope:public', 'type:domain', 'runtime:universal'])].map((n) => [
+          n.name,
+          n,
+        ]),
+      );
+      expect(validateRuntimeCompat(app, projects)).toEqual([]);
+    },
+  );
 
   it('matches the documented compatibility matrix shape', () => {
     // Runtime cụ thể phụ thuộc được chính nó + universal; universal chỉ được
