@@ -268,13 +268,45 @@ export class PgMatrixRepo {
    * nhưng mọi pact đã pass" (matrix rỗng không thể xảy ra ở nhánh này vì
    * mỗi pact cho ra đúng một hàng).
    */
+  /**
+   * Kiểm tra selector có khớp version/pacticipant nào không — dùng cho
+   * fail-closed empty override (DOM-02): phân biệt "selector không khớp gì"
+   * với "version tồn tại nhưng không có pact".
+   */
+  async selectorExists(
+    tenantId: string,
+    pacticipantName: string,
+    version?: string,
+  ): Promise<boolean> {
+    if (version) {
+      const { rows } = await this.pool.query<{ found: number }>(
+        `SELECT 1::int AS found
+           FROM pact.versions v
+           JOIN pact.pacticipants pc ON pc.tenant_id = v.tenant_id AND pc.id = v.pacticipant_id
+          WHERE v.tenant_id = $1 AND pc.name = $2 AND v.number = $3
+          LIMIT 1`,
+        [tenantId, pacticipantName, version],
+      );
+      return rows.length > 0;
+    }
+    const { rows } = await this.pool.query<{ found: number }>(
+      `SELECT 1::int AS found
+         FROM pact.pacticipants
+        WHERE tenant_id = $1 AND name = $2
+        LIMIT 1`,
+      [tenantId, pacticipantName],
+    );
+    return rows.length > 0;
+  }
+
   async canIDeploy(
     tenantId: string,
     pacticipantName: string,
     version: string,
     to?: string,
+    targetKind?: MatrixTarget['type'],
   ): Promise<MatrixQueryResult & { consumerVersionExists: boolean }> {
-    const result = await this.getMatrix(tenantId, pacticipantName, version, to);
+    const result = await this.getMatrix(tenantId, pacticipantName, version, to, targetKind);
     if (result.rows.length > 0) {
       return { ...result, consumerVersionExists: true };
     }
