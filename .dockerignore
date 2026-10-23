@@ -18,7 +18,8 @@
 # re-include đúng file cần (`!tools/dx/package.json`).
 #
 # Input bắt buộc của build — đối chiếu từng dòng COPY trong
-# `deploys/home-deploy/Dockerfile` và `pnpm install` của workspace:
+# `deploys/home-deploy/Dockerfile`, `deploys/backoffice-deploy/Dockerfile`,
+# `deploys/account-deploy/Dockerfile` và `pnpm install` của workspace:
 # `pnpm-workspace.yaml`, `package.json`, `pnpm-lock.yaml`, `patches/`,
 # `tools/dx/package.json`, `apps/home/**`, `libs/ui-ecoma-logo/**`,
 # `tsconfig.base.json`. Spec `tools/dx/src/docker-context.spec.ts` đọc trực tiếp
@@ -36,15 +37,20 @@
 !libs
 !tsconfig.base.json
 
-# Chỉ mở đúng subtree mà image `home` dùng — các app/lib khác của workspace
-# không có lý do gì nằm trong context của image này.
+# Chỉ mở đúng subtree mà các image dùng — app/lib khác của workspace không có
+# lý do gì nằm trong context của image này.
 apps/*
 !apps/home
 !apps/backoffice
+!apps/account
 libs/*
 !libs/backoffice-domain
 !libs/ui-app-shell
 !libs/ui-ecoma-logo
+!libs/identity-contracts
+!libs/identity-domain
+!libs/identity-auth-contracts
+!libs/transactional-mail-contracts
 tools/*
 !tools/dx
 tools/dx/*
@@ -98,3 +104,7 @@ apps/backoffice/tests
 apps/backoffice/vitest.config.mts
 apps/backoffice/tsconfig.db.json
 apps/backoffice/tsconfig.spec.json
+apps/account/tests
+apps/account/vitest.config.mts
+apps/account/tsconfig.db.json
+apps/account/tsconfig.spec.json

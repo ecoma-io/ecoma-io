@@ -54,9 +54,11 @@ export const CLEANUP_KINDS: readonly DeployResourceKind[] = [
   'postgres',
   'home',
   'backoffice',
+  'account',
   'network',
   'home-image',
   'backoffice-image',
+  'account-image',
   'postgres-volume',
 ];
 
@@ -324,7 +326,7 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
         ? 'network'
         : kind === POSTGRES_VOLUME_KIND
           ? 'volume'
-          : kind === 'home-image' || kind === 'backoffice-image'
+          : kind === 'home-image' || kind === 'backoffice-image' || kind === 'account-image'
             ? 'image'
             : 'container';
 
@@ -346,10 +348,13 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
       .filter((line) => {
         if (line.length === 0) return false;
         if (dockerType === 'image') {
-          // Image name format `ecoma-<app>-<ns>:local` (home/backoffice) — không có
-          // suffix `-image` trong tag, nên lọc theo prefix + namespace pattern.
+          // Image name format `ecoma-<app>-<ns>:local` (home/backoffice/account) —
+          // không có suffix `-image` trong tag, nên lọc theo prefix + namespace
+          // pattern.
           return (
-            (line.startsWith('ecoma-home-') || line.startsWith('ecoma-backoffice-')) &&
+            (line.startsWith('ecoma-home-') ||
+              line.startsWith('ecoma-backoffice-') ||
+              line.startsWith('ecoma-account-')) &&
             line.endsWith(':local')
           );
         }

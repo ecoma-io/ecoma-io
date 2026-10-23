@@ -419,8 +419,9 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
     expect(upCalls[3][1]).toBe('account-deploy');
     expect(upCalls[4][1]).toBe('auth-deploy');
 
-    // Hai stack identity nhận đúng bộ key mật khẩu qua stdin (không argv):
-    // account có ownerPassword (nó sở hữu ecoma_owner), auth không.
+    // Hai stack identity nhận đúng bộ key mật khẩu/secret qua stdin (không argv):
+    // account có ownerPassword (nó sở hữu ecoma_owner) + hai secret HMAC của app,
+    // auth không có cái nào trong số đó.
     const identityConfigSets = execMock.mock.calls.filter(([, args]) => {
       if (args[0] !== 'config' || args[1] !== 'set') return false;
       const stackRef = args[args.indexOf('--stack') + 1] ?? '';
@@ -437,6 +438,8 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
       'namespace:runtimePassword',
       'namespace:migratorPassword',
       'namespace:prunerPassword',
+      'namespace:internalHmacSecret',
+      'namespace:otpHmacSecret',
     ]);
     expect(authKeys).toEqual([
       'namespace:runtimePassword',

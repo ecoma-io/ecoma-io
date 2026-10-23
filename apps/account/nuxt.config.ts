@@ -146,6 +146,18 @@ export default defineNuxtConfig({
     // 300s. Để trống chứ không đặt số ở đây để chỉ có **một** nơi định nghĩa mặc định
     // (trong `identity-contracts`) — tránh hai nguồn sự thật cho cùng một luật.
     internalAuthSkewSeconds: '',
+    // Binding container của Cloudflare — preset `cloudflare-module` tự nạp qua
+    // `globalThis.__env__` (production) và `getPlatformProxy` (dev), Nuxt core
+    // không đụng vào key này. Khai báo ở đây để preset `node-server` (local Docker)
+    // có "chốt" mà envmap đổ vào: biến `NUXT_CLOUDFLARE_ENV` chứa JSON object
+    // (ví dụ `{"DB_ACCOUNT":{"connectionString":"..."}}`) được merge vào
+    // `cloudflare.env` lúc khởi động. Không đặt biến ⇒ object rỗng ⇒
+    // `accountHyperdrive()` trả `null` ⇒ `/ready` 503 — fail-closed giữ nguyên.
+    // Production (Workers) không đọc `NUXT_CLOUDFLARE_ENV` nào cả: `__env__` ghi đè
+    // bằng binding thật, nên khai báo này là additive và không đổi hành vi.
+    cloudflare: {
+      env: {},
+    },
   },
 
   nitro: {

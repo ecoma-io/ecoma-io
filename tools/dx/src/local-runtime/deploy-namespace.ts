@@ -91,7 +91,9 @@ export type DeployResourceKind =
   | 'backoffice-image'
   /** Container ephemeral provision/migrate của account-deploy (PR database isolation #181). */
   | 'account'
-  | 'auth';
+  | 'auth'
+  /** Image `node-server` của app account (PR #182 — container + Traefik local). */
+  | 'account-image';
 
 /**
  * Tên Docker resource hợp lệ và nhất quán cho một namespace.
