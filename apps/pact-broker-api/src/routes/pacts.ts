@@ -67,6 +67,13 @@ function buildPactResponse(
   return {
     consumer: { name: consumer.name },
     provider: { name: provider.name },
+    _embedded: {
+      consumer: {
+        name: consumer.name,
+        _embedded: { version: { number: version.number } },
+      },
+      provider: { name: provider.name },
+    },
     consumerVersion: version.number,
     contentSha: pact.contentSha,
     createdAt: pact.createdAt,
@@ -282,6 +289,11 @@ export function pactRoutes(
       _links: {
         self: hal.link(`/pacts/provider/${encodeURIComponent(providerName)}/latest`),
         provider: hal.link(`/pacticipants/${encodeURIComponent(providerName)}`),
+        'pb:pacts': pacts.map((p) => ({
+          href: `${hal.baseUrl}/pacts/provider/${encodeURIComponent(providerName)}/consumer/${encodeURIComponent(p.consumer.name)}/latest`,
+          title: `Latest pact between ${p.consumer.name} and ${providerName}`,
+          name: p.consumer.name,
+        })),
       },
       _embedded: {
         pacts: pacts.map((p) => buildPactResponse(hal, p.pact, p.consumer, p.provider, p.version)),
@@ -303,15 +315,20 @@ export function pactRoutes(
     }
     const hal = new HalBuilder(getBaseUrl(c.req.raw));
 
+    const builtPacts = allPacts.map((p) =>
+      buildPactResponse(hal, p.pact, p.consumer, p.provider, p.version),
+    );
     return c.json({
       _links: {
         self: hal.link('/pacts/latest'),
+        'pb:pacts': allPacts.map((p) => ({
+          href: `${hal.baseUrl}/pacts/provider/${encodeURIComponent(p.provider.name)}/consumer/${encodeURIComponent(p.consumer.name)}/latest`,
+          title: `Latest pact between ${p.consumer.name} and ${p.provider.name}`,
+          name: p.consumer.name,
+        })),
       },
-      _embedded: {
-        pacts: allPacts.map((p) =>
-          buildPactResponse(hal, p.pact, p.consumer, p.provider, p.version),
-        ),
-      },
+      pacts: builtPacts,
+      _embedded: { pacts: builtPacts },
     });
   });
 
