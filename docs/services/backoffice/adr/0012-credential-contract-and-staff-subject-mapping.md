@@ -1,6 +1,6 @@
 # ADR-0012 — Credential contract của `backoffice`: Authorization Code + PKCE qua `auth`, BFF verify access token offline, ánh xạ `sub` → staff
 
-> **Trạng thái:** Accepted · **Ngày:** 2026-10-24 · **Quyết định từ:** [`01-architecture.md`](../01-architecture.md) §5, §6 · **Issue:** #116 · **Hiện thực:** PR B của Backoffice MVP (J2)
+> **Trạng thái:** Accepted · **Ngày:** 2026-10-23 · **Quyết định từ:** [`01-architecture.md`](../01-architecture.md) §5, §6 · **Issue:** #116 · **Hiện thực:** PR B của Backoffice MVP (J2)
 
 ## Bối cảnh
 
