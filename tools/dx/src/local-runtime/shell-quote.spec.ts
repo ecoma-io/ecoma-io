@@ -16,9 +16,9 @@
  * `set -e`, và marker file chỉ được tạo nếu `$(touch …)` được evaluate.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -26,6 +26,8 @@ import { shellQuote, sqlQuote } from './shell-quote.js';
 
 /** Shell POSIX thuần — không bash, không zsh: cùng ngữ nghĩa mà `command.local.Command` dùng. */
 const POSIX_SHELL = '/bin/sh';
+
+const DX_ROOT = resolve(import.meta.dirname, '../..');
 
 const cleanup: string[] = [];
 
@@ -220,5 +222,33 @@ describe('shellQuote + sqlQuote together (the backoffice-deploy ALTER ROLE bound
     const sql = `ALTER ROLE role1 WITH PASSWORD ${sqlQuote(markerScript)};`;
     const marker = shellDoesNotEvaluate(shellQuote, sql);
     expect(marker).toMatch(/pwned-marker$/u);
+  });
+});
+
+describe('wiring', () => {
+  const CALLER = join(DX_ROOT, '../../deploys/backoffice-deploy/index.ts');
+
+  it('pins the backoffice provision SQL to the two-boundary shellQuote composition', () => {
+    // Test tổ hợp phía trên chỉ chứng minh module `shell-quote` ĐÚNG — nó
+    // không nhìn thấy caller. Nếu ai revert `index.ts` về nối SQL vào double
+    // quotes của shell (`-c "... ${sqlQuote(pw)} ..."`), mọi test module vẫn
+    // xanh trong khi lỗ hổng quay lại (đã đo: shell mở rộng `$(...)` trước
+    // psql). Assert này đọc chính file caller và yêu cầu mật khẩu đi qua
+    // `-c ${shellQuote(...)}` — cùng mẫu wiring mà namedInputs phía dưới
+    // đảm bảo CHẠY THẬT khi file này đổi (xem namedInputs trong package.json
+    // của project).
+    const source = readFileSync(CALLER, 'utf8');
+
+    for (const role of ['ecoma_backoffice_migrator', 'ecoma_backoffice_runtime']) {
+      const pattern = new RegExp(
+        `psql [^\\n]*-c \\$\\{shellQuote\\(\`ALTER ROLE ${role} WITH PASSWORD \\$\\{sqlQuote\\([^}]+\\)\\};\`\\)\\}`,
+        'u',
+      );
+      expect(source).toMatch(pattern);
+    }
+    // Không còn đường nối password vào double quotes của shell: câu ALTER ROLE
+    // nằm trong `"..."` kèm `${sqlQuote(` là chính revert mutation cần chặn.
+    const doubleQuotedPassword = /-c "[^"\n]*PASSWORD \$\{sqlQuote\(/u;
+    expect(source).not.toMatch(doubleQuotedPassword);
   });
 });

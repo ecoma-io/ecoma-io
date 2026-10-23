@@ -412,6 +412,9 @@ describe('wiring', () => {
     for (const required of [
       '{workspaceRoot}/.github/workflows/code-analysis.yml',
       '{workspaceRoot}/lefthook.yml',
+      // `shell-quote.spec.ts` ghim caller `deploys/backoffice-deploy/index.ts`
+      // qua `fs.readFileSync` — cũng vô hình với graph nếu không khai.
+      '{workspaceRoot}/deploys/backoffice-deploy/index.ts',
     ]) {
       expect(inputs).toContain(required);
     }

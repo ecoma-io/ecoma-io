@@ -29,6 +29,10 @@
  * Dùng `replace` với regex global chứ không phải `replaceAll`: tsconfig của
  * deploy unit đặt `target: es2020`, thiếu `String.prototype.replaceAll`
  * (ES2021) — typecheck fail-loud đã bắt đúng điều đó.
+ *
+ * NUL byte là giới hạn của chính biên argv POSIX (mọi scheme quoting đều
+ * không mang được NUL qua argument) — không phải hàm này cố xử lý; giá trị
+ * chứa NUL không thể đến từ Pulumi config hợp lệ hay path của kernel.
  */
 export const shellQuote = (value: string): string => `'${value.replace(/'/gu, `'\\''`)}'`;
 
@@ -37,7 +41,8 @@ export const shellQuote = (value: string): string => `'${value.replace(/'/gu, `'
  *
  * Trong chuỗi SQL, một dấu nháy đơn được escape thành hai dấu nháy đơn (chuẩn
  * SQL, đúng hành vi với `standard_conforming_strings = on` mặc định của
- * PostgreSQL). Mọi giá trị đi vào `ALTER ROLE ... PASSWORD '<giá trị>'` đều
+ * PostgreSQL — giả định này được giữ; không cấu hình nào trong repo tắt nó).
+ * Mọi giá trị đi vào `ALTER ROLE ... PASSWORD '<giá trị>'` đều
  * phải qua hàm này: password do orchestration sinh (`base64url`, không chứa
  * nháy đơn) vẫn an toàn như cũ, nhưng đoạn nối chuỗi được miễn nhiễm với giá
  * trị tương lai thay đổi bảng chữ cái — một password chứa `'` ngày nào đó

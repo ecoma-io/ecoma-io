@@ -20,7 +20,8 @@
         "{projectRoot}/**/*",
         "sharedGlobals",
         "{workspaceRoot}/.github/workflows/code-analysis.yml",
-        "{workspaceRoot}/lefthook.yml"
+        "{workspaceRoot}/lefthook.yml",
+        "{workspaceRoot}/deploys/backoffice-deploy/index.ts"
       ]
     }
   }
