@@ -2,11 +2,11 @@
  * Chương trình Pulumi của `account-deploy` — deploy unit của `apps/account`
  * (identity/account) ở LAN LOCAL deployment.
  *
- * PR database isolation (issue #181): stack này provision `db-account` + bộ 4
- * role chuẩn (owner/migrator/runtime/pruner) trên PostgreSQL của platform, chạy
- * migration qua **đường canonical** (`apps/account/db/apply.mts` — advisory
- * lock, GUC, history qua DDL idempotent), CHƯA build image/chạy container
- * (container + Traefik là PR kế tiếp theo `02-identity.md` §Dependency graph).
+ * Đủ vòng đời theo `02-identity.md` §Dependency graph: provision `db-account`
+ * + bộ 4 role chuẩn (owner/migrator/runtime/pruner) → migration đường canonical
+ * (`apps/account/db/apply.mts`) → image `node-server` → container trên platform
+ * network với Traefik router `Host(account.<rootHostname>)` → readiness qua
+ * `GET /ready` (chạm DB thật, không phải `/health`).
  *
  * Mirror `deploys/backoffice-deploy/index.ts` (cùng ownership labels, namespace,
  * stack reference, fail-closed, `command.local.Command` + `docker exec` psql qua
@@ -19,9 +19,20 @@
  * cho PUBLIC theo mặc định), và revoke trên database đích phải được điều kiện
  * hoá bằng `pg_database` (xóa REVOKE trên database không tồn tại là lỗi, không
  * phải no-op).
+ *
+ * Binding local (issue #182): container Node không có Hyperdrive thật. Adapter
+ * là biến `NUXT_CLOUDFLARE_ENV` chứa JSON `{"DB_ACCOUNT":{"connectionString":
+ * ...}}` — Nitro envmap (`applyEnv` + `destr`) merge nó vào
+ * `runtimeConfig.cloudflare.env` được khai tường minh trong `nuxt.config.ts`, đúng
+ * hình dạng mà `accountHyperdrive()` kiểm. Không đặt biến ⇒ object rỗng ⇒ binding
+ * `null` ⇒ `/ready` 503 — fail-closed như production. `AUTH_SERVICE` chưa có ở
+ * phiên này: `authServiceBinding()` trả `null` ⇒ mọi gọi auth là
+ * `binding_missing` (shim HTTP là scope issue #183).
  */
 
 import * as command from '@pulumi/command';
+import * as docker from '@pulumi/docker';
+import * as dockerBuild from '@pulumi/docker-build';
 import * as pulumi from '@pulumi/pulumi';
 
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- xem backoffice-deploy
@@ -30,6 +41,8 @@ import {
   normalizeWorktreeRoot,
   worktreeNamespace,
 } from '../../tools/dx/src/local-runtime/deploy-namespace';
+// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
+import { shellQuote, sqlQuote } from '../../tools/dx/src/local-runtime/shell-quote';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
 import { ownershipLabels } from '../../tools/dx/src/deployment/local-platform/deploy-labels';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
@@ -53,44 +66,20 @@ const NODE_IMAGE =
 /** Alias DNS của PostgreSQL platform trong network nội bộ. */
 const POSTGRES_HOST = 'ecoma-postgres';
 
-/**
- * Escape một giá trị để đặt an toàn bên trong SQL literal nháy đơn.
- *
- * Trong chuỗi SQL, một dấu nháy đơn được escape thành hai dấu nháy đơn
- * (chuẩn SQL, đúng hành vi với `standard_conforming_strings = on` mặc định của
- * PostgreSQL). Mọi giá trị đi vào `ALTER ROLE ... PASSWORD '<giá trị>'` đều
- * phải qua hàm này: password do orchestration sinh (`base64url`, không chứa
- * nháy đơn) vẫn an toàn như cũ, nhưng đoạn nối chuỗi được miễn nhiễm với giá
- * trị tương lai thay đổi bảng chữ cái — một password chứa `'` ngày nào đó
- * không còn phá SQL literal nữa.
- *
- * Dùng `replace` với regex global chứ không phải `replaceAll`: tsconfig của
- * deploy unit đặt `target: es2020`, thiếu `String.prototype.replaceAll`
- * (ES2021) — typecheck fail-loud đã bắt đúng điều đó.
- */
-const sqlQuote = (value: string): string => `'${value.replace(/'/gu, "''")}'`;
+/** Cổng HTTP nội bộ của container account — Nitro `node-server` mặc định 3000. */
+const ACCOUNT_INTERNAL_PORT = 3000;
 
-/**
- * Quote một giá trị để dùng an toàn bên trong double quotes của POSIX shell.
- *
- * Bọc trong nháy đơn và escape nháy đơn theo công thức `'...'` → `'\''`.
- * `worktreeRoot` đến từ `--config namespace:worktreeRoot=` do người dùng gõ,
- * không phải giá trị kiểm soát — một path chứa `$`, backtick hay nháy đơn
- * phải là path thật, không phải mã shell được chạy.
- */
-const shellQuote = (value: string): string => `'${value.replace(/'/gu, `'\\''`)}'`;
+/** Prefix router/service Traefik của app này — namespace vào tên để multi-tenant. */
+const traefikPrefix = (ns: string): string => `account-${ns}`;
 
 const conf = new pulumi.Config('namespace');
 
 const worktreeRoot = conf.require('worktreeRoot');
 const ns = worktreeNamespace(worktreeRoot);
 
-// Labels ownership Certificate: PR database isolation CHƯA tạo Docker resource
-// nào (image/container/Traefik là PR3/PR4) — biến này được dùng khi resource
-// đầu tiên xuất hiện; giữ sẵn ở đây là bản sao của pattern backoffice và lint
-// bắt được nếu quên gắn khi thêm resource.
+// Labels ownership: gắn lên MỌI Docker resource (image + container) để
+// `pnpm dx local-cleanup` phân loại được.
 const labels = ownershipLabels(normalizeWorktreeRoot(worktreeRoot), ns);
-void labels;
 
 const platform = new pulumi.StackReference(conf.require('platformStackRef'));
 
@@ -109,12 +98,19 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
 
 const networkName = requirePlatformOutput('networkName');
 const platformNamespace = requirePlatformOutput('namespace');
+const rootHostname = requirePlatformOutput('rootHostname');
 
 // Mật khẩu bốn role — do orchestration sinh và truyền qua --config (stdin, không argv).
 const ownerPassword = conf.require('ownerPassword');
 const runtimePassword = conf.require('runtimePassword');
 const migratorPassword = conf.require('migratorPassword');
 const prunerPassword = conf.require('prunerPassword');
+
+// Secret HMAC của app — cùng kênh `--config` (stdin) như mật khẩu role; orchestration
+// (`local-deploy`) sinh và set, stack này đọc. Thiếu key là fail ngay lúc `pulumi up`
+// (`conf.require`) chứ không Container với secret rỗng.
+const internalHmacSecret = conf.require('internalHmacSecret');
+const otpHmacSecret = conf.require('otpHmacSecret');
 
 const verifiedNamespace = pulumi.output(platformNamespace).apply((upstreamNs) => {
   if (upstreamNs !== ns) {
@@ -123,6 +119,45 @@ const verifiedNamespace = pulumi.output(platformNamespace).apply((upstreamNs) =>
     );
   }
   return ns;
+});
+
+// Connection string runtime (role `ecoma_account_runtime`) qua network nội bộ —
+// cùng pattern backoffice. `pulumi.secret` đánh dấu redact trong diff/log;
+// `pulumi.interpolate` với config plaintext KHÔNG tự redact, nên phải bọc
+// secret TRƯỚC rồi interpolate.
+const accountDatabaseUrl = pulumi.interpolate`postgresql://ecoma_account_runtime:${pulumi.secret(runtimePassword)}@${POSTGRES_HOST}:5432/db-account`;
+
+/**
+ * Giá trị biến `NUXT_CLOUDFLARE_ENV` — JSON object đúng hình dạng mà
+ * `applyEnv` của Nitro merge vào `runtimeConfig.cloudflare.env`.
+ *
+ * Chỉ có key parent (`cloudflare.env`) xuất hiện trong runtimeConfig khai
+ * tường minh thì envmap mới chạm được tới cấp binding (đã đo thật: biến cấp
+ * sâu `NUXT_CLOUDFLARE_ENV_DB_ACCOUNT` không bao giờ được đọc vì recursion
+ * chỉ đi các key CÓ SẴN trong object inline). JSON được `destr` parse thành
+ * object rồi merge — sau đó `accountHyperdrive()` thấy
+ * `DB_ACCOUNT.connectionString` là chuỗi. Không đặt biến ⇒ object rỗng ⇒
+ * fail-closed như Workers thiếu binding.
+ *
+ * Toàn bộ giá trị là một pulumi.secret interpolate: connection string chứa
+ * mật khẩu runtime, không được đi vào diff/log/argv — biến chỉ đi qua `envs`
+ * của container (kênh container env, cùng kênh backoffice dùng) và Pulumi
+ * redact khi in.
+ */
+const cloudflareEnvJson = pulumi.interpolate`{"DB_ACCOUNT":{"connectionString":${pulumi.secret(accountDatabaseUrl)}}}`;
+
+const imageTag = `ecoma-account-${ns}:local`;
+
+// Image `node-server` — mirror `backoffice-image`: build từ context repo root,
+// Dockerfile ghim digest Node, load vào Docker local, không push.
+const image = new dockerBuild.Image(dockerResourceName(ns, 'account-image'), {
+  context: { location: worktreeRoot },
+  dockerfile: { location: `${worktreeRoot}/deploys/account-deploy/Dockerfile` },
+  tags: [imageTag],
+  builder: { name: 'default' },
+  load: true,
+  push: false,
+  labels,
 });
 
 /**
@@ -135,6 +170,12 @@ const verifiedNamespace = pulumi.output(platformNamespace).apply((upstreamNs) =>
  * config, không phải trạng thái database). Thứ tự revoke/grant theo README
  * account §"Chặn chéo": PUBLIC trước, per-role sau.
  *
+ * Mọi ALTER ROLE password đi qua HAI biên escaping độc lập, đúng pattern #193
+ * đã ghim cho backoffice: `sqlQuote` bảo vệ literal SQL, rồi `shellQuote` bọc
+ * CẢ câu SQL thành MỘT argument của shell. Chỉ `sqlQuote` bên trong double
+ * quotes của shell là KHÔNG đủ — shell mở rộng `$`/backtick trước khi psql
+ * thấy SQL (đo thật trong `shell-quote.spec.ts`).
+ *
  * Chạy cả `create` và `update` để redeploy cũng áp cấu hình mới.
  */
 const postgresContainerName = dockerResourceName(ns, 'postgres');
@@ -144,14 +185,14 @@ PSQL="docker exec $PG psql -U ecoma_local -d postgres -v ON_ERROR_STOP=1"
 # 1. Role owner dùng chung account/auth — stack này SỞ HỘI password của nó:
 #    auth stack guard-create khi thiếu nhưng KHÔNG BAO GIỜ ALTER password ở đây.
 if ! $PSQL -tAc "SELECT 1 FROM pg_roles WHERE rolname='ecoma_owner'" | grep -q 1; then $PSQL -c "CREATE ROLE ecoma_owner LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS"; fi
-$PSQL -c "ALTER ROLE ecoma_owner WITH PASSWORD ${sqlQuote(ownerPassword)};"
+$PSQL -c ${shellQuote(`ALTER ROLE ecoma_owner WITH PASSWORD ${sqlQuote(ownerPassword)};`)}
 # 2. Ba role của db-account.
 if ! $PSQL -tAc "SELECT 1 FROM pg_roles WHERE rolname='ecoma_account_migrator'" | grep -q 1; then $PSQL -c "CREATE ROLE ecoma_account_migrator LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS"; fi
 if ! $PSQL -tAc "SELECT 1 FROM pg_roles WHERE rolname='ecoma_account_runtime'" | grep -q 1; then $PSQL -c "CREATE ROLE ecoma_account_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS"; fi
 if ! $PSQL -tAc "SELECT 1 FROM pg_roles WHERE rolname='ecoma_account_nonce_pruner'" | grep -q 1; then $PSQL -c "CREATE ROLE ecoma_account_nonce_pruner LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS"; fi
-$PSQL -c "ALTER ROLE ecoma_account_migrator WITH PASSWORD ${sqlQuote(migratorPassword)};"
-$PSQL -c "ALTER ROLE ecoma_account_runtime WITH PASSWORD ${sqlQuote(runtimePassword)};"
-$PSQL -c "ALTER ROLE ecoma_account_nonce_pruner WITH PASSWORD ${sqlQuote(prunerPassword)};"
+$PSQL -c ${shellQuote(`ALTER ROLE ecoma_account_migrator WITH PASSWORD ${sqlQuote(migratorPassword)};`)}
+$PSQL -c ${shellQuote(`ALTER ROLE ecoma_account_runtime WITH PASSWORD ${sqlQuote(runtimePassword)};`)}
+$PSQL -c ${shellQuote(`ALTER ROLE ecoma_account_nonce_pruner WITH PASSWORD ${sqlQuote(prunerPassword)};`)}
 # 3. Database + owner. CREATE là lệnh guard (bash if), ALTER idempotent sẵn.
 if ! $PSQL -tAc "SELECT 1 FROM pg_database WHERE datname='db-account'" | grep -q 1; then $PSQL -c 'CREATE DATABASE "db-account"'; fi
 $PSQL -c 'ALTER DATABASE "db-account" OWNER TO ecoma_owner'
@@ -211,6 +252,80 @@ const migrate = new command.local.Command(
   { dependsOn: [provision] },
 );
 
+/**
+ * Container account — image `node-server`, plain HTTP trên platform network,
+ * TLS do Traefik chấm dứt phía trước (cùng model home/backoffice).
+ *
+ * Thứ tự phụ thuộc: provision (database + role) → migrate (schema) → image →
+ * container. Migration chạy trên image Node ghim riêng (ephemeral container),
+ * độc lập với image app — container chỉ lên sau khi schema đã sẵn sàng, để
+ * `/ready` của healthcheck không đỏ giả trong cửa sổ chưa-migrate.
+ *
+ * Env: `NUXT_CLOUDFLARE_ENV` là adapter binding (JSON, secret); hai secret HMAC
+ * phủ từ envmap `NUXT_*` vào runtimeConfig private; `mailServiceUrl` để RỖNG —
+ * đường mail local là scope riêng (sink local D1, issue #183), để rỗng giữ
+ * fail-closed ở lần gửi.
+ */
+const account = new docker.Container(
+  dockerResourceName(ns, 'account'),
+  {
+    name: dockerResourceName(ns, 'account'),
+    image: pulumi.interpolate`${imageTag}@${image.digest}`,
+    restart: 'unless-stopped',
+    networksAdvanced: [{ name: networkName, aliases: ['ecoma-account'] }],
+    envs: [
+      `PORT=${ACCOUNT_INTERNAL_PORT}`,
+      'NODE_ENV=production',
+      pulumi.interpolate`NUXT_CLOUDFLARE_ENV=${cloudflareEnvJson}`,
+      pulumi.interpolate`NUXT_INTERNAL_HMAC_SECRET=${pulumi.secret(internalHmacSecret)}`,
+      pulumi.interpolate`NUXT_OTP_HMAC_SECRET=${pulumi.secret(otpHmacSecret)}`,
+      'NUXT_MAIL_SERVICE_URL=',
+    ],
+    labels: [
+      ...Object.entries(labels).map(([label, value]) => ({ label, value })),
+      { label: 'traefik.enable', value: 'true' },
+      // Bắt buộc với provider docker multi-tenant (memory: cùng network flag
+      // KHÔNG lọc — container trên nhiều network bị Traefik thấy qua network
+      // nào là do label này quyết).
+      { label: 'traefik.docker.network', value: networkName },
+      {
+        label: `traefik.http.routers.${traefikPrefix(ns)}.rule`,
+        value: pulumi.interpolate`Host(\`account.${rootHostname}\`)`,
+      },
+      {
+        label: `traefik.http.routers.${traefikPrefix(ns)}.entrypoints`,
+        value: 'websecure',
+      },
+      { label: `traefik.http.routers.${traefikPrefix(ns)}.tls`, value: 'true' },
+      {
+        label: `traefik.http.services.${traefikPrefix(ns)}.loadbalancer.server.port`,
+        value: String(ACCOUNT_INTERNAL_PORT),
+      },
+    ],
+    healthcheck: {
+      // `/ready` chứ không phải `/health`: readiness phải chứng minh DB probe
+      // thật (`selectAccountStatus`) thành công — `/health` không chạm DB nên
+      // không đủ làm bằng chứng container phục vụ được request thật
+      // (`02-identity.md` §Runtime contracts).
+      tests: [
+        'CMD',
+        'node',
+        '-e',
+        `fetch('http://127.0.0.1:${ACCOUNT_INTERNAL_PORT}/ready')` +
+          `.then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))`,
+      ],
+      interval: '10s',
+      timeout: '5s',
+      retries: 12,
+      startPeriod: '30s',
+    },
+  },
+  { dependsOn: [migrate] },
+);
+
 export const provisionCommandName = provision.id;
 export const migrateCommandName = migrate.id;
+export const imageDigest = image.digest;
+export const containerName = account.name;
+export const containerId = account.id;
 export const namespaceVerified = verifiedNamespace;

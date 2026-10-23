@@ -153,7 +153,9 @@ describe('root .dockerignore: matcher semantics', () => {
   it('excluding a directory excludes its subtree', () => {
     const rules = ['apps/*'].map(compile);
     expect(finalInclude(rules, 'apps/account')).toBe(false);
-    expect(isExcluded('apps/account/src/x.ts')).toBe(true);
+    // App không nằm trong whitelist của `.dockerignore` thật (`apps/auth` —
+    // deploy local của nó là worker, không qua image này): subtree bị loại.
+    expect(isExcluded('apps/auth/src/x.ts')).toBe(true);
   });
 
   it('re-included directory makes its subtree includable again', () => {
@@ -218,5 +220,29 @@ describe('root .dockerignore: required build inputs are included', () => {
     expect(isExcluded('libs/ui-ecoma-logo/package.json')).toBe(false);
     expect(isExcluded('libs/ui-ecoma-logo/src/index.ts')).toBe(false);
     expect(isExcluded('tsconfig.base.json')).toBe(false);
+  });
+
+  it('backoffice app and backoffice-domain enter the context', () => {
+    expect(isExcluded('apps/backoffice/package.json')).toBe(false);
+    expect(isExcluded('apps/backoffice/.npmrc')).toBe(false);
+    expect(isExcluded('apps/backoffice/nuxt.config.ts')).toBe(false);
+    expect(isExcluded('libs/backoffice-domain/src/index.ts')).toBe(false);
+  });
+
+  it('account app and identity libs enter the context', () => {
+    expect(isExcluded('apps/account/package.json')).toBe(false);
+    expect(isExcluded('apps/account/.npmrc')).toBe(false);
+    expect(isExcluded('apps/account/nuxt.config.ts')).toBe(false);
+    expect(isExcluded('libs/identity-contracts/src/index.ts')).toBe(false);
+    expect(isExcluded('libs/identity-domain/src/index.ts')).toBe(false);
+    expect(isExcluded('libs/identity-auth-contracts/src/index.ts')).toBe(false);
+    expect(isExcluded('libs/transactional-mail-contracts/src/index.ts')).toBe(false);
+  });
+
+  it('account test sources and test configs never enter the context', () => {
+    expect(isExcluded('apps/account/tests/unit/bindings.spec.ts')).toBe(true);
+    expect(isExcluded('apps/account/vitest.config.mts')).toBe(true);
+    expect(isExcluded('apps/account/tsconfig.db.json')).toBe(true);
+    expect(isExcluded('apps/account/tsconfig.spec.json')).toBe(true);
   });
 });

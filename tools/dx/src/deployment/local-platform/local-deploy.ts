@@ -702,6 +702,11 @@ function runApply(
           ['namespace:runtimePassword', generatePostgresPassword()],
           ['namespace:migratorPassword', generatePostgresPassword()],
           ['namespace:prunerPassword', generatePostgresPassword()],
+          // Secret HMAC của app account (container local #182): cùng độ dài tối
+          // thiểu 32 ký tự mà `config-validation.ts` đòi (validateAccountConfig
+          // fail-closed ở request đầu nếu ngắn hơn) — base64url 24 bytes đủ dài.
+          ['namespace:internalHmacSecret', generatePostgresPassword()],
+          ['namespace:otpHmacSecret', generatePostgresPassword()],
         ] as const)
       : ([
           ['namespace:runtimePassword', generatePostgresPassword()],
