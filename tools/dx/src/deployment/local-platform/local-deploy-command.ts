@@ -36,8 +36,8 @@ export default defineCommand({
     'worktree-root': worktreeRootArg,
   },
 
-  run({ args }) {
-    process.exitCode = runLocalCommand('deploy', () =>
+  async run({ args }) {
+    process.exitCode = await runLocalCommand('deploy', () =>
       localDeploy({
         worktreeRoot: requireDirectoryRoot(args['worktree-root']),
         previewOnly: args.preview,

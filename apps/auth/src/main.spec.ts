@@ -2,6 +2,10 @@ import { exportPKCS8, generateKeyPair } from 'jose';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { signRequest } from '@ecoma-io/identity-auth-contracts';
+// Namespace import để `vi.spyOn` thay thế `createPostgresClient` theo từng ca
+// (stub tầng driver của readiness probe — xem các ca `account_unreachable` và
+// nhánh 200 trong `describe('GET /ready')`).
+import * as infrastructure from '@ecoma-io/identity-auth-infrastructure';
 
 import app from './main';
 import type { AuthEnv } from './config';
@@ -183,11 +187,140 @@ describe('GET /ready', () => {
     expect(lines[0]).not.toContain('127.0.0.1');
     expect(lines[0]).not.toContain('db-auth');
   });
-  // ⚠️ Nhánh 200 KHÔNG kiểm ở môi trường Node: nó cần một `auth.oauth_clients`
-  // thật (testcontainers — `internal-auth.spec.ts` dạng đó). Probe đi qua
-  // `createPostgresClient` — cùng pool shape của replay guard, đã được phủ bởi
-  // lib suite — nên các nhánh fail ở mọi tầng dưới route là những nhánh ĐÃ phủ
-  // ở unit này; nhánh còn lại duy nhất là redirect 200, thuộc Integration.
+
+  it('fails closed with 503 and config_invalid when the signing config cannot load even with both bindings present', async () => {
+    // `AUTH_SIGNING_KEY` sai shape (không phải PKCS#8 PEM) — `loadAuthConfig`
+    // ném lúc `SigningKeyProvider.fromPem`. Binding + DB có xanh đến đâu, một
+    // Worker không ký được token là Worker không phục vụ được request nào.
+    //
+    // ⚠️ Response và log KHÔNG nêu tên biến thiếu: tên cấu hình không thuộc
+    // response công khai; readiness log chỉ mã ổn định.
+    //
+    // ⚠️ `vi.resetModules()` + dynamic import: `getConfig` cache config theo
+    // isolate (cache PROMISE, KHÔNG cache lỗi) — một test trước đó với env hợp
+    // lệ đã fill cache, và request qua instance `app` cũ sẽ đi qua cache mà
+    // không hề gọi `loadAuthConfig` với PEM sai (đúng lỗi này, đo thật: ca
+    // chạy một mình xanh, chạy sau ca DB chết nhận nhầm `db_unreachable`).
+    // Instance module MỚI có cache rỗng, nên `loadAuthConfig` chạy thật với
+    // env của ca này. Static import `app` của các ca khác không bị đụng.
+    vi.resetModules();
+    const freshApp = (await import('./main')).default;
+    const readyEnv: AuthEnv = { ...env };
+    readyEnv.AUTH_SIGNING_KEY = 'not-a-pem';
+    // HYPERDRIVE trỏ cổng chết: nếu một refactor sau đảo thứ tự hai probe
+    // (config sau DB), ca này chuyển sang fail `db_unreachable` — một đổi
+    // hành vi mà ca này sẽ bắt, thay vì đi qua một probe treo vô hạn.
+    readyEnv.HYPERDRIVE = { connectionString: 'postgres://ecoma:nope@127.0.0.1:1/db-auth' };
+
+    const { lines, result: response } = await captureLogLines(
+      async () => await freshApp.request('/ready', {}, readyEnv),
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'service_unavailable' });
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0] ?? '')).toEqual({
+      event: 'ready.failed',
+      status: 503,
+      reason: 'config_invalid',
+    });
+    expect(lines[0]).not.toContain('AUTH_SIGNING_KEY');
+  });
+
+  it('fails closed with 503 and account_unreachable when the ACCOUNT_SERVICE binding throws — binding status never proves account reachability', async () => {
+    // Binding "có mặt" (fetch là function) nhưng fetch THẤT BẠI — shim chết,
+    // upstream treo, timeout... là các dạng thật của local lẫn production.
+    // Probe readiness phải đi QUA binding (đường request thật) và coi "không
+    // trả lời được" là fail-closed; việc binding được gắn không phải bằng chứng
+    // account sống.
+    //
+    // ⚠️ Thứ tự probe trong route là config → DB → account: probe DB chạy
+    // TRƯỚC probe account, nên ca này stub tầng DB
+    // (`vi.spyOn` trên namespace import của `identity-auth-infrastructure`)
+    // để request đi TỚI probe account — fetch-stub của binding đếm được lần
+    // gọi, còn DB thật thì không cần (không PostgreSQL trong unit runner).
+    const readyEnv: AuthEnv = {
+      ...env,
+      ACCOUNT_SERVICE: {
+        fetch: async () => {
+          throw new Error('network unreachable (stub)');
+        },
+      },
+    };
+
+    const { lines, result: response } = await captureLogLines(async () => {
+      const dbStub = vi.spyOn(infrastructure, 'createPostgresClient').mockImplementation(
+        () =>
+          ({
+            unsafe: vi
+              .fn<() => Promise<unknown[]>>()
+              .mockResolvedValue([{ client_id: 'probe-client' }]),
+            end: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+          }) as unknown as ReturnType<typeof infrastructure.createPostgresClient>,
+      );
+      try {
+        return await app.request('/ready', {}, readyEnv);
+      } finally {
+        dbStub.mockRestore();
+      }
+    });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'service_unavailable' });
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0] ?? '')).toEqual({
+      event: 'ready.failed',
+      status: 503,
+      reason: 'account_unreachable',
+    });
+    // Message của stub chứa chữ "unreachable" — log chỉ được mã ổn định, không
+    // byte nào từ exception của dependency.
+    expect(lines[0]).not.toContain('stub');
+  });
+
+  it('returns 200 ready when the config loads and both probes pass — a non-2xx account response still counts as reachable', async () => {
+    // Nhánh 200 với probe account TRẢ 503: account đỏ (db-account của nó chết)
+    // vẫn là account SỐNG và trả lời đúng hợp đồng — readiness chi tiết của
+    // account là việc của account. Chỉ "không trả lời được" (throw) là fail.
+    //
+    // ⚠️ Cùng kỹ thuật stub DB với ca trên: `ready.ok` là nhánh 200 duy nhất
+    // của route, và ca này chứng minh nó đạt được với probe account non-2xx —
+    // bản end-to-end trên stack thật (WIC + account container) thuộc Integration.
+    const readyEnv: AuthEnv = {
+      ...env,
+      ACCOUNT_SERVICE: {
+        fetch: async () => new Response('{}', { status: 503 }),
+      },
+    };
+
+    const { lines, result: response } = await captureLogLines(async () => {
+      const dbStub = vi.spyOn(infrastructure, 'createPostgresClient').mockImplementation(
+        () =>
+          ({
+            unsafe: vi
+              .fn<() => Promise<unknown[]>>()
+              .mockResolvedValue([{ client_id: 'probe-client' }]),
+            end: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+          }) as unknown as ReturnType<typeof infrastructure.createPostgresClient>,
+      );
+      try {
+        return await app.request('/ready', {}, readyEnv);
+      } finally {
+        dbStub.mockRestore();
+      }
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ service: 'auth', status: 'ready' });
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0] ?? '')).toEqual({ event: 'ready.ok', status: 200 });
+  });
+  // ⚠️ Nhánh 200 ĐẦY ĐỦ trên hạ tầng thật (DB thật trả dòng
+  // `auth.oauth_clients` + account thật qua shim) thuộc Integration — nó cần
+  // một `auth.oauth_clients` thật (testcontainers, `tests/integration/`).
+  // Probe đi qua `createPostgresClient` — cùng pool shape của replay guard,
+  // đã được phủ bởi lib suite — nên unit này phủ mọi nhánh fail của route và
+  // nhánh 200 với stub ở tầng driver.
 });
 
 describe('GET /.well-known/openid-configuration', () => {

@@ -38,10 +38,19 @@ export const workerWorktreeRootArg = {
  * (path không tồn tại từ `realpathSync`, `.env` không đọc được, Pulumi fail
  * ngoài nhánh đã xử lý...) thành thông điệp `[local-<cmd>] <lý do>` + exit 1 —
  * thay vì stack trace Node với exit code không kiểm soát được.
+ *
+ * Nhận cả action đồng bộ lẫn async (Promise<number>): `local-deploy` cần
+ * sinh khoá ký ES256 qua WebCrypto (`crypto.subtle` — API chỉ có dạng
+ * promise), nên luồng apply trả Promise. Lỗi rejection cũng bị nuốt vào
+ * cùng biên lỗi — một Promise từ chối thoát ra ngoài là unhandled rejection
+ * với exit code không kiểm soát được, đúng thứ boundary này cấm.
  */
-export function runLocalCommand(command: string, action: () => number): number {
+export async function runLocalCommand(
+  command: string,
+  action: () => number | Promise<number>,
+): Promise<number> {
   try {
-    return action();
+    return await action();
   } catch (error) {
     console.error(`[local-${command}] ${error instanceof Error ? error.message : String(error)}`);
     return 1;

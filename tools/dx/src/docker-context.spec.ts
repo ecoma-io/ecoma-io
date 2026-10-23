@@ -245,4 +245,14 @@ describe('root .dockerignore: required build inputs are included', () => {
     expect(isExcluded('apps/account/tsconfig.db.json')).toBe(true);
     expect(isExcluded('apps/account/tsconfig.spec.json')).toBe(true);
   });
+
+  it('auth WIC entrypoint enters the context while the rest of deploys stays out', () => {
+    // Image WIC COPY đúng một file của `deploys/` (wic-entrypoint.sh); mọi
+    // resource Pulumi khác của thư mục này không thuộc build context.
+    expect(isExcluded('deploys/auth-deploy/wic-entrypoint.sh')).toBe(false);
+    expect(isExcluded('deploys/auth-deploy/index.ts')).toBe(true);
+    expect(isExcluded('deploys/auth-deploy/Dockerfile')).toBe(true);
+    expect(isExcluded('deploys/account-deploy/index.ts')).toBe(true);
+    expect(isExcluded('deploys/platform-deploy/index.ts')).toBe(true);
+  });
 });

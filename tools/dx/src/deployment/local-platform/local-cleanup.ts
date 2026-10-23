@@ -55,11 +55,15 @@ export const CLEANUP_KINDS: readonly DeployResourceKind[] = [
   'home',
   'backoffice',
   'account',
+  'auth-wic',
+  'auth-wic-state-init',
   'network',
   'home-image',
   'backoffice-image',
   'account-image',
+  'auth-wic-image',
   'postgres-volume',
+  'auth-wic-state',
 ];
 
 export interface CleanupFilter {
@@ -324,9 +328,12 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
     const dockerType: DockerCommandType =
       kind === 'network'
         ? 'network'
-        : kind === POSTGRES_VOLUME_KIND
+        : kind === POSTGRES_VOLUME_KIND || kind === 'auth-wic-state'
           ? 'volume'
-          : kind === 'home-image' || kind === 'backoffice-image' || kind === 'account-image'
+          : kind === 'home-image' ||
+              kind === 'backoffice-image' ||
+              kind === 'account-image' ||
+              kind === 'auth-wic-image'
             ? 'image'
             : 'container';
 
@@ -348,13 +355,14 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
       .filter((line) => {
         if (line.length === 0) return false;
         if (dockerType === 'image') {
-          // Image name format `ecoma-<app>-<ns>:local` (home/backoffice/account) —
-          // không có suffix `-image` trong tag, nên lọc theo prefix + namespace
-          // pattern.
+          // Image name format `ecoma-<app>-<ns>:local` (home/backoffice/account/
+          // auth-wic) — không có suffix `-image` trong tag, nên lọc theo prefix +
+          // namespace pattern.
           return (
             (line.startsWith('ecoma-home-') ||
               line.startsWith('ecoma-backoffice-') ||
-              line.startsWith('ecoma-account-')) &&
+              line.startsWith('ecoma-account-') ||
+              line.startsWith('ecoma-auth-wic-')) &&
             line.endsWith(':local')
           );
         }

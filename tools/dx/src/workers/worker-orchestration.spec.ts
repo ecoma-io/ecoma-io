@@ -19,6 +19,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   devVarsArgv,
+  localWorkerEnvInjections,
   MAIL_WORKER_ENTRIES,
   portCandidates,
   resolveWranglerInvocationArgv,
@@ -951,6 +952,26 @@ describe('portCandidates', () => {
       20000, 20001, 20002, 20003, 20004, 20005, 20006, 20007, 20008, 20009,
     ]);
     expect(portCandidates(20000)).toEqual(portCandidates(20000));
+  });
+});
+
+describe('localWorkerEnvInjections', () => {
+  it('injects BRIDGE_TARGET_ORIGIN for the account-bridge shim pointing at the account container alias', () => {
+    const injected = localWorkerEnvInjections('ecoma-account-bridge', 'wtestns123456');
+    expect(injected).toEqual({
+      BRIDGE_TARGET_ORIGIN: 'http://ecoma-wtestns123456-account:3000',
+    });
+  });
+
+  it('injects nothing for workers without a local env contract — no implicit env', () => {
+    expect(localWorkerEnvInjections('ecoma-transactional-mail', 'wtestns123456')).toEqual({});
+    expect(localWorkerEnvInjections('ecoma-anything-else', 'wtestns123456')).toEqual({});
+  });
+
+  it('builds a namespace-scoped origin so two worktrees never share an upstream', () => {
+    const first = localWorkerEnvInjections('ecoma-account-bridge', 'waaaa1234567');
+    const second = localWorkerEnvInjections('ecoma-account-bridge', 'wbbbb7654321');
+    expect(first.BRIDGE_TARGET_ORIGIN).not.toBe(second.BRIDGE_TARGET_ORIGIN);
   });
 });
 

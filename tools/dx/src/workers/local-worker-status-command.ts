@@ -25,8 +25,8 @@ export default defineCommand({
     'worktree-root': workerWorktreeRootArg,
   },
 
-  run({ args }) {
-    process.exitCode = runLocalCommand('worker-status', () => {
+  async run({ args }) {
+    process.exitCode = await runLocalCommand('worker-status', () => {
       const rows = statusWorkerRuntime({
         worktreeRoot: requireDirectoryRoot(args['worktree-root']) ?? process.cwd(),
       });

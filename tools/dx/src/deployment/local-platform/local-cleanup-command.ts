@@ -31,8 +31,8 @@ export default defineCommand({
     'worktree-root': worktreeRootArg,
   },
 
-  run({ args }) {
-    process.exitCode = runLocalCommand('cleanup', () => {
+  async run({ args }) {
+    process.exitCode = await runLocalCommand('cleanup', () => {
       // Filter diagnostics: KHÔNG bắt buộc path tồn tại — worktree bị xoá là
       // đối tượng chính của cleanup, và filter trỏ worktree không còn trên đĩa
       // hợp lệ (chỉ match không resource nào, xem `runLocalCleanup`).

@@ -23,8 +23,8 @@ export default defineCommand({
     'worktree-root': worktreeRootArg,
   },
 
-  run({ args }) {
-    process.exitCode = runLocalCommand('status', () =>
+  async run({ args }) {
+    process.exitCode = await runLocalCommand('status', () =>
       localStatus({ worktreeRoot: requireDirectoryRoot(args['worktree-root']) }),
     );
   },
