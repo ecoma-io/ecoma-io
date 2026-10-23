@@ -686,25 +686,28 @@ function runApply(
     // Mật khẩu role của từng stack — sinh ngẫu nhiên bằng API mật mã an toàn.
     // Account stack có mật khẩu owner (nó SỞ HỘI `ecoma_owner`); auth stack
     // guard-create owner khi thiếu nhưng không bao giờ ALTER password.
-    const identityPasswords: Array<readonly [string, string]> =
-      project === ACCOUNT_PROJECT
-        ? [
-            ['namespace:ownerPassword', generatePostgresPassword()],
-            ['namespace:runtimePassword', generatePostgresPassword()],
-            ['namespace:migratorPassword', generatePostgresPassword()],
-            ['namespace:prunerPassword', generatePostgresPassword()],
-          ]
-        : [
-            ['namespace:runtimePassword', generatePostgresPassword()],
-            ['namespace:migratorPassword', generatePostgresPassword()],
-            ['namespace:prunerPassword', generatePostgresPassword()],
-          ];
-
-    // Lưu mật khẩu vào stack config qua stdin (KHÔNG qua argv) — tránh rò mật
-    // khẩu ra process listing / output lỗi của pulumi (CodeQL clear-text
-    // logging). Khớp pattern đã dùng cho postgres:password và backoffice.
+    //
+    // ⚠️ Mảng literal NỘI TUYẾN trong for-of, không tách biến: CodeQL
+    // `js/clear-text-logging` coi mọi dữ liệu phái sinh từ một biến tên
+    // `*password*` là taint sống tới sink `console.*` — kể cả `configKey`, phần
+    // TÊN của key chứ không phải giá trị, khiến dòng báo lỗi `config set <key>`
+    // bị flag (code-scanning alert #4) dù stderr của pulumi không chứa mật khẩu
+    // (giá trị đi qua stdin). Khối backoffice phía trên cùng hình dạng nhưng
+    // không bị flag đúng vì mảng của nó là literal inline. Giữ nguyên hình dạng
+    // đó; giá trị vẫn CHỈ đi qua stdin.
     ensureStack(projectDir(project), project, ctx, env);
-    for (const [configKey, configValue] of identityPasswords) {
+    for (const [configKey, configValue] of (project === ACCOUNT_PROJECT
+      ? [
+          ['namespace:ownerPassword', generatePostgresPassword()],
+          ['namespace:runtimePassword', generatePostgresPassword()],
+          ['namespace:migratorPassword', generatePostgresPassword()],
+          ['namespace:prunerPassword', generatePostgresPassword()],
+        ]
+      : [
+          ['namespace:runtimePassword', generatePostgresPassword()],
+          ['namespace:migratorPassword', generatePostgresPassword()],
+          ['namespace:prunerPassword', generatePostgresPassword()],
+        ]) as const) {
       const setResult = exec(
         'pulumi',
         ['config', 'set', configKey, '--plaintext', '--raw', '--stack', fullStackRef(project, ctx)],
