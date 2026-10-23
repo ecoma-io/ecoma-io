@@ -84,7 +84,7 @@ Câu `REVOKE` không phụ thuộc table nào tồn tại → từ chối đư�
 ### 3.2 Migration
 
 - **Greenfield provisioning, không phải data migration.** Không có `db-identity` nào tồn tại để kế thừa. Danh sách migration đã có trong repo tại `apps/auth/migrations/`: `0001` schema + `oauth_clients` tới `0013` (`oidc_state` — một bảng, bảy kind giao thức của provider); `0012` đổi tên cột `authn_level` → `acr` (đồng bộ với `0004` của `db-account`), `0013` là trạng thái OIDC cho provider. Danh sách này phục vụ provisioning lần đầu khi `db-auth` được tạo; các file đã được test phủ (integration suite của `apps/auth`).
-- Migration chạy từ **CI runner** bằng PostgreSQL client kết nối thẳng, dùng role `_migrator_`, giữ advisory lock ([`02` §3.1](../../overview/02-delivery.md)).
+- Migration chạy từ **CI runner** bằng PostgreSQL client kết nối thẳng, dùng role `_migrator_`, giữ advisory lock ([`02` §3.1](../../overview/02-delivery.md)). Runner đã có: `pnpm nx run @ecoma-io/auth:db:migrate` với `DATABASE_URL` (bắt buộc) — thiếu `DATABASE_URL` thì exit code khác 0 chứ không im lặng coi như đã apply.
 - **Migration history độc lập** với `db-account`.
 - ⚠️ **Thứ tự mở rộng:** authorization transaction và authorization code **phải** nằm trong PostgreSQL — consume-once cần compare-and-set trong database. KV eventual consistency ≥ 60 s (KV1), 1 write/giây/key (KV2) và tài liệu chính thức khuyến cáo không dùng cho atomic operation (KV6); Queue là at-least-once (QU1). Không có lựa chọn nào cho consume-once đúng ([`01-architecture.md`](./01-architecture.md) §3.3).
 - Expand → compatible rollout → contract; không down-migration, **forward-fix**.

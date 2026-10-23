@@ -170,10 +170,12 @@ export function probePostgresVolume(
   return { state: 'unknown', detail: firstLine ?? 'lỗi Docker không xác định' };
 }
 
-/** Tên Nx project của hai deploy unit — dùng cho stack ref đầy đủ và exec cwd. */
+/** Tên Nx project của các deploy unit — dùng cho stack ref đầy đủ và exec cwd. */
 const PLATFORM_PROJECT = 'platform-deploy';
 const HOME_PROJECT = 'home-deploy';
 const BACKOFFICE_PROJECT = 'backoffice-deploy';
+const ACCOUNT_PROJECT = 'account-deploy';
+const AUTH_PROJECT = 'auth-deploy';
 
 function projectDir(project: string): string {
   return join(ROOT_DIR, 'deploys', project);
@@ -292,6 +294,8 @@ export const DEPLOY_STEPS = [
   'update-env',
   'home-up',
   'backoffice-up',
+  'account-up',
+  'auth-up',
   'smoke-https',
 ] as const;
 export type DeployStep = (typeof DEPLOY_STEPS)[number];
@@ -667,6 +671,75 @@ function runApply(
     { prepareStack: true, stream: true },
   );
   if (!backofficeOk) return 1;
+
+  // 4c/4d. Account + auth up — DB isolation provisioning + migration (PR #181).
+  //
+  // Thứ tự account TRƯỚC auth là bất biến: cả hai stack guard-create role owner
+  // dùng chung `ecoma_owner`, nhưng CHỈ account stack ALTER password của nó —
+  // up auth trước trên cluster mới vẫn đúng (auth chỉ tạo khi thiếu), nhưng giữ
+  // account trước làm chủ sở hữu password xuất hiện sớm nhất, và chiều revoke
+  // chéo được đo lường trên cluster thật theo đúng thứ tự này.
+  for (const [stepLabel, project] of [
+    ['account up', ACCOUNT_PROJECT],
+    ['auth up', AUTH_PROJECT],
+  ] as const) {
+    // Mật khẩu role của từng stack — sinh ngẫu nhiên bằng API mật mã an toàn.
+    // Account stack có mật khẩu owner (nó SỞ HỘI `ecoma_owner`); auth stack
+    // guard-create owner khi thiếu nhưng không bao giờ ALTER password.
+    //
+    // ⚠️ Mảng literal NỘI TUYẾN trong for-of, không tách biến: CodeQL
+    // `js/clear-text-logging` coi mọi dữ liệu phái sinh từ một biến tên
+    // `*password*` là taint sống tới sink `console.*` — kể cả `configKey`, phần
+    // TÊN của key chứ không phải giá trị, khiến dòng báo lỗi `config set <key>`
+    // bị flag (code-scanning alert #4) dù stderr của pulumi không chứa mật khẩu
+    // (giá trị đi qua stdin). Khối backoffice phía trên cùng hình dạng nhưng
+    // không bị flag đúng vì mảng của nó là literal inline. Giữ nguyên hình dạng
+    // đó; giá trị vẫn CHỈ đi qua stdin.
+    ensureStack(projectDir(project), project, ctx, env);
+    for (const [configKey, configValue] of project === ACCOUNT_PROJECT
+      ? ([
+          ['namespace:ownerPassword', generatePostgresPassword()],
+          ['namespace:runtimePassword', generatePostgresPassword()],
+          ['namespace:migratorPassword', generatePostgresPassword()],
+          ['namespace:prunerPassword', generatePostgresPassword()],
+        ] as const)
+      : ([
+          ['namespace:runtimePassword', generatePostgresPassword()],
+          ['namespace:migratorPassword', generatePostgresPassword()],
+          ['namespace:prunerPassword', generatePostgresPassword()],
+        ] as const)) {
+      const setResult = exec(
+        'pulumi',
+        ['config', 'set', configKey, '--plaintext', '--raw', '--stack', fullStackRef(project, ctx)],
+        projectDir(project),
+        env,
+        { input: configValue },
+      );
+      if (setResult.status !== 0) {
+        console.error(
+          `[local-deploy] ${project} config set ${configKey} thất bại:\n${setResult.stderr}`,
+        );
+        return 1;
+      }
+    }
+
+    console.log(`[local-deploy] ${stepLabel}…`);
+    const upOk = runProjectStep(
+      stepLabel,
+      project,
+      [
+        'up',
+        '--yes',
+        ...sharedConfigArgs,
+        '--config',
+        `namespace:platformStackRef=organization/platform-deploy/${ctx.stackName}`,
+      ],
+      ctx,
+      env,
+      { prepareStack: true, stream: true },
+    );
+    if (!upOk) return 1;
+  }
 
   // 5. Smoke HTTPS qua Traefik với certificate local.
   if (options.skipSmoke !== true) {

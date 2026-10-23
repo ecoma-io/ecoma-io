@@ -4,11 +4,12 @@ Thư mục chứa migration của **`db-auth`** — database mà service `auth` 
 object sống trong schema `auth` (không dùng `public`); xem §"Vì sao schema `auth`, không phải
 `public`".
 
-Đây là một work unit của nền tảng Auth: **chỉ có SQL và runbook**. Không có migration runner
-viết bằng TypeScript trong unit này — `docs/overview/02-delivery.md` §3 mô tả track PostgreSQL
-dùng `drizzle-kit` làm runner tương lai, và việc chọn/bổ sung runner đó là một quyết định thuộc
-unit khác. Các file ở đây được viết để áp dụng được bằng bất kỳ runner nào giữ đúng các quy ước
-dưới đây.
+Đây là một work unit của nền tảng Auth. Runner TypeScript canonical của unit này giờ đã có:
+`apps/auth/db/apply.mts`, chạy bằng `pnpm nx run @ecoma-io/auth:db:migrate` với biến môi
+trường `DATABASE_URL` (credential `ecoma_auth_migrator`, database `db-auth`) — runner hiện thực
+hoá đúng giao thức trong §"Cách áp dụng" dưới đây (advisory lock, history
+`auth.schema_migrations`, checksum, thứ tự tên file). Các file SQL ở đây vẫn được viết để áp
+dụng được bằng bất kỳ runner nào giữ đúng các quy ước dưới đây.
 
 Mục lục:
 

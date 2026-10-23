@@ -88,7 +88,10 @@ export type DeployResourceKind =
   | 'home'
   | 'home-image'
   | 'backoffice'
-  | 'backoffice-image';
+  | 'backoffice-image'
+  /** Container ephemeral provision/migrate của account-deploy (PR database isolation #181). */
+  | 'account'
+  | 'auth';
 
 /**
  * Tên Docker resource hợp lệ và nhất quán cho một namespace.
