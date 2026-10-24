@@ -1,6 +1,11 @@
 {
   "name": "backoffice-deploy",
   "main": "index.ts",
+  "ecoma": {
+    "deployment": {
+      "status": "implemented"
+    }
+  },
   "nx": {
     "implicitDependencies": [
       "platform-deploy"

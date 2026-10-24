@@ -1,6 +1,11 @@
 {
   "name": "pact-broker-api-deploy",
   "main": "index.ts",
+  "ecoma": {
+    "deployment": {
+      "status": "scaffold"
+    }
+  },
   "nx": {
     "implicitDependencies": [
       "platform-deploy"

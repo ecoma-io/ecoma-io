@@ -11,7 +11,8 @@ import { main } from './arch-tags.js';
 export default defineCommand({
   meta: {
     name: 'arch-check',
-    description: 'Validate Nx architecture tags (scope/type/runtime) against the project graph',
+    description:
+      'Validate Nx architecture tags, the deployment map and target refs against the project graph and disk',
   },
 
   run() {

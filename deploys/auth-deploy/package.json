@@ -1,6 +1,11 @@
 {
   "name": "auth-deploy",
   "main": "index.ts",
+  "ecoma": {
+    "deployment": {
+      "status": "implemented"
+    }
+  },
   "nx": {
     "implicitDependencies": [
       "platform-deploy"
