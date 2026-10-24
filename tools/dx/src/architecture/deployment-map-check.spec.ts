@@ -9,7 +9,11 @@ import {
   readDeploymentStatusMarker,
   validateDeploymentMap,
 } from './deployment-map-check.js';
-import { DEPLOYMENT_MAP, knownInvalidTargets } from './deployment-map.js';
+import {
+  DEPLOYMENT_MAP,
+  knownInvalidTargets,
+  type InvalidTargetAllowlistEntry,
+} from './deployment-map.js';
 import { DEPLOYMENT_TYPE, PLATFORM_DEPLOY_PROJECT, type ArchProjectNode } from './arch-tags.js';
 import { ROOT_DIR } from '../utils.js';
 
@@ -73,6 +77,103 @@ describe('validateDeploymentMap — map coverage', () => {
     const violations = validateDeploymentMap(state);
     expect(violations).toHaveLength(1);
     expect(violations[0]).toMatchObject({ project: 'home', kind: 'stale-map-entry' });
+  });
+});
+
+describe('validateDeploymentMap — owner-null invariant per status', () => {
+  it('reports an absorbed entry that carries a non-null owner without duplicate violations', () => {
+    // absorbed/none không có deployment unit riêng — owner khác null là mâu
+    // thuẫn trong chính entry. Invariant báo MỘT lỗi rồi dừng với entry đó:
+    // không nhân đôi thành invalid-map-owner của lượt owner (owner ảo không
+    // có trong graph) hay của reverse ownership.
+    const entry = DEPLOYMENT_MAP['account-bridge'] as { owner: string | null };
+    const original = entry.owner;
+    entry.owner = 'auth-deploy';
+    try {
+      const violations = validateDeploymentMap(goodState());
+      expect(kinds(violations)).toEqual(['invalid-map-owner']);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].project).toBe('account-bridge');
+      expect(violations[0].detail).toContain('absorbed');
+      expect(violations[0].detail).toContain('null');
+    } finally {
+      entry.owner = original;
+    }
+  });
+
+  it('reports a none entry that carries a non-null owner without duplicate violations', () => {
+    const entry = DEPLOYMENT_MAP['auth-nonce-prune-job'] as { owner: string | null };
+    const original = entry.owner;
+    entry.owner = 'auth-deploy';
+    try {
+      const violations = validateDeploymentMap(goodState());
+      // Invariant chặn TRƯỚC lượt owner: owner thật (auth-deploy) trên entry
+      // none bị báo một lần với đúng nguyên nhân (none ⇒ null), không rơi xuống
+      // platform-cannot-own hay reverse ownership. Marker check không tham gia:
+      // auth-deploy vẫn sở hữu `auth` nên marker của nó vẫn khớp.
+      expect(kinds(violations)).toEqual(['invalid-map-owner']);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].project).toBe('auth-nonce-prune-job');
+      expect(violations[0].detail).toContain("'none'");
+    } finally {
+      entry.owner = original;
+    }
+  });
+
+  it('reports an implemented entry that lost its owner', () => {
+    const entry = DEPLOYMENT_MAP.home as { owner: string | null };
+    const original = entry.owner;
+    entry.owner = null;
+    try {
+      const violations = validateDeploymentMap(goodState());
+      // home mất owner: invariant báo entry (implemented ⇒ owner khác null);
+      // home-deploy không rơi vào reverse-ownership vì nó không còn là owner
+      // của app nào trong map — và owner null thì mọi lượt owner khác vô nghĩa.
+      expect(kinds(violations)).toEqual(['invalid-map-owner']);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].project).toBe('home');
+      expect(violations[0].detail).toContain("'implemented'");
+    } finally {
+      entry.owner = original;
+    }
+  });
+
+  it('reports a scaffold entry that lost its owner', () => {
+    const entry = DEPLOYMENT_MAP['pact-broker-api'] as { owner: string | null };
+    const original = entry.owner;
+    entry.owner = null;
+    try {
+      const violations = validateDeploymentMap(goodState());
+      expect(kinds(violations)).toEqual(['invalid-map-owner']);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].project).toBe('pact-broker-api');
+      expect(violations[0].detail).toContain("'scaffold'");
+    } finally {
+      entry.owner = original;
+    }
+  });
+
+  it('keeps every implemented/scaffold entry in the shipped map with an owner', () => {
+    // Dữ liệu thật: mọi entry implemented/scaffold phải có owner — test chạy
+    // trên map thật; thêm entry implemented/scaffold thiếu owner là đỏ ngay ở CI.
+    const needingOwner = Object.entries(DEPLOYMENT_MAP).filter(
+      ([, entry]) =>
+        entry.kind === 'app' &&
+        (entry.status === 'implemented' || entry.status === 'scaffold') &&
+        entry.owner === null,
+    );
+    expect(needingOwner).toEqual([]);
+  });
+
+  it('keeps every absorbed/none entry in the shipped map without an owner', () => {
+    // Chiều đối xứng của test trên, trên dữ liệu thật của repo.
+    const forbiddenOwner = Object.entries(DEPLOYMENT_MAP).filter(
+      ([, entry]) =>
+        entry.kind === 'app' &&
+        (entry.status === 'absorbed' || entry.status === 'none') &&
+        entry.owner !== null,
+    );
+    expect(forbiddenOwner).toEqual([]);
   });
 });
 
@@ -259,38 +360,117 @@ describe('findInvalidTargetRefs', () => {
     expect(violations[0].detail).toContain('tools/ghost/src/gate.mts');
   });
 
-  it('does not flag the seeded knownInvalidTargets refs', () => {
-    // Đúng hình cây HEAD: 7 app đang trỏ tools/delivery/src/deploy-gate.mts
-    // (dangling) — allowlist phải che đúng ref đó, không che ref khác.
-    const violations = findInvalidTargetRefs(
-      new Map([
-        ['@ecoma-io/home', ['npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/home']],
-      ]),
-    );
-    expect(violations).toEqual([]);
+  it('does not flag a dangling ref that a matching allowlist entry covers', () => {
+    // Hợp đồng allowlist: entry có reason che đúng ref hỏng nó khai — allowlist
+    // là cơ chế cho ref hỏng TƯƠNG LAI có chủ đích, không phải di tích của cây
+    // HEAD (cây mới không còn ref tools/delivery nào). Seed entry + command
+    // khớp để test cơ chế, độc lập dữ liệu allowlist thật (đang rỗng).
+    const original = [...knownInvalidTargets];
+    (knownInvalidTargets as InvalidTargetAllowlistEntry[]).length = 0;
+    (knownInvalidTargets as InvalidTargetAllowlistEntry[]).push({
+      ref: 'tools/delivery/src/deploy-gate.mts',
+      reason: 'test fixture: intentionally dangling ref covered by the allowlist',
+    });
+    try {
+      const violations = findInvalidTargetRefs(
+        new Map([
+          [
+            '@ecoma-io/home',
+            ['npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/home'],
+          ],
+        ]),
+      );
+      expect(violations).toEqual([]);
+    } finally {
+      (knownInvalidTargets as InvalidTargetAllowlistEntry[]).length = 0;
+      (knownInvalidTargets as InvalidTargetAllowlistEntry[]).push(...original);
+    }
   });
 
   it('still flags a NEW dangling ref that the allowlist does not cover', () => {
-    // Đúng hình "thêm 1 ref hỏng mới ngoài allowlist" của acceptance criteria.
-    const violations = findInvalidTargetRefs(
-      new Map([
-        [
-          '@ecoma-io/account',
+    // Đúng hình "thêm 1 ref hỏng mới ngoài allowlist" của acceptance criteria:
+    // entry đã khớp 1 ref hỏng (không stale), ref mới ngoài allowlist vẫn đỏ.
+    const original = [...knownInvalidTargets];
+    (knownInvalidTargets as InvalidTargetAllowlistEntry[]).length = 0;
+    (knownInvalidTargets as InvalidTargetAllowlistEntry[]).push({
+      ref: 'tools/delivery/src/deploy-gate.mts',
+      reason: 'test fixture: intentionally dangling ref covered by the allowlist',
+    });
+    try {
+      const violations = findInvalidTargetRefs(
+        new Map([
           [
-            'npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/account',
-            'npx tsx tools/delivery/src/other-gate.mts --project @ecoma-io/account',
+            '@ecoma-io/account',
+            [
+              'npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/account',
+              'npx tsx tools/delivery/src/other-gate.mts --project @ecoma-io/account',
+            ],
           ],
-        ],
-      ]),
-    );
-    expect(violations).toHaveLength(1);
-    expect(violations[0].detail).toContain('tools/delivery/src/other-gate.mts');
+        ]),
+      );
+      expect(violations).toHaveLength(1);
+      expect(violations[0].detail).toContain('tools/delivery/src/other-gate.mts');
+    } finally {
+      (knownInvalidTargets as InvalidTargetAllowlistEntry[]).length = 0;
+      (knownInvalidTargets as InvalidTargetAllowlistEntry[]).push(...original);
+    }
   });
 
   it('requires a non-empty reason on every allowlist entry', () => {
     for (const entry of knownInvalidTargets) {
       expect(entry.reason.length, `${entry.ref} needs a reason`).toBeGreaterThan(0);
     }
+  });
+
+  it('flags an allowlist entry that matches no dangling ref on the tree', () => {
+    // Entry chết: không còn ref hỏng nào khớp ⇒ allowlist che không gì và bị
+    // báo stale để dọn. Hình thật của cây sau Phase 3: allowlist rỗng; test
+    // này neo cơ chế nếu ai thêm entry mà không có (hay đã xóa) target tương ứng.
+    const original = [...knownInvalidTargets];
+    (knownInvalidTargets as InvalidTargetAllowlistEntry[]).length = 0;
+    (knownInvalidTargets as InvalidTargetAllowlistEntry[]).push({
+      ref: 'tools/ghost/src/gate.mts',
+      reason: 'test fixture: seeded without a matching dangling ref',
+    });
+    try {
+      const violations = findInvalidTargetRefs(new Map());
+      expect(violations).toHaveLength(1);
+      expect(violations[0]).toMatchObject({ project: '', kind: 'stale-allowlist-entry' });
+      expect(violations[0].detail).toContain('tools/ghost/src/gate.mts');
+    } finally {
+      (knownInvalidTargets as InvalidTargetAllowlistEntry[]).length = 0;
+      (knownInvalidTargets as InvalidTargetAllowlistEntry[]).push(...original);
+    }
+  });
+
+  it('keeps a live allowlist entry that covers an existing dangling ref', () => {
+    // Chiều đối xứng của test trên: entry khớp >= 1 ref hỏng thật thì KHÔNG
+    // bị báo stale, và ref được che vẫn không sinh invalid-target-ref.
+    const original = [...knownInvalidTargets];
+    (knownInvalidTargets as InvalidTargetAllowlistEntry[]).length = 0;
+    (knownInvalidTargets as InvalidTargetAllowlistEntry[]).push({
+      ref: 'tools/ghost/src/gate.mts',
+      reason: 'test fixture: intentionally dangling ref still present on the tree',
+    });
+    try {
+      const violations = findInvalidTargetRefs(
+        new Map([
+          ['@ecoma-io/home', ['npx tsx tools/ghost/src/gate.mts --project @ecoma-io/home']],
+        ]),
+      );
+      expect(violations).toEqual([]);
+    } finally {
+      (knownInvalidTargets as InvalidTargetAllowlistEntry[]).length = 0;
+      (knownInvalidTargets as InvalidTargetAllowlistEntry[]).push(...original);
+    }
+  });
+
+  it('ships an empty allowlist: the tree has no dangling target ref left', () => {
+    // Contract Phase 3: 7 target deploy và entry allowlist che chúng bị xóa
+    // CÙNG LÚC — allowlist rỗng đồng nghĩa cây không còn dangling ref nào.
+    // Nếu ai thêm lại ref hỏng mà không khai allowlist thì test flags-a-command
+    // phía trên đã đỏ; test này chốt chiều ngược lại: không để entry chết.
+    expect(knownInvalidTargets).toEqual([]);
   });
 
   it('ignores bare commands, flags and URLs', () => {

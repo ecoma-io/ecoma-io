@@ -18,12 +18,7 @@
 import { existsSync, readdirSync, readFileSync, statSync, type Dirent } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-import {
-  DEPLOYMENT_MAP,
-  knownInvalidTargets,
-  type AppDeploymentStatus,
-  type DeploymentMapEntry,
-} from './deployment-map.js';
+import { DEPLOYMENT_MAP, knownInvalidTargets, type AppDeploymentStatus } from './deployment-map.js';
 import {
   DEPLOYMENT_DIR,
   DEPLOYMENT_TYPE,
@@ -135,12 +130,41 @@ export function validateDeploymentMap(input: {
   }
 
   // (2) Owner phải là deployment project thật; platform-deploy không được là
-  // owner. Entry absorbed/none bắt buộc có reason.
+  // owner. Entry absorbed/none bắt buộc có reason. Invariant owner-null theo
+  // status chạy ĐẦU TIÊN và `continue` ngay khi báo: một entry absorbed/none
+  // mang owner khác null không có unit thật để kiểm tiếp (lượt owner bên dưới
+  // sẽ nhân đôi lỗi cùng một nguyên nhân), còn implemented/scaffold thiếu owner
+  // thì mọi lượt owner khác đều vô nghĩa khi không có gì để kiểm. Entry bị
+  // invariant báo được đưa vào `invalidEntries` để các lượt (3) và (4) bỏ nó —
+  // một nguyên nhân dữ liệu chỉ báo một lần, không lan thành lỗi dây chuyền.
+  const invalidEntries = new Set<string>();
   const deployProjects = new Set(
     [...input.projects.values()].filter((p) => p.tags.includes(DEPLOYMENT_TYPE)).map((p) => p.name),
   );
   for (const [key, entry] of Object.entries(DEPLOYMENT_MAP)) {
     if (entry.kind === 'platform') {
+      continue;
+    }
+    if (entry.owner !== null && (entry.status === 'absorbed' || entry.status === 'none')) {
+      violations.push({
+        project: key,
+        kind: 'invalid-map-owner',
+        detail:
+          `status '${entry.status}' must have owner null ` +
+          `(got '${entry.owner}'); absorbed/none entries have no deployment unit of their own`,
+      });
+      invalidEntries.add(key);
+      continue;
+    }
+    if (entry.owner === null && (entry.status === 'implemented' || entry.status === 'scaffold')) {
+      violations.push({
+        project: key,
+        kind: 'invalid-map-owner',
+        detail:
+          `status '${entry.status}' requires a non-null owner deploy project; ` +
+          `no deploy project provisions this app's runtime`,
+      });
+      invalidEntries.add(key);
       continue;
     }
     if (entry.owner !== null) {
@@ -181,10 +205,13 @@ export function validateDeploymentMap(input: {
 
   // (3) Marker machine-readable trong deploys/*/package.json khớp status map.
   // Entry absorbed/none không có owner nên không cần marker — chỉ kiểm marker
-  // trên deploy project NÀO ĐÓ sở hữu entry implemented/scaffold.
+  // trên deploy project NÀO ĐÓ sở hữu entry implemented/scaffold. Entry đã bị
+  // invariant (2) báo bị loại khỏi nguồn expected: owner/status của nó không
+  // còn đáng tin để đối chiếu marker, và lỗi marker phát sinh từ đó là lỗi dây
+  // chuyền của cùng một nguyên nhân đã báo rồi.
   const ownedByStatus = new Map<string, AppDeploymentStatus>();
-  for (const entry of Object.values(DEPLOYMENT_MAP)) {
-    if (entry.kind === 'app' && entry.owner !== null) {
+  for (const [key, entry] of Object.entries(DEPLOYMENT_MAP)) {
+    if (entry.kind === 'app' && entry.owner !== null && !invalidEntries.has(key)) {
       ownedByStatus.set(entry.owner, entry.status);
     }
   }
@@ -214,11 +241,13 @@ export function validateDeploymentMap(input: {
 
   // (4) Reverse ownership: mọi deploy project trừ platform phải sở hữu ≥1 app.
   // Đọc từ GRAPH (type:deployment) chứ không từ đĩa: một deploy project mới
-  // xuất hiện trong graph mà chưa sở hữu app nào là lỗi dữ liệu bản đồ.
+  // xuất hiện trong graph mà chưa sở hữu app nào là lỗi dữ liệu bản đồ. Entry
+  // đã bị invariant (2) báo không đóng góp owner vào tập này — owner ảo của
+  // nó không biến deploy project thật thành "đã có chủ" (hoặc ngược lại).
   const owners = new Set(
-    Object.values(DEPLOYMENT_MAP)
-      .filter((e): e is Extract<DeploymentMapEntry, { kind: 'app' }> => e.kind === 'app')
-      .map((e) => e.owner)
+    Object.entries(DEPLOYMENT_MAP)
+      .filter(([key, entry]) => entry.kind === 'app' && !invalidEntries.has(key))
+      .map(([, entry]) => (entry.kind === 'app' ? entry.owner : null))
       .filter((o): o is string => o !== null),
   );
   for (const name of deployProjects) {
@@ -246,12 +275,19 @@ export function validateDeploymentMap(input: {
  * repo (chứa `/`, không phải flag `--x=y`, không phải URL) được kiểm tồn tại
  * trên đĩa. Cho phép test inject `targetCommands`: map project → danh sách
  * chuỗi command.
+ *
+ * Allowlist là trạng thái tạm thời có chủ đích, không phải bãi rác: mỗi entry
+ * được đếm số ref hỏng nó che; entry che 0 ref là dư thừa và bị báo
+ * `stale-allowlist-entry` để dọn cùng lúc với target nó từng che, tránh
+ * allowlist biến thành đường miễn trừ vĩnh viễn cho ref hỏng tương lai.
  */
 export function findInvalidTargetRefs(
   targetCommands: ReadonlyMap<string, readonly string[]>,
 ): DeploymentMapViolation[] {
   const violations: DeploymentMapViolation[] = [];
-  const allowlisted = new Set(knownInvalidTargets.map((e) => e.ref));
+  // Map ref → số lần ref đó bị phát hiện hỏng và được allowlist che. Chỉ entry
+  // khớp >= 1 ref hỏng thật mới được ở lại allowlist.
+  const allowlistedHits = new Map<string, number>(knownInvalidTargets.map((e) => [e.ref, 0]));
 
   for (const [project, commands] of targetCommands) {
     for (const command of commands) {
@@ -262,9 +298,13 @@ export function findInvalidTargetRefs(
         // Token dạng a=b (gán biến môi trường) — chỉ kiểm vế phải nếu nó
         // trông như đường dẫn repo.
         const candidate = token.includes('=') ? token.slice(token.indexOf('=') + 1) : token;
-        if (!candidate.includes('/') || allowlisted.has(candidate)) continue;
+        if (!candidate.includes('/')) continue;
         if (candidate.startsWith('@')) continue; // package name scope (@ecoma-io/home)
         if (existsOnDisk(candidate, resolveCommandBase(project))) continue;
+        if (allowlistedHits.has(candidate)) {
+          allowlistedHits.set(candidate, (allowlistedHits.get(candidate) ?? 0) + 1);
+          continue;
+        }
         violations.push({
           project,
           kind: 'invalid-target-ref',
@@ -273,6 +313,18 @@ export function findInvalidTargetRefs(
             `add it to knownInvalidTargets with a reason if the reference is intentionally stale`,
         });
       }
+    }
+  }
+
+  for (const [ref, hits] of allowlistedHits) {
+    if (hits === 0) {
+      violations.push({
+        project: '',
+        kind: 'stale-allowlist-entry',
+        detail:
+          `allowlist entry "${ref}" matches no dangling target reference in the workspace; ` +
+          `remove the entry (it masks nothing now) or fix the ref it was seeded for`,
+      });
     }
   }
   return violations;
