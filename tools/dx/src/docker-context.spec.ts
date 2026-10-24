@@ -281,4 +281,15 @@ describe('root .dockerignore: required build inputs are included', () => {
     expect(isExcluded('deploys/account-deploy/index.ts')).toBe(true);
     expect(isExcluded('deploys/platform-deploy/index.ts')).toBe(true);
   });
+
+  it('pact-broker-api WIC entrypoint enters the context while its Pulumi program stays out', () => {
+    // Image WIC thứ hai (pact-broker-api-deploy) COPY đúng một file của
+    // `deploys/` — cùng trình tự re-include với auth-deploy phía trên; thiếu
+    // dòng `!` trong `.dockerignore` là `docker build` chết ngay ở COPY
+    // (bài học #228: COPY path ngoài context là lỗi build, không phải warning).
+    expect(isExcluded('deploys/pact-broker-api-deploy/wic-entrypoint.sh')).toBe(false);
+    expect(isExcluded('deploys/pact-broker-api-deploy/index.ts')).toBe(true);
+    expect(isExcluded('deploys/pact-broker-api-deploy/Dockerfile')).toBe(true);
+    expect(isExcluded('deploys/pact-broker-api-deploy/package.json')).toBe(true);
+  });
 });

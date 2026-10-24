@@ -24,6 +24,17 @@
           "cwd": "deploys/pact-broker-api-deploy",
           "command": "npx tsx ../../tools/dx provision-gate"
         }
+      },
+      "local-up": {
+        "//": "Local lane — duy nhất một lane (`-c local`). KHÔNG dependsOn unit nào: unit này CHƯA nằm trong LOCAL_LANE_PROJECTS (graph reader fail-closed với edge trỏ ra ngoài chuỗi — local-deploy-graph.ts), và membership wiring là PR riêng. Stack tự đầy đủ: provision + migrate + seed db-pact-broker rồi WIC container.",
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "deploys/pact-broker-api-deploy",
+          "command": "npx tsx ../../tools/dx local-stack-step --stack pact-broker-api-deploy --step up"
+        },
+        "configurations": {
+          "local": {}
+        }
       }
     }
   }

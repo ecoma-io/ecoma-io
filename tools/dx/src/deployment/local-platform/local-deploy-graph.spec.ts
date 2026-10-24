@@ -263,9 +263,11 @@ describe('readProjectLaneTargets — fail-closed on broken declarations', () => 
   it('throws LocalLaneGraphError when a lane target is missing', () => {
     // Project ngoài danh sách lane không có target local → module phải ném lỗi
     // tường minh (không trả về spec rỗng cho caller "đoán" tiếp).
-    expect(() => readProjectLaneTargets('pact-broker-api-deploy')).toThrowError(
+    // `pact-broker-api-deploy` từng là ví dụ ở đây nhưng đã có target local-up
+    // thật (WIC runtime) — dùng scaffold chưa triển khai thay thế.
+    expect(() => readProjectLaneTargets('push-notification-deploy')).toThrowError(
       new LocalLaneGraphError(
-        'pact-broker-api-deploy thiếu target local-up — khai báo Nx là nguồn sự thật thứ tự lane local',
+        'push-notification-deploy thiếu target local-up — khai báo Nx là nguồn sự thật thứ tự lane local',
       ),
     );
   });

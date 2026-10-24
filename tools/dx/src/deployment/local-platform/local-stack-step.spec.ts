@@ -356,6 +356,7 @@ describe('localStackSecrets — per-stack secret contract', () => {
       'account-deploy',
       'auth-deploy',
       'backoffice-deploy',
+      'pact-broker-api-deploy',
       'pact-broker-app-deploy',
     ]) {
       const keys = localStackSecretsKeys(project, base);
@@ -369,6 +370,21 @@ describe('localStackSecrets — per-stack secret contract', () => {
     const value = localStackSecrets('pact-broker-app-deploy', base)[0]?.[1];
     expect(value).toMatch(/^[A-Za-z0-9_-]+$/u);
     expect(value?.length).toBeGreaterThanOrEqual(32);
+  });
+
+  it('pact-broker-api-deploy receives exactly the two role passwords plus the machine token', () => {
+    const keys = localStackSecretsKeys('pact-broker-api-deploy', base);
+    expect(keys).toEqual([
+      'namespace:runtimePassword',
+      'namespace:migratorPassword',
+      'namespace:machineToken',
+    ]);
+    // Token sinh ngẫu nhiên mỗi lần gọi — orchestration là nguồn, không có
+    // giá trị hard-code nào ở đây.
+    const secrets = localStackSecrets('pact-broker-api-deploy', base);
+    const token = secrets.find(([k]) => k === 'namespace:machineToken')?.[1];
+    expect(token).toMatch(/^[A-Za-z0-9_-]+$/u);
+    expect(token?.length).toBeGreaterThanOrEqual(32);
   });
 
   it('platform has NO per-stack secrets (its password lives in the postgres:password path)', () => {
