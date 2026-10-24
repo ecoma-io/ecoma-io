@@ -122,7 +122,7 @@ export function classifyOwnership(labels: Record<string, string>): OwnershipChec
     // tự nhận là được tool quản lý nhưng sai giá trị.
     return {
       state: 'malformed',
-      detail: `managed-by "${managed}" không phải "${LABEL_MANAGED_BY_VALUE}"`,
+      detail: `managed-by "${managed}" is not "${LABEL_MANAGED_BY_VALUE}"`,
     };
   }
 
@@ -133,7 +133,7 @@ export function classifyOwnership(labels: Record<string, string>): OwnershipChec
   if (missingLabel !== undefined) {
     return {
       state: 'malformed',
-      detail: `label ${missingLabel} thiếu hoặc rỗng`,
+      detail: `label ${missingLabel} missing or empty`,
     };
   }
 
@@ -141,7 +141,7 @@ export function classifyOwnership(labels: Record<string, string>): OwnershipChec
   if (deployment !== LABEL_DEPLOYMENT_VALUE) {
     return {
       state: 'malformed',
-      detail: `deployment "${deployment}" không phải "${LABEL_DEPLOYMENT_VALUE}"`,
+      detail: `deployment "${deployment}" is not "${LABEL_DEPLOYMENT_VALUE}"`,
     };
   }
 
@@ -149,13 +149,13 @@ export function classifyOwnership(labels: Record<string, string>): OwnershipChec
   if (!/^w[0-9a-f]{12}$/u.test(namespace)) {
     return {
       state: 'malformed',
-      detail: `worktreeId "${namespace}" không khớp pattern namespace`,
+      detail: `worktreeId "${namespace}" does not match the namespace pattern`,
     };
   }
 
   const path = labels[LABEL_WORKTREE_PATH] ?? '';
   if (!path.startsWith('/') || path === '/') {
-    return { state: 'malformed', detail: `worktreePath "${path}" không phải absolute path` };
+    return { state: 'malformed', detail: `worktreePath "${path}" is not an absolute path` };
   }
 
   // Kiểm tính nhất quán: worktree id phải được sinh từ canonical path bằng cùng
@@ -165,12 +165,12 @@ export function classifyOwnership(labels: Record<string, string>): OwnershipChec
   try {
     expectedId = namespaceFromCanonicalPath(path);
   } catch {
-    return { state: 'malformed', detail: `worktreePath "${path}" không hash được` };
+    return { state: 'malformed', detail: `worktreePath "${path}" could not be hashed` };
   }
   if (expectedId !== namespace) {
     return {
       state: 'malformed',
-      detail: `worktreeId "${namespace}" không khớp worktreePath "${path}" (expected ${expectedId})`,
+      detail: `worktreeId "${namespace}" does not match worktreePath "${path}" (expected ${expectedId})`,
     };
   }
 

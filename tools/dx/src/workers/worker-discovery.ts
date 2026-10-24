@@ -93,7 +93,7 @@ export function loadWorkerMarkerDeclaration(markerPath: string): WorkerMarkerDec
   const marker = parseJsonc(readFileSync(markerPath, 'utf8'));
   if (marker === null || typeof marker !== 'object' || Array.isArray(marker)) {
     throw new Error(
-      `local worker marker phải là object: ${markerPath} — "readiness": "http-health" | "log-banner"`,
+      `local worker marker must be an object: ${markerPath} — "readiness": "http-health" | "log-banner"`,
     );
   }
   // Reject key lạ — marker contract là danh sách field đóng; chấp nhận ngầm
@@ -106,16 +106,16 @@ export function loadWorkerMarkerDeclaration(markerPath: string): WorkerMarkerDec
   );
   if (unknownKeys.length > 0) {
     throw new Error(
-      `marker chứa field lạ ở ${markerPath}: ${unknownKeys.join(', ')} — ` +
-        'marker chỉ khai "readiness": "http-health" | "log-banner" và ' +
-        '"external_queue_producers" (danh sách queue có producer ngoài repo, tùy chọn)',
+      `unknown field in marker at ${markerPath}: ${unknownKeys.join(', ')} — ` +
+        'the marker only declares "readiness": "http-health" | "log-banner" and ' +
+        '"external_queue_producers" (optional list of queues with producers outside the repo)',
     );
   }
   const declared = (marker as Record<string, unknown>).readiness;
   if (declared !== 'http-health' && declared !== 'log-banner') {
     throw new Error(
-      `readiness không hợp lệ trong ${markerPath}: '${String(declared)}' — ` +
-        'chỉ khai "readiness": "http-health" | "log-banner" (no inference)',
+      `invalid readiness in ${markerPath}: '${String(declared)}' — ` +
+        'only "readiness": "http-health" | "log-banner" may be declared (no inference)',
     );
   }
   // `external_queue_producers` tùy chọn; khi có phải array string không rỗng,
@@ -125,8 +125,8 @@ export function loadWorkerMarkerDeclaration(markerPath: string): WorkerMarkerDec
   if (rawExternal !== undefined) {
     if (!Array.isArray(rawExternal)) {
       throw new Error(
-        `"external_queue_producers" trong ${markerPath} phải là array tên queue — ` +
-          'nhận ' +
+        `"external_queue_producers" in ${markerPath} must be an array of queue names — ` +
+          'got ' +
           `${Array.isArray(rawExternal) ? 'array' : typeof rawExternal}`,
       );
     }
@@ -134,14 +134,14 @@ export function loadWorkerMarkerDeclaration(markerPath: string): WorkerMarkerDec
     for (const [index, item] of rawExternal.entries()) {
       if (typeof item !== 'string' || item.length === 0) {
         throw new Error(
-          `"external_queue_producers"[${index}] trong ${markerPath} phải là string ` +
-            `không rỗng — nhận ${typeof item}`,
+          `"external_queue_producers"[${index}] in ${markerPath} must be a ` +
+            `non-empty string — got ${typeof item}`,
         );
       }
       if (seen.has(item)) {
         throw new Error(
-          `"external_queue_producers" trong ${markerPath} khai '${item}' hai lần — ` +
-            'danh sách phải không trùng',
+          `"external_queue_producers" in ${markerPath} declares '${item}' twice — ` +
+            'the list must not contain duplicates',
         );
       }
       seen.add(item);
@@ -272,7 +272,7 @@ export function discoverWorkerEntries(rootDir?: string): DiscoveredWorkerEntry[]
       // phải quan sát được: stderr warn (path + lý do), không đụng stdout
       // (JSON của `local-worker-status` vẫn parse được).
       console.warn(
-        `[local-worker] skip app '${dir}' (${LOCAL_WORKER_MARKER} có nhưng không load được): ` +
+        `[local-worker] skipping app '${dir}' (${LOCAL_WORKER_MARKER} exists but cannot be loaded): ` +
           `${error instanceof Error ? error.message : String(error)}`,
       );
       continue;
@@ -308,15 +308,15 @@ function entryFromCommittedConfig(
     // thích của module. Kiểm shape (nếu khai object) rồi mới đọc key.
     if (typeof db !== 'object' || db === null) {
       throw new Error(
-        `d1_databases[${index}] của app '${appDirName}' tại ${committedConfigPath} ` +
-          `không phải object (nhận ${typeof db}) — topology local không suy ngầm từ shape lạ`,
+        `d1_databases[${index}] of app '${appDirName}' at ${committedConfigPath} ` +
+          `is not an object (got ${typeof db}) — local topology is not inferred from unexpected shapes`,
       );
     }
     if (typeof db.database_name !== 'string' || db.database_name.length === 0) {
       throw new Error(
-        `d1_databases[${index}] của app '${appDirName}' thiếu/gõ sai 'database_name' ` +
-          `(string không rỗng) tại ${committedConfigPath} — local runtime không suy tên ` +
-          'database (no inference)',
+        `d1_databases[${index}] of app '${appDirName}' is missing or mistypes 'database_name' ` +
+          `(non-empty string) at ${committedConfigPath} — the local runtime does not infer the ` +
+          'database name (no inference)',
       );
     }
     return db.database_name;
@@ -333,8 +333,8 @@ function entryFromCommittedConfig(
     (config.queues === null || typeof config.queues !== 'object' || Array.isArray(config.queues))
   ) {
     throw new Error(
-      `"queues" của app '${appDirName}' tại ${committedConfigPath} phải là object — ` +
-        'topology local không suy ngầm từ shape lạ',
+      `"queues" of app '${appDirName}' at ${committedConfigPath} must be an object — ` +
+        'local topology is not inferred from unexpected shapes',
     );
   }
   const queues = (config.queues ?? {}) as Record<string, unknown>;
@@ -342,8 +342,8 @@ function entryFromCommittedConfig(
     const value = queues[section];
     if (value !== undefined && !Array.isArray(value)) {
       throw new Error(
-        `"queues.${section}" của app '${appDirName}' tại ${committedConfigPath} phải là ` +
-          'array — topology local không suy ngầm từ shape lạ',
+        `"queues.${section}" of app '${appDirName}' at ${committedConfigPath} must be an ` +
+          'array — local topology is not inferred from unexpected shapes',
       );
     }
   }
@@ -356,16 +356,16 @@ function entryFromCommittedConfig(
   const dependsOnServiceNames = services.map((svc, index) => {
     if (typeof svc !== 'object' || svc === null) {
       throw new Error(
-        `services[${index}] của app '${appDirName}' tại ${committedConfigPath} không ` +
-          `phải object (nhận ${typeof svc}) — topology local không suy ngầm từ shape lạ`,
+        `services[${index}] of app '${appDirName}' at ${committedConfigPath} is not ` +
+          `an object (got ${typeof svc}) — local topology is not inferred from unexpected shapes`,
       );
     }
     const name = (svc as Record<string, unknown>).service;
     if (typeof name !== 'string' || name.length === 0) {
       throw new Error(
-        `services[${index}] của app '${appDirName}' tại ${committedConfigPath} ` +
-          `thiếu/gõ sai 'service' (string không rỗng) — topology local không suy ` +
-          'tên peer (no inference)',
+        `services[${index}] of app '${appDirName}' at ${committedConfigPath} ` +
+          `is missing or mistypes 'service' (non-empty string) — local topology does not infer ` +
+          'the peer name (no inference)',
       );
     }
     return name;
@@ -430,17 +430,17 @@ function readQueueReferences(
   const names = section.map((item: unknown, index: number) => {
     if (typeof item !== 'object' || item === null) {
       throw new Error(
-        `queues.${context.sectionName}[${index}] của app '${context.appDirName}' tại ` +
-          `${context.committedConfigPath} không phải object — topology local không suy ` +
-          'ngầm từ shape lạ',
+        `queues.${context.sectionName}[${index}] of app '${context.appDirName}' at ` +
+          `${context.committedConfigPath} is not an object — local topology is not ` +
+          'inferred from unexpected shapes',
       );
     }
     const name = (item as Record<string, unknown>).queue;
     if (typeof name !== 'string' || name.length === 0) {
       throw new Error(
-        `queues.${context.sectionName}[${index}] của app '${context.appDirName}' tại ` +
-          `${context.committedConfigPath} thiếu/gõ sai 'queue' (string không rỗng) — ` +
-          'topology local không suy tên queue (no inference)',
+        `queues.${context.sectionName}[${index}] of app '${context.appDirName}' at ` +
+          `${context.committedConfigPath} is missing or mistypes 'queue' (non-empty string) — ` +
+          'local topology does not infer the queue name (no inference)',
       );
     }
     return name;
@@ -468,10 +468,10 @@ export function topoSortEntries(entries: DiscoveredWorkerEntry[]): DiscoveredWor
     const existing = byWorkerName.get(entry.workerName);
     if (existing !== undefined) {
       throw new Error(
-        `worker name '${entry.workerName}' trùng giữa các app ` +
-          `'${existing.entryName}' và '${entry.entryName}' (từ wrangler.jsonc 'name') — ` +
-          'generated config sinh theo worker name sẽ ghi đè file của nhau và ' +
-          'service binding neo sai peer; mỗi app cần wrangler `name` riêng',
+        `worker name '${entry.workerName}' is duplicated across apps ` +
+          `'${existing.entryName}' and '${entry.entryName}' (from wrangler.jsonc 'name') — ` +
+          'the generated configs are named by worker name, so the apps would overwrite each ' +
+          "other's files and the service binding would anchor the wrong peer; each app needs its own wrangler `name`",
       );
     }
     byWorkerName.set(entry.workerName, entry);
@@ -497,10 +497,10 @@ export function topoSortEntries(entries: DiscoveredWorkerEntry[]): DiscoveredWor
         // opt-in). Fail-closed rõ với message nhắc đúng nguyên nhân — người
         // đọc đi tìm marker của peer, không đi tìm wrangler.jsonc tưởng missing.
         throw new Error(
-          `app '${entry.entryName}' service binding tới '${serviceName}' — Worker này ` +
-            'không trong tập app đã opt-in local runtime; nếu peer có trong repo, ' +
-            `peer cần marker ${LOCAL_WORKER_MARKER} trong apps/<dir> để tham gia ` +
-            'cùng topology',
+          `app '${entry.entryName}' has a service binding to '${serviceName}' — this Worker ` +
+            'is not in the set of apps opted into the local runtime; if the peer is in the repo, ' +
+            `the peer needs the ${LOCAL_WORKER_MARKER} marker in apps/<dir> to join the ` +
+            'same topology',
         );
       }
       init(peer.entryName);
@@ -533,9 +533,9 @@ export function topoSortEntries(entries: DiscoveredWorkerEntry[]): DiscoveredWor
       const owner = dbOwners.get(databaseName);
       if (owner !== undefined && owner !== entry.entryName) {
         throw new Error(
-          `d1 database '${databaseName}' được khai bởi nhiều app (${owner}, ${entry.entryName}) — ` +
-            'persist dir chia sẻ theo worktree nên hai service sẽ bind chung một DB local ' +
-            'và migrations apply chồng nhau; mỗi service cần database_name riêng ' +
+          `d1 database '${databaseName}' is declared by multiple apps (${owner}, ${entry.entryName}) — ` +
+            'the persist dir is shared per worktree, so both services would bind the same local DB ' +
+            'and migrations would apply on top of each other; each service needs its own database_name ' +
             '(services own their data)',
         );
       }
@@ -554,9 +554,9 @@ export function topoSortEntries(entries: DiscoveredWorkerEntry[]): DiscoveredWor
   const conflicted = [...externalProducers].filter((queue) => producedQueues.has(queue));
   if (conflicted.length > 0) {
     throw new Error(
-      'queue vừa được khai "external_queue_producers" vừa có producer trong repo: ' +
+      'queue is declared in "external_queue_producers" while also having a producer in the repo: ' +
         conflicted.join(', ') +
-        ' — một trong hai declaration là sai, gỡ một bên',
+        ' — one of the two declarations is wrong, remove one of them',
     );
   }
   const orphanConsumes = [...consumedQueues].filter(
@@ -564,7 +564,7 @@ export function topoSortEntries(entries: DiscoveredWorkerEntry[]): DiscoveredWor
   );
   if (orphanConsumes.length > 0) {
     throw new Error(
-      'queue consumer không có producer trong repo: ' +
+      'queue consumer has no producer in the repo: ' +
         orphanConsumes
           .map((queue) => {
             const consumers = entries
@@ -592,8 +592,8 @@ export function topoSortEntries(entries: DiscoveredWorkerEntry[]): DiscoveredWor
       sorted.cyclePath.includes(name),
     );
     throw new Error(
-      'dependency cycle giữa các worker apps — các node chưa boot được vì phụ thuộc ' +
-        `khép kín (tập, không phải đường cycle): ${sortedUnresolved.join(', ')}`,
+      'dependency cycle across worker apps — these nodes cannot boot because their dependencies ' +
+        `are closed among themselves (set, not a cycle path): ${sortedUnresolved.join(', ')}`,
     );
   }
   return sorted.order.map((entryName) => byEntryName.get(entryName) as DiscoveredWorkerEntry);

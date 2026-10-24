@@ -262,7 +262,7 @@ function run(bin, args, options = {}) {
       signal: null,
       stdout: result.stdout ?? '',
       stderr: result.stderr ?? '',
-      error: result.error.code === 'ETIMEDOUT' ? `${bin} quá thời gian` : result.error.message,
+      error: result.error.code === 'ETIMEDOUT' ? `${bin} timed out` : result.error.message,
     };
   }
   return {

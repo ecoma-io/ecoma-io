@@ -26,12 +26,12 @@ afterAll(() => {
 });
 
 describe('normalizeWorktreeRoot', () => {
-  it('trả về đường dẫn tuyệt đối đã realpath cho một thư mục có thật', () => {
+  it('returns the realpathed absolute path for a real directory', () => {
     const dir = makeFixture('abs');
     expect(normalizeWorktreeRoot(dir)).toBe(dir);
   });
 
-  it('resolve symlink về thư mục thật — hai đường dẫn trỏ cùng một đích ra MỘT kết quả', () => {
+  it('resolves symlinks to the real directory — two paths to the same target yield ONE result', () => {
     const dir = makeFixture('real');
     const link = makeFixture('link');
     const linkPath = join(link, 'symlink');
@@ -39,7 +39,7 @@ describe('normalizeWorktreeRoot', () => {
     expect(normalizeWorktreeRoot(linkPath)).toBe(dir);
   });
 
-  it('bỏ trailing separator và bỏ qua thành phần `.`', () => {
+  it('drops the trailing separator and skips `.` components', () => {
     const dir = makeFixture('slash');
     expect(normalizeWorktreeRoot(`${dir}/`)).toBe(dir);
     expect(normalizeWorktreeRoot(`${dir}/./`)).toBe(dir);
@@ -47,23 +47,23 @@ describe('normalizeWorktreeRoot', () => {
 });
 
 describe('worktreeNamespace', () => {
-  it('ổn định: cùng một normalized root luôn ra cùng một namespace', () => {
+  it('stable: the same normalized root always yields the same namespace', () => {
     const dir = makeFixture('stable');
     expect(worktreeNamespace(dir)).toBe(worktreeNamespace(dir));
   });
 
-  it('ổn định qua trình bày khác nhau của cùng một root (`.`, trailing slash)', () => {
+  it('stable across different presentations of the same root (`.`, trailing slash)', () => {
     const dir = makeFixture('stable2');
     expect(worktreeNamespace(`${dir}/.`)).toBe(worktreeNamespace(dir));
   });
 
-  it('hai worktree root khác nhau ra hai namespace khác nhau', () => {
+  it('two different worktree roots yield two different namespaces', () => {
     const a = worktreeNamespace(makeFixture('one'));
     const b = worktreeNamespace(makeFixture('two'));
     expect(a).not.toBe(b);
   });
 
-  it('đúng hình dạng: `w` + đúng NAMESPACE_LENGTH ký tự hex', () => {
+  it('correct shape: `w` followed by exactly NAMESPACE_LENGTH hex chars', () => {
     const ns = worktreeNamespace(makeFixture('shape'));
     expect(ns).toMatch(new RegExp(`^w[0-9a-f]{${NAMESPACE_LENGTH}}$`, 'u'));
   });
@@ -72,37 +72,37 @@ describe('worktreeNamespace', () => {
 describe('dockerResourceName', () => {
   const ns = 'wabcdef123456';
 
-  it('ghép prefix + namespace + kind theo đúng hình dạng', () => {
+  it('concatenates prefix + namespace + kind in the exact shape', () => {
     expect(dockerResourceName(ns, 'network')).toBe(`ecoma-${ns}-network`);
     expect(dockerResourceName(ns, 'postgres-volume')).toBe(`ecoma-${ns}-postgres-volume`);
   });
 
-  it('chứa namespace — hai worktree không trùng tên resource', () => {
+  it('contains the namespace — two worktrees never share a resource name', () => {
     const a = dockerResourceName('w000000000001', 'traefik');
     const b = dockerResourceName('w000000000002', 'traefik');
     expect(a).not.toBe(b);
   });
 
-  it('từ chối namespace không hợp lệ cho Docker name', () => {
-    expect(() => dockerResourceName('W_UPPER', 'network')).toThrow(/namespace không hợp lệ/u);
-    expect(() => dockerResourceName('', 'network')).toThrow(/namespace không hợp lệ/u);
-    expect(() => dockerResourceName('has space', 'network')).toThrow(/namespace không hợp lệ/u);
+  it('rejects an invalid namespace for a Docker name', () => {
+    expect(() => dockerResourceName('W_UPPER', 'network')).toThrow(/invalid namespace/u);
+    expect(() => dockerResourceName('', 'network')).toThrow(/invalid namespace/u);
+    expect(() => dockerResourceName('has space', 'network')).toThrow(/invalid namespace/u);
   });
 });
 
 describe('pulumiStackName', () => {
-  it('mỗi namespace một stack riêng — hai worktree không dùng chung state', () => {
+  it('one stack per namespace — two worktrees never share state', () => {
     expect(pulumiStackName('w000000000001')).toBe('local-w000000000001');
     expect(pulumiStackName('w000000000002')).toBe('local-w000000000002');
   });
 
-  it('ổn định qua các lần gọi', () => {
+  it('stable across calls', () => {
     expect(pulumiStackName('wabcdef123456')).toBe(pulumiStackName('wabcdef123456'));
   });
 });
 
-describe('isolation trên fixture thật — hai thư mục khác nhau', () => {
-  it('namespace, docker name và stack của hai fixture khác nhau toàn bộ', () => {
+describe('isolation on real fixtures — two different directories', () => {
+  it('namespace, docker name, and stack of two different fixtures are fully disjoint', () => {
     const dirA = makeFixture('iso-a');
     const dirB = makeFixture('iso-b');
     writeFileSync(join(dirA, 'marker.txt'), 'a');

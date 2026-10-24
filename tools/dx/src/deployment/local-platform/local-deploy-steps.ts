@@ -93,7 +93,7 @@ export function resolvePlatformEnv(
   try {
     outputs = JSON.parse(stdout ?? '') as Record<string, unknown>;
   } catch {
-    return { ok: false, error: `Outputs của platform stack không parse được JSON:\n${stdout}` };
+    return { ok: false, error: `Failed to parse platform stack outputs as JSON:\n${stdout}` };
   }
   const rawPort = outputs['traefikHostPort'];
   // Port đo được là số nguyên dương — giá trị lạ ở đây sẽ sinh `host:NaN` ở
@@ -101,7 +101,7 @@ export function resolvePlatformEnv(
   if (typeof rawPort !== 'number' || !Number.isInteger(rawPort) || rawPort <= 0) {
     return {
       ok: false,
-      error: `Output traefikHostPort không hợp lệ: ${JSON.stringify(rawPort)} — platform chưa up đầy đủ?`,
+      error: `Invalid traefikHostPort output: ${JSON.stringify(rawPort)} — platform not fully up yet?`,
     };
   }
   return { ok: true, traefikHostPort: rawPort };

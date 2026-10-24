@@ -551,7 +551,7 @@ describe('MAIL_WORKER_ENTRIES', () => {
     writeLikelyQueueApp(root, 'web-push-notification-job', 'ecoma-web-push-notification-job', {
       queue: 'ecoma-push-delivery',
     });
-    expect(() => MAIL_WORKER_ENTRIES(root)).toThrow(/queue consumer không có producer/u);
+    expect(() => MAIL_WORKER_ENTRIES(root)).toThrow(/queue consumer has no producer/u);
   });
 
   it('exempts a consumed queue declared with an external producer in its marker (lifecycle events)', () => {
@@ -617,7 +617,7 @@ describe('MAIL_WORKER_ENTRIES', () => {
       'utf8',
     );
     expect(() => MAIL_WORKER_ENTRIES(root)).toThrow(
-      /vừa được khai "external_queue_producers" vừa có producer trong repo: ecoma-push-delivery/u,
+      /declared in "external_queue_producers" while also having a producer in the repo: ecoma-push-delivery/u,
     );
   });
 
@@ -674,7 +674,7 @@ describe('MAIL_WORKER_ENTRIES', () => {
       writeLocalWorkerMarker(root, dirName, 'http-health');
     }
     expect(() => MAIL_WORKER_ENTRIES(root)).toThrow(
-      /'shared-db' được khai bởi nhiều app \(first-service, second-service\)/u,
+      /'shared-db' is declared by multiple apps \(first-service, second-service\)/u,
     );
   });
 
@@ -790,7 +790,7 @@ describe('MAIL_WORKER_ENTRIES', () => {
       const warning = String(spy.mock.calls[0]?.[0]);
       expect(warning).toContain('queues-bad-shape');
       expect(warning).toMatch(/queues/u);
-      expect(warning).toMatch(/phải là (object|array)/u);
+      expect(warning).toMatch(/must be an? (object|array)/u);
     } finally {
       spy.mockRestore();
     }
@@ -806,7 +806,7 @@ describe('MAIL_WORKER_ENTRIES', () => {
         d1_databases: [{ binding: 'db', database_name: 'qi-null-db' }],
         queues: { producers: [null] },
       }),
-      expectedFragment: /không phải object/u,
+      expectedFragment: /is not an object/u,
     },
     {
       picture: 'a producers item is missing the queue key',
@@ -885,7 +885,7 @@ describe('MAIL_WORKER_ENTRIES', () => {
       const warning = String(spy.mock.calls[0]?.[0]);
       expect(warning).toContain('d1-element-not-object');
       expect(warning).toContain('d1_databases[0]');
-      expect(warning).toMatch(/không phải object/u);
+      expect(warning).toMatch(/is not an object/u);
     } finally {
       spy.mockRestore();
     }
@@ -976,7 +976,7 @@ describe('MAIL_WORKER_ENTRIES', () => {
       // việc không suy `exchange`: producer biến mất khỏi graph → consumer
       // của `ecoma-real-queue` thành orphan, topo-sort fail-closed với
       // message orphan-consumer (không bao giờ ăn `exchange` làm cạnh thật).
-      expect(() => MAIL_WORKER_ENTRIES(root)).toThrow(/queue consumer không có producer/u);
+      expect(() => MAIL_WORKER_ENTRIES(root)).toThrow(/queue consumer has no producer/u);
       expect(spy).toHaveBeenCalledTimes(1);
       const warning = String(spy.mock.calls[0]?.[0]);
       expect(warning).toContain('exchange-producer');
@@ -1053,7 +1053,7 @@ describe('loadWorkerMarkerDeclaration', () => {
       loadWorkerMarkerDeclaration(
         writeMarker(root, '{"readiness": "log-banner", "external_queue_producers": "q"}'),
       ),
-    ).toThrow(/phải là array/u);
+    ).toThrow(/must be an array/u);
   });
 
   it('rejects an empty string inside external_queue_producers with the index', () => {
@@ -1071,14 +1071,14 @@ describe('loadWorkerMarkerDeclaration', () => {
       loadWorkerMarkerDeclaration(
         writeMarker(root, '{"readiness": "log-banner", "external_queue_producers": ["q", "q"]}'),
       ),
-    ).toThrow(/hai lần/u);
+    ).toThrow(/twice/u);
   });
 
   it('still rejects unknown keys now that the contract has two fields (no silent ignore)', () => {
     const root = makeWorktreeFixture('marker-unknown-key-two-field');
     expect(() =>
       loadWorkerMarkerDeclaration(writeMarker(root, '{"readiness": "http-health", "path": "/x"}')),
-    ).toThrow(/field lạ/u);
+    ).toThrow(/unknown field/u);
   });
 
   it('loadReadinessDeclaration keeps returning only the readiness (wrapper contract)', () => {
@@ -1318,7 +1318,7 @@ describe('startWorkerRuntime', () => {
             throw new Error('unreachable — guard must throw before spawn');
           }) as unknown as typeof childSpawn,
         }),
-      ).rejects.toThrow(/local worker runtime đã chạy \(alive: old-app\)/u);
+      ).rejects.toThrow(/local worker runtime is already running \(alive: old-app\)/u);
     } finally {
       if (keeper.pid !== undefined) {
         try {
@@ -1382,7 +1382,7 @@ describe('startWorkerRuntime', () => {
             throw new Error('unreachable — guard must throw before spawn');
           }) as unknown as typeof childSpawn,
         }),
-      ).rejects.toThrow(/local worker runtime đã chạy \(alive: old-app\)/u);
+      ).rejects.toThrow(/local worker runtime is already running \(alive: old-app\)/u);
     } finally {
       warnSpy.mockRestore();
       if (keeper.pid !== undefined) {

@@ -90,7 +90,7 @@ afterEach(() => {
 });
 
 describe('DEPLOY_STEPS', () => {
-  it('thứ tự contract: platform → outputs → env → home → backoffice → account → auth → smoke', () => {
+  it('step order contract: platform → outputs → env → home → backoffice → account → auth → smoke', () => {
     expect(DEPLOY_STEPS).toEqual([
       'platform-up',
       'read-outputs',
@@ -105,7 +105,7 @@ describe('DEPLOY_STEPS', () => {
 });
 
 describe('resolveContext', () => {
-  it('mỗi worktree một namespace, stack và state backend riêng', () => {
+  it('each worktree gets its own namespace, stack, and state backend', () => {
     const a = resolveContext(tempWorktree());
     const b = resolveContext(tempWorktree());
     expect(a.namespace).not.toBe(b.namespace);
@@ -113,7 +113,7 @@ describe('resolveContext', () => {
     expect(a.stateUrl).not.toBe(b.stateUrl);
   });
 
-  it('stack name tuân contract local-<ns> và state nằm trong worktree (ngoài Git)', () => {
+  it('stack name follows the local-<ns> contract and state lives inside the worktree (outside Git)', () => {
     const root = tempWorktree();
     const ctx: LocalDeployContext = resolveContext(root);
     expect(ctx.stackName).toBe(`local-${worktreeNamespace(root)}`);
@@ -122,14 +122,14 @@ describe('resolveContext', () => {
 });
 
 describe('upsertLocalEnv', () => {
-  it('file chưa tồn tại → tạo mới với đúng một key', () => {
+  it('missing file → creates a new one with exactly one key', () => {
     const root = tempWorktree();
     const { envPath } = upsertLocalEnv(root, { ROOT_HOST: 'fbi.com:40000' });
     expect(existsSync(envPath)).toBe(true);
     expect(readFileSync(envPath, 'utf8')).toBe('ROOT_HOST=fbi.com:40000\n');
   });
 
-  it('key đã có → thay đúng dòng đó, giữ nguyên mọi key khác', () => {
+  it('existing key → replaces exactly that line, keeps every other key', () => {
     const root = tempWorktree();
     writeFileSync(
       join(root, '.env'),
@@ -147,7 +147,7 @@ describe('upsertLocalEnv', () => {
     expect(content).not.toContain('fbi.com:1');
   });
 
-  it('key chưa có trong file hiện hữu → thêm cuối, không xoá gì', () => {
+  it('key absent from the existing file → appends at the end, deletes nothing', () => {
     const root = tempWorktree();
     writeFileSync(join(root, '.env'), 'ONLY=one', 'utf8');
     upsertLocalEnv(root, { ROOT_HOST: 'fbi.com:40002' });
@@ -156,7 +156,7 @@ describe('upsertLocalEnv', () => {
     expect(content).toContain('ROOT_HOST=fbi.com:40002');
   });
 
-  it('chạy hai lần với port khác nhau → giá trị cuối thắng, không nhân bản dòng', () => {
+  it('run twice with different ports → last value wins, no duplicated line', () => {
     const root = tempWorktree();
     upsertLocalEnv(root, { ROOT_HOST: 'fbi.com:40003' });
     upsertLocalEnv(root, { ROOT_HOST: 'fbi.com:40004' });
@@ -167,7 +167,7 @@ describe('upsertLocalEnv', () => {
 });
 
 describe('localDeploy previewOnly', () => {
-  it('previewOnly không bao giờ ghi .env — dù preview thành công hay thất bại', async () => {
+  it('previewOnly never writes .env — whether preview succeeds or fails', async () => {
     const root = tempWorktree();
     // Exit code của preview tuỳ prerequisite (worktree mới → fail read-only,
     // worktree đã deploy → xanh), nhưng bất biến phải giữ ở CẢ HAI: port do
@@ -177,7 +177,7 @@ describe('localDeploy previewOnly', () => {
     expect(existsSync(join(root, '.env'))).toBe(false);
   });
 
-  it('missing passphrase → exit 1 TRƯỚC khi chạm Pulumi, không tạo state dir', async () => {
+  it('missing passphrase → exit 1 BEFORE touching Pulumi, no state dir created', async () => {
     const root = tempWorktree();
     const saved = process.env.PULUMI_CONFIG_PASSPHRASE;
     delete process.env.PULUMI_CONFIG_PASSPHRASE;
@@ -294,7 +294,7 @@ describe('localDeploy previewOnly', () => {
     expect(existsSync(join(root, '.env'))).toBe(false);
   });
 
-  it('missing platform outputs (init, chưa up) → exit 1 với hướng dẫn chạy apply, không preview', async () => {
+  it('missing platform outputs (init, never up) → exit 1 with guidance to run apply, no preview', async () => {
     const root = tempWorktree();
     process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
     // State dir có (stack đã init) nhưng `stack output` trả `{}` = chưa up.
@@ -516,12 +516,12 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
 });
 
 describe('classifyStackOutput — local-status state machine', () => {
-  it('exit 0 + `{}` (stack init, chưa từng up) → no-outputs, KHÔNG phải deployed', () => {
+  it('exit 0 + `{}` (stack init, never up) → no-outputs, NOT deployed', () => {
     const result = classifyStackOutput({ status: 0, stdout: '{}\n', stderr: '' });
     expect(result).toEqual({ state: 'no-outputs' });
   });
 
-  it('exit 0 + outputs đầy đủ → deployed kèm outputs', () => {
+  it('exit 0 + full outputs → deployed with outputs', () => {
     const outputs = { traefikHostPort: 34942, namespace: 'wtest' };
     const result = classifyStackOutput({
       status: 0,
@@ -531,7 +531,7 @@ describe('classifyStackOutput — local-status state machine', () => {
     expect(result).toEqual({ state: 'deployed', outputs });
   });
 
-  it('exit != 0 + "no stack named" → no-stack (chưa init — KHÔNG phải backend error)', () => {
+  it('exit != 0 + "no stack named" → no-stack (never initialized — NOT a backend error)', () => {
     const result = classifyStackOutput({
       status: 6,
       stdout: '',
@@ -540,7 +540,7 @@ describe('classifyStackOutput — local-status state machine', () => {
     expect(result).toEqual({ state: 'no-stack' });
   });
 
-  it('exit != 0 + backend không mở được → backend-error (exit code của status phải khác 0)', () => {
+  it('exit != 0 + backend cannot be opened → backend-error (status exit code must be non-zero)', () => {
     const result = classifyStackOutput({
       status: 1,
       stdout: '',
@@ -553,12 +553,12 @@ describe('classifyStackOutput — local-status state machine', () => {
     expect(detail).toContain('unable to open state directory');
   });
 
-  it('exit 0 + stdout không phải JSON → parse-error (không nuốt thành no-outputs)', () => {
+  it('exit 0 + stdout not JSON → parse-error (not swallowed as no-outputs)', () => {
     const result = classifyStackOutput({ status: 0, stdout: 'not-json{{', stderr: '' });
     expect(result.state).toBe('parse-error');
   });
 
-  it('exit != 0 + lỗi không nhận diện được → backend-error với dòng lỗi đầu, KHÔNG phải no-stack', () => {
+  it('exit != 0 + unrecognized error → backend-error with the first error line, NOT no-stack', () => {
     const result = classifyStackOutput({
       status: 1,
       stdout: '',
@@ -569,7 +569,7 @@ describe('classifyStackOutput — local-status state machine', () => {
     expect(detail).toContain('something unprecedented');
   });
 
-  it('status null (binary không chạy được, spawnSync.error) → backend-error với đúng nguyên nhân', () => {
+  it('status null (binary cannot run, spawnSync.error) → backend-error with the exact cause', () => {
     // `pulumi` không có trên PATH: `spawnSync` báo qua `error`, status là null,
     // stderr/stdout rỗng — chi tiết phải là message của error, không phải
     // "lỗi Pulumi không xác định".
@@ -584,7 +584,7 @@ describe('classifyStackOutput — local-status state machine', () => {
     expect(detail).toContain('ENOENT');
   });
 
-  it('status null + bị signal kill → backend-error kèm tên signal', () => {
+  it('status null + killed by signal → backend-error with the signal name', () => {
     const result = classifyStackOutput({ status: null, stdout: '', stderr: '', signal: 'SIGKILL' });
     expect(result.state).toBe('backend-error');
     const detail = (result as { detail?: string }).detail ?? '';
@@ -592,8 +592,8 @@ describe('classifyStackOutput — local-status state machine', () => {
   });
 });
 
-describe('queryPlatformStatus — no-stack khi state dir chưa tồn tại', () => {
-  it('worktree chưa từng deploy (không có .pulumi-local-state) → no-stack mà KHÔNG gọi CLI', () => {
+describe('queryPlatformStatus — no-stack when the state dir does not exist', () => {
+  it('worktree that never deployed (no .pulumi-local-state) → no-stack without calling the CLI', () => {
     // Worktree nháp không có thư mục state: nếu queryPlatformStatus bấm CLI
     // thì CLI trả "unable to open state directory" → sai khiếp thành
     // backend-error. Guard phải bắt ngay từ kiểm sự tồn tại.
@@ -605,8 +605,8 @@ describe('queryPlatformStatus — no-stack khi state dir chưa tồn tại', () 
   });
 });
 
-describe('localDestroy — teardown trên worktree chưa từng deploy', () => {
-  it('không có state dir → no-op exit 0, không tạo state, không gọi pulumi', () => {
+describe('localDestroy — teardown on a worktree that never deployed', () => {
+  it('no state dir → no-op exit 0, no state created, no pulumi call', () => {
     const wt = tempWorktree();
     const before = existsSync(join(wt, '.pulumi-local-state'));
     const exit = localDestroy({ worktreeRoot: wt });
@@ -623,7 +623,7 @@ describe('localDestroy — volume removal coping with lost Pulumi stacks', () =>
     mkdirSync(join(wt, '.pulumi-local-state'), { recursive: true });
     process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
     pulumiRunMock.mockImplementation(() => {
-      throw new Error('pulumi destroy thất bại:\nerror: no stack named');
+      throw new Error('pulumi destroy failed:\nerror: no stack named');
     });
     execMock.mockReturnValue({ status: 0, stdout: '', stderr: '' } satisfies ExecResult);
     const exit = localDestroy({ worktreeRoot: wt, removeData: true });
@@ -642,7 +642,7 @@ describe('localDestroy — volume removal coping with lost Pulumi stacks', () =>
     mkdirSync(join(wt, '.pulumi-local-state'), { recursive: true });
     process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
     pulumiRunMock.mockImplementation(() => {
-      throw new Error('pulumi destroy thất bại:\nerror: no stack named');
+      throw new Error('pulumi destroy failed:\nerror: no stack named');
     });
     execMock.mockReturnValue({ status: 0, stdout: '', stderr: '' } satisfies ExecResult);
     const exit = localDestroy({ worktreeRoot: wt });
@@ -680,7 +680,7 @@ describe('localDestroy — full coverage: five stacks in reverse dependency orde
     process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
     pulumiRunMock.mockImplementation((_dir, project, args) => {
       if (project === 'account-deploy' && args[0] === 'destroy') {
-        throw new Error('pulumi destroy thất bại:\nboom');
+        throw new Error('pulumi destroy failed:\nboom');
       }
       return undefined;
     });
@@ -785,7 +785,7 @@ describe('runNxOrchestratedDeploy — Nx Task Graph path', () => {
 });
 
 describe('isConfigKeyMissing — secret regen guard', () => {
-  it('CLI báo "no value for the key" → true (được phép regen)', () => {
+  it('CLI reports "no value for the key" → true (regen allowed)', () => {
     expect(
       isConfigKeyMissing({
         status: 1,
@@ -803,7 +803,7 @@ describe('isConfigKeyMissing — secret regen guard', () => {
     ).toBe(true);
   });
 
-  it('sai passphrase (secret không giải được) → false — phải fail, KHÔNG regen', () => {
+  it('wrong passphrase (secret cannot be decrypted) → false — must fail, NO regen', () => {
     // Lỗi decrypt của sai passphrase có dạng này — exit != 0 nhưng KHÔNG phải
     // "key missing". Guard cũ gộp nhánh → regen đè secret tốt. Đây chính là
     // regression mà review bắt.
@@ -817,7 +817,7 @@ describe('isConfigKeyMissing — secret regen guard', () => {
     ).toBe(false);
   });
 
-  it('lỗi khác (backend hỏng, lock) → false', () => {
+  it('other errors (broken backend, lock) → false', () => {
     expect(
       isConfigKeyMissing({
         status: 1,
@@ -827,7 +827,7 @@ describe('isConfigKeyMissing — secret regen guard', () => {
     ).toBe(false);
   });
 
-  it('status 0 nhưng stdout rỗng → false về pattern... nhưng caller vẫn regen qua nhánh stdout rỗng', () => {
+  it('status 0 but empty stdout → false on the pattern... but the caller still regens via the empty-stdout branch', () => {
     // Guard hai lớp: isConfigKeyMissing chỉ nhận diện chữ ký; nhánh regen của
     // caller vẫn là `stdout rỗng` SAU KHI đã pass qua guard throw. Case status 0
     // + rỗng không thể xảy ra trên CLI thật (exit 0 luôn kèm giá trị) nhưng
@@ -883,10 +883,10 @@ describe('lookupPostgresPassword', () => {
     // Detail là thông điệp CỐ ĐỊNH — raw stderr/stdout KHÔNG được nhúng vào:
     // stdout của `config get postgres:password` khi exit 0 chính là mật khẩu,
     // nên raw output trong error string là đường leak tiềm ẩn (detail ra log).
-    expect(detail).toContain('pulumi config get thất bại');
+    expect(detail).toContain('pulumi config get failed');
     expect(detail).toContain('exit 1');
     expect(detail).not.toContain('could not decrypt');
-    expect(detail).toContain('không được log');
+    expect(detail).toContain('not logged');
   });
 
   it('masked [secret] output (unreachable on pinned CLI; kept as defense-in-depth) → error state', () => {
@@ -978,7 +978,7 @@ describe('resolvePostgresPassword', () => {
     const r = resolvePostgresPassword(c, {});
     expect(r.ok).toBe(false);
     const error = (r as { error?: string }).error ?? '';
-    expect(error).toContain('Volume PostgreSQL');
+    expect(error).toContain('PostgreSQL volume');
     expect(error).toContain('local-destroy --remove-data');
     expect(execMock.mock.calls.some(([, args]) => args[1] === 'set')).toBe(false);
   });
@@ -1041,7 +1041,7 @@ describe('resolvePostgresPassword', () => {
     const r = resolvePostgresPassword(c, {});
     expect(r.ok).toBe(false);
     const error = (r as { error?: string }).error ?? '';
-    expect(error).toContain('Đọc postgres:password');
+    expect(error).toContain('Failed to read postgres:password');
   });
 
   it('masked [secret] config (unreachable on pinned CLI) → fail with guidance, never regenerate', () => {
@@ -1066,7 +1066,7 @@ describe('resolvePostgresPassword', () => {
     const r = resolvePostgresPassword(c, {});
     expect(r.ok).toBe(false);
     const error = (r as { error?: string }).error ?? '';
-    expect(error).toContain('Đọc postgres:password');
+    expect(error).toContain('Failed to read postgres:password');
     expect(execMock.mock.calls.some(([, args]) => args[1] === 'set')).toBe(false);
   });
 

@@ -187,19 +187,19 @@ describe('parseJsonc', () => {
   });
 
   it('throws a clear error for malformed JSONC instead of returning garbage', () => {
-    expect(() => parseJsonc('{ name: broken')).toThrow(/không parse được JSONC/u);
+    expect(() => parseJsonc('{ name: broken')).toThrow(/failed to parse JSONC/u);
   });
 
   it('fails loud with the specific state for an unterminated block comment', () => {
     // Block comment không đóng nuốt phần còn lại của file — không được fail
     // mô hồ "không parse được JSONC" mà phải báo đúng loại lỗi.
-    expect(() => parseJsonc('{"a": 1, /* chưa đóng')).toThrow(/block comment .*không đóng/u);
+    expect(() => parseJsonc('{"a": 1, /* unterminated')).toThrow(/block comment .*unterminated/u);
   });
 
   it('fails loud with the specific state for an unterminated string', () => {
-    expect(() => parseJsonc('{"a": "chưa đóng')).toThrow(/chuỗi .*chưa đóng/u);
+    expect(() => parseJsonc('{"a": "unterminated')).toThrow(/string .*unterminated/u);
     // Chuỗi newline escape cuối file — cùng state 'string' ở EOF.
-    expect(() => parseJsonc('{"a": "dangling escape \\')).toThrow(/chuỗi .*chưa đóng/u);
+    expect(() => parseJsonc('{"a": "dangling escape \\')).toThrow(/string .*unterminated/u);
   });
 });
 
@@ -254,7 +254,7 @@ describe('validateCommittedWranglerConfig (qua generateWorkerConfig)', () => {
     const configPath = writeCommittedConfig(dir);
     expect(() =>
       generateWorkerConfig({ worktreeRoot: dir, committedConfigPath: configPath, remote: true }),
-    ).toThrow(/remote mode không được phép/u);
+    ).toThrow(/remote mode is not allowed/u);
   });
 
   it('fails closed when the committed config file does not exist', () => {
@@ -264,7 +264,7 @@ describe('validateCommittedWranglerConfig (qua generateWorkerConfig)', () => {
         worktreeRoot: dir,
         committedConfigPath: join(dir, 'nope.jsonc'),
       }),
-    ).toThrow(/không tồn tại/u);
+    ).toThrow(/does not exist/u);
   });
 
   it('rejects remote: "true" boolean-like string anywhere in the config', () => {
@@ -330,7 +330,7 @@ describe('validateCommittedWranglerConfig (qua generateWorkerConfig)', () => {
     for (const port of [0, 80, 22, 65536, 99999, Number.NaN, 8080.5]) {
       expect(() =>
         generateWorkerConfig({ worktreeRoot: dir, committedConfigPath: configPath, port }),
-      ).toThrow(/port không hợp lệ/u);
+      ).toThrow(/invalid port/u);
     }
   });
 });
@@ -476,7 +476,7 @@ describe('applyLocalD1Seeds / applyLocalD1Migrations', () => {
         seedFiles: ['non-empty.sql'],
         remote: true,
       }),
-    ).toThrow(/remote mode không được phép/u);
+    ).toThrow(/remote mode is not allowed/u);
     expect(() =>
       applyLocalD1Migrations({
         configPath: join(dir, 'cfg.jsonc'),
@@ -484,7 +484,7 @@ describe('applyLocalD1Seeds / applyLocalD1Migrations', () => {
         persistTo: join(dir, 'persist'),
         remote: true,
       }),
-    ).toThrow(/remote mode không được phép/u);
+    ).toThrow(/remote mode is not allowed/u);
   });
 
   it('rejects an empty seedFiles list fail-loud instead of a silent no-op', () => {
@@ -496,7 +496,7 @@ describe('applyLocalD1Seeds / applyLocalD1Migrations', () => {
         persistTo: join(dir, 'persist'),
         seedFiles: [],
       }),
-    ).toThrow(/seedFiles rỗng/u);
+    ).toThrow(/seedFiles is empty/u);
   });
 
   it('rejects a flag-smuggling databaseName before building the wrangler argv', () => {
@@ -511,7 +511,7 @@ describe('applyLocalD1Seeds / applyLocalD1Migrations', () => {
         databaseName: '--remote',
         persistTo: result.persistTo,
       }),
-    ).toThrow(/database identifier không hợp lệ/u);
+    ).toThrow(/invalid database identifier/u);
     expect(() =>
       applyLocalD1Seeds({
         configPath: result.configPath,
@@ -519,7 +519,7 @@ describe('applyLocalD1Seeds / applyLocalD1Migrations', () => {
         persistTo: result.persistTo,
         seedFiles: ['some.sql'],
       }),
-    ).toThrow(/database identifier không hợp lệ/u);
+    ).toThrow(/invalid database identifier/u);
   });
 
   it('rejects a databaseName that matches no d1_databases binding or database_name', () => {
@@ -529,7 +529,7 @@ describe('applyLocalD1Seeds / applyLocalD1Migrations', () => {
     const dir = makeWorktreeFixture('binding-mismatch');
     const configPath = writeCommittedConfig(dir);
     expect(() => assertDatabaseNameInConfig(configPath, 'mail-typo')).toThrow(
-      /không khớp binding\/database_name/u,
+      /matches no binding\/database_name/u,
     );
     // Cả `binding` và `database_name` đều được chấp nhận.
     expect(() => assertDatabaseNameInConfig(configPath, 'mail')).not.toThrow();
@@ -547,14 +547,14 @@ describe('applyLocalD1Seeds / applyLocalD1Migrations', () => {
         persistTo: join(dir, 'persist'),
         seedFiles: [],
       }),
-    ).toThrow(/seedFiles rỗng/u);
+    ).toThrow(/seedFiles is empty/u);
     expect(() =>
       applyLocalD1Migrations({
         configPath: join(dir, 'absent.jsonc'),
         databaseName: 'mail',
         persistTo: join(dir, 'persist'),
       }),
-    ).toThrow(/không tồn tại/u);
+    ).toThrow(/does not exist/u);
     const configPath = writeCommittedConfig(dir);
     const result = generateWorkerConfig({ worktreeRoot: dir, committedConfigPath: configPath });
     expect(() =>
@@ -564,6 +564,6 @@ describe('applyLocalD1Seeds / applyLocalD1Migrations', () => {
         persistTo: result.persistTo,
         seedFiles: [join(dir, 'absent-seed.sql')],
       }),
-    ).toThrow(/seed file không tồn tại/u);
+    ).toThrow(/seed file does not exist/u);
   });
 });

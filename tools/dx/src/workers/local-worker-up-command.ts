@@ -109,8 +109,8 @@ export default defineCommand({
           // vẫn exit 0: "không có gì sống" là trạng thái hợp lệ của runtime,
           // không phải lỗi process (JSDoc discovery cam kết hành vi này).
           console.warn(
-            '[local-worker-up] no worker apps found — app tham gia local runtime khi khai cả ' +
-              "'apps/<dir>/wrangler.jsonc' và marker 'apps/<dir>/local-worker.jsonc'",
+            '[local-worker-up] no worker apps found — an app joins the local runtime only when it declares both ' +
+              "'apps/<dir>/wrangler.jsonc' and the marker 'apps/<dir>/local-worker.jsonc'",
           );
         }
         for (const worker of runtime.workers) {

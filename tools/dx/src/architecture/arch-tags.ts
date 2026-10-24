@@ -589,7 +589,7 @@ function findCrossUnitDeploymentEdges(projects: Map<string, ArchProjectNode>): A
       violations.push({
         project: project.name,
         kind: 'cross-unit-deploy-dependency',
-        detail: `${project.name} -> ${dep}: chỉ ${PLATFORM_DEPLOY_PROJECT} được làm target của edge deployment`,
+        detail: `${project.name} -> ${dep}: only ${PLATFORM_DEPLOY_PROJECT} may be the target of an edge deployment`,
       });
     }
   }
@@ -616,13 +616,13 @@ function validateDeploymentPlacement(projects: Map<string, ArchProjectNode>): Ar
       violations.push({
         project: project.name,
         kind: 'misplaced-deployment-project',
-        detail: `project trong ${DEPLOYMENT_DIR}/ phải mang ${DEPLOYMENT_TYPE}`,
+        detail: `a project inside ${DEPLOYMENT_DIR}/ must carry ${DEPLOYMENT_TYPE}`,
       });
     } else if (tagged && !inDeploys) {
       violations.push({
         project: project.name,
         kind: 'misplaced-deployment-project',
-        detail: `${DEPLOYMENT_TYPE} phải đặt trong ${DEPLOYMENT_DIR}/`,
+        detail: `${DEPLOYMENT_TYPE} must be placed inside ${DEPLOYMENT_DIR}/`,
       });
     }
   }

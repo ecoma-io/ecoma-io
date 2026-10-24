@@ -87,7 +87,7 @@ function fakeDockerExec(docker: FakeDocker) {
       docker.removed.push(key);
       return { status: 0, stdout: `${name}\n`, stderr: '' };
     }
-    return { status: 1, stdout: '', stderr: `fake docker không xử lý: ${args.join(' ')}` };
+    return { status: 1, stdout: '', stderr: `fake docker does not handle: ${args.join(' ')}` };
   };
 }
 
@@ -109,7 +109,7 @@ describe('decideResourceAction', () => {
   it('skips malformed ownership metadata instead of deleting', () => {
     const decision = decideResourceAction(
       'home',
-      { state: 'malformed', detail: 'label io.ecoma.worktree-id thiếu hoặc rỗng' },
+      { state: 'malformed', detail: 'label io.ecoma.worktree-id missing or empty' },
       { worktreePresence: () => 'absent' },
     );
     expect(decision.action).toBe('skipped');
@@ -407,7 +407,7 @@ describe('runLocalCleanup', () => {
     expect(docker.removed).toHaveLength(0);
     for (const entry of report.entries) {
       expect(entry.action).toBe('skipped');
-      expect(entry.reason).toContain('ngoài quản lý DX');
+      expect(entry.reason).toContain('outside DX management');
     }
   });
 
@@ -501,7 +501,7 @@ describe('runLocalCleanup', () => {
       execDocker: fakeDockerExec(docker),
       worktreePresence: () => 'absent',
     });
-    expect(report.errors.some((e) => e.includes('container ls') || e.includes('ls thất bại'))).toBe(
+    expect(report.errors.some((e) => e.includes('container ls') || e.includes('ls failed'))).toBe(
       true,
     );
     expect(report.entries.filter((e) => e.kind === 'home')).toHaveLength(0);
@@ -520,7 +520,7 @@ describe('runLocalCleanup', () => {
     });
     expect(report.entries).toHaveLength(0);
     expect(report.errors).toHaveLength(1);
-    expect(report.errors[0]).toContain('Docker daemon không trả lời');
+    expect(report.errors[0]).toContain('Docker daemon not responding');
   });
 });
 
