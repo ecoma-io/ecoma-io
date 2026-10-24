@@ -143,8 +143,13 @@ const accountDatabaseUrl = pulumi.interpolate`postgresql://ecoma_account_runtime
  * mật khẩu runtime, không được đi vào diff/log/argv — biến chỉ đi qua `envs`
  * của container (kênh container env, cùng kênh backoffice dùng) và Pulumi
  * redact khi in.
+ *
+ * Dấu ngoặc kép quanh `${...}` là BẮT BUỘC: thiếu quote thì giá trị nội suy
+ * là URL trần (`"connectionString":postgresql://...`) — không phải JSON hợp
+ * lệ, `destr` parse fail ⇒ binding `null` ⇒ `/ready` 503 `binding_missing`
+ * (issue #229).
  */
-const cloudflareEnvJson = pulumi.interpolate`{"DB_ACCOUNT":{"connectionString":${pulumi.secret(accountDatabaseUrl)}}}`;
+const cloudflareEnvJson = pulumi.interpolate`{"DB_ACCOUNT":{"connectionString":"${pulumi.secret(accountDatabaseUrl)}"}}`;
 
 const imageTag = `ecoma-account-${ns}:local`;
 
