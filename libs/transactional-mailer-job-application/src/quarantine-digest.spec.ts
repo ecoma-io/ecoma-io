@@ -194,7 +194,11 @@ describe('quarantineReasonFor', () => {
 
     const mapped = VALIDATOR_REASONS.map((reason) => quarantineReasonFor(reason, 'delivery_id'));
 
-    expect(new Set(mapped)).toEqual(new Set(QUARANTINE_REASON_VALUES));
+    // `QUARANTINE_REASON_VALUES` là union của hai producer: validator command (4 reason
+    // phía trên) và ingest lifecycle event ('lifecycle-event-invalid' — §11.3). Phần ảnh
+    // của validator phải là tập con, và phần bù đúng một reason của producer kia.
+    const unmapped = QUARANTINE_REASON_VALUES.filter((reason) => !mapped.includes(reason));
+    expect(unmapped).toEqual(['lifecycle-event-invalid']);
     for (const reason of mapped) {
       expect(QUARANTINE_REASON_VALUES).toContain(reason);
     }

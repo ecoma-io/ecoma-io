@@ -60,6 +60,16 @@ export type D1PreparedStatement<Row> = {
 /** Database binding tối thiểu repository cần. */
 export type D1DatabaseLike = {
   prepare<Row = Record<string, unknown>>(sql: string): D1PreparedStatement<Row>;
+  /**
+   * Chạy **một batch** nhiều statement — D1 thực thi batch trong một transaction ngầm,
+   * fail statement nào rollback cả batch.
+   *
+   * Khai ở đúng subset mà `D1LifecycleEventStore` dùng (persist event + correlate là
+   * hai statement phải đi cùng); binding D1 thật khớp cấu trúc, không cần adapter.
+   */
+  batch<Row = Record<string, unknown>>(
+    statements: readonly D1BoundStatement<Row>[],
+  ): Promise<readonly D1RunResult<Row>[]>;
 };
 
 /**

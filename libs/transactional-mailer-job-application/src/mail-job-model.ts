@@ -36,6 +36,7 @@ export const QUARANTINE_REASON_VALUES = [
   'unparseable-body',
   'unsupported-version',
   'forbidden-field',
+  'lifecycle-event-invalid',
 ] as const;
 
 export type QuarantineReason = (typeof QUARANTINE_REASON_VALUES)[number];

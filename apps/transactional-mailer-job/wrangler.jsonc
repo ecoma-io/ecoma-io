@@ -55,12 +55,23 @@
   // xem 01-architecture.md §6). DLQ bắt buộc: hết retry mà không có DLQ thì
   // message bị xoá vĩnh viễn (overview `04` QU3). `max_retries` = 3 theo
   // mặc định platform (overview `04` QU2).
+  //
+  // Consumer thứ hai cùng worker: Queue `ecoma-mail-lifecycle-events` nhận lifecycle
+  // event của provider Email Service qua Event Subscriptions (§11.3). CHƯA provision
+  // Event Subscriptions hay queue thật — queue chưa tồn tại thì consumer chỉ không
+  // nhận message; mọi path ingest khác vô hại. `max_retries` thấp hơn delivery path
+  // (2): event hỏng đi quarantine chứ không quay vòng retry (§11.3).
   "queues": {
     "consumers": [
       {
         "queue": "ecoma-mail-delivery",
         "max_retries": 3,
         "dead_letter_queue": "ecoma-mail-delivery-dlq",
+      },
+      {
+        "queue": "ecoma-mail-lifecycle-events",
+        "max_retries": 2,
+        "dead_letter_queue": "ecoma-mail-lifecycle-events-dlq",
       },
     ],
   },
@@ -73,6 +84,21 @@
     {
       "binding": "TRANSACTIONAL_MAIL_SERVICE",
       "service": "ecoma-transactional-mail",
+    },
+  ],
+
+  // Email Sending binding — kênh gửi thật của provider Cloudflare (provider mặc định,
+  // `MAIL_PROVIDER_KIND=cloudflare`). `allowed_sender_addresses` ghim sender đúng một
+  // địa chỉ; loader fail-closed nếu `MAIL_CF_SENDER` khác giá trị này — hai lớp chặn
+  // phải nói cùng một sự thật. CHƯA provision: sender domain `ecoma.io` cần được
+  // onboard Email Service trước khi binding hoạt động thật; `wrangler dev` mô phỏng
+  // binding cục bộ (log console, không gửi thư) nên local/dev không cần provision.
+  // Reference: docs/services/transactional-mailer-job/01-architecture.md §11,
+  // docs/services/transactional-mailer-job/03-operations.md (trạng thái provision).
+  "send_email": [
+    {
+      "name": "SEND_EMAIL",
+      "allowed_sender_addresses": ["no-reply@ecoma.io"],
     },
   ],
 }

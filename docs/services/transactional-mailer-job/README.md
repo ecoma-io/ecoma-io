@@ -4,10 +4,10 @@ Delivery worker (delivery plane) thực hiện mail delivery cho các `Mail Mess
 
 ## Runtime / deploy unit
 
-- Cloudflare Worker — không hostname, không HTTP API; Queue consumer của `ecoma-mail-delivery`.
+- Cloudflare Worker — không hostname, không HTTP API; Queue consumer của `ecoma-mail-delivery` (Mail Command) và `ecoma-mail-lifecycle-events` (lifecycle ingest, chưa provision Event Subscriptions).
 - D1 `mail-job` — job execution state của service; không truy cập D1 `mail` hay D1 của service khác.
 - Control plane `transactional-mail` — resolve runtime material và báo outcome qua private Service Binding; credential **không** đi qua private interface, không bao giờ vào Queue/log.
-- External: mail relay (provider) — endpoint + credential là Worker Secret của chính worker này, không đến từ control plane.
+- External: provider mail — v1 là Cloudflare Email Service qua binding `send_email` (cùng account, không credential HTTP); adapter Resend giữ lại làm adapter phụ (endpoint + credential là Worker Secret của chính worker này, không đến từ control plane).
 
 ## Documents
 

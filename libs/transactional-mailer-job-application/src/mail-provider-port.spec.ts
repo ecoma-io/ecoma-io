@@ -399,6 +399,11 @@ describe('MailProviderPort — the only seam out to a provider', () => {
       'runBlockedBacklogSweep',
       'runReportSweep',
       'runStaleLeaseSweep',
+      // (§11.3) — lifecycle event ingest (model trung tính, chu vi of lifecycle path)
+      'ingestLifecycleEventMessage',
+      'MAIL_LIFECYCLE_EVENT_TYPE_VALUES',
+      'MAIL_LIFECYCLE_REASON_TOKEN_VALUES',
+      'normalizeLifecycleEventMessage',
     ]);
   });
 });
@@ -433,6 +438,7 @@ describe('dependency boundary', () => {
     expect(discovered.length).toBeGreaterThan(0);
     expect(new Set(discovered.flatMap(importSpecifiersOf))).toEqual(
       new Set([
+        './lifecycle-events',
         './mail-job-model',
         './mail-job-repository-port',
         './mail-job-rules',

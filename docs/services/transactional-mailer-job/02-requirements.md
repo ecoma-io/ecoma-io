@@ -91,7 +91,7 @@ Worker MUST gọi provider qua **provider port** nội bộ — contract (reques
 - Fake provider: một adapter giả cùng port tạo được các kết quả xác định (`accepted`/`retryable`/`permanent`/`credential`) cùng các nhánh `warningCode`/`retryAfterMs` — chọn theo nội dung request (`recipient`/`subject` chứa token test, theo thứ tự ưu tiên được định nghĩa trong fake), không cần field selector riêng trên port. **Nguồn canonical:** `libs/transactional-mailer-job-infrastructure/src/fake-mail-provider.ts`.
 - Sender identity thuộc trusted config của worker: port **không** mang `from`/`sender` và **không** mang `app`; địa chỉ người gửi, envelope và mọi header cố định của relay nằm trong Worker Secret / cấu hình của adapter (`01-architecture.md` §11.1, §13). Cần sender theo từng app là một contract mới phải sửa port — không được adapter tự suy ra.
 
-**Thực thi qua provider port.** Port là seam duy nhất đi ra provider, dùng chung cho adapter relay thật và **fake provider**: worker core, orchestration và test MUST inject port này thay vì gọi network trực tiếp, để orchestration và state machine test được ngay cả khi không có credential provider thật. Provider mặc định v1 **đã chọn: Resend** (`01-architecture.md` §9.3); phần dưới chỉ chốt ranh giới port, không giả định wire protocol của provider ở tầng requirements.
+**Thực thi qua provider port.** Port là seam duy nhất đi ra provider, dùng chung cho adapter relay thật và **fake provider**: worker core, orchestration và test MUST inject port này thay vì gọi network trực tiếp, để orchestration và state machine test được ngay cả khi không có credential provider thật. Provider mặc định v1 **đã chọn: Cloudflare Email Service** (binding `send_email`, `01-architecture.md` §9.3/§11); phần dưới chỉ chốt ranh giới port, không giả định wire protocol của provider ở tầng requirements.
 
 ---
 
@@ -286,4 +286,4 @@ Job phải vận hành trong giới hạn platform: Queue batch/ack semantics (`
 
 # 6. Non-goals
 
-Các boundary ngoài phạm vi worker (canonical ở [`01-architecture.md`](./01-architecture.md) §2.2): không render template · không quyết định recipient (chỉ nhận qua runtime material) · không chọn/reroute provider (single relay cấu hình ở chính worker — provider mặc định v1: Resend) · không truyền credential ra ngoài (credential là Worker Secret của chính worker) · không đọc/ghi D1 `mail` · không business logic của application.
+Các boundary ngoài phạm vi worker (canonical ở [`01-architecture.md`](./01-architecture.md) §2.2): không render template · không quyết định recipient (chỉ nhận qua runtime material) · không chọn/reroute provider (single relay cấu hình ở chính worker — provider mặc định v1: Cloudflare Email Service) · không truyền credential ra ngoài (credential là Worker Secret của chính worker) · không đọc/ghi D1 `mail` · không business logic của application.
