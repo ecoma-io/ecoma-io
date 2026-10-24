@@ -17,13 +17,13 @@
         "defaultConfiguration": "production",
         "options": {
           "platform": "neutral",
-          "outputPath": "apps/account-bridge/dist",
+          "outputPath": "tools/account-bridge/dist",
           "format": [
             "esm"
           ],
           "bundle": true,
-          "main": "apps/account-bridge/src/main.ts",
-          "tsConfig": "apps/account-bridge/tsconfig.app.json",
+          "main": "tools/account-bridge/src/main.ts",
+          "tsConfig": "tools/account-bridge/tsconfig.app.json",
           "esbuildOptions": {
             "sourcemap": true,
             "outExtension": {

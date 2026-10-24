@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig(() => ({
   root: import.meta.dirname,
-  cacheDir: '../../node_modules/.vite/apps/account-bridge',
+  cacheDir: '../../node_modules/.vite/tools/account-bridge',
   test: {
     name: '@ecoma-io/account-bridge',
     watch: false,

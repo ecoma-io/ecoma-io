@@ -61,9 +61,12 @@ provision.
 **Bản đồ ownership canonical.** Câu hỏi "app/runtime này do deployment unit nào sở hữu" có đúng một nguồn sự thật:
 `DEPLOYMENT_MAP` trong `tools/dx/src/architecture/deployment-map.ts` — mỗi app trong `apps/` đúng một entry
 (`owner`, `status: implemented | scaffold | absorbed | none`), kèm entry `platform-deploy` loại `platform`
-(prerequisite, không owner app nào). Hai trường hợp đặc biệt hiện tại: `apps/account-bridge` được provision
-bên trong `auth-deploy` (WIC container chạy hai worker — `absorbed`), và `apps/auth-nonce-prune-job` không có
-deploy project (cron Worker, wrangler-only — `none`); entry `absorbed`/`none` bắt buộc có `reason`. Đối chiếu
+(prerequisite, không owner app nào). Quy tắc cấu trúc đi kèm: `apps/` chỉ chứa project có đường triển khai
+production — bây giờ hoặc theo kế hoạch (status `implemented`/`scaffold`); project local-only/internal-only
+(shim, worker chỉ chạy trong topology local platform, script nội bộ) sống ở `tools/` và không thuộc bản đồ
+(vd `tools/account-bridge` được provision bên trong `auth-deploy`). Trường hợp đặc biệt còn lại trong `apps/`:
+`apps/auth-nonce-prune-job` không có deploy project (cron Worker, wrangler-only — `none`); entry
+`absorbed`/`none` bắt buộc có `reason`. Đối chiếu
 hai chiều với đĩa: mỗi `deploys/<unit>-deploy` mang marker machine-readable `ecoma.deployment.status`
 (`implemented`/`scaffold`) trong `package.json`, và `pnpm dx arch-check` fail khi marker lệch map, owner trỏ
 project không tồn tại, deploy project không sở hữu app nào, hoặc map thiếu/thừa entry so với `apps/`.

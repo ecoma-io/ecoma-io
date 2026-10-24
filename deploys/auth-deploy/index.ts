@@ -88,7 +88,7 @@ const AUTH_INTERNAL_PORT = 4203;
 
 /**
  * Cổng HTTP nội bộ của shim `ecoma-account-bridge` trong WIC — `dev.port` của
- * `apps/account-bridge/wrangler.jsonc`. Không publish ra ngoài container:
+ * `tools/account-bridge/wrangler.jsonc`. Không publish ra ngoài container:
  * traffic duy nhất đi vào là service binding từ auth (dev registry nội bộ
  * container) và probe liveness nội bộ — hằng này chỉ là tham chiếu tài liệu;
  * entrypoint không nhận port từ Pulumi (nguồn số duy nhất là wrangler.jsonc).
@@ -361,8 +361,8 @@ const wic = new docker.Container(
         readOnly: true,
       },
       {
-        hostPath: `${worktreeRoot}/apps/account-bridge/dist`,
-        containerPath: '/repo/apps/account-bridge/dist',
+        hostPath: `${worktreeRoot}/tools/account-bridge/dist`,
+        containerPath: '/repo/tools/account-bridge/dist',
         readOnly: true,
       },
       // KHÔNG mount gì vào `<app>/.wrangler`: Docker không tạo được mountpoint
