@@ -79,11 +79,11 @@ CREATE TABLE auth.signing_keys (
 );
 
 COMMENT ON TABLE auth.signing_keys IS
-    'Metadata của signing key. TUYỆT ĐỐI KHÔNG chứa private key (FR-023) — db-auth có thể bị restore, backup và đọc bởi operator.';
+    'Signing key metadata. Never contains a private key (FR-023) — db-auth can be restored, backed up and read by operators.';
 COMMENT ON COLUMN auth.signing_keys.public_key_jwk IS
-    'PUBLIC key dạng JWK, dùng dựng JWKS. KHÔNG phải bí mật. Không bao giờ đổ private key vào đây.';
+    'PUBLIC key in JWK form, used to build the JWKS. Not a secret. A private key must never be written here.';
 COMMENT ON COLUMN auth.signing_keys.status IS
-    'active = dùng ký token mới. retiring = đã xoá khỏi JWKS, chỉ còn verify token đã cấp. retired = hết cửa sổ (FR-024).';
+    'active = signs new tokens. retiring = removed from the JWKS, still verifies issued tokens. retired = window closed (FR-024).';
 
 -- Tra JWKS: chỉ các key còn dùng để ký.
 CREATE INDEX IF NOT EXISTS signing_keys_active_idx

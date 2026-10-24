@@ -56,7 +56,7 @@ CREATE TABLE auth.oauth_consent_decisions (
 );
 
 COMMENT ON TABLE auth.oauth_consent_decisions IS
-    'Quyết định consent của user tại một thời điểm — BẰNG CHỨNG LỊCH SỬ, không phải quyền hiện hành (01-architecture.md §3.4). Không dùng bảng này để quyết định cấp token.';
+    'The user''s consent decision at one point in time — historical evidence, not the current entitlement (01-architecture.md §3.4). This table never decides token issuance.';
 
 -- ---------------------------------------------------------------------------------------------
 -- Index — chỉ những truy vấn protocol/UI thực sự cần.
@@ -111,7 +111,7 @@ CREATE TABLE auth.oauth_grants (
 );
 
 COMMENT ON TABLE auth.oauth_grants IS
-    'Quyền hiện hành của một (sub, client). Được kiểm MỖI lần phát hành token. KHÔNG tự tái sinh khi consent cũ còn trong lịch sử (FR-014b).';
+    'Current entitlement of a (sub, client) pair. Checked on EVERY token issuance. It does not regenerate itself while an old consent still exists in history (FR-014b).';
 
 -- ⚠️ Tại một thời điểm, mỗi `(sub, client)` chỉ có **một** grant `active`. Đây là ràng buộc
 --    điều kiện nên các grant đã thu hồi không làm nghẽn index, và nó chặn trạng thái "hai
@@ -157,4 +157,4 @@ CREATE TABLE auth.client_grant_scopes (
 );
 
 COMMENT ON TABLE auth.client_grant_scopes IS
-    'Scope cụ thể của từng grant, dùng để kiểm scope tại thời điểm phát hành token và tại introspection.';
+    'Concrete scope of each grant, used to check scope at token issuance and at introspection.';

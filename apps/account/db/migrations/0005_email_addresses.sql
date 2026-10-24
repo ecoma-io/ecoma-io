@@ -56,13 +56,13 @@ CREATE TABLE IF NOT EXISTS account.email_addresses (
 );
 
 COMMENT ON TABLE account.email_addresses IS
-  'Dia chi email cua user. Chi status = verified moi dang nhap duoc (FR-002); tra cuu theo address_hash, khong theo dia chi tran.';
+  'Email addresses of a user. Only status = verified may log in (FR-002); lookups go through address_hash, never the plaintext address.';
 COMMENT ON COLUMN account.email_addresses.address_normalized IS
-  'Dia chi da lowercase + trim, dang noi bo. Khong phai dang hien thi.';
+  'Lowercased + trimmed address, internal form. Not a display form.';
 COMMENT ON COLUMN account.email_addresses.address_hash IS
-  'SHA-256 hex cua address_normalized. Khoa tra cuu cua luong OTP; khong dao nguoc duoc.';
+  'SHA-256 hex of address_normalized. Lookup key of the OTP flow; not reversible.';
 COMMENT ON COLUMN account.email_addresses.status IS
-  'pending -> verified | revoked. Chi verified nhan OTP dang nhap (FR-002).';
+  'pending -> verified | revoked. Only verified receives login OTP (FR-002).';
 
 -- Truy vấn "mọi email của một sub" (trang quản lý email, và luồng OTP liệt kê
 -- địa chỉ đăng nhập). Mỗi index gắn với đúng một truy vấn — không thêm index

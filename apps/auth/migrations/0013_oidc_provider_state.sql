@@ -133,13 +133,13 @@ CREATE TABLE auth.oidc_state (
 );
 
 COMMENT ON TABLE auth.oidc_state IS
-    'State co che giao thuc cua oidc-provider (Interaction/Session/Grant/token). KHONG phai source of truth nghiep vu - authorization_transactions (0002) giu vai tro do.';
+    'State of the oidc-provider protocol machinery (Interaction/Session/Grant/token). Not the business source of truth - authorization_transactions (0002) holds that role.';
 
 COMMENT ON COLUMN auth.oidc_state.payload IS
-    'Payload jsonb ma provider serialize/deserialize nguyen van. Hinh dang thuoc ve oidc-provider (IN_PAYLOAD tung model), khong duoc doc de ra quyet dinh nghiep vu.';
+    'jsonb payload the provider serializes/deserializes verbatim. Its shape belongs to oidc-provider (IN_PAYLOAD of each model); it must not be read to make business decisions.';
 
 COMMENT ON COLUMN auth.oidc_state.consumed_at IS
-    'Ban chep cot cua payload.consumed (provider ghi vao payload khi consume). Chi cac kind consume-once duoc phep co gia tri.';
+    'Column copy of payload.consumed (the provider writes it into the payload on consume). Only consume-once kinds may hold a value.';
 
 -- ---------------------------------------------------------------------------------------------
 -- Indexes — đúng bốn đường truy cập của adapter + prune.

@@ -58,7 +58,7 @@ CREATE SCHEMA IF NOT EXISTS account;
 -- phải một lớp phòng thủ. Tương tự, không khai báo `dblink` hay `postgres_fdw`.
 
 COMMENT ON SCHEMA account IS
-  'Schema ứng dụng của db-account. Runtime role chỉ có DML ở đây; grant được cấp ở 0002_roles_and_grants.sql.';
+  'Application schema of db-account. Runtime role only has DML here; grants are issued in 0002_roles_and_grants.sql.';
 
 -- ---------------------------------------------------------------------------
 -- users — chủ thể và tombstone
@@ -89,11 +89,11 @@ CREATE TABLE IF NOT EXISTS account.users (
 );
 
 COMMENT ON TABLE account.users IS
-  'Chu the va tombstone toi thieu. sub khong tai su dung, khong tai phat hanh (FR-001, FR-012d, FR-012e).';
+  'Subject and minimal tombstone. sub is never reused, never reissued (FR-001, FR-012d, FR-012e).';
 COMMENT ON COLUMN account.users.sub IS
-  'Opaque, khong tai su dung va khong tai phat hanh. La muc tieu tai lien ket duy nhat (FR-012l).';
+  'Opaque, never reused and never reissued. The only re-linking target (FR-012l).';
 COMMENT ON COLUMN account.users.deleted_at IS
-  'Chi co gia tri khi status = deleted; tombstone giu dung cot nay va status.';
+  'Set only when status = deleted; the tombstone keeps exactly this column and status.';
 
 -- ---------------------------------------------------------------------------
 -- Tombstone là bất biến: chặn mọi UPDATE trên hàng đã deleted (FR-012d, FR-001)
@@ -134,7 +134,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION account.users_tombstone_immutable() IS
-  'Chan moi UPDATE tren row users da tombstone: deleted -> active la hoi sinh, bi chan o tang database (FR-012d).';
+  'Blocks every UPDATE on a tombstoned users row: deleted -> active is resurrection, blocked at the database layer (FR-012d).';
 
 DROP TRIGGER IF EXISTS users_tombstone_immutable ON account.users;
 CREATE TRIGGER users_tombstone_immutable
@@ -183,13 +183,13 @@ CREATE TABLE IF NOT EXISTS account.account_sessions (
 );
 
 COMMENT ON TABLE account.account_sessions IS
-  'Phien cookie trinh duyet. Chi luu hash session identifier, khong luu gia tri cookie (FR-004, invariant 3).';
+  'Browser cookie session. Stores only the session identifier hash, never the cookie value (FR-004, invariant 3).';
 COMMENT ON COLUMN account.account_sessions.id_hash IS
-  'Hash cua session identifier. Gia tri cookie khong bao gio duoc luu o day.';
+  'Hash of the session identifier. The cookie value is never stored here.';
 COMMENT ON COLUMN account.account_sessions.session_ref IS
-  'account_session_ref cua instance session. Identifier noi bo, KHONG phai credential (FR-006e).';
+  'account_session_ref of the session instance. Internal identifier, NOT a credential (FR-006e).';
 COMMENT ON COLUMN account.account_sessions.authn_at IS
-  'Thoi diem xac thuyen, dung de do tuoi bang chung cho hanh dong nhay cam (FR-004b, SR-005).';
+  'Authentication time, used to measure evidence age for sensitive actions (FR-004b, SR-005).';
 
 -- Truy vấn phục vụ BFF endpoint `GET /account/sessions` (FR-009) và nhánh chặn
 -- ngay tại `db-account` khi suspend (FR-012): "mọi session của sub này còn sống
@@ -234,11 +234,11 @@ CREATE TABLE IF NOT EXISTS account.login_handoffs (
 );
 
 COMMENT ON TABLE account.login_handoffs IS
-  'Rang buoc giua handle X cua auth va session da trinh no. KHONG luu X dang ro (01-architecture.md §3.6).';
+  'Binding between an auth handle X and the session that presented it. X is never stored in plaintext (01-architecture.md §3.6).';
 COMMENT ON COLUMN account.login_handoffs.handle_hash IS
-  'Hash cua handle X. X den tu query string, luot vao log tang trung gian; chi hash duoc luu. PRIMARY KEY la co che first-binding-wins (FR-006c2).';
+  'Hash of handle X. X arrives via the query string and can leak into intermediary logs; only the hash is stored. The PRIMARY KEY is the first-binding-wins mechanism (FR-006c2).';
 COMMENT ON COLUMN account.login_handoffs.session_ref IS
-  'Con tro toi mot session, KHONG phai credential. Chi doi duy nhat trong giao dich chuyen binding luc rotate (FR-006c4).';
+  'Pointer to a session, NOT a credential. Changed only once, in the rebinding transaction during rotation (FR-006c4).';
 
 -- Truy vấn dọn dẹp của nhóm (2) (`01-architecture.md` §7.1): TTL ngắn, xoá hẳn
 -- khi hết hạn hoặc đã consume. Không có retention tự động nào khác đọc cột này,
@@ -305,7 +305,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION account.login_handoffs_rebind_guard() IS
-  'Chan doi handle_hash (PRIMARY KEY, co che first-binding-wins, FR-006c2); chan ghi de binding (FR-006c3); cho phep chuyen binding dung mot lan, bound -> session_rotated (FR-006c4); consumed/expired la ket thuc, khong UPDATE duoc (FR-006d2, FR-006g).';
+  'Blocks handle_hash changes (PRIMARY KEY, first-binding-wins mechanism, FR-006c2); blocks binding overwrites (FR-006c3); allows the single rebinding transition bound -> session_rotated (FR-006c4); consumed/expired are terminal and reject UPDATE (FR-006d2, FR-006g).';
 
 DROP TRIGGER IF EXISTS login_handoffs_rebind_guard ON account.login_handoffs;
 CREATE TRIGGER login_handoffs_rebind_guard
@@ -340,11 +340,11 @@ CREATE TABLE IF NOT EXISTS account.security_events (
 );
 
 COMMENT ON TABLE account.security_events IS
-  'Audit append-only. KHONG co FK toi users de soat sau tombstone; UPDATE bi tu choi (SR-002, invariant 8).';
+  'Append-only audit. No FK to users so auditing survives tombstones; UPDATE is rejected (SR-002, invariant 8).';
 COMMENT ON COLUMN account.security_events.subject_sub IS
-  'sub cua chu the, co the NULL khi khong xac dinh duoc (vd probe khong ton tai). Khong FK.';
+  'Subject sub, may be NULL when it cannot be determined (e.g. a probe for a nonexistent account). No FK.';
 COMMENT ON COLUMN account.security_events.metadata IS
-  'Chi payload da duoc loc. Khong luu password, token, code_verifier hay assertion (SR-001, invariant 9).';
+  'Sanitized payload only. Never stores passwords, tokens, code_verifier or assertions (SR-001, invariant 9).';
 
 -- Truy vấn FR-012k / AC-008m: đọc tombstone qua đường nội bộ đều audit theo
 -- `sub`; đó là một trong những nơi đọc audit nhiều nhất, sắp theo thời điểm.
@@ -379,9 +379,9 @@ CREATE TABLE IF NOT EXISTS account.account_outbox_events (
 );
 
 COMMENT ON TABLE account.account_outbox_events IS
-  'Transactional outbox sang auth. Ghi cung transaction voi thay doi trang thai (invariant 6).';
+  'Transactional outbox to auth. Written in the same transaction as the state change (invariant 6).';
 COMMENT ON COLUMN account.account_outbox_events.event_id IS
-  'Idempotency key. account gui lai cung event_id khi khong biet request truoc da commit hay chua (FR-006n).';
+  'Idempotency key. account resends the same event_id when it does not know whether the previous request committed (FR-006n).';
 
 -- Đúng một truy vấn đọc tranh chấp hàng chưa publish: relay outbox, `FOR UPDATE
 -- SKIP LOCKED`. Index phục vụ riêng câu đó — không truy vấn nào khác lọc theo
@@ -416,7 +416,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION account.security_events_append_only() IS
-  'Tuan chon append-only cua audit (SR-002, invariant 8). DELETE khong chan o day vi retention nhom (3) con mo.';
+  'Enforces the append-only property of the audit log (SR-002, invariant 8). DELETE is not blocked here because group (3) retention is still an open decision.';
 
 DROP TRIGGER IF EXISTS security_events_append_only ON account.security_events;
 CREATE TRIGGER security_events_append_only

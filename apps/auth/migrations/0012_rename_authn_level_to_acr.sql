@@ -59,6 +59,6 @@ ALTER TABLE auth.authorization_transactions
 -- Bước 3 — COMMENT cho cột mới.
 -- ---------------------------------------------------------------------------------------------
 COMMENT ON COLUMN auth.authorization_transactions.acr IS
-  'ACR URN (assurance cao nhat session da vuot qua) - thay the authn_level ladder. Null cho toi khi account xac thuc.';
+  'ACR URN (the highest assurance the session has passed) - replaces the authn_level ladder. NULL until account authenticates.';
 
 COMMIT;

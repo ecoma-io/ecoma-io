@@ -61,7 +61,7 @@ CREATE TABLE auth.refresh_token_families (
 );
 
 COMMENT ON TABLE auth.refresh_token_families IS
-    'Family của refresh token cho một grant. Là ĐƠN VỊ THU HỒI: compromised ⇒ thu hồi toàn bộ family, buộc re-authenticate (FR-018a).';
+    'Family of refresh tokens for one grant. It is the unit of revocation: compromised means revoke the whole family and force re-authentication (FR-018a).';
 
 -- Tra cứu lúc phát hành: "subject này có family active nào cho client này không" — và tra
 -- khi cần thu hồi hàng loạt theo subject.
@@ -151,7 +151,7 @@ CREATE TABLE auth.refresh_tokens (
 );
 
 COMMENT ON TABLE auth.refresh_tokens IS
-    'Refresh token hiện tại. CHỈ lưu hash; rotation với CAS nên không có cửa sổ double-use (FR-018).';
+    'Current refresh token. Stores the hash only; rotation uses CAS, so there is no double-use window (FR-018).';
 
 -- Tra family của một token (đường đi của reuse detection): `family_id` là cột dẫn của
 -- các index FK, nên index FK đã phục vụ truy vấn này — không cần index thứ hai.

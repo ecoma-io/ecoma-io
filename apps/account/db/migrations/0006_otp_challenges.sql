@@ -59,15 +59,15 @@ CREATE TABLE IF NOT EXISTS account.otp_challenges (
 );
 
 COMMENT ON TABLE account.otp_challenges IS
-  'Kho challenge OTP. KHONG luu ma tran — chi keyed HMAC digest. Rate limit dem tu bang nay, khong bang rieng.';
+  'OTP challenge store. Stores no plaintext code — only a keyed HMAC digest. Rate limiting derives from this table, no separate table.';
 COMMENT ON COLUMN account.otp_challenges.address_hash IS
-  'SHA-256 hex cua dia chi da normalize. Khong FK: challenge cung cap cho dia chi chua ton tai (anti-enumeration).';
+  'SHA-256 hex of the normalized address. No FK: a challenge is issued even for an address that does not exist yet (anti-enumeration).';
 COMMENT ON COLUMN account.otp_challenges.code_digest IS
-  'HMAC-SHA256(key, purpose || ":" || code) hex. Key o Worker Secret NUXT_OTP_HMAC_SECRET; so sanh timing-safe o tang app.';
+  'HMAC-SHA256(key, purpose || ":" || code) hex. Key lives in the Worker Secret NUXT_OTP_HMAC_SECRET; compared timing-safe at the app layer.';
 COMMENT ON COLUMN account.otp_challenges.purpose IS
-  'Muc dich challenge. Login la duy nhat cua v1; tach cot de luong sau dung chung bang.';
+  'Challenge purpose. Login is the only one in v1; the column is split so later flows can share the table.';
 COMMENT ON COLUMN account.otp_challenges.consumed_at IS
-  'NULL = dang hieu luc. Partial UNIQUE index tren (address_hash, purpose) chi tinh cac hang nay.';
+  'NULL = still valid. The partial UNIQUE index on (address_hash, purpose) counts only these rows.';
 
 -- Đúng hai truy vấn đọc bảng này:
 --   1. Tra cứu challenge active theo (address, purpose) — index UNIQUE bên dưới phục vụ.

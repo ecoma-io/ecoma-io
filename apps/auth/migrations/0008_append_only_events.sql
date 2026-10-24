@@ -82,7 +82,7 @@ CREATE TABLE auth.authorization_audit_events (
 );
 
 COMMENT ON TABLE auth.authorization_audit_events IS
-    'Audit của auth. APPEND-ONLY — quyền UPDATE/DELETE bị thu khỏi ecoma_auth_runtime ở file 0009. KHÔNG chứa token, code_verifier, secret, handle, account_session_ref hay assertion (SR-002).';
+    'Auth audit log. APPEND-ONLY — UPDATE/DELETE privileges are revoked from ecoma_auth_runtime in file 0009. Contains no tokens, code_verifier, secrets, handles, account_session_ref or assertions (SR-002).';
 
 -- ⚠️ Vì append-only, index theo thời gian là chiều truy vấn chính: "sự kiện của client này
 --    trong khoảng này", "sự kiện của subject này", "sự kiện loại này".
@@ -161,7 +161,7 @@ CREATE TABLE auth.outbox_events (
 );
 
 COMMENT ON TABLE auth.outbox_events IS
-    'Transactional outbox sang account. Ghi CÙNG transaction với state đổi nên event không thể mất. Giao thức at-least-once: consumer phải idempotent theo event_id, và published_at chỉ set sau khi gửi thành công.';
+    'Transactional outbox to account. Written in the SAME transaction as the state change, so events cannot be lost. At-least-once protocol: consumers must be idempotent by event_id, and published_at is set only after successful delivery.';
 
 -- ⚠️ Đường nóng của relay: lấy các item chưa phát, cũ nhất trước.
 CREATE INDEX IF NOT EXISTS outbox_events_pending_idx

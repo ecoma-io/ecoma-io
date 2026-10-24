@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS backoffice.bff_sessions (
 );
 
 COMMENT ON TABLE backoffice.bff_sessions IS
-  'Phien BFF server-side cua backoffice (ADR-0012): cookie chi mang ID, token set nam o day. Khong log token (SR-014).';
+  'Server-side BFF session of backoffice (ADR-0012): the cookie carries only an ID, the token set lives here. Tokens are never logged (SR-014).';
 
 -- Phiên append-then-revoke: UPDATE chỉ cho phép đổi `expires_at` (sliding),
 -- `access_token` (refresh rotate), `revoked_at` (logout/reuse) — không đường
@@ -75,7 +75,7 @@ CREATE TRIGGER bff_sessions_immutable_guard
   FOR EACH ROW EXECUTE FUNCTION backoffice.bff_sessions_immutable_guard();
 
 COMMENT ON FUNCTION backoffice.bff_sessions_immutable_guard() IS
-  'Chan doi chu phien, id_hash hay created_at sau khi INSERT (pattern account_sessions guard).';
+  'Blocks changing the session owner, id_hash or created_at after INSERT (the account_sessions guard pattern).';
 
 -- ---------------------------------------------------------------------------
 -- Grant cho runtime role
@@ -112,7 +112,7 @@ CREATE TABLE IF NOT EXISTS backoffice.bff_login_flows (
 );
 
 COMMENT ON TABLE backoffice.bff_login_flows IS
-  'Luong login-in-progress cua BFF: state + PKCE verifier, consume bang DELETE (single-use, TTL 10 phut). ADR-0012 1.';
+  'The BFF login-in-progress flow: state + PKCE verifier, consumed by DELETE (single-use, 10-minute TTL). ADR-0012 1.';
 
 -- Luồng login là write-once-consume-once: runtime không cần UPDATE (không có
 -- gì để trượt hay rotate) — DELETE là consume, và DELETE hàng hết hạn là dọn.

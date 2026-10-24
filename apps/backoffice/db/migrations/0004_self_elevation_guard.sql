@@ -93,7 +93,7 @@ END;
 $$;
 
 COMMENT ON CONSTRAINT staff_sub_account_id_format_check ON backoffice.staff IS
-  'sub phai la Account ID dung dinh dang: prefix sub_ + 32 ky tu base32 viet thuong (a-z, 2-7) — khop isBackofficeAccountId cua libs/backoffice-domain.';
+  'sub must be a well-formed Account ID: sub_ prefix + 32 lowercase base32 characters (a-z, 2-7) — matches isBackofficeAccountId in libs/backoffice-domain.';
 
 -- ---------------------------------------------------------------------------
 -- CHECK: độ dài `request_id`/`correlation_id` + định dạng `target_sub` của audit
@@ -168,11 +168,11 @@ END;
 $$;
 
 COMMENT ON CONSTRAINT authorization_audit_request_id_length_check ON backoffice.authorization_audit IS
-  'request_id toi da 128 ky tu — cung nguong voi AUTHORIZATION_AUDIT_ID_MAX_LENGTH o tang app (apps/backoffice/server/authorization-audit.ts).';
+  'request_id is at most 128 characters — same threshold as AUTHORIZATION_AUDIT_ID_MAX_LENGTH at the app layer (apps/backoffice/server/authorization-audit.ts).';
 COMMENT ON CONSTRAINT authorization_audit_correlation_id_length_check ON backoffice.authorization_audit IS
-  'correlation_id toi da 128 ky tu — cung nguong voi AUTHORIZATION_AUDIT_ID_MAX_LENGTH o tang app (apps/backoffice/server/authorization-audit.ts).';
+  'correlation_id is at most 128 characters — same threshold as AUTHORIZATION_AUDIT_ID_MAX_LENGTH at the app layer (apps/backoffice/server/authorization-audit.ts).';
 COMMENT ON CONSTRAINT authorization_audit_target_sub_format_check ON backoffice.authorization_audit IS
-  'target_sub la Account ID (sub_ + 32 ky tu base32) hoac NULL; chan audit lam kenh ro du lieu (S2, SR-014).';
+  'target_sub is an Account ID (sub_ + 32 base32 characters) or NULL; blocks the audit from becoming a data-exfiltration channel (S2, SR-014).';
 
 -- ---------------------------------------------------------------------------
 -- Trigger: runtime role không được tự nâng quyền qua `role_assignments`
@@ -295,7 +295,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION backoffice.role_assignments_no_self_elevation() IS
-  'Chan runtime role tu gan role cho chinh minh va gan system-defined role; actor (created_by_sub) phai duoc khai bao va dung dinh dang. Migrator/owner khong bi chan (duong bootstrap ADR-0003).';
+  'Blocks the runtime role from assigning roles to itself and from assigning system-defined roles; the actor (created_by_sub) must be declared and well-formed. Migrator/owner are not blocked (the ADR-0003 bootstrap path).';
 
 -- Trigger bắt **cả** INSERT lẫn UPDATE của các cột mang ý nghĩa cấp quyền, và
 -- cả UPDATE `revoked_at`/`valid_until` để runtime không tự un-revoke hay kéo
@@ -340,7 +340,7 @@ ALTER TABLE backoffice.role_permissions
   ADD COLUMN IF NOT EXISTS created_by_sub text;
 
 COMMENT ON COLUMN backoffice.role_permissions.created_by_sub IS
-  'Actor da gan permission nay (Account ID). Nullable o tang schema de duong governance (migrator/owner) khong bi chan; trigger chan runtime khi NULL.';
+  'Actor that granted this permission (Account ID). Nullable at the schema layer so the governance path (migrator/owner) is not blocked; the trigger blocks the runtime when NULL.';
 
 -- ---------------------------------------------------------------------------
 -- Trigger: runtime role không được đổi nội dung role / gắn permission ngoài
@@ -443,7 +443,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION backoffice.role_permissions_governed_write() IS
-  'Runtime role chi duoc gan permission co status active trong sealed catalog va khong gan vao system-defined role (ADR-0004); actor phai duoc khai bao. Doc bang quyen cua caller (runtime co SELECT), khong SECURITY DEFINER.';
+  'The runtime role may grant only permissions with status active in the sealed catalog and never onto a system-defined role (ADR-0004); the actor must be declared. Reads with the caller''s privileges (the runtime has SELECT), not SECURITY DEFINER.';
 
 -- `role_permissions` không có UPDATE cho runtime (đổi membership làm bằng
 -- INSERT/DELETE — `0002`), nên guard INSERT chỉ cần BEFORE INSERT. DELETE đi
@@ -502,7 +502,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION backoffice.role_permissions_no_system_delete() IS
-  'Chan runtime role xoá permission khoi role (system-defined va custom) — noi dung role la governance action (ADR-0004). Migrator/owner khong bi chan.';
+  'Blocks the runtime role from removing permissions from a role (system-defined and custom) — changing role contents is a governance action (ADR-0004). Migrator/owner are not blocked.';
 
 DROP TRIGGER IF EXISTS role_permissions_no_system_delete ON backoffice.role_permissions;
 CREATE TRIGGER role_permissions_no_system_delete
