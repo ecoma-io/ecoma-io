@@ -36,8 +36,14 @@ import {
   type D1DatabaseLike,
 } from '@ecoma-io/transactional-mailer-job-infrastructure';
 
-import workerMj, { LIFECYCLE_QUEUE_NAME } from './main';
+import workerMj from './main';
 import { INTERNAL_AUTH_SECRET_ENV } from './internal-delivery-client';
+
+// `main` không export hằng tên queue (named export non-function làm workerd
+// từ chối boot entry module) — test khai literal khớp consumer config trong
+// `wrangler.jsonc`; test entrypoint contract dưới/assert batch.route theo
+// literal này.
+const LIFECYCLE_QUEUE_NAME = 'ecoma-mail-lifecycle-events';
 
 // Không gửi telemetri khi spawn wrangler trong test.
 process.env['WRANGLER_SEND_METRICS'] = 'false';

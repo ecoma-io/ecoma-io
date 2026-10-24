@@ -8,6 +8,24 @@ import {
 import { startWorkerRuntime, statusWorkerRuntime } from './worker-orchestration.js';
 
 /**
+ * Chuẩn hoá giá trị `--entry` về mảng hoặc undefined để truyền thẳng
+ * `entryFilter` (undefined = boot toàn bộ runtime).
+ *
+ * Citty parse qua `node:util.parseArgs` (strict:false) — flag string LẶP LẠI
+ * bị COLLAPSE, giá trị cuối thắng (`--entry a --entry b` → `'b'`, không
+ * bao giờ là array). Vì vậy list nhiều entry phải viết comma-separated:
+ * `--entry transactional-mail,transactional-mailer-job`. Đã đo được hiện
+ * tượng collapse này trên wrangler/citty của repo (node 24.20.0).
+ */
+function readEntryFilterArg(entry: string | string[] | undefined): string[] | undefined {
+  if (entry === undefined) return undefined;
+  const raw = Array.isArray(entry) ? entry : [entry];
+  const names = raw.flatMap((value) => value.split(',')).map((value) => value.trim());
+  const filtered = names.filter((value) => value.length > 0);
+  return filtered.length > 0 ? filtered : undefined;
+}
+
+/**
  * Entry `pnpm dx local-worker-up`.
  *
  * Bring up WORKER runtime của worktree — mọi app ecoma OPT-IN qua marker
@@ -52,6 +70,13 @@ export default defineCommand({
 
   args: {
     'worktree-root': workerWorktreeRootArg,
+    entry: {
+      type: 'string',
+      description:
+        'Boot only these app dirs, comma-separated: --entry transactional-mail,transactional-mailer-job. ' +
+        'Boot order stays topological within the selection; unknown name fails closed',
+      required: false,
+    },
   },
 
   run({ args }) {
@@ -61,7 +86,21 @@ export default defineCommand({
     void runLocalCommandAsync('worker-up', async () => {
       const worktreeRoot = requireDirectoryRoot(args['worktree-root']) ?? process.cwd();
       try {
-        const runtime = await startWorkerRuntime({ worktreeRoot });
+        const entryFilter = readEntryFilterArg(args.entry);
+        const runtime = await startWorkerRuntime({ worktreeRoot, entryFilter });
+        // EXIT TƯỜNG MINH sau khi xong: CLI này spawn worker DETACHED (thiết kế
+        // có chủ ý — CLI là điểm điều khiển, không phải process manager), và
+        // orchestration release stdout/stderr của worker bằng destroy()
+        // best-effort. destroy() thỉnh thoảng không đóng được hết handle read-end
+        // (đo được 2026-10-24: CLI in đủ output "runtime up" rồi treo idle
+        // epoll-vô-hạn vì còn handle ref — flake theo timing, không phải logic),
+        // event loop không drain và process không bao giờ exit. `process.exit`
+        // cắt đúng điểm này: mọi output đã flush qua console.log (write sync với
+        // pipe), worker detached không bị ảnh hưởng. Không dùng cho status/down —
+        // hai lệnh đó không giữ pipe của process con.
+        process.stdout.write('', () => {
+          process.exit(process.exitCode ?? 0);
+        });
         if (runtime.workers.length === 0) {
           // 0 entry discovered (OCR round-2 finding F6): gần như luôn là
           // misconfig (marker gõ sai tên `local-worker.jsonc`, app dir bị

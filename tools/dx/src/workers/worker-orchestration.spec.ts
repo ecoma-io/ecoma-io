@@ -17,6 +17,7 @@ import { createServer } from 'node:net';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { loadReadinessDeclaration, loadWorkerMarkerDeclaration } from './worker-discovery.js';
 import {
   devVarsArgv,
   localWorkerEnvInjections,
@@ -553,6 +554,103 @@ describe('MAIL_WORKER_ENTRIES', () => {
     expect(() => MAIL_WORKER_ENTRIES(root)).toThrow(/queue consumer không có producer/u);
   });
 
+  it('exempts a consumed queue declared with an external producer in its marker (lifecycle events)', () => {
+    // PR3: `ecoma-mail-lifecycle-events` có producer là Cloudflare Event
+    // Subscriptions — cơ chế platform ngoài repo, không bao giờ xuất hiện
+    // trong scan. Marker khai external = tuyên bố topology; guard thôi coi
+    // là orphan thay vì discovery fail cả repo (bug thật: PR2 thêm consumer
+    // lifecycle là `local-worker-status` fail trên main).
+    const root = makeWorktreeFixture('orphan-external-producer');
+    const jobDir = join(root, 'apps', 'transactional-mailer-job');
+    mkdirSync(jobDir, { recursive: true });
+    writeFileSync(
+      join(jobDir, 'wrangler.jsonc'),
+      JSON.stringify({
+        name: 'ecoma-transactional-mailer-job',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'mail-job', database_name: 'mail-job' }],
+        queues: { consumers: [{ queue: 'ecoma-mail-lifecycle-events' }] },
+      }),
+      'utf8',
+    );
+    writeFileSync(
+      join(jobDir, 'local-worker.jsonc'),
+      JSON.stringify({
+        readiness: 'log-banner',
+        external_queue_producers: ['ecoma-mail-lifecycle-events'],
+      }),
+      'utf8',
+    );
+    const entries = MAIL_WORKER_ENTRIES(root);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.externalQueueProducers).toEqual(['ecoma-mail-lifecycle-events']);
+  });
+
+  it('fails closed when a queue is declared external AND produced in the repo (contradiction)', () => {
+    // Hai declaration mâu thuẫn: guard miễn queue external là tin marker,
+    // queue pair thật lại cấp cạnh boot-order — sống chung nghĩa một bên sai
+    // mà không ai biết bên nào. Fail-loud buộc gỡ một declaration.
+    const root = makeWorktreeFixture('orphan-external-conflict');
+    writeLikelyQueueApp(root, 'push-notification', 'ecoma-push-notification', {
+      queue: 'ecoma-push-delivery',
+    });
+    const jobDir = join(root, 'apps', 'consumer-job');
+    mkdirSync(jobDir, { recursive: true });
+    writeFileSync(
+      join(jobDir, 'wrangler.jsonc'),
+      JSON.stringify({
+        name: 'ecoma-consumer-job',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'db', database_name: 'consumer-db' }],
+        queues: { consumers: [{ queue: 'ecoma-push-delivery' }] },
+      }),
+      'utf8',
+    );
+    writeFileSync(
+      join(jobDir, 'local-worker.jsonc'),
+      JSON.stringify({
+        readiness: 'log-banner',
+        external_queue_producers: ['ecoma-push-delivery'],
+      }),
+      'utf8',
+    );
+    expect(() => MAIL_WORKER_ENTRIES(root)).toThrow(
+      /vừa được khai "external_queue_producers" vừa có producer trong repo: ecoma-push-delivery/u,
+    );
+  });
+
+  it('still fails closed for an orphan queue that is neither produced nor declared external', () => {
+    // Exemption theo danh sách, không phải tắt guard: queue khác không khai
+    // external vẫn orphan như cũ.
+    const root = makeWorktreeFixture('orphan-unrelated-queue');
+    const jobDir = join(root, 'apps', 'consumer-job');
+    mkdirSync(jobDir, { recursive: true });
+    writeFileSync(
+      join(jobDir, 'wrangler.jsonc'),
+      JSON.stringify({
+        name: 'ecoma-consumer-job',
+        main: 'dist/main.js',
+        compatibility_date: '2026-10-05',
+        d1_databases: [{ binding: 'db', database_name: 'consumer-db' }],
+        queues: {
+          consumers: [{ queue: 'ecoma-declared-external' }, { queue: 'ecoma-truly-orphan' }],
+        },
+      }),
+      'utf8',
+    );
+    writeFileSync(
+      join(jobDir, 'local-worker.jsonc'),
+      JSON.stringify({
+        readiness: 'log-banner',
+        external_queue_producers: ['ecoma-declared-external'],
+      }),
+      'utf8',
+    );
+    expect(() => MAIL_WORKER_ENTRIES(root)).toThrow(/ecoma-truly-orphan/u);
+  });
+
   it('fails closed when two apps declare the same D1 database_name (services own their data)', () => {
     // OCR round-2 finding F8: `database_name` là định danh object D1 trong
     // persist dir chia sẻ theo worktree — hai app cùng tên là cùng bind MỘT
@@ -909,6 +1007,86 @@ describe('MAIL_WORKER_ENTRIES', () => {
     } finally {
       warnSpy.mockRestore();
     }
+  });
+});
+
+/** Ghi marker opt-in cho app giả `some-app` trong fixture — trả path marker. */
+function writeMarker(dir: string, content: string): string {
+  const appDir = join(dir, 'apps', 'some-app');
+  mkdirSync(appDir, { recursive: true });
+  const path = join(appDir, 'local-worker.jsonc');
+  writeFileSync(path, content, 'utf8');
+  return path;
+}
+
+describe('loadWorkerMarkerDeclaration', () => {
+  it('parses readiness-only marker into an empty external producers list', () => {
+    const root = makeWorktreeFixture('marker-readiness-only');
+    const declaration = loadWorkerMarkerDeclaration(
+      writeMarker(root, '{"readiness": "log-banner"}'),
+    );
+    expect(declaration.readiness).toBe('log-banner');
+    expect(declaration.externalQueueProducers).toEqual([]);
+  });
+
+  it('parses external_queue_producers as a declared list (JSONC comments allowed)', () => {
+    const root = makeWorktreeFixture('marker-external');
+    const declaration = loadWorkerMarkerDeclaration(
+      writeMarker(
+        root,
+        [
+          '{',
+          '  // Producer thật là Cloudflare Event Subscriptions — ngoài repo.',
+          '  "readiness": "log-banner",',
+          '  "external_queue_producers": ["ecoma-mail-lifecycle-events"]',
+          '}',
+        ].join('\n'),
+      ),
+    );
+    expect(declaration.readiness).toBe('log-banner');
+    expect(declaration.externalQueueProducers).toEqual(['ecoma-mail-lifecycle-events']);
+  });
+
+  it('rejects an external_queue_producers value that is not an array', () => {
+    const root = makeWorktreeFixture('marker-external-not-array');
+    expect(() =>
+      loadWorkerMarkerDeclaration(
+        writeMarker(root, '{"readiness": "log-banner", "external_queue_producers": "q"}'),
+      ),
+    ).toThrow(/phải là array/u);
+  });
+
+  it('rejects an empty string inside external_queue_producers with the index', () => {
+    const root = makeWorktreeFixture('marker-external-empty-item');
+    expect(() =>
+      loadWorkerMarkerDeclaration(
+        writeMarker(root, '{"readiness": "log-banner", "external_queue_producers": ["a", ""]}'),
+      ),
+    ).toThrow(/"external_queue_producers"\[1\]/u);
+  });
+
+  it('rejects a duplicate queue inside external_queue_producers', () => {
+    const root = makeWorktreeFixture('marker-external-dup');
+    expect(() =>
+      loadWorkerMarkerDeclaration(
+        writeMarker(root, '{"readiness": "log-banner", "external_queue_producers": ["q", "q"]}'),
+      ),
+    ).toThrow(/hai lần/u);
+  });
+
+  it('still rejects unknown keys now that the contract has two fields (no silent ignore)', () => {
+    const root = makeWorktreeFixture('marker-unknown-key-two-field');
+    expect(() =>
+      loadWorkerMarkerDeclaration(writeMarker(root, '{"readiness": "http-health", "path": "/x"}')),
+    ).toThrow(/field lạ/u);
+  });
+
+  it('loadReadinessDeclaration keeps returning only the readiness (wrapper contract)', () => {
+    const root = makeWorktreeFixture('marker-wrapper');
+    const declaration = loadReadinessDeclaration(
+      writeMarker(root, '{"readiness": "http-health", "external_queue_producers": ["q"]}'),
+    );
+    expect(declaration).toBe('http-health');
   });
 });
 

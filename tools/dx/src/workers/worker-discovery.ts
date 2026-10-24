@@ -60,31 +60,55 @@ export const LOCAL_WORKER_MARKER = 'local-worker.jsonc';
 export type ReadinessDeclaration = 'http-health' | 'log-banner';
 
 /**
- * Đọc marker opt-in `apps/<dir>/local-worker.jsonc` → readiness declaration.
+ * Marker opt-in đã parse — readiness declaration cùng danh sách queue consumer
+ * của app khai "producer nằm NGOÀI repo".
+ *
+ * `externalQueueProducers` phục vụ đúng một invariant của discovery: orphan
+ * guard từ chối consumer của queue không app nào trong repo produce. Một số
+ * queue có producer KHÔNG THỂ là Worker của repo theo thiết kế — hiện tại là
+ * Cloudflare Event Subscriptions (platform mechanism) publish lifecycle event
+ * vào `ecoma-mail-lifecycle-events`. Khai queue đó ở đây = tuyên bố "producer
+ * của queue này nằm ngoài tập app"; guard thôi coi nó là orphan. Queue KHÔNG
+ * được khai ở đây nếu một app trong repo cũng produce nó (mâu thuẫn → fail).
+ * Trong local runtime, producer thật không tồn tại — E2E tiệm cận path ingest
+ * bằng một fixture producer do script sinh (xem
+ * `scripts/mail-worker-runtime-e2e.mjs`), config đó không vào repo.
+ */
+export interface WorkerMarkerDeclaration {
+  readonly readiness: ReadinessDeclaration;
+  readonly externalQueueProducers: readonly string[];
+}
+
+/**
+ * Đọc marker opt-in `apps/<dir>/local-worker.jsonc` → declaration đầy đủ.
  *
  * Marker phải tồn tại (đã kiểm trước khi gọi) và parse được:
- * `{"readiness": "http-health" | "log-banner"}`. Sai shape hay giá trị lạ →
- * throw với path cụ thể — fail-loud (OCR bug-critical: readiness suy từ
- * `workers_dev`/`queues` khiến app không có `/health` bị poll 60s timeout).
+ * `{"readiness": "http-health" | "log-banner", "external_queue_producers"?: [...]}`
+ * — key thứ hai tùy chọn, chỉ consumer có producer ngoài repo mới khai.
+ * Sai shape hay giá trị lạ → throw với path cụ thể — fail-loud (OCR
+ * bug-critical: readiness suy từ `workers_dev`/`queues` khiến app không có
+ * `/health` bị poll 60s timeout).
  */
-export function loadReadinessDeclaration(markerPath: string): ReadinessDeclaration {
+export function loadWorkerMarkerDeclaration(markerPath: string): WorkerMarkerDeclaration {
   const marker = parseJsonc(readFileSync(markerPath, 'utf8'));
   if (marker === null || typeof marker !== 'object' || Array.isArray(marker)) {
     throw new Error(
       `local worker marker phải là object: ${markerPath} — "readiness": "http-health" | "log-banner"`,
     );
   }
-  // Reject key lạ — marker contract tự khai là "một field, hai giá trị hợp
-  // lệ" (readiness declaration duy nhất); chấp nhận ngầm key lạ nuốt intent
-  // của tác giả (vd `"path": "/api/health"` tưởng poll path khác) hoặc field
-  // copy lẫn từ config wrangler, trái principle no-inference của discovery.
+  // Reject key lạ — marker contract là danh sách field đóng; chấp nhận ngầm
+  // key lạ nuốt intent của tác giả (vd `"path": "/api/health"` tưởng poll
+  // path khác) hoặc field copy lẫn từ config wrangler, trái principle
+  // no-inference của discovery.
+  const knownKeys = new Set(['readiness', 'external_queue_producers']);
   const unknownKeys = Object.keys(marker as Record<string, unknown>).filter(
-    (key) => key !== 'readiness',
+    (key) => !knownKeys.has(key),
   );
   if (unknownKeys.length > 0) {
     throw new Error(
       `marker chứa field lạ ở ${markerPath}: ${unknownKeys.join(', ')} — ` +
-        'marker chỉ khai "readiness": "http-health" | "log-banner" (no inference)',
+        'marker chỉ khai "readiness": "http-health" | "log-banner" và ' +
+        '"external_queue_producers" (danh sách queue có producer ngoài repo, tùy chọn)',
     );
   }
   const declared = (marker as Record<string, unknown>).readiness;
@@ -94,7 +118,46 @@ export function loadReadinessDeclaration(markerPath: string): ReadinessDeclarati
         'chỉ khai "readiness": "http-health" | "log-banner" (no inference)',
     );
   }
-  return declared;
+  // `external_queue_producers` tùy chọn; khi có phải array string không rỗng,
+  // không trùng — khai sai shape là lỗi tác giả marker, không suy ngầm.
+  const rawExternal = (marker as Record<string, unknown>).external_queue_producers;
+  const externalQueueProducers: string[] = [];
+  if (rawExternal !== undefined) {
+    if (!Array.isArray(rawExternal)) {
+      throw new Error(
+        `"external_queue_producers" trong ${markerPath} phải là array tên queue — ` +
+          'nhận ' +
+          `${Array.isArray(rawExternal) ? 'array' : typeof rawExternal}`,
+      );
+    }
+    const seen = new Set<string>();
+    for (const [index, item] of rawExternal.entries()) {
+      if (typeof item !== 'string' || item.length === 0) {
+        throw new Error(
+          `"external_queue_producers"[${index}] trong ${markerPath} phải là string ` +
+            `không rỗng — nhận ${typeof item}`,
+        );
+      }
+      if (seen.has(item)) {
+        throw new Error(
+          `"external_queue_producers" trong ${markerPath} khai '${item}' hai lần — ` +
+            'danh sách phải không trùng',
+        );
+      }
+      seen.add(item);
+      externalQueueProducers.push(item);
+    }
+  }
+  return { readiness: declared, externalQueueProducers };
+}
+
+/**
+ * Wrapper tương thích: nhiều call site chỉ cần readiness. Giữ tên cũ để
+ * caller không đụng tới; đọc declaration một lần duy nhất trong
+ * {@link discoverWorkerEntries} — KHÔNG đọc marker hai lần.
+ */
+export function loadReadinessDeclaration(markerPath: string): ReadinessDeclaration {
+  return loadWorkerMarkerDeclaration(markerPath).readiness;
 }
 
 /** Entry đã discovered từ một `wrangler.jsonc` + marker opt-in của app đó. */
@@ -118,6 +181,13 @@ export interface DiscoveredWorkerEntry {
   producesQueues: string[];
   /** Các queue mà entry này CONSUME — producer phải boot trước để redelivery. */
   consumesQueues: string[];
+  /**
+   * Queue consumer của entry khai "producer nằm ngoài repo" (marker
+   * `external_queue_producers`) — orphan guard miễn các queue này; local
+   * runtime không có producer nào cho chúng (Event Subscriptions không chạy
+   * được local).
+   */
+  externalQueueProducers: readonly string[];
   /** Readiness app KHAI trong marker opt-in — không suy từ config wrangler. */
   readiness: ReadinessDeclaration;
   /** Nhãn ngắn phục vụ report/error. */
@@ -192,9 +262,10 @@ export function discoverWorkerEntries(rootDir?: string): DiscoveredWorkerEntry[]
       // (3) Readiness là DECLARATION trong marker — sai shape/giá trị fail:
       // app này có marker + config load OK nhưng readiness sai vẫn phải ra
       // khỏi danh sách, không fallback ngầm gây readiness timeout
-      // (OCR bug-critical).
-      const readiness = loadReadinessDeclaration(markerPath);
-      entries.push(entryFromCommittedConfig(dir, committedConfigPath, config, readiness));
+      // (OCR bug-critical). Cùng một lần đọc trả cả danh sách queue có
+      // producer ngoài repo — marker là declaration duy nhất, đọc một lần.
+      const marker = loadWorkerMarkerDeclaration(markerPath);
+      entries.push(entryFromCommittedConfig(dir, committedConfigPath, config, marker));
     } catch (error) {
       // Fail-closed: app out khỏi runtime, không fallback readiness ngầm —
       // nhưng marker tồn tại nghĩa là app chủ động opt-in, nên lý do rơi ra
@@ -220,7 +291,7 @@ function entryFromCommittedConfig(
   appDirName: string,
   committedConfigPath: string,
   config: CommittedWranglerConfig,
-  readiness: ReadinessDeclaration,
+  marker: WorkerMarkerDeclaration,
 ): DiscoveredWorkerEntry {
   const appDir = join(committedConfigPath, '..');
 
@@ -325,7 +396,8 @@ function entryFromCommittedConfig(
     dependsOnServiceNames,
     producesQueues,
     consumesQueues,
-    readiness,
+    externalQueueProducers: marker.externalQueueProducers,
+    readiness: marker.readiness,
     label: appDirName,
   };
 }
@@ -473,7 +545,23 @@ export function topoSortEntries(entries: DiscoveredWorkerEntry[]): DiscoveredWor
 
   const consumedQueues = new Set(entries.flatMap((e) => e.consumesQueues));
   const producedQueues = new Set(entries.flatMap((e) => e.producesQueues));
-  const orphanConsumes = [...consumedQueues].filter((queue) => !producedQueues.has(queue));
+  // Queue consumer khai "producer ngoài repo" (marker) không rơi vào orphan
+  // guard — đó là tuyên bố topology, không phải thiếu sót cấu hình. Đổi lại,
+  // queue vừa được khai external VỪA có app trong repo produce là mâu thuẫn
+  // phải fail: một trong hai declaration là sai, để cả hai cùng sống là
+  // boot-order thiếu/giả cạnh mà không ai biết declaration nào đúng.
+  const externalProducers = new Set(entries.flatMap((e) => e.externalQueueProducers));
+  const conflicted = [...externalProducers].filter((queue) => producedQueues.has(queue));
+  if (conflicted.length > 0) {
+    throw new Error(
+      'queue vừa được khai "external_queue_producers" vừa có producer trong repo: ' +
+        conflicted.join(', ') +
+        ' — một trong hai declaration là sai, gỡ một bên',
+    );
+  }
+  const orphanConsumes = [...consumedQueues].filter(
+    (queue) => !producedQueues.has(queue) && !externalProducers.has(queue),
+  );
   if (orphanConsumes.length > 0) {
     throw new Error(
       'queue consumer không có producer trong repo: ' +

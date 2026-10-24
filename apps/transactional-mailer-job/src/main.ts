@@ -247,8 +247,13 @@ function queueDeps(env: MailerJobEnv, config: LoadedMailerJobConfig): ProcessMai
  * Event Subscriptions của Cloudflare Email Service publish lifecycle event vào Queue;
  * provision subscription thật KHÔNG nằm trong phạm vi implementation này — queue chưa
  * có ở môi trường thật thì consumer chỉ không nhận message nào, mọi path khác vô hại.
+ *
+ * KHÔNG export: workerd coi MỌI named export của entry module là map entry
+ * `function | ExportedHandler` — một string export làm runtime từ chối boot
+ * cả Worker ("Incorrect type for map entry", đo được trong E2E local runtime
+ * 2026-10-24). Test cùng package đọc tên queue qua literal riêng.
  */
-export const LIFECYCLE_QUEUE_NAME = 'ecoma-mail-lifecycle-events' as const;
+const LIFECYCLE_QUEUE_NAME = 'ecoma-mail-lifecycle-events' as const;
 
 /**
  * Xử lý một batch lifecycle event — MỘT message một lần ingest, per-message ack/retry.

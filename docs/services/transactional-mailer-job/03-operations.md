@@ -453,7 +453,19 @@ Mục tiêu: giữ backlog ổn định, không vượt provider rate limit. Kh�
 
 ---
 
-## 13. Operational invariants
+## 13. Local Worker runtime — E2E
+
+Cặp mail có đường kiểm vận hành đầy đủ trên local Worker runtime (`wrangler dev`): message create → outbox → Queue → job gửi qua fake provider → outcome → lifecycle event ingest (dedupe + quarantine) → teardown sạch. Script in-repo, lặp lại được, không chạm Cloudflare hay email thật:
+
+```
+node tools/dx/scripts/mail-worker-runtime-e2e.mjs
+```
+
+Quy trình từng bước, giới hạn của wrangler dev (cron không tự chạy, lifecycle producer là fixture do script sinh tạm) và bằng chứng gốc của runtime → [`local-platform/05-worker-runtime-e2e.md`](../local-platform/05-worker-runtime-e2e.md). Marker `local-worker.jsonc` của worker này khai `external_queue_producers` cho `ecoma-mail-lifecycle-events` — producer thật (Cloudflare Event Subscriptions) nằm ngoài repo, discovery exempt queue đó khỏi orphan guard.
+
+---
+
+## 14. Operational invariants
 
 Boundary/idempotency/retry invariants → `docs/services/transactional-mailer-job/01-architecture.md` §14. Chỉ các invariant vận hành:
 

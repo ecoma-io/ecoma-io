@@ -8,4 +8,11 @@
   // (config committed không khai `workers_dev` nên inference cũ còn sai
   // thêm nhánh đó).
   "readiness": "log-banner",
+  // Queue lifecycle event có producer NGOÀI repo theo thiết kế: Cloudflare
+  // Event Subscriptions publish lifecycle event vào `ecoma-mail-lifecycle-events`
+  // (transactional-mailer-job/01-architecture.md §11.3). Khai ở đây để orphan
+  // guard của discovery không coi consumer này là lỗi cấu hình; ở local
+  // runtime không có Event Subscriptions — E2E tiệm cận path ingest bằng
+  // fixture producer do script sinh (tools/dx/scripts/mail-worker-runtime-e2e.mjs).
+  "external_queue_producers": ["ecoma-mail-lifecycle-events"],
 }

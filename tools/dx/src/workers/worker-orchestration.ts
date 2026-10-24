@@ -102,6 +102,12 @@ export interface MailWorkerEntry {
   /** Seed files tùy chọn — list rỗng nghĩa là KHÔNG chạy `applyLocalD1Seeds`. */
   seedFiles: string[];
   readiness: WorkerReadiness;
+  /**
+   * Queue mà entry này consume nhưng producer nằm NGOÀI repo (marker
+   * `external_queue_producers`) — orphan guard miễn chúng. Rỗng với entry
+   * thường; sao chép nguyên văn từ discovery, orchestration không suy luận.
+   */
+  externalQueueProducers: readonly string[];
   /** Nhãn ngắn phục vụ báo cáo/error. */
   label: string;
 }
@@ -149,6 +155,7 @@ export function discoveryToWorkerEntry(discovered: DiscoveredWorkerEntry): MailW
       discovered.readiness === 'http-health'
         ? { kind: 'http-health', path: '/health' }
         : { kind: 'log-banner', pattern: WRANGLER_READY_BANNER },
+    externalQueueProducers: discovered.externalQueueProducers,
     label: discovered.label,
   };
 }
@@ -402,6 +409,17 @@ export interface StartWorkerRuntimeOptions {
     pollIntervalMs?: number;
     timeoutMs?: number;
   };
+  /**
+   * Boot CHỈ các entryName này thay vì toàn bộ discovered runtime — thứ tự
+   * vẫn topological trong tập đã chọn (queue/service dependency giữa các
+   * entry được chọn vẫn được tôn trọng; dependency TRONG repo nhưng KHÔNG
+   * được chọn làm boot fail như mọi orphan). Mục đích: E2E/script một bounded
+   * context boot đúng tập app của mình mà không kéo cả repo runtime
+   * (sub Directed Boot — E2E mail chỉ cần hai entry mail). Fail-closed: tên
+   * không thuộc discovered set → throw; tập rỗng → throw (không có "up với
+   * 0 entry" ngầm — caller không muốn thế thì đừng gọi).
+   */
+  entryFilter?: readonly string[];
   /** Test seam — thay spawn thật của `startWorkerProcess` trong unit test. */
   spawnImpl?: typeof import('node:child_process').spawn;
 }
@@ -570,7 +588,28 @@ export async function startWorkerRuntime(
         'dùng `pnpm dx local-worker-status` để xem, hoặc `pnpm dx local-worker-down` trước khi up lại',
     );
   }
-  const entries = MAIL_WORKER_ENTRIES(worktreeRoot);
+  const discovered = MAIL_WORKER_ENTRIES(worktreeRoot);
+  let entries = discovered;
+  if (options.entryFilter !== undefined) {
+    if (options.entryFilter.length === 0) {
+      throw new Error('entryFilter rỗng — boot 0 entry là lỗi caller, không phải runtime rỗng');
+    }
+    const known = discovered.map((entry) => entry.entryName);
+    const knownSet = new Set(known);
+    const unknown = options.entryFilter.filter((name) => !knownSet.has(name));
+    if (unknown.length > 0) {
+      // `known` đã theo thứ tự alphabet của scan (discovery sort appDirs) —
+      // display không cần sort thêm; rule no-array-sort cấm `.sort()`.
+      throw new Error(
+        `entryFilter nêu entry không thuộc discovered runtime: ${unknown.join(', ')} — ` +
+          `discovered: ${known.join(', ')}`,
+      );
+    }
+    const wanted = new Set(options.entryFilter);
+    // Thứ tự topological GIỮ nguyên: lọc trên mảng đã sort — dependency giữa
+    // các entry được chọn vẫn quyết định thứ tự boot như runtime đầy đủ.
+    entries = discovered.filter((entry) => wanted.has(entry.entryName));
+  }
 
   const rows: WorkerRuntimeRow[] = [];
   for (const entry of entries) {
