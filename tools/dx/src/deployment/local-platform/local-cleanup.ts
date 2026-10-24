@@ -41,6 +41,7 @@ import {
 } from './deploy-labels.js';
 import {
   dockerResourceName,
+  NAMESPACE_LENGTH,
   normalizeWorktreeRoot,
   type DeployResourceKind,
 } from './../../local-runtime/deploy-namespace.js';
@@ -358,16 +359,25 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
       .filter((line) => {
         if (line.length === 0) return false;
         if (dockerType === 'image') {
-          // Image name format `ecoma-<app>-<ns>:local` (home/backoffice/account/
-          // pact-app/auth-wic) — không có suffix `-image` trong tag, nên lọc theo
-          // prefix + namespace pattern.
+          // Hai shape tên image thật (nhìn từ `tags` của từng deploy unit):
+          //  - app-first: `ecoma-<app>-<ns>:local` (home/backoffice/account/
+          //    pact-app) — tag literal hard-code trong index.ts của từng unit.
+          //  - namespace-first: `ecoma-<ns>-auth-wic:local` (auth-wic) — sinh
+          //    bởi `dockerResourceName(ns, 'auth-wic')`.
+          // Prefix `ecoma-auth-wic-` kiểu app-first là dead filter: namespace
+          // là `w` + hex (`worktreeNamespace`), không image nào bắt đầu bằng
+          // `ecoma-auth-wic-` tồn tại — match auth-wic qua shape đúng của nó.
           return (
+            line.endsWith(':local') &&
             (line.startsWith('ecoma-home-') ||
               line.startsWith('ecoma-backoffice-') ||
               line.startsWith('ecoma-account-') ||
               line.startsWith('ecoma-pact-app-') ||
-              line.startsWith('ecoma-auth-wic-')) &&
-            line.endsWith(':local')
+              // `ecoma-` + namespace + `-auth-wic:local`, namespace đủ độ dài
+              // chuẩn (`w` + 12 hex từ `worktreeNamespace`).
+              (line.startsWith('ecoma-') &&
+                line.length > 'ecoma-'.length + NAMESPACE_LENGTH + '-auth-wic:local'.length &&
+                line.endsWith('-auth-wic:local')))
           );
         }
         return line.startsWith('ecoma-') && line.endsWith(`-${kind}`);
