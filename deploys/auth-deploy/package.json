@@ -26,7 +26,7 @@
         }
       },
       "local-up": {
-        "//": "Local lane — duy nhất một lane (`-c local`). Nửa SAU của bất biến identity: `dependsOn` account:local-up buộc auth chạy sau account (owner password role + WIC phụ thuộc container account). Node CUỐI của chuỗi unit — smoke gắn sau node này.",
+        "//": "Local lane — duy nhất một lane (`-c local`). Nửa SAU của bất biến identity: `dependsOn` account:local-up buộc auth chạy sau account (owner password role + WIC phụ thuộc container account). Node CUỐI của chuỗi unit — smoke gắn sau node này. Hai edge `build` là build prerequisite NGOÀI lane (validator chấp nhận target `build`): WIC container chạy `wrangler dev` từ bundle `dist/` mount vào lúc container start — bundle chưa build là wrangler fail entry-point và container restart loop (#247). Nx bảo đảm `auth:build` + `account-bridge:build` chạy trước task up này; edge không tham gia spine topo nên destroy order không đổi.",
         "executor": "nx:run-commands",
         "options": {
           "cwd": "deploys/auth-deploy",
@@ -41,6 +41,18 @@
               "account-deploy"
             ],
             "target": "local-up"
+          },
+          {
+            "projects": [
+              "auth"
+            ],
+            "target": "build"
+          },
+          {
+            "projects": [
+              "account-bridge"
+            ],
+            "target": "build"
           }
         ]
       }

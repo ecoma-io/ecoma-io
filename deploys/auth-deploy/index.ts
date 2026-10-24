@@ -57,7 +57,10 @@ import {
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
 import { shellQuote, sqlQuote } from '../../tools/dx/src/local-runtime/shell-quote';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import { ownershipLabels } from '../../tools/dx/src/deployment/local-platform/deploy-labels';
+import {
+  LABEL_PREFIX,
+  ownershipLabels,
+} from '../../tools/dx/src/deployment/local-platform/deploy-labels';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
 import type { PlatformOutputs } from '../../tools/dx/src/deployment/local-platform/platform-outputs-contract';
 
@@ -309,6 +312,44 @@ const wicStateInit = new docker.Container(
 );
 
 /**
+ * Content-hash của HAI cây bundle `dist/` (`apps/auth/dist` +
+ * `tools/account-bridge/dist`) — trigger recreate của container WIC.
+ *
+ * Vì sao cần: entrypoint chỉ COPY `dist` vào runtime tree LÚC CONTAINER
+ * START (`wic-entrypoint.sh`), còn container WIC là resource có định nghĩa
+ * bất biến giữa các lần `pulumi up` — bundle build lại trên host không làm
+ * thay đổi thuộc tính nào của container, Pulumi không recreate, worker chạy
+ * mãi trên bundle cũ (hoặc, với worktree lần đầu, trên bundle RỖNG → wrangler
+ * fail entry-point → restart loop, #247). Build prerequisite Nx
+ * (`auth:build`/`account-bridge:build` trong `dependsOn` của `local-up`) chỉ
+ * bảo đảm dist tồn tại TRƯỚC khi up; việc container NHẬN bundle mới phải do
+ * chính stack này phát hiện.
+ *
+ * Cơ chế: `command.local.Command` chạy sha256 trên danh sách file của cả hai
+ * cây (`find -type f -print0 | sort -z | xargs -0 sha256sum` rồi hash chuỗi
+ * kết quả — bao phủ cả tên file lẫn nội dung, bất kể thứ tự duyệt), hash
+ * chảy vào `labels` của container (ForceNew) — hash đổi là container
+ * recreate, entrypoint copy lại bundle mới. `@pulumi/docker` 5.2.0 Container
+ * KHÔNG có property `triggers` (property đó thuộc `remoteImage`/
+ * `registryImage`/`@pulumi/command`) — label là cơ chế ForceNew tương đương.
+ *
+ * Hash của cây RỘNG vẫn tính được (không fail-closed ở đây): `triggers` của
+ * command chỉ gồm `worktreeRoot` (đường dẫn, không nội dung), nên command
+ * không re-run theo bundle; empty dist là trạng thái không hợp lệ sẽ bị
+ * guard `wic.fatal: dist_missing` của entrypoint ném ra tường minh.
+ *
+ * `sort -z | xargs -0` là để tên file với ký tự lạ không phá cấu trúc; hash
+ * này không phải dữ liệu bảo mật, chỉ là thay đổi-detector.
+ */
+const bundleHashCommand = pulumi.interpolate`cd ${worktreeRoot} && for d in apps/auth/dist tools/account-bridge/dist; do if [ -d "$d" ]; then (cd "$d" && find . -type f -print0 | sort -z | xargs -0 -r sha256sum); fi; done | sha256sum | cut -d' ' -f1`;
+
+const bundleHash = new command.local.Command(dockerResourceName(ns, 'auth-wic') + '-bundle-hash', {
+  create: bundleHashCommand,
+  update: bundleHashCommand,
+  triggers: [worktreeRoot],
+});
+
+/**
  * Container WIC — HAI worker `wrangler dev` (auth + shim bridge) qua
  * `wic-entrypoint.sh`, plain HTTP trên platform network, TLS do Traefik chấm
  * dứt phía trước (cùng model home/backoffice/account).
@@ -316,6 +357,11 @@ const wicStateInit = new docker.Container(
  * Thứ tự phụ thuộc: provision → migrate → image → volume → container —
  * container chỉ lên sau khi schema `db-auth` sẵn sàng, để readiness đỏ của
  * cửa sổ chưa-migrate không bị healthcheck giết lặp vô tận.
+ *
+ * `bundleHash` là dependency thêm của container (không phải của migrate):
+ * container phải đọc được hash của LẦN build hiện hành trước khi tạo —
+ * bundle vừa build lại thì hash mới đã chảy vào label trước khi Pulumi so
+ * sánh desired state.
  *
  * Env:
  * - `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` (secret):
@@ -405,6 +451,14 @@ const wic = new docker.Container(
     ],
     labels: [
       ...Object.entries(labels).map(([label, value]) => ({ label, value })),
+      // Bundle-hash trigger: hash SHA-256 của 2 cây dist hiện hành. ForceNew —
+      // bundle build lại trên host đổi hash ⇒ container recreate ⇒ entrypoint
+      // copy lại bundle (xem JSDoc của bundleHash). Thuộc namespace
+      // `io.ecoma` cùng họ ownership labels, không đụng `io.docker.*`.
+      {
+        label: `${LABEL_PREFIX}.bundle-hash`,
+        value: bundleHash.stdout,
+      },
       { label: 'traefik.enable', value: 'true' },
       // Bắt buộc với provider docker multi-tenant (memory: cùng network flag
       // KHÔNG lọc — container trên nhiều network bị Traefik thấy qua network
@@ -450,7 +504,7 @@ const wic = new docker.Container(
       startPeriod: '120s',
     },
   },
-  { dependsOn: [migrate, wicImage, wicStateVolume, wicStateInit] },
+  { dependsOn: [migrate, wicImage, wicStateVolume, wicStateInit, bundleHash] },
 );
 
 export const provisionCommandName = provision.id;
