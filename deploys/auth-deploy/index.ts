@@ -350,6 +350,18 @@ const wic = new docker.Container(
         volumeName: wicStateVolumeName,
         containerPath: '/state',
       },
+      // Repo root mount read-only — nguồn `node_modules` (binary wrangler của
+      // entrypoint + resolve module hai tầng của cây runtime mirror) và
+      // `wrangler.jsonc` của cả hai app. Thiếu mount này là `/repo` rỗng trừ
+      // hai subtree dist bên dưới → deps check của entrypoint fail
+      // `wrangler_binary_missing` → restart loop (Issue #233). RO vì WIC không
+      // ghi gì xuống repo: wrangler ghi `.wrangler/tmp`, cache miniflare và
+      // registry đều qua điểm ghi `/state` (xem wic-entrypoint.sh).
+      {
+        hostPath: worktreeRoot,
+        containerPath: '/repo',
+        readOnly: true,
+      },
       // Bundle `dist/` của hai app: repo mount read-only không chứa dist
       // (bundle build trên host bởi target `build` của Nx), mount bind trực
       // tiếp từng thư mục dist đã build (ro: workerd chỉ ĐỌC bundle; build
