@@ -115,7 +115,15 @@ export type DeployResourceKind =
   /** Container image `node-server` của app pact-broker-app (BFF dashboard). */
   | 'pact-app'
   /** Image build từ context repo root của deploy unit `pact-broker-app-deploy`. */
-  | 'pact-app-image';
+  | 'pact-app-image'
+  /** WIC container của transactional-mail-deploy (control plane + consumer). */
+  | 'mail-wic'
+  /** Image của WIC mail container. */
+  | 'mail-wic-image'
+  /** Volume state wrangler của WIC mail (persist D1 mail/mail-job + dev registry). */
+  | 'mail-wic-state'
+  /** Container init một-shot chown volume state WIC mail cho uid node. */
+  | 'mail-wic-state-init';
 
 /**
  * Tên Docker resource hợp lệ và nhất quán cho một namespace.

@@ -11,6 +11,7 @@ import {
   validateStepTarget,
   LocalStackStepUsageError,
   resolveIdentityInternalSecret,
+  resolveMailInternalAuthSecret,
   type LocalStackStep,
 } from './local-stack-step.js';
 import { exec, ensureStack, pulumiEnv, pulumiRun, resolveContext } from './pulumi-context.js';
@@ -340,7 +341,12 @@ describe('runLocalStackStep smoke', () => {
 });
 
 describe('localStackSecrets — per-stack secret contract', () => {
-  const base = { rootHost: 'fbi.com:1', identityInternalSecret: 'shared', signingKeyPem: 'PEM' };
+  const base = {
+    rootHost: 'fbi.com:1',
+    identityInternalSecret: 'shared',
+    mailInternalAuthSecret: 'shared-mail',
+    signingKeyPem: 'PEM',
+  };
 
   it('account and auth receive the SAME internal secret value', () => {
     const account = localStackSecrets('account-deploy', base);
@@ -351,6 +357,42 @@ describe('localStackSecrets — per-stack secret contract', () => {
     expect(authSecret).toBe('shared');
   });
 
+  it('account and transactional-mail-deploy receive the SAME mail secret value', () => {
+    const account = localStackSecrets('account-deploy', base);
+    const mail = localStackSecrets('transactional-mail-deploy', base);
+    const accountSecret = account.find(([k]) => k === 'namespace:mailInternalAuthSecret')?.[1];
+    const mailSecret = mail.find(([k]) => k === 'namespace:mailInternalAuthSecret')?.[1];
+    expect(accountSecret).toBe('shared-mail');
+    expect(mailSecret).toBe('shared-mail');
+    // Mail path là credential RIÊNG — không bao giờ trùng path Account↔Auth.
+    expect(mailSecret).not.toBe(account.find(([k]) => k === 'namespace:internalHmacSecret')?.[1]);
+    // DUY NHẤT secret chia hai stack là mail secret: ba secret còn lại của
+    // transactional-mail-deploy (consumer pair, fingerprint keyring, quarantine)
+    // là của riêng cặp mail — account không nhận key nào trong ba key đó.
+    const mailKeys = mail.map(([k]) => k);
+    expect(mailKeys).toEqual([
+      'namespace:mailInternalAuthSecret',
+      'namespace:mailerJobInternalSecret',
+      'namespace:mailFingerprintKey',
+      'namespace:mailQuarantineHmacKey',
+    ]);
+    for (const key of mailKeys.slice(1)) {
+      expect(account.find(([k]) => k === key)).toBeUndefined();
+    }
+    // Hai khoá hex phải là hình 64 hex chữ thường mà loader của cả hai Worker
+    // đòi (FINGERPRINT_KEY_HEX / HEX_KEY_64) — sinh sai hình là chết lúc boot.
+    expect(mail.find(([k]) => k === 'namespace:mailFingerprintKey')?.[1]).toMatch(
+      /^[0-9a-f]{64}$/u,
+    );
+    expect(mail.find(([k]) => k === 'namespace:mailQuarantineHmacKey')?.[1]).toMatch(
+      /^[0-9a-f]{64}$/u,
+    );
+    // Hai khoá hex sinh ĐỘC LẬP — trùng nhau là hai ngữ cảnh dùng chung khoá.
+    expect(mail.find(([k]) => k === 'namespace:mailFingerprintKey')?.[1]).not.toBe(
+      mail.find(([k]) => k === 'namespace:mailQuarantineHmacKey')?.[1],
+    );
+  });
+
   it('every secret key is unique per stack (no accidental overwrite inside one stack)', () => {
     for (const project of [
       'account-deploy',
@@ -358,6 +400,7 @@ describe('localStackSecrets — per-stack secret contract', () => {
       'backoffice-deploy',
       'pact-broker-api-deploy',
       'pact-broker-app-deploy',
+      'transactional-mail-deploy',
     ]) {
       const keys = localStackSecretsKeys(project, base);
       expect(new Set(keys).size).toBe(keys.length);
@@ -409,6 +452,129 @@ describe('resolveIdentityInternalSecret — persistence contract', () => {
     expect(resolveIdentityInternalSecret('home-deploy', ctx, env)).toBe('');
     expect(resolveIdentityInternalSecret('backoffice-deploy', ctx, env)).toBe('');
     expect(resolveIdentityInternalSecret('platform-deploy', ctx, env)).toBe('');
+  });
+});
+
+describe('resolveMailInternalAuthSecret — persistence contract (Account<->Mail path)', () => {
+  const ctx = resolveContext(tempWorktree());
+  const env = pulumiEnv(ctx, { kind: 'inline', value: 'unit-test-pass' });
+
+  it('account generates a fresh mail secret (it runs first and persists it)', () => {
+    const a = resolveMailInternalAuthSecret('account-deploy', ctx, env);
+    const b = resolveMailInternalAuthSecret('account-deploy', ctx, env);
+    expect(a).toMatch(/^[A-Za-z0-9_-]+$/u);
+    expect(a?.length).toBeGreaterThanOrEqual(32);
+    expect(a).not.toBe(b);
+    // Đường mail là credential RIÊNG, không tái sử dụng đường Account<->Auth.
+    expect(a).not.toBe(resolveIdentityInternalSecret('account-deploy', ctx, env));
+  });
+
+  it('non-mail projects get an empty string (no secret needed)', () => {
+    expect(resolveMailInternalAuthSecret('home-deploy', ctx, env)).toBe('');
+    expect(resolveMailInternalAuthSecret('backoffice-deploy', ctx, env)).toBe('');
+    expect(resolveMailInternalAuthSecret('platform-deploy', ctx, env)).toBe('');
+    expect(resolveMailInternalAuthSecret('auth-deploy', ctx, env)).toBe('');
+  });
+
+  it('transactional-mail-deploy reads the persisted value from the account stack', () => {
+    const calls: Array<readonly string[]> = [];
+    execMock.mockImplementation((_command, args) => {
+      if (args[1] === 'get') {
+        calls.push(args);
+        return {
+          status: 0,
+          stdout: 'persisted-mail-secret-32-chars-min!!\n',
+          stderr: '',
+        } satisfies ExecResult;
+      }
+      return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+    });
+    expect(resolveMailInternalAuthSecret('transactional-mail-deploy', ctx, env)).toBe(
+      'persisted-mail-secret-32-chars-min!!',
+    );
+    const getCall = calls[0];
+    expect(getCall[2]).toBe('namespace:mailInternalAuthSecret');
+    expect(getCall[getCall.indexOf('--stack') + 1]).toContain('account-deploy');
+  });
+
+  it('transactional-mail-deploy FAILS (undefined) when the account stack has no mail secret', () => {
+    execMock.mockImplementation((_command, args) => {
+      if (args[1] === 'get') {
+        return {
+          status: 6,
+          stdout: '',
+          stderr: 'error: no value for the key',
+        } satisfies ExecResult;
+      }
+      return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+    });
+    expect(resolveMailInternalAuthSecret('transactional-mail-deploy', ctx, env)).toBeUndefined();
+  });
+
+  it('account up FAILS CLOSED before touching Pulumi when the mail secret is unreadable', async () => {
+    const root = tempWorktree();
+    process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
+    writeFileSync(join(root, '.env'), 'ROOT_HOST=fbi.com:40014\n', 'utf8');
+    execMock.mockImplementation((_command, args) => {
+      if (args[1] === 'get') {
+        return {
+          status: 6,
+          stdout: '',
+          stderr: "error: no stack named 'organization/account-deploy/local-x' found",
+        } satisfies ExecResult;
+      }
+      return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+    });
+    pulumiRunMock.mockReturnValue(undefined);
+
+    const exit = await runLocalStackStep('transactional-mail-deploy', 'up', {
+      worktreeRoot: root,
+    });
+    expect(exit).toBe(1);
+    expect(vi.mocked(ensureStack)).not.toHaveBeenCalled();
+    expect(pulumiRunMock).not.toHaveBeenCalled();
+  });
+
+  it('transactional-mail-deploy up persists the SAME value the account stack holds', async () => {
+    const root = tempWorktree();
+    process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
+    writeFileSync(join(root, '.env'), 'ROOT_HOST=fbi.com:40015\n', 'utf8');
+    execMock.mockImplementation((_command, args) => {
+      if (args[1] === 'get') {
+        return {
+          status: 0,
+          stdout: 'persisted-mail-secret-32-chars-min!!\n',
+          stderr: '',
+        } satisfies ExecResult;
+      }
+      return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+    });
+    pulumiRunMock.mockReturnValue(undefined);
+
+    const exit = await runLocalStackStep('transactional-mail-deploy', 'up', {
+      worktreeRoot: root,
+    });
+    expect(exit).toBe(0);
+
+    const mailSets = execMock.mock.calls.filter(
+      ([, args]) =>
+        args[1] === 'set' &&
+        (args[args.indexOf('--stack') + 1] ?? '').includes('transactional-mail-deploy'),
+    );
+    const keys = mailSets.map(([, args]) => args[2]);
+    // Persist đủ BỐN secret: mail secret đọc từ account + ba secret riêng cặp
+    // mail (sinh tại chỗ — cùng chu kỳ xoay với các secret local khác).
+    expect(keys).toEqual([
+      'namespace:mailInternalAuthSecret',
+      'namespace:mailerJobInternalSecret',
+      'namespace:mailFingerprintKey',
+      'namespace:mailQuarantineHmacKey',
+    ]);
+    // CÙNG giá trị với secret account đã persist — invariant path Account<->Mail.
+    expect(mailSets[0]?.[4]).toEqual({ input: 'persisted-mail-secret-32-chars-min!!' });
+    // Khoá hex persist đúng hình loader đòi (64 hex chữ thường).
+    expect(mailSets[2]?.[4]?.input).toMatch(/^[0-9a-f]{64}$/u);
+    expect(mailSets[3]?.[4]?.input).toMatch(/^[0-9a-f]{64}$/u);
   });
 });
 

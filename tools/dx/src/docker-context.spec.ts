@@ -292,4 +292,12 @@ describe('root .dockerignore: required build inputs are included', () => {
     expect(isExcluded('deploys/pact-broker-api-deploy/Dockerfile')).toBe(true);
     expect(isExcluded('deploys/pact-broker-api-deploy/package.json')).toBe(true);
   });
+
+  it('mail WIC entrypoint enters the context while the rest of its deploy stays out', () => {
+    // Image WIC của transactional-mail-deploy COPY đúng một file thứ hai của
+    // `deploys/` — cùng trình tự re-include với auth-deploy phía trên.
+    expect(isExcluded('deploys/transactional-mail-deploy/wic-entrypoint.sh')).toBe(false);
+    expect(isExcluded('deploys/transactional-mail-deploy/index.ts')).toBe(true);
+    expect(isExcluded('deploys/transactional-mail-deploy/Dockerfile')).toBe(true);
+  });
 });

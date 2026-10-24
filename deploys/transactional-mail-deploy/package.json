@@ -24,6 +24,17 @@
           "cwd": "deploys/transactional-mail-deploy",
           "command": "npx tsx ../../tools/dx provision-gate"
         }
+      },
+      "local-up": {
+        "//": "Local lane — duy nhất một lane (`-c local`). Node này CHƯA nằm trong `LOCAL_LANE_PROJECTS` (ghim 5 unit, spec test chặn cứng): `nx run transactional-mail-deploy:local-up` chạy được khi gọi tường minh nhưng orchestration `pnpm dx local-deploy` chưa gọi tới nó. KHÔNG dependsOn account:local-up ở tầng Nx — contract thứ tự (account persist secret trước) được orchestration thực thi qua cross-stack read (`pulumi config get` fail-closed), không phải cạnh graph, để project ngoài lane không ép graph của lane đổi.",
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "deploys/transactional-mail-deploy",
+          "command": "npx tsx ../../tools/dx local-stack-step --stack transactional-mail-deploy --step up"
+        },
+        "configurations": {
+          "local": {}
+        }
       }
     }
   }

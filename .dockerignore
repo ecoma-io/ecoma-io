@@ -65,13 +65,15 @@ tools/*
 tools/dx/*
 !tools/dx/package.json
 
-# Image WIC (auth-deploy, pact-broker-api-deploy) COPY đúng MỘT file mỗi unit
-# của thư mục `deploys/` — entrypoint script của container wrangler dev. Cùng
-# trình tự mở-lại-đúng-file như `tools/dx` phía trên: `deploys/*` chặn phần
-# còn lại của thư mục (Pulumi program, Pulumi.yaml... không thuộc build context).
+# Image WIC (auth-deploy, pact-broker-api-deploy, transactional-mail-deploy)
+# COPY đúng MỘT file entrypoint mỗi unit của thư mục `deploys/` — script của
+# container wrangler dev. Cùng trình tự mở-lại-đúng-file như `tools/dx` phía
+# trên: `deploys/*` chặn phần còn lại của thư mục (Pulumi program, Pulumi.yaml...
+# không thuộc build context).
 deploys/*
 !deploys/auth-deploy/wic-entrypoint.sh
 !deploys/pact-broker-api-deploy/wic-entrypoint.sh
+!deploys/transactional-mail-deploy/wic-entrypoint.sh
 
 # Blacklist bên trong các subtree đã mở: dependency, kết quả build trung gian
 # và cache dev không bao giờ là input — copy vào context chỉ làm chậm và có

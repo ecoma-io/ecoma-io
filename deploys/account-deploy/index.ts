@@ -69,6 +69,15 @@ const POSTGRES_HOST = 'ecoma-postgres';
 /** Cổng HTTP nội bộ của container account — Nitro `node-server` mặc định 3000. */
 const ACCOUNT_INTERNAL_PORT = 3000;
 
+/**
+ * Cổng HTTP nội bộ của control plane `ecoma-transactional-mail` trong WIC của
+ * transactional-mail-deploy — GIÁ TRỊ GHIM ở stack đó (`MAIL_INTERNAL_PORT`),
+ * copy tại đây vì hai stack là hai Pulumi program độc lập; lệch giá trị là
+ * connection refused ở lần gửi OTP đầu tiên. Alias `ecoma-mail` + port này
+ * được BÁO trong PR của transactional-mail-deploy.
+ */
+const MAIL_INTERNAL_PORT_OF_MAIL_WIC = 4206;
+
 /** Prefix router/service Traefik của app này — namespace vào tên để multi-tenant. */
 const traefikPrefix = (ns: string): string => `account-${ns}`;
 
@@ -111,6 +120,17 @@ const prunerPassword = conf.require('prunerPassword');
 // (`conf.require`) chứ không Container với secret rỗng.
 const internalHmacSecret = conf.require('internalHmacSecret');
 const otpHmacSecret = conf.require('otpHmacSecret');
+
+/**
+ * Secret HMAC path Account↔Mail (đường OTP login) — orchestration sinh MỘT
+ * giá trị, persist vào stack config của CHÍNH stack này; transactional-mail-
+ * deploy đọc lại cùng giá trị và giữ nó làm registry entry
+ * `MAIL_INTERNAL_AUTH_SECRET_SVC_ACCOUNT`. Hai stack một giá trị — cùng cơ
+ * chế bất biến `internalHmacSecret` phía trên. PHẢI khác
+ * `internalHmacSecret` (validation của account từ chối trùng; receiver mail
+ * coi mỗi registry entry là một credential riêng).
+ */
+const mailInternalAuthSecret = conf.require('mailInternalAuthSecret');
 
 const verifiedNamespace = pulumi.output(platformNamespace).apply((upstreamNs) => {
   if (upstreamNs !== ns) {
@@ -267,9 +287,12 @@ const migrate = new command.local.Command(
  * `/ready` của healthcheck không đỏ giả trong cửa sổ chưa-migrate.
  *
  * Env: `NUXT_CLOUDFLARE_ENV` là adapter binding (JSON, secret); hai secret HMAC
- * phủ từ envmap `NUXT_*` vào runtimeConfig private; `mailServiceUrl` để RỖNG —
- * đường mail local là scope riêng (sink local D1, issue #183), để rỗng giữ
- * fail-closed ở lần gửi.
+ * phủ từ envmap `NUXT_*` vào runtimeConfig private; `NUXT_MAIL_SERVICE_URL` trỏ
+ * alias `ecoma-mail` của WIC transactional-mail (port nội bộ 4206 — nguồn hằng
+ * `MAIL_INTERNAL_PORT` của transactional-mail-deploy) và
+ * `NUXT_MAIL_INTERNAL_AUTH_SECRET` là credential path đó — bật đường OTP login
+ * local (validation của account bật cặp này cùng nhau; URL rỗng = đường mail
+ * tắt).
  */
 const account = new docker.Container(
   dockerResourceName(ns, 'account'),
@@ -284,7 +307,10 @@ const account = new docker.Container(
       pulumi.interpolate`NUXT_CLOUDFLARE_ENV=${cloudflareEnvJson}`,
       pulumi.interpolate`NUXT_INTERNAL_HMAC_SECRET=${pulumi.secret(internalHmacSecret)}`,
       pulumi.interpolate`NUXT_OTP_HMAC_SECRET=${pulumi.secret(otpHmacSecret)}`,
-      'NUXT_MAIL_SERVICE_URL=',
+      // Alias `ecoma-mail` của WIC transactional-mail (không namespace — một
+      // alias duy nhất trên platform network, account container cùng network).
+      pulumi.interpolate`NUXT_MAIL_SERVICE_URL=http://ecoma-mail:${MAIL_INTERNAL_PORT_OF_MAIL_WIC}`,
+      pulumi.interpolate`NUXT_MAIL_INTERNAL_AUTH_SECRET=${pulumi.secret(mailInternalAuthSecret)}`,
     ],
     labels: [
       ...Object.entries(labels).map(([label, value]) => ({ label, value })),

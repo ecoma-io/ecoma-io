@@ -42,6 +42,7 @@ import {
 } from './pulumi-context.js';
 import {
   generateEs256SigningKeyPem,
+  generateHexKey64,
   generateInternalHmacSecret,
   generatePostgresPassword,
   resolvePlatformEnv,
@@ -85,10 +86,21 @@ export function validateStepTarget(project: string, step: LocalStackStep): void 
  * `namespace:internalSecret` — hai giá trị khác nhau là mọi envelope internal
  * chết `bad_signature` lúc runtime. Bất biến "cùng secret" thuộc về
  * orchestration; `runUpStep` bảo đảm nó qua persistence stack account.
+ *
+ * Tương tự cho `inputs.mailInternalAuthSecret` trên path Account↔Mail: account
+ * nhận làm `namespace:mailInternalAuthSecret` (persist), transactional-mail-deploy
+ * nhận CÙNG giá trị (`namespace:mailInternalAuthSecret` — read lại từ stack
+ * account). PHẢI khác `identityInternalSecret`: receiver mail suy principal từ
+ * credential khớp, còn validation của account từ chối hai secret trùng nhau.
  */
 export function localStackSecrets(
   project: string,
-  inputs: { rootHost: string; identityInternalSecret: string; signingKeyPem: string },
+  inputs: {
+    rootHost: string;
+    identityInternalSecret: string;
+    mailInternalAuthSecret: string;
+    signingKeyPem: string;
+  },
 ): ReadonlyArray<readonly [string, string]> {
   if (project === 'account-deploy') {
     return [
@@ -97,6 +109,7 @@ export function localStackSecrets(
       ['namespace:migratorPassword', generatePostgresPassword()],
       ['namespace:prunerPassword', generatePostgresPassword()],
       ['namespace:internalHmacSecret', inputs.identityInternalSecret],
+      ['namespace:mailInternalAuthSecret', inputs.mailInternalAuthSecret],
       ['namespace:otpHmacSecret', generatePostgresPassword()],
     ] as const;
   }
@@ -143,13 +156,34 @@ export function localStackSecrets(
       ['namespace:machineToken', generatePostgresPassword()],
     ] as const;
   }
+  if (project === 'transactional-mail-deploy') {
+    // Secret HMAC path Account↔Mail — CÙNG GIÁ TRỊ account đã persist (một giá
+    // trị chia hai stack, cơ chế `identityInternalSecret`). Receiver mail giữ nó
+    // làm entry `MAIL_INTERNAL_AUTH_SECRET_SVC_ACCOUNT` của credential registry.
+    // Ba secret còn lại là CỦA RIÊNG cặp mail local (không stack nào khác đọc):
+    // secret HMAC consumer<->control plane, khoá keyring fingerprint và khoá
+    // quarantine — sinh tại chỗ mỗi lần up, cùng chu kỳ xoay với các secret
+    // local khác (`otpHmacSecret`, `cookieKeys`): hai process của cặp nhận
+    // ĐỒNG BỘ giá trị mới trong CÙNG một lần up nên không bao giờ lệch nhau.
+    return [
+      ['namespace:mailInternalAuthSecret', inputs.mailInternalAuthSecret],
+      ['namespace:mailerJobInternalSecret', generateInternalHmacSecret()],
+      ['namespace:mailFingerprintKey', generateHexKey64()],
+      ['namespace:mailQuarantineHmacKey', generateHexKey64()],
+    ] as const;
+  }
   return [];
 }
 
 /** Danh sách KEY secret của một project — dùng cho spec kiểm trùng key. */
 export function localStackSecretsKeys(
   project: string,
-  inputs: { rootHost: string; identityInternalSecret: string; signingKeyPem: string },
+  inputs: {
+    rootHost: string;
+    identityInternalSecret: string;
+    mailInternalAuthSecret: string;
+    signingKeyPem: string;
+  },
 ): string[] {
   return localStackSecrets(project, inputs).map(([key]) => key);
 }
@@ -323,12 +357,15 @@ async function runUpStep(
     }
     const identityInternalSecret = resolveIdentityInternalSecret(project, ctx, env);
     if (identityInternalSecret === undefined) return 1;
+    const mailInternalAuthSecret = resolveMailInternalAuthSecret(project, ctx, env);
+    if (mailInternalAuthSecret === undefined) return 1;
     const signingKeyPem = project === 'auth-deploy' ? await generateEs256SigningKeyPem() : '';
 
     ensureStack(projectDir, project, ctx, env);
     for (const [configKey, configValue] of localStackSecrets(project, {
       rootHost,
       identityInternalSecret,
+      mailInternalAuthSecret,
       signingKeyPem,
     })) {
       setStackSecret(project, configKey, configValue, ctx, env, projectDir);
@@ -401,6 +438,54 @@ export function resolveIdentityInternalSecret(
     `[local-stack-step] auth up: đọc namespace:internalHmacSecret từ account stack thất bại ` +
       `(exit ${String(read.status)}) — account up phải chạy TRƯỚC auth (dependsOn). Chạy tay ` +
       `'pulumi config get namespace:internalHmacSecret --stack <account-stack-ref>' trong ` +
+      'deploys/account-deploy để xem stderr gốc — output của lệnh này không được log vì có thể chứa secret.',
+  );
+  return undefined;
+}
+
+/**
+ * Giá trị secret HMAC dùng chung account <-> transactional-mail (path OTP).
+ *
+ * Cùng cơ chế persistence với {@link resolveIdentityInternalSecret}: account
+ * (chạy trước) SINH giá trị mới và persist vào stack config của chính nó
+ * (`namespace:mailInternalAuthSecret`); transactional-mail-deploy (chạy sau)
+ * ĐỌC LẠI từ stack account. Hai stack nhận đúng MỘT giá trị — receiver mail
+ * giữ nó làm entry `MAIL_INTERNAL_AUTH_SECRET_SVC_ACCOUNT`, account ký envelope
+ * với `NUXT_MAIL_INTERNAL_AUTH_SECRET` cùng giá trị đó.
+ *
+ * Giá trị PHẢI khác `identityInternalSecret` (sinh độc lập trong `runUpStep`):
+ * validation của account từ chối hai secret trùng, và registry của receiver
+ * mail coi mỗi entry là một credential riêng.
+ */
+export function resolveMailInternalAuthSecret(
+  project: string,
+  ctx: LocalDeployContext,
+  env: NodeJS.ProcessEnv,
+): string | undefined {
+  if (project === 'account-deploy') return generateInternalHmacSecret();
+  if (project !== 'transactional-mail-deploy') return '';
+  const read = exec(
+    'pulumi',
+    [
+      'config',
+      'get',
+      'namespace:mailInternalAuthSecret',
+      '--stack',
+      fullStackRef('account-deploy', ctx),
+    ],
+    join(ROOT_DIR, 'deploys', 'account-deploy'),
+    env,
+  );
+  if (read.status === 0 && read.stdout.trim().length > 0) {
+    return read.stdout.trim();
+  }
+  // Cùng luật không-leak với nhánh auth: raw stdout của `config get` khi exit 0
+  // chính là secret — không bao giờ ghép vào error string.
+  console.error(
+    `[local-stack-step] transactional-mail-deploy up: đọc namespace:mailInternalAuthSecret ` +
+      `từ account stack thất bại (exit ${String(read.status)}) — account up phải chạy TRƯỚC ` +
+      'transactional-mail-deploy (dependsOn). Chạy tay `pulumi config get ' +
+      'namespace:mailInternalAuthSecret --stack <account-stack-ref>` trong ' +
       'deploys/account-deploy để xem stderr gốc — output của lệnh này không được log vì có thể chứa secret.',
   );
   return undefined;
