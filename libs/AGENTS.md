@@ -1,19 +1,19 @@
 # Repository Instructions — `libs/`
 
-## Phạm vi
+## Scope
 
-Mỗi thư mục con `libs/<bc>-<layer>` là một Nx project. Cấu trúc, tag và ranh giới phụ thuộc → [`docs/overview/05-code-architecture.md`](../docs/overview/05-code-architecture.md).
+Each `libs/<bc>-<layer>` subdirectory is one Nx project. Structure, tags and dependency boundaries → [`docs/overview/05-code-architecture.md`](../docs/overview/05-code-architecture.md).
 
-## Tag bắt buộc
+## Required tags
 
-Mỗi project mang **đúng một** tag mỗi chiều: `type:*`, `scope:*`, `runtime:*`. `pnpm dx arch-check` chạy trên **toàn workspace** trong CI, không theo `nx affected` — tag sai ở project không đổi file nào vẫn phải đỏ.
+Each project carries **exactly one** tag per dimension: `type:*`, `scope:*`, `runtime:*`. `pnpm dx arch-check` runs on the **whole workspace** in CI, not via `nx affected` — a wrong tag on a project that changes no file must still fail.
 
-⚠️ **Hai kiểu cấm khác nhau trong `.oxlintrc.json`, và đọc nhầm thì viết sai luật:**
+⚠️ **Two different prohibition styles live in `.oxlintrc.json`, and misreading them means writing the wrong rule:**
 
-- `notDependOnLibsWithTags` — cấm **transitive**: mọi project _reachable_, kể cả qua trung gian.
-- `onlyDependOnLibsWithTags` — allowlist **direct edge**; project ngoài danh sách bị chặn ở lượt import trực tiếp.
+- `notDependOnLibsWithTags` — prohibits **transitively**: every _reachable_ project, including through intermediaries.
+- `onlyDependOnLibsWithTags` — a **direct-edge** allowlist; a project outside the list is blocked on the direct import.
 
-| `type`           | Không được phụ thuộc (transitive)                                   | Allowlist direct                                       |
+| `type`           | Must not depend on (transitive)                                     | Direct allowlist                                       |
 | ---------------- | ------------------------------------------------------------------- | ------------------------------------------------------ |
 | `domain`         | `application`, `infrastructure`, `composition`, `tooling`           | —                                                      |
 | `contracts`      | `domain`, `application`, `infrastructure`, `composition`, `tooling` | —                                                      |
@@ -21,33 +21,31 @@ Mỗi project mang **đúng một** tag mỗi chiều: `type:*`, `scope:*`, `run
 | `infrastructure` | —                                                                   | `domain`, `application`, `contracts`, `infrastructure` |
 | `composition`    | —                                                                   | `domain`, `application`, `contracts`, `infrastructure` |
 
-⚠️ **`type:infrastructure` ĐƯỢC import `type:application`.** Đó là hướng bình thường — adapter cần use case để gọi. Đừng viết luật cấm ngược lại.
+⚠️ **`type:infrastructure` MAY import `type:application`.** That is the normal direction — an adapter needs the use case to call it. Do not write the rule backwards.
 
-⚠️ **`type:contracts` không import `type:domain`, kể cả gián tiếp.** Contract là thứ provider **publish** để consumer phụ thuộc vào, không phải một tầng để đi theo chiều phụ thuộc. Vì vậy kiểu dùng chung được khai báo lại ở tầng contracts dưới dạng union `wire`, không import union của domain.
+⚠️ **`type:contracts` must not import `type:domain`, not even transitively.** A contract is what a provider **publishes** for consumers to depend on, not a layer to travel down the dependency direction. That is why a shared type is re-declared at the contracts layer as a `wire` union instead of importing the domain's union.
 
-⚠️ **Tag không phân biệt được hai deploy unit cùng scope.** `apps/account` và `apps/auth` đều là `type:composition` + `scope:identity`, nên **không** tag nào chặn được app khai báo binding trỏ sang database của app kia. Ranh giới đó là credential không cho phép ([`docs/overview/05-code-architecture.md`](../docs/overview/05-code-architecture.md) §6.3).
+⚠️ **Tags cannot distinguish two deploy units with the same scope.** `apps/account` and `apps/auth` are both `type:composition` + `scope:identity`, so **no** tag can stop an app from declaring a binding that points at the other app's database. That boundary is enforced by credentials that do not allow it ([`docs/overview/05-code-architecture.md`](../docs/overview/05-code-architecture.md) §6.3).
 
-## Import
+## Imports
 
-- `.oxlintrc.json` cấm `node:*` **và** 18 builtin trần (kể cả `crypto`) trong `libs/**`. Chỉ `*.{spec,test}.{ts,tsx,js,jsx,mts,cts}` được miễn.
-- `libs/` không dùng alias: import tương đối trong lib, và package name `@ecoma-io/<name>` khi app dùng.
-- ⚠️ **App dùng `@ecoma-io/*` phải khai báo `alias` tường minh trong `nuxt.config.ts`.** `tsconfig.base.json#paths` rỗng và `vite.resolve.tsconfigPaths` **không** resolve được package của workspace lúc runtime.
+- `.oxlintrc.json` prohibits `node:*` **and** 18 bare builtins (including `crypto`) in `libs/**`. Only `*.{spec,test}.{ts,tsx,js,jsx,mts,cts}` are exempt.
+- `libs/` does not use aliases: relative imports within a lib, and the package name `@ecoma-io/<name>` when an app consumes it.
+- ⚠️ **An app that consumes `@ecoma-io/*` must declare the `alias` explicitly in `nuxt.config.ts`.** `tsconfig.base.json#paths` is empty and `vite.resolve.tsconfigPaths` does **not** resolve workspace packages at runtime.
 
-## Contract với peer service
+## Contracts with peer services
 
-⚠️ **Dùng chung contract phải là quyết định có issue, không phải tiện lợi khi code.** Hai deploy unit có thể dùng chung `identity-contracts`, nhưng chỉ sau khi bờ của contract đã được chốt ở tài liệu. Lệch ở canonical string, tên header, cửa sổ skew hay cách kiểm replay sẽ hỏng **im lặng ở cả hai đầu** — không có lỗi biên dịch nào bắt được.
+⚠️ **Sharing a contract must be a decision with an issue, not a coding-time convenience.** Two deploy units may share `identity-contracts`, but only after the contract's boundary is pinned down in documentation. A drift in a canonical string, a header name, the skew window or the replay check fails **silently on both ends** — no compile error catches it.
 
-## Ngôn ngữ
+## Language
 
-- Comment và JSDoc: **tiếng Việt**.
-- Test title (`it` / `describe`): **tiếng Anh**.
-- Commit message: tiếng Anh, ASCII-only.
+Follow the root [`AGENTS.md`](../AGENTS.md) Language policy. No libs-specific language rule: comment and JSDoc stay Vietnamese, and everything else follows the root policy as written.
 
-## Kiểm tra
+## Checks
 
 ```bash
 pnpm nx run-many -t test lint typecheck -p <project> --skip-nx-cache
 pnpm dx arch-check
 ```
 
-⚠️ `--skip-nx-cache` là bắt buộc khi bạn vừa sửa một file mà chỉ được đọc **lúc runtime** (ví dụ config của commitlint): Nx cache lại kết quả xanh cũ và test chạy lại y hệt file cũ.
+⚠️ `--skip-nx-cache` is mandatory when you just edited a file that is only read **at runtime** (for example commitlint config): Nx caches the previous green result and the test re-runs against the old file exactly as before.
