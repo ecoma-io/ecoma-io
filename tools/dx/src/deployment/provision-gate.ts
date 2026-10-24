@@ -9,6 +9,12 @@
  * `projectRoot` lấy từ cwd của target (mỗi project đặt `cwd` của nó), nên một
  * bản cho toàn bộ `deploys/*` là đủ — không nhân bản 11 file.
  *
+ * Đọc marker `ecoma.deployment.status` trong `package.json` của deploy project
+ * (marker do arch-check đảm bảo khớp với `DEPLOYMENT_MAP`): project `scaffold`
+ * in thêm một dòng tường minh — nó là placeholder, chưa quản lý resource nào,
+ * nên "provision xong" ở đây là KHÔNG có gì để provision. Vẫn exit 0: cổng
+ * này là cổng hiển thị kế hoạch, không phải gate cấm scaffold chạy provision.
+ *
  * Việc provision thật là `pulumi up` do operator chạy có chủ đích, ngoài đường
  * release của application — xem `docs/overview/02-delivery.md` §7.4.1.
  */
@@ -30,6 +36,26 @@ export function readPulumiProjectName(manifest: string): { name: string } | { er
 }
 
 /**
+ * Đọc marker `ecoma.deployment.status` từ `package.json` cạnh manifest.
+ * Trả `undefined` khi file không tồn tại, không parse được, hoặc thiếu marker:
+ * marker là dữ liệu arch-check đảm bảo, còn provision-gate chỉ ĐỌC để in
+ * cảnh báo — thiếu marker không được biến cổng dry-run thành fail.
+ */
+export function readDeploymentStatus(
+  packageJsonPath: string,
+): 'implemented' | 'scaffold' | undefined {
+  try {
+    const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
+      ecoma?: { deployment?: { status?: string } };
+    };
+    const status = pkg.ecoma?.deployment?.status;
+    return status === 'implemented' || status === 'scaffold' ? status : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Fail-closed: thiếu manifest hoặc thiếu `name:` đều exit 1.
  *
  * Target im lặng exit 0 trên project hỏng là hợp đồng thứ tự trông xanh trong
@@ -40,6 +66,12 @@ export function provisionGate(projectRoot: string = process.cwd()): number {
   if ('error' in result) {
     console.error(`[provision] ${result.error}`);
     return 1;
+  }
+  const status = readDeploymentStatus(join(projectRoot, 'package.json'));
+  if (status === 'scaffold') {
+    console.log(
+      `[provision] ${result.name} is a scaffold — no managed resources; nothing to provision.`,
+    );
   }
   console.log(`[provision] ${result.name} — dry-run, không provision gì.`);
   return 0;

@@ -22,12 +22,16 @@
  *
  * 3. **Bất biến đồ thị deployment** — kiểm trên chính project graph những điều
  *    mà metadata Nx không diễn đạt được (xem `validateDeploymentGraph`).
+ *
+ * 4. **Deployment map** — đối chiếu `DEPLOYMENT_MAP` với đĩa và marker
+ *    `ecoma.deployment.status` (xem `validateDeploymentMap`).
  */
 
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 
 import { ROOT_DIR } from '../utils.js';
+import { validateDeploymentMap } from './deployment-map-check.js';
 
 /** Giá trị hợp lệ của mỗi dimension tag kiến trúc bắt buộc. */
 export const ARCH_TAG_DIMENSIONS = {
@@ -140,7 +144,17 @@ export interface ArchTagViolation {
     | 'misplaced-deployment-project'
     | 'cross-unit-deploy-dependency'
     | 'cross-context-contract-edge'
-    | 'graph-inconsistent';
+    | 'graph-inconsistent'
+    // Kinds của lượt deployment map (validateDeploymentMap): cùng hình dạng
+    // { project, kind, detail } nên mọi lượt gom về một danh sách in ra.
+    | 'missing-map-entry'
+    | 'stale-map-entry'
+    | 'invalid-map-owner'
+    | 'platform-cannot-own'
+    | 'missing-reason'
+    | 'stale-allowlist-entry'
+    | 'invalid-target-ref'
+    | 'deployment-status-marker-mismatch';
   detail: string;
 }
 
@@ -657,7 +671,14 @@ function findCycles(edges: ReadonlyMap<string, readonly string[]>): string[][] {
   return cycles;
 }
 
-/** Chạy đủ các lượt trên toàn workspace, trả mọi vi phạm (rỗng = sạch). */
+/**
+ * Chạy đủ các lượt trên toàn workspace, trả mọi vi phạm (rỗng = sạch).
+ *
+ * Chỉ gồm các lượt thuần trên project graph — lượt deployment map đọc thêm
+ * ĐĨA (apps/, marker trong deploys, command của nx target) nên nó được nối
+ * vào ở `main()`: một state tổng hợp trong unit test không mang dữ liệu đĩa,
+ * và chạy lượt đĩa trên state đó sẽ báo lỗi ảo cho dữ liệu thật của repo.
+ */
 export function validateArchitecture(state: ArchWorkspaceState): ArchTagViolation[] {
   const violations: ArchTagViolation[] = [];
   for (const project of state.projects.values()) {
@@ -683,8 +704,17 @@ export function main(): number {
     throw error; // lỗi môi trường (nx crash, JSON hỏng) — để stacktrace gốc lộ ra
   }
   const violations = validateArchitecture(state);
+  // Lượt deployment map đọc thêm ĐĨA (apps/, marker deploys/*/package.json,
+  // command của nx target) — nối ở CLI chứ không trong `validateArchitecture`:
+  // state tổng hợp của unit test không mang dữ liệu đĩa, chạy lượt đĩa trên
+  // state đó sẽ báo lỗi ảo. Lỗi I/O đĩa để nổ ra thay vì nuốt thành "workspace
+  // sạch": fail-closed theo đúng hợp đồng arch-check.
+  violations.push(...validateDeploymentMap({ projects: state.projects }));
   if (violations.length === 0) {
-    console.log(`architecture tags OK (${state.projects.size} projects validated)`);
+    console.log(
+      `architecture checks OK (${state.projects.size} projects, ` +
+        `deployment map + markers + target refs validated)`,
+    );
     return 0;
   }
   for (const v of violations) {

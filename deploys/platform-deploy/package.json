@@ -1,6 +1,11 @@
 {
   "name": "platform-deploy",
   "main": "index.ts",
+  "ecoma": {
+    "deployment": {
+      "status": "implemented"
+    }
+  },
   "nx": {
     "tags": [
       "type:deployment",
