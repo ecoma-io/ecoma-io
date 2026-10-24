@@ -628,6 +628,49 @@ describe('runLocalCleanup — additional safety', () => {
     expect(entry?.action).toBe('removed');
   });
 
+  it('orphan auth-wic image (namespace-first name) is removed, not filtered out', () => {
+    // Regression: image auth-wic có tên `ecoma-<ns>-auth-wic:local`
+    // (`dockerResourceName` namespace-first) — filter cũ theo prefix
+    // app-first `ecoma-auth-wic-` không bao giờ match nên image này từng bị
+    // rớt khỏi candidate list của cleanup.
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const imageName = `ecoma-${ns}-auth-wic:local`;
+    const docker: FakeDocker = {
+      names: new Map([['image', [imageName]]]),
+      labels: new Map([[`image/${imageName}`, ownedLabels(wt)]]),
+      removed: [],
+    };
+    const report = runLocalCleanup({
+      dryRun: false,
+      env: {},
+      execDocker: fakeDockerExec(docker),
+      worktreePresence: () => 'absent',
+    });
+    expect(docker.removed).toContain(`image/${imageName}`);
+    const entry = report.entries.find((e) => e.name === imageName);
+    expect(entry?.action).toBe('removed');
+  });
+
+  it('image name that merely ends with a known kind but lacks ecoma- prefix is skipped', () => {
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const imageName = `something-else-${ns}-auth-wic:local`;
+    const docker: FakeDocker = {
+      names: new Map([['image', [imageName]]]),
+      labels: new Map([[`image/${imageName}`, ownedLabels(wt)]]),
+      removed: [],
+    };
+    const report = runLocalCleanup({
+      dryRun: false,
+      env: {},
+      execDocker: fakeDockerExec(docker),
+      worktreePresence: () => 'absent',
+    });
+    expect(docker.removed).toHaveLength(0);
+    expect(report.entries.find((e) => e.name === imageName)).toBeUndefined();
+  });
+
   it('image belonging to a live worktree is kept', () => {
     const wt = tempWorktree();
     const ns = worktreeNamespace(wt);
