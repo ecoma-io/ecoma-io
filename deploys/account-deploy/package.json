@@ -24,6 +24,25 @@
           "cwd": "deploys/account-deploy",
           "command": "npx tsx ../../tools/dx provision-gate"
         }
+      },
+      "local-up": {
+        "//": "Local lane — duy nhất một lane (`-c local`). Bất biến identity: account TRƯỚC auth (account sở hữu password role owner `ecoma_owner`; container account phải tồn tại trước khi WIC auth boot). Bất biến đó diễn đạt NGAY TẠI ĐÂY bằng `dependsOn` backoffice:local-up — auth lại dependsOn account — nên mọi đường chạy Task Graph đều có account trước auth.",
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "deploys/account-deploy",
+          "command": "npx tsx ../../tools/dx local-stack-step --stack account-deploy --step up"
+        },
+        "configurations": {
+          "local": {}
+        },
+        "dependsOn": [
+          {
+            "projects": [
+              "backoffice-deploy"
+            ],
+            "target": "local-up"
+          }
+        ]
       }
     }
   }

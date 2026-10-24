@@ -28,11 +28,20 @@ import {
   type LocalDeployContext,
 } from './pulumi-context.js';
 import { worktreeNamespace } from './../../local-runtime/deploy-namespace.js';
+
+import { ROOT_DIR } from '../../utils.js';
 import {
   LOCAL_ENV_OWNED_KEYS,
   POSTGRES_PASSWORD_ENV_KEY,
   ROOT_HOST_ENV_KEY,
 } from './platform-outputs-contract.js';
+
+/** Hình dạng return tối thiểu mà `runNxOrchestratedDeploy` đọc từ spawn. */
+interface SpawnSyncReturns {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
 
 /**
  * Orchestration boundary được test bằng injected command runner: mock
@@ -335,7 +344,8 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
       return undefined;
     });
     try {
-      const exit = await localDeploy({ worktreeRoot: root, skipSmoke: true });
+      // `legacyApply` — suite này mock biên pulumi-context (runApply), không phải Nx spawn.
+      const exit = await localDeploy({ worktreeRoot: root, skipSmoke: true, legacyApply: true });
       expect(exit).toBe(0);
       // Passphrase do công cụ sinh và lưu ngoài Git — không cần developer đặt.
       expect(existsSync(join(root, '.pulumi-local-passphrase'))).toBe(true);
@@ -376,7 +386,8 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
       return undefined;
     });
 
-    const exit = await localDeploy({ worktreeRoot: root, skipSmoke: true });
+    // `legacyApply` — suite này mock biên pulumi-context (runApply), không phải Nx spawn.
+    const exit = await localDeploy({ worktreeRoot: root, skipSmoke: true, legacyApply: true });
     expect(exit).toBe(0);
 
     // ensureStack (stack init) được gọi cho platform, backoffice, account và
@@ -642,6 +653,137 @@ describe('localDestroy — volume removal coping with lost Pulumi stacks', () =>
   });
 });
 
+describe('localDestroy — full coverage: five stacks in reverse dependency order', () => {
+  it('destroys ALL FIVE stacks — auth, account, backoffice, home, platform (no orphan identity stacks)', () => {
+    const wt = tempWorktree();
+    mkdirSync(join(wt, '.pulumi-local-state'), { recursive: true });
+    process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
+    pulumiRunMock.mockReturnValue(undefined);
+    execMock.mockReturnValue({ status: 0, stdout: '', stderr: '' } satisfies ExecResult);
+    const exit = localDestroy({ worktreeRoot: wt });
+    expect(exit).toBe(0);
+    const destroyed = pulumiRunMock.mock.calls
+      .filter(([, , args]) => args[0] === 'destroy')
+      .map(([, project]) => project);
+    expect(destroyed).toEqual([
+      'auth-deploy',
+      'account-deploy',
+      'backoffice-deploy',
+      'home-deploy',
+      'platform-deploy',
+    ]);
+  });
+
+  it('platform destroy runs LAST even when a unit destroy fails (failure does not reorder teardown)', () => {
+    const wt = tempWorktree();
+    mkdirSync(join(wt, '.pulumi-local-state'), { recursive: true });
+    process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
+    pulumiRunMock.mockImplementation((_dir, project, args) => {
+      if (project === 'account-deploy' && args[0] === 'destroy') {
+        throw new Error('pulumi destroy thất bại:\nboom');
+      }
+      return undefined;
+    });
+    execMock.mockReturnValue({ status: 0, stdout: '', stderr: '' } satisfies ExecResult);
+    const exit = localDestroy({ worktreeRoot: wt });
+    expect(exit).toBe(1);
+    const destroyed = pulumiRunMock.mock.calls
+      .filter(([, , args]) => args[0] === 'destroy')
+      .map(([, project]) => project);
+    // Vẫn đủ 5 lần gọi, đúng thứ tự nghịch — lỗi ở giữa KHÔNG dừng teardown của
+    // các stack sau (mỗi destroy độc lập; exit code là nơi tổng hợp thất bại).
+    expect(destroyed).toEqual([
+      'auth-deploy',
+      'account-deploy',
+      'backoffice-deploy',
+      'home-deploy',
+      'platform-deploy',
+    ]);
+  });
+});
+
+describe('runNxOrchestratedDeploy — Nx Task Graph path', () => {
+  it('buildNxOrchestrationPlan locks the run-many command to the local configuration', async () => {
+    const { buildNxOrchestrationPlan } = await import('./local-deploy.js');
+    const plan = buildNxOrchestrationPlan();
+    expect(plan.command).toBe(process.execPath);
+    const scriptIndex = plan.args.findIndex((arg) => arg.endsWith('nx.js'));
+    expect(scriptIndex).toBeGreaterThanOrEqual(0);
+    expect(plan.args[scriptIndex + 1]).toBe('run-many');
+    expect(plan.args).toContain('-c');
+    expect(plan.args[plan.args.indexOf('-c') + 1]).toBe('local');
+    // Task sequence dẫn xuất từ khai báo Nx — 7 task (8 bước legacy gộp
+    // read-outputs+update-env thành 1 task local-env).
+    expect(plan.taskSequence).toEqual([
+      'platform-deploy:local-up',
+      'platform-deploy:local-env',
+      'home-deploy:local-up',
+      'backoffice-deploy:local-up',
+      'account-deploy:local-up',
+      'auth-deploy:local-up',
+      'platform-deploy:local-smoke',
+    ]);
+  });
+
+  it('runNxOrchestratedDeploy without a passphrase on an initialized worktree → exit 1 and NO nx spawned (injectable spawn)', async () => {
+    const root = tempWorktree();
+    const saved = process.env.PULUMI_CONFIG_PASSPHRASE;
+    const savedFile = process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
+    delete process.env.PULUMI_CONFIG_PASSPHRASE;
+    delete process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
+    try {
+      // Worktree đã có state THẬT (file stack .json — thư mục rỗng không đủ,
+      // `hasPulumiState` bỏ qua) → resolveLocalPassphrase fail-closed.
+      // `spawn` cắm spy: nếu code bấm nx thật thì spy bị gọi (fail) chứ KHÔNG
+      // chạy nx thật — một test không bao giờ được phép spawn Docker/Pulumi.
+      const stacksDir = join(root, '.pulumi-local-state', '.pulumi', 'stacks', 'platform-deploy');
+      mkdirSync(stacksDir, { recursive: true });
+      writeFileSync(join(stacksDir, 'local-wtest.json'), '{}', 'utf8');
+      const { runNxOrchestratedDeploy } = await import('./local-deploy.js');
+      const spawnSpy = vi.fn<() => SpawnSyncReturns>(() => ({ status: 0, stdout: '', stderr: '' }));
+      const exit = runNxOrchestratedDeploy(resolveContext(root), {}, spawnSpy as never);
+      expect(exit).toBe(1);
+      expect(spawnSpy).not.toHaveBeenCalled();
+      expect(existsSync(join(root, '.pulumi-local-passphrase'))).toBe(false);
+    } finally {
+      if (saved !== undefined) process.env.PULUMI_CONFIG_PASSPHRASE = saved;
+      if (savedFile !== undefined) process.env.PULUMI_CONFIG_PASSPHRASE_FILE = savedFile;
+    }
+  });
+
+  it('runNxOrchestratedDeploy failure propagation: nx exit != 0 → deploy exit 1 (spawn spy, never a real nx)', async () => {
+    const root = tempWorktree();
+    process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
+    const { runNxOrchestratedDeploy } = await import('./local-deploy.js');
+    const spawnSpy = vi.fn<() => SpawnSyncReturns>(() => ({ status: 1, stdout: '', stderr: '' }));
+    const exit = runNxOrchestratedDeploy(resolveContext(root), {}, spawnSpy as never);
+    expect(exit).toBe(1);
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const [command, args, opts] = spawnSpy.mock.calls[0] as unknown as [
+      string,
+      string[],
+      { cwd: string },
+    ];
+    expect(command).toBe(process.execPath);
+    expect(args).toContain('run-many');
+    expect(args).toContain('-c');
+    expect(args[args.indexOf('-c') + 1]).toBe('local');
+    expect(opts.cwd).toBe(ROOT_DIR);
+  });
+
+  it('runNxOrchestratedDeploy success: nx exit 0 → deploy exit 0 (spawn spy, never a real nx)', async () => {
+    const root = tempWorktree();
+    process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
+    const { runNxOrchestratedDeploy } = await import('./local-deploy.js');
+    const spawnSpy = vi.fn<() => SpawnSyncReturns>(() => ({ status: 0, stdout: '', stderr: '' }));
+    const exit = runNxOrchestratedDeploy(resolveContext(root), {}, spawnSpy as never);
+    expect(exit).toBe(0);
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    // Passphrase file được tạo TRƯỚC khi bấm Nx (cha resolve, con không đua).
+    expect(existsSync(join(root, '.pulumi-local-passphrase'))).toBe(true);
+  });
+});
+
 describe('isConfigKeyMissing — secret regen guard', () => {
   it('CLI báo "no value for the key" → true (được phép regen)', () => {
     expect(
@@ -730,7 +872,7 @@ describe('lookupPostgresPassword', () => {
     ).toEqual({ state: 'missing' });
   });
 
-  it('exit != 0 + other error → error state with detail, never "missing"', () => {
+  it('exit != 0 + other error → error state with fixed detail, never "missing", raw output NOT embedded', () => {
     const r = lookupPostgresPassword({
       status: 1,
       stdout: '',
@@ -738,7 +880,13 @@ describe('lookupPostgresPassword', () => {
     });
     expect(r.state).toBe('error');
     const detail = (r as { detail?: string }).detail ?? '';
-    expect(detail).toContain('could not decrypt');
+    // Detail là thông điệp CỐ ĐỊNH — raw stderr/stdout KHÔNG được nhúng vào:
+    // stdout của `config get postgres:password` khi exit 0 chính là mật khẩu,
+    // nên raw output trong error string là đường leak tiềm ẩn (detail ra log).
+    expect(detail).toContain('pulumi config get thất bại');
+    expect(detail).toContain('exit 1');
+    expect(detail).not.toContain('could not decrypt');
+    expect(detail).toContain('không được log');
   });
 
   it('masked [secret] output (unreachable on pinned CLI; kept as defense-in-depth) → error state', () => {

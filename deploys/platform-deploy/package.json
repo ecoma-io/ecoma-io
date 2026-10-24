@@ -21,6 +21,55 @@
           "cwd": "deploys/platform-deploy",
           "command": "npx tsx ../../tools/dx provision-gate"
         }
+      },
+      "local-up": {
+        "//": "Local lane — duy nhất một lane (`-c local`), không có staging/production trên target này. Bước 1 của orchestration local: platform up. `dependsOn` rỗng Có CHỦ ĐÍCH — platform là node ĐẦU của chuỗi; mọi unit khác phụ thuộc platform qua `^local-up`, và các bước `local-env`/`local-smoke` gắn sau ở các target riêng. Cache bị tắt ở targetDefaults `nx.json` (CONTRACT: mutate Docker/state thật).",
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "deploys/platform-deploy",
+          "command": "npx tsx ../../tools/dx local-stack-step --stack platform-deploy --step up"
+        },
+        "configurations": {
+          "local": {}
+        }
+      },
+      "local-env": {
+        "//": "Bước 2+3 gộp: đọc outputs platform (port Traefik thật) rồi ghi `.env` của worktree — hai thao tác nguyên tử về dữ liệu (env cần outputs), tách target sẽ phải truyền state giữa hai target. `dependsOn local-up` (cùng project): outputs chỉ tồn tại sau up — KHÔNG có dependsOn này thì Nx đặt local-env song song với local-up và đọc outputs cũ (hoặc exit 1 trên worktree chưa deploy).",
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "deploys/platform-deploy",
+          "command": "npx tsx ../../tools/dx local-stack-step --stack platform-deploy --step env"
+        },
+        "configurations": {
+          "local": {}
+        },
+        "dependsOn": [
+          {
+            "projects": [
+              "platform-deploy"
+            ],
+            "target": "local-up"
+          }
+        ]
+      },
+      "local-smoke": {
+        "//": "Bước CUỐI của chuỗi local: smoke HTTPS qua Traefik. `dependsOn auth:local-up` — smoke chỉ có nghĩa khi toàn bộ chuỗi (qua chuỗi dependsOn: platform → home → backoffice → account → auth) đã xanh. Là node lá (không ai dependsOn nó), nên orchestrator dùng nó làm điểm hoàn tất.",
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "deploys/platform-deploy",
+          "command": "npx tsx ../../tools/dx local-stack-step --stack platform-deploy --step smoke"
+        },
+        "configurations": {
+          "local": {}
+        },
+        "dependsOn": [
+          {
+            "projects": [
+              "auth-deploy"
+            ],
+            "target": "local-up"
+          }
+        ]
       }
     }
   }

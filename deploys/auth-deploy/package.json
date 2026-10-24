@@ -24,6 +24,25 @@
           "cwd": "deploys/auth-deploy",
           "command": "npx tsx ../../tools/dx provision-gate"
         }
+      },
+      "local-up": {
+        "//": "Local lane — duy nhất một lane (`-c local`). Nửa SAU của bất biến identity: `dependsOn` account:local-up buộc auth chạy sau account (owner password role + WIC phụ thuộc container account). Node CUỐI của chuỗi unit — smoke gắn sau node này.",
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "deploys/auth-deploy",
+          "command": "npx tsx ../../tools/dx local-stack-step --stack auth-deploy --step up"
+        },
+        "configurations": {
+          "local": {}
+        },
+        "dependsOn": [
+          {
+            "projects": [
+              "account-deploy"
+            ],
+            "target": "local-up"
+          }
+        ]
       }
     }
   }
