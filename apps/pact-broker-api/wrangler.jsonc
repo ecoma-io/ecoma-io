@@ -14,9 +14,9 @@
   // này — chúng chạy từ CI runner bằng chuỗi kết nối trực tiếp (docs/services/
   // pact-broker/03-operations.md §2), vì Hyperdrive không hỗ trợ advisory lock.
   //
-  // KHÔNG có deploy target/staging/production env ở đây: `tools/delivery` đã
-  // bị gỡ khỏi main (commit f68105b), provisioning là việc tiếp theo ngoài
-  // phạm vi. Wrangler env `staging`/`production` sẽ thêm khi provision.
+  // KHÔNG có deploy target/staging/production env ở đây: đường deploy trực
+  // tiếp chưa có trong repo, provisioning là việc tiếp theo ngoài phạm vi.
+  // Wrangler env `staging`/`production` sẽ thêm khi provision.
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "ecoma-pact-broker-api",
   "main": "dist/main.js",

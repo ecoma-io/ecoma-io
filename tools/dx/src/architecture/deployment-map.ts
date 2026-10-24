@@ -105,8 +105,9 @@ export const DEPLOYMENT_MAP: Readonly<Record<string, DeploymentMapEntry>> = {
  *
  * Mỗi entry PHẢI có `reason`; reason ghi rõ việc dọn dẹp thuộc phase nào, để
  * allowlist là trạng thái tạm thời có chủ đích chứ không phải bãi rác vĩnh viễn.
- * Entry không còn khớp tham chiếu nào trên cây sẽ bị arch-check báo stale —
- * xóa entry cùng lúc với xóa target (Phase 3), không để trước.
+ * Entry không khớp tham chiếu hỏng nào trên cây sẽ bị arch-check báo
+ * `stale-allowlist-entry` — dọn entry ngay khi target nó che bị xóa, không để
+ * trước.
  */
 export interface InvalidTargetAllowlistEntry {
   /** Đường dẫn tương đối so với repo root xuất hiện trong `command`. */
@@ -115,18 +116,11 @@ export interface InvalidTargetAllowlistEntry {
 }
 
 /**
- * 7 app (account, backoffice, home, push-notification, transactional-mail,
- * transactional-mailer-job, web-push-notification-job) còn mang nx target
- * `deploy` chạy `tools/delivery/src/deploy-gate.mts` — file không tồn tại
- * (dangling, không caller nào trong CI). Phase 3 xóa các target này và xóa
- * entry allowlist này CÙNG LÚC.
+ * Hiện tại MẢNG RỖNG: 7 target `deploy` trỏ `tools/delivery/src/deploy-gate.mts`
+ * (file không tồn tại) đã bị xóa CÙNG entry allowlist che chúng trong Phase 3
+ * của deployment graph normalization (#216), nên cây không còn dangling ref
+ * nào. Export vẫn được giữ vì allowlist là cơ chế cho ref hỏng TƯƠNG LAI có
+ * chủ đích — thêm entry mới thì phải kèm reason và entry đó phải khớp ít nhất
+ * một ref hỏng thật trên cây, nếu không arch-check báo `stale-allowlist-entry`.
  */
-export const knownInvalidTargets: readonly InvalidTargetAllowlistEntry[] = [
-  {
-    ref: 'tools/delivery/src/deploy-gate.mts',
-    reason:
-      'dangling deploy target referenced by 7 apps; the deploy-gate file no longer exists ' +
-      'and no CI lane calls these targets — removal of the 7 targets and of this ' +
-      'allowlist entry is tracked in Phase 3 of the deployment graph normalization (#216)',
-  },
-];
+export const knownInvalidTargets: readonly InvalidTargetAllowlistEntry[] = [];

@@ -63,14 +63,6 @@
       "options": {
         "targetName": "e2e"
       }
-    },
-    {
-      "plugin": "@nx/js/typescript",
-      "options": {
-        "typecheck": {
-          "targetName": "typecheck"
-        }
-      }
     }
   ],
   "release": {

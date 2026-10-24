@@ -1,5 +1,6 @@
 {
   "name": "web-push-notification-job-deploy",
+  "private": true,
   "main": "index.ts",
   "ecoma": {
     "deployment": {

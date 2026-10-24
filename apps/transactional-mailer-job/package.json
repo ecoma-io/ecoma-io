@@ -15,24 +15,6 @@
       "runtime:edge"
     ],
     "targets": {
-      "deploy": {
-        "executor": "nx:run-commands",
-        "dependsOn": [
-          "build"
-        ],
-        "options": {
-          "forwardAllArgs": false,
-          "command": "npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/transactional-mailer-job"
-        },
-        "configurations": {
-          "staging": {
-            "command": "npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/transactional-mailer-job --lane staging"
-          },
-          "production": {
-            "command": "npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/transactional-mailer-job --lane production"
-          }
-        }
-      },
       "build": {
         "executor": "@nx/esbuild:esbuild",
         "outputs": [

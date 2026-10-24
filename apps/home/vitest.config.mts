@@ -52,11 +52,12 @@ export default defineConfig(() => ({
     // thật — xem `package.json` target `test` dependsOn `build`); giữ
     // `src`/`tests` để không phá project được generate.
     //
-    // Không còn glob cho `deploy/pipeline/`: pipeline đã chuyển sang
-    // `tools/delivery` (Issue #166) — nó là tooling dùng chung cho mọi deploy
-    // unit, đặt trong `apps/home` sẽ khiến app sở hữu code không liên quan tới
-    // nó, và repo chặn app import project `scope:local`. Spec của pipeline
-    // chạy bằng vitest của `tools/delivery`.
+    // Không còn glob cho `deploy/pipeline/`: pipeline hai làn (overview
+    // `02-delivery.md` §7.2) là thiết kế chưa hiện thực — tooling dùng chung
+    // cho mọi deploy unit thuộc tầng delivery, đặt trong `apps/home` sẽ khiến
+    // app sở hữu code không liên quan tới nó, và repo chặn app import project
+    // `scope:local`. Spec của pipeline tương lai sẽ chạy bằng vitest của
+    // project tooling đó, không phải của app.
     include: ['{src,tests,app,shared,server}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     reporters: ['default'],
     coverage: {
