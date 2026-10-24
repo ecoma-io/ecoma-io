@@ -5,7 +5,8 @@
   "dependencies": {
     "@ecoma-io/backoffice-domain": "workspace:*",
     "@ecoma-io/ui-app-shell": "workspace:*",
-    "@ecoma-io/ui-ecoma-logo": "workspace:*"
+    "@ecoma-io/ui-ecoma-logo": "workspace:*",
+    "jose": "6.2.13"
   },
   "devDependencies": {
     "@nuxtjs/i18n": "10.6.0",

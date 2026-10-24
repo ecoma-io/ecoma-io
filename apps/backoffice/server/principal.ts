@@ -7,26 +7,26 @@
  * `01-architecture.md` §5 (T-10 confused deputy): "Trusted mapping từ token
  * subject (`sub`) sang Account ID và sang staff context diễn ra server-side từ
  * token đã xác thực; client không supply được principal, role, permission hay
- * scope". Ở giai đoạn này **chưa** có tầng xác thực OIDC trong
- * `apps/backoffice` (việc đó thuộc lane wiring sau — issue #99 KHÔNG dựng
- * tầng xác thực mới), nên principal chỉ có thể đến từ context mà một tầng
- * xác thực server-side đã gắn vào.
+ * scope". Tầng xác thực thật đã được wire (ADR-0012, PR J2): middleware
+ * `server/middleware/authn.ts` verify phiên + access token rồi gắn principal
+ * vào context **trước** mọi route.
  *
  * ⚠️ Vì vậy context này **không** phải header do client gửi: `event.context` là
- * nơi middleware của chính app (tương lai) sẽ gắn principal sau khi verify
- * token. Route đọc được nó, không tự verify, và **fail closed** khi nó vắng.
+ * nơi middleware của chính app gắn principal sau khi verify. Route đọc được
+ * nó, không tự verify, và **fail closed** khi nó vắng.
  *
- * ## Vì sao vắng principal ⇒ `503` chứ không phải `401`
+ * ## Vì sao vắng principal ⇒ `401` (đã flip từ `503`)
  *
- * ADR-0010 (đã merge, `docs/services/backoffice/adr/0010-permission-naming-and-read-catalog.md`):
- * "trong giai đoạn này, principal không verify được được xử lý theo đường
- * **503** (unavailable) thay vì 401; 401 không được dùng cho đường này".
+ * ADR-0011 §1: `401` = credential vắng/hỏng — caller chưa đăng nhập. Trước PR
+ * J2, app **chưa có** đường xác thực nên thiếu principal nghĩa là "hệ thống
+ * chưa dựng được đường" ⇒ `503` (ADR-0010, giai đoạn đó). Từ PR J2, middleware
+ * authn là đường đó: thiếu principal ở context nghĩa là request **không có
+ * phiên hợp lệ** — một khẳng định về caller ⇒ `401`. Đây là đúng quy tắc
+ * chuyển tiếp của ADR-0011 §3: flip trong cùng PR wire authn.
  *
- * Lý do: `401` mang nghĩa "caller chưa xác thực" — một khẳng định về danh
- * tính. Ở giai đoạn này, việc thiếu principal là **hệ thống chưa dựng được
- * đường xác thực**, tức "không trả lời được" chứ không phải "caller sai" —
- * cùng ngữ nghĩa với `503` mà `requirePermission` dùng cho actor sai định
- * dạng, và cùng ngữ nghĩa với `503` của `account` khi binding DB vắng.
+ * ⚠️ `503` vẫn giữ cho các class "không verify được **lúc này**" (JWKS outage,
+ * DB outage) và cho actor sai định dạng ở `requirePermission` (trục
+ * authorization) — chúng nằm ở middleware/hook khác, không phải ở đây.
  *
  * ⚠️ Route **không** đọc `sub` từ query/body/header. Đọc header `x-actor-sub`
  * ở đây là đường confused deputy: client tự chọn danh tính, và `SR-001` cấm
@@ -39,12 +39,13 @@ import type { H3Event } from 'h3';
 import { isBackofficeAccountId } from '@ecoma-io/backoffice-domain';
 
 /**
- * Khoá context mà tầng xác thực server-side sẽ gắn principal vào.
+ * Khoá context mà middleware authn gắn principal vào.
  *
  * ⚠️ Đây là **hợp đồng giữa các lớp trong cùng app**, chưa phải contract với
- * service khác: giá trị ở `event.context` chỉ có ý nghĩa khi chính middleware
- * của app gắn nó. Tới lúc đó, key này được middleware đó đọc lại — nếu một
- * tầng sau này đổi tên key, route này và middleware phải đổi cùng lúc.
+ * service khác: giá trị ở `event.context` chỉ có ý nghĩa khi middleware authn
+ * gắn nó. Tầng authn (`server/middleware/authn.ts`) là bên **duy nhất** ghi
+ * key này — nếu một tầng sau này đổi tên key, route này và middleware phải
+ * đổi cùng lúc.
  */
 export const PRINCIPAL_CONTEXT_KEY = 'backofficePrincipal';
 
@@ -81,14 +82,14 @@ export function readPrincipal(event: H3Event): VerifiedPrincipal | null {
 }
 
 /**
- * Đọc principal hoặc fail closed với `503` (ADR-0010).
+ * Đọc principal hoặc fail closed với `401` (ADR-0011 §1 — credential vắng).
  *
- * @throws {H3Error} `503` khi context không có principal verify được.
+ * @throws {H3Error} `401` khi context không có principal verify được.
  */
 export function requirePrincipal(event: H3Event): VerifiedPrincipal {
   const principal = readPrincipal(event);
   if (principal === null) {
-    throw createError({ statusCode: 503, statusMessage: 'authorization unavailable' });
+    throw createError({ statusCode: 401, statusMessage: 'unauthorized' });
   }
   return principal;
 }

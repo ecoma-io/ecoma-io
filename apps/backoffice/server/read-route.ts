@@ -18,7 +18,9 @@
  *
  * ## Thứ tự fail-closed
  *
- * 1. Principal không verify được ⇒ `503` (ADR-0010) — trước cả việc mở pool.
+ * 1. Principal không verify được ⇒ `401` (ADR-0011 §1 — caller chưa đăng
+ *    nhập; middleware authn gắn principal trước route, vắng nghĩa là không có
+ *    phiên) — trước cả việc mở pool.
  * 2. Binding `DB_BACKOFFICE` vắng ⇒ `503` — Worker chưa có DB thì không có
  *    đường đọc nào trả lời được.
  * 3. `requirePermission` deny ⇒ `403` **sau khi** audit đã ghi (audit trước
@@ -70,7 +72,7 @@ export async function withReadEnforcement<T>(
   permission: CatalogPermission,
   read: (client: PoolClient) => Promise<T>,
 ): Promise<T> {
-  // 1. Principal — không verify được thì `503`, chưa mở pool.
+  // 1. Principal — không có phiên hợp lệ thì `401` (ADR-0011 §1), chưa mở pool.
   const principal = requirePrincipal(event);
 
   // 2. Binding — Worker chưa có DB thì `503`, không phải "trả rỗng".

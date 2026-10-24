@@ -484,6 +484,9 @@ importers:
       '@ecoma-io/ui-ecoma-logo':
         specifier: workspace:*
         version: link:../../libs/ui-ecoma-logo
+      jose:
+        specifier: 6.2.13
+        version: 6.2.13
     devDependencies:
       '@nuxtjs/i18n':
         specifier: 10.6.0

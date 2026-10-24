@@ -43,7 +43,8 @@ const RENAME_SUB = accountId('f');
 const PAST_VALID_SUB = accountId('g');
 
 /**
- * Bảng và grant kỳ vọng của runtime role, theo đúng `0002_roles_and_grants.sql`.
+ * Bảng và grant kỳ vọng của runtime role, theo đúng `0002_roles_and_grants.sql`
+ * và `0006_bff_sessions.sql`.
  *
  * Ba hình dạng grant khác nhau, không suy ra từ một quy tắc chung:
  *   * DML giới hạn (`staff`, `role_assignments`) — SELECT + INSERT + UPDATE,
@@ -55,9 +56,18 @@ const PAST_VALID_SUB = accountId('g');
  *     compose role làm bằng insert/delete để `created_at` giữ đúng "gắn từ
  *     khi nào".
  *   * append-only (`authorization_audit`) — SELECT + INSERT (SR-015).
+ *   * protocol state sống động (`bff_sessions`) — đủ SELECT + INSERT + UPDATE
+ *     + DELETE: sliding idle/refresh rotate/revoke là UPDATE; prune phiên hết
+ *     hạn là DELETE — nội dung phiên không có giá trị lịch sử sau khi chết
+ *     (token sinh lại được bằng login; khác audit/assignment giữ lại để điều
+ *     tra). Mốc: `account.account_sessions` đủ bốn quyền ở runtime role.
+ *   * write-once-consume-once (`bff_login_flows`) — SELECT + INSERT + DELETE,
+ *     **không** UPDATE: consume bằng DELETE là toàn bộ vòng đời (single-use).
  */
 const EXPECTED_RUNTIME_PRIVILEGES: Record<string, string[]> = {
   authorization_audit: ['INSERT', 'SELECT'],
+  bff_login_flows: ['DELETE', 'INSERT', 'SELECT'],
+  bff_sessions: ['DELETE', 'INSERT', 'SELECT', 'UPDATE'],
   permissions: ['SELECT'],
   role_assignments: ['INSERT', 'SELECT', 'UPDATE'],
   role_permissions: ['DELETE', 'INSERT', 'SELECT'],
