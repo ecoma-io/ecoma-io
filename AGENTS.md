@@ -8,13 +8,29 @@
 
 ## Language
 
-- Write **Vietnamese** in: `docs/` (see `docs/AGENTS.md` for its document rules), code comments and JSDoc, issue bodies, pull request bodies, and README files.
-- Keep **English** for: proper nouns, technical and domain terminology, product and service names, framework and library names, protocol names, architecture patterns, API names, configuration keys, file paths, commands, code identifiers, commit messages, and pull request titles.
-- Write **English** for: `AGENTS.md` files themselves — they are agent instructions, so they stay English; and test case titles (`it` / `describe` / `test`), which describe behaviour rather than prose.
-- Keep **English** in two places that are read by machines or by other tools rather than by a person reading prose: CLI output written with `console.log`, and the `message` fields of the Semgrep rules in `.github/semgrep/`.
-- Use Vietnamese for the explanation, rationale and surrounding prose; use English for the term itself. Do not translate a term when translating it would reduce technical precision.
-- In an issue or pull request body written in Vietnamese, keep issue titles, branch names, pull request titles, file paths, and error codes unchanged.
+**English is the default for everything, with one closed list of exceptions: Vietnamese is used only for human-facing prose.**
+
+Write **Vietnamese** in these human-facing prose surfaces, and nowhere else:
+
+- Markdown documentation: `docs/` (see `docs/AGENTS.md` for its document rules) and README files — every `.md` file except files named `AGENTS.md`.
+- Code comments and JSDoc.
+- Issue bodies and issue comments.
+- Pull request bodies and review comments.
+
+Write **English** for everything else, with no exceptions. Non-exhaustive list:
+
+- Every file named `AGENTS.md` (agent instructions, in any directory).
+- Identifiers: variables, functions, types, configuration keys.
+- Test titles (`it` / `describe` / `test`), which describe behaviour rather than prose.
+- Every string a program emits at runtime: console output, log lines, error messages, CLI output, spinner and help text — regardless of mechanism (`console.*`, a logger library, `process.stderr`, ...).
+- The `message` fields of the Semgrep rules in `.github/semgrep/`.
+- Commit messages, pull request titles, branch names.
+
+Additional rules:
+
+- Keep proper nouns, technical and domain terminology, product and service names, framework and library names, protocol names, architecture patterns, and API names in English even when writing Vietnamese. Do not translate a term when translating it would reduce technical precision.
 - Do not translate existing content just because this policy is new. Apply it when writing or editing.
+- In an issue or pull request body written in Vietnamese, keep issue titles, branch names, pull request titles, file paths, and error codes unchanged.
 
 ## Communication
 
