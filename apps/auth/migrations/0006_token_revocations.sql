@@ -76,7 +76,7 @@ CREATE TABLE auth.token_revocations (
 );
 
 COMMENT ON TABLE auth.token_revocations IS
-    'Control plane thu hồi DUY NHẤT (FR-017a), append-only. Ghi ở đây KHÔNG làm token đã cấp mất hiệu lực trong mô hình verify offline — nó giữ auth không cấp token mới và để lại đường truy vết.';
+    'The ONLY revocation control plane (FR-017a), append-only. Writing here does NOT invalidate already issued tokens in the offline-verification model — it keeps auth from issuing new tokens and preserves an audit trail.';
 
 -- ---------------------------------------------------------------------------------------------
 -- Index — phục vụ **truy vấn kiểm thu hồi tại thời điểm phát hành** (điểm kiểm soát A).

@@ -95,11 +95,11 @@ CREATE TABLE auth.oauth_clients (
 );
 
 COMMENT ON TABLE  auth.oauth_clients IS
-    'Client đăng ký. client_secret_hash chỉ tồn tại với client confidential (FR-001); client_secret chỉ cấp một lần rồi không còn (FR-004).';
+    'Registered client. client_secret_hash exists only for confidential clients (FR-001); client_secret is issued once and never again (FR-004).';
 COMMENT ON COLUMN auth.oauth_clients.client_secret_hash IS
-    'Hash của client secret — KHÔNG phải secret. Giá trị gốc không lưu trong db-auth.';
+    'Hash of the client secret — not the secret itself. The raw value is never stored in db-auth.';
 COMMENT ON COLUMN auth.oauth_clients.allowed_scopes IS
-    'Trần scope client được xin. Scope hiện hành của từng grant nằm ở auth.client_grant_scopes.';
+    'Ceiling on the scopes a client may request. The effective scope of each grant lives in auth.client_grant_scopes.';
 
 -- ---------------------------------------------------------------------------------------------
 -- auth.client_redirect_uris — redirect URI đã đăng ký (FR-002).
@@ -120,4 +120,4 @@ CREATE TABLE auth.client_redirect_uris (
 );
 
 COMMENT ON TABLE auth.client_redirect_uris IS
-    'Redirect URI đã đăng ký. auth chỉ so khớp exact string — cấm wildcard, cấm prefix match, cấm so khớp chỉ theo scheme+host (FR-002).';
+    'Registered redirect URI. auth matches exact strings only — no wildcards, no prefix matching, no scheme+host-only matching (FR-002).';

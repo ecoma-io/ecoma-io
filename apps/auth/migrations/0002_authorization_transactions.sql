@@ -196,18 +196,18 @@ CREATE TABLE auth.authorization_transactions (
 );
 
 COMMENT ON TABLE auth.authorization_transactions IS
-    'Transaction của một lần authorization_code flow. Mỗi handle X/Y/Z được tiêu thụ đúng một lần bằng UPDATE ... WHERE handle IS NOT consumed ... RETURNING (01-architecture.md §5.1.2).';
+    'Transaction of one authorization_code flow. Each handle X/Y/Z is consumed exactly once via UPDATE ... WHERE handle IS NOT consumed ... RETURNING (01-architecture.md §5.1.2).';
 
 COMMENT ON COLUMN auth.authorization_transactions.sub IS
-    'Định danh danh tính do account cấp. Opaque: KHÔNG có foreign key sang db-account (NFR-002b).';
+    'Identity handle issued by account. Opaque: no foreign key into db-account (NFR-002b).';
 COMMENT ON COLUMN auth.authorization_transactions.browser_binding_hash IS
-    'Hash của cookie __Host-auth-browser. Chỉ ràng buộc "cùng trình duyệt", KHÔNG phải session của account (NFR-002).';
+    'Hash of the __Host-auth-browser cookie. Binds "same browser" only, NOT the account session (NFR-002).';
 COMMENT ON COLUMN auth.authorization_transactions.event_id IS
-    'event_id đã xử lý, là idempotency key của event account -> auth (NFR-006).';
+    'event_id already processed, the idempotency key of account -> auth events (NFR-006).';
 COMMENT ON COLUMN auth.authorization_transactions.code_challenge_method IS
-    'Luôn bằng "S256". plain bị từ chối ở tầng schema (FR-008a, SR-002).';
+    'Always "S256". plain is rejected at the schema layer (FR-008a, SR-002).';
 COMMENT ON COLUMN auth.authorization_transactions.browser_confirmed_at IS
-    'Đặt bởi account qua auth -> account status contract. NULL = chưa xác nhận trình duyệt, nên handle X chưa được tiêu thụ.';
+    'Set by account through the auth -> account status contract. NULL = browser not yet confirmed, so handle X has not been consumed.';
 
 -- ==============================================================================================
 -- INDEX — chỉ những index gắn với một truy vấn hoặc ràng buộc cụ thể.

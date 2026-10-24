@@ -80,11 +80,11 @@ CREATE TABLE auth.authorization_codes (
 );
 
 COMMENT ON TABLE auth.authorization_codes IS
-    'Code đã phát hành. CHỈ lưu hash (FR-006a); consume là compare-and-set nên không có cửa sổ double-spend (FR-006).';
+    'Issued code. Stores the hash only (FR-006a); consumption is compare-and-set, so there is no double-spend window (FR-006).';
 COMMENT ON COLUMN auth.authorization_codes.code_hash IS
-    'Hash của authorization code. Giá trị code dạng rõ KHÔNG được lưu ở bất kỳ cột nào.';
+    'Hash of the authorization code. The plaintext code value is NOT stored in any column.';
 COMMENT ON COLUMN auth.authorization_codes.code_challenge IS
-    'PKCE challenge chép từ transaction gốc — KHÔNG phải code_verifier (verifier không bao giờ tới db-auth).';
+    'PKCE challenge copied from the originating transaction — NOT the code_verifier (the verifier never reaches db-auth).';
 
 -- Tra theo transaction — dùng khi điều tra `codes_reused_total` và khi reconciliation.
 CREATE INDEX IF NOT EXISTS authorization_codes_transaction_idx

@@ -101,6 +101,6 @@ $$;
 -- Bước 3 — COMMENT cho cột mới (idempotent: COMMENT thay thế, không lỗi khi lặp).
 -- ---------------------------------------------------------------------------------------------
 COMMENT ON COLUMN account.account_sessions.acr IS
-  'ACR URN - assurance cao nhat session da vuot qua. Null khi session chua xac thuc; di cung authn_at theo account_sessions_authn_pair_check.';
+  'ACR URN - the highest assurance the session has passed. NULL when the session is unauthenticated; paired with authn_at by account_sessions_authn_pair_check.';
 
 COMMIT;

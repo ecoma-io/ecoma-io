@@ -232,10 +232,10 @@ END
 $$;
 
 COMMENT ON COLUMN auth.authorization_transactions.transaction_id IS
-    'Chuỗi base64url 43 ký tự (32 byte, entropy ≥ 256 bit theo 01-architecture.md §5.6). Hàng legacy từ 0002 giữ giá trị dạng chuỗi UUID — không re-key vì handle X/Y/Z là HMAC trên ID gốc.';
+    '43-character base64url string (32 bytes, entropy >= 256 bits per 01-architecture.md §5.6). Legacy rows from 0002 keep UUID-string values — not re-keyed because handles X/Y/Z are HMACs over the original ID.';
 COMMENT ON COLUMN auth.authorization_transactions.state IS
-    'Sáu trạng thái canonical của máy trạng thái §5.1.2. `already_processed` KHÔNG phải state — đó là outcome của contract /internal/session/verified (§5.1.1).';
+    'The six canonical states of the §5.1.2 state machine. `already_processed` is NOT a state — it is an outcome of the /internal/session/verified contract (§5.1.1).';
 COMMENT ON COLUMN auth.authorization_transactions.client_state IS
-    '`state` của client (RFC 6749 §4.1.1) — optional, NULL khi client không gửi. KHÔNG liên quan cột `state` của máy trạng thái.';
+    'The client''s `state` (RFC 6749 §4.1.1) — optional, NULL when the client does not send it. Unrelated to the `state` column of the state machine.';
 
 COMMIT;

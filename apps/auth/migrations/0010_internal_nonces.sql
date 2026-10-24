@@ -53,13 +53,13 @@ CREATE TABLE auth.internal_nonces (
 );
 
 COMMENT ON TABLE auth.internal_nonces IS
-  'Kho nonce bieu dien cho replay guard cua duong noi bo account->auth. KHONG dung authorization_audit_events lam kho: retention va van hoa append-only khac nhau.';
+  'Nonce store backing the replay guard of account->auth internal routes. authorization_audit_events is deliberately not used as the store: its retention and append-only economics differ.';
 
 COMMENT ON COLUMN auth.internal_nonces.nonce IS
-  'Gia tri nonce cua envelope da xac thuc. PRIMARY KEY la trong tai cua phep "kiem tra va ghi" cua claimNonce.';
+  'Nonce value of an authenticated envelope. The PRIMARY KEY is the core of the claimNonce check-and-set.';
 
 COMMENT ON COLUMN auth.internal_nonces.expires_at IS
-  'Het han sau cua skew chap nhan cong bien do tre do dong ho. Prune theo cot nay; phai lon hon DEFAULT_SKEW_SECONDS.';
+  'Expiry past the accepted skew plus clock-drift margin. Pruning uses this column; it must exceed DEFAULT_SKEW_SECONDS.';
 
 -- Đúng một truy vấn đọc bảng này: dọn nonce hết hạn theo lô. Không truy vấn nào khác lọc theo
 -- `expires_at`, nên index phục vụ riêng câu đó.

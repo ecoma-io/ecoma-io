@@ -59,6 +59,6 @@ END;
 $$;
 
 COMMENT ON CONSTRAINT permissions_id_matches_domain_action ON backoffice.permissions IS
-  'id cua permission phai bang dung domain.action (ADR-0010); chan catalog row co id lech voi domain/action cua no.';
+  'A permission''s id must equal exactly domain.action (ADR-0010); blocks catalog rows whose id disagrees with their own domain/action.';
 
 COMMIT;

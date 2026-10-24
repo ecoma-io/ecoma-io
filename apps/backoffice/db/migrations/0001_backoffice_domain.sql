@@ -69,7 +69,7 @@ $$;
 CREATE SCHEMA IF NOT EXISTS backoffice;
 
 COMMENT ON SCHEMA backoffice IS
-  'Schema ứng dụng của db-backoffice. Runtime role chỉ có DML ở đây; grant được cấp ở 0002_roles_and_grants.sql.';
+  'Application schema of db-backoffice. Runtime role only has DML here; grants are issued in 0002_roles_and_grants.sql.';
 
 -- ---------------------------------------------------------------------------
 -- staff — sổ staff, trục trạng thái riêng khỏi account
@@ -102,11 +102,11 @@ CREATE TABLE IF NOT EXISTS backoffice.staff (
 );
 
 COMMENT ON TABLE backoffice.staff IS
-  'Sổ staff. sub la tham chieu opaque sang Account ID cua account, 1:1, khong FK xuyen database (01 3, 4.1). Email khong o bang nay.';
+  'Staff directory. sub is an opaque reference to the account Account ID, 1:1, no cross-database FK (01 3, 4.1). Email does not live in this table.';
 COMMENT ON COLUMN backoffice.staff.sub IS
-  'Account ID (dang sub_) cua staff member. PRIMARY KEY = unique; reference opaque, doi sub tren hang ton tai bi chan (01 4.1).';
+  'Account ID (sub form) of the staff member. PRIMARY KEY = unique; opaque reference, changing sub on an existing row is blocked (01 4.1).';
 COMMENT ON COLUMN backoffice.staff.status IS
-  'Truc rieng khong suy qua account status (01 4.2): active | suspended | terminated. Terminated la terminal, trigger chan phuc hoi im lang.';
+  'Independent axis that does not infer account status (01 4.2): active | suspended | terminated. Terminated is terminal; a trigger silently blocks restoration.';
 
 -- ---------------------------------------------------------------------------
 -- terminated là terminal: chặn hồi sinh im lặng
@@ -160,7 +160,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION backoffice.staff_identity_and_terminal_guard() IS
-  'Chan UPDATE doi sub va doi status ra khoi terminated; phuc hoi membership phai la thao tac moi co audit (01 4.1, 4.2).';
+  'Blocks UPDATEs that change sub or move status away from terminated; restoring membership must be a new audited operation (01 4.1, 4.2).';
 
 DROP TRIGGER IF EXISTS staff_identity_and_terminal_guard ON backoffice.staff;
 CREATE TRIGGER staff_identity_and_terminal_guard
@@ -197,11 +197,11 @@ CREATE TABLE IF NOT EXISTS backoffice.permissions (
 );
 
 COMMENT ON TABLE backoffice.permissions IS
-  'Permission catalog — sealed: chi INSERT qua seed migration chay bang migrator; runtime role khong INSERT/UPDATE (0002). Unique (domain, action).';
+  'Permission catalog — sealed: INSERT only via the seed migration run by the migrator; the runtime role cannot INSERT/UPDATE (0002). Unique (domain, action).';
 COMMENT ON COLUMN backoffice.permissions.domain IS
-  'Resource domain cua permission (vi du delivery). La mot nua dinh danh; action la nua con lai.';
+  'Resource domain of the permission (e.g. delivery). One half of the identifier; action is the other half.';
 COMMENT ON COLUMN backoffice.permissions.action IS
-  'Ten hanh dong trong resource domain. Cau thanh dinh danh giong permission kieu delivery.redrive (vi du tu 01 4.3).';
+  'Action name within the resource domain. Together they form identifiers like the delivery.redrive permission (example from 01 4.3).';
 
 -- ---------------------------------------------------------------------------
 -- Status retired là terminal: chặn hồi sinh catalog entry
@@ -232,7 +232,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION backoffice.permissions_retired_immutable() IS
-  'Chi insert-then-retire: entry retired la terminal, quay lai active bi chan im lang (01 4.3).';
+  'Insert-then-retire only: a retired entry is terminal, returning to active is silently blocked (01 4.3).';
 
 DROP TRIGGER IF EXISTS permissions_retired_immutable ON backoffice.permissions;
 CREATE TRIGGER permissions_retired_immutable
@@ -271,9 +271,9 @@ CREATE TABLE IF NOT EXISTS backoffice.roles (
 );
 
 COMMENT ON TABLE backoffice.roles IS
-  'Role = tap permission co ten. Khong co role bypass: moi role la tap huu han qua role_permissions (SR-016).';
+  'Role = a named set of permissions. No bypass role: every role is a finite set via role_permissions (SR-016).';
 COMMENT ON COLUMN backoffice.roles.is_system IS
-  'System-defined role co id prefix sys_; CHECK biconditional chan mot nua doi ma mot nua kia giu. Custom role administration chua chot (01 10).';
+  'System-defined roles have the id prefix sys_; the biconditional CHECK blocks changing one half while keeping the other. Custom role administration is not finalized (01 10).';
 
 -- Bảng nối nhiều-to-nhiều: role chứa permission nào. Khoá (role_id,
 -- permission_id): một role không trùng permission — đúng nghĩa "tập hữu hạn".
@@ -285,9 +285,9 @@ CREATE TABLE IF NOT EXISTS backoffice.role_permissions (
 );
 
 COMMENT ON TABLE backoffice.role_permissions IS
-  'Tap permission cua moi role. Doi tap quyen cua role chi lam qua role_permissions, khong qua cot khac.';
+  'Permission set of each role. Changing a role''s permission set happens only through role_permissions, no other column.';
 COMMENT ON COLUMN backoffice.role_permissions.role_id IS
-  'FK sang backoffice.roles. Runtime không được phép tạo role (0002 grant) nhưng role_permissions có DML cho custom role (expand-friendly).';
+  'FK into backoffice.roles. The runtime role may not create roles (0002 grant) but role_permissions has DML for custom roles (expand-friendly).';
 
 -- ---------------------------------------------------------------------------
 -- role_assignments — gán role cho staff, minimal scope, giữ lịch sử
@@ -342,13 +342,13 @@ CREATE TABLE IF NOT EXISTS backoffice.role_assignments (
 );
 
 COMMENT ON TABLE backoffice.role_assignments IS
-  'Gan role cho staff, N per staff. valid_until la read-time filter o app layer (workstream B); revoke la UPDATE revoked_at, khong DELETE (01 4.6).';
+  'Assigns roles to staff, N per staff. valid_until is a read-time filter in the app layer (workstream B); revocation is UPDATE revoked_at, not DELETE (01 4.6).';
 COMMENT ON COLUMN backoffice.role_assignments.scope_label IS
-  'Nhan pham vi — minimal cho v1 (01 10). Mo rong shape: cot hoac bang con duoc them sau, expand-friendly.';
+  'Scope label — minimal for v1 (01 10). Shape may grow: more columns or tables can be added later, expand-friendly.';
 COMMENT ON COLUMN backoffice.role_assignments.valid_until IS
-  'Han hieu luc read-time: app layer khong query hang khi valid_until da qua. Row van con de audit (01 4.6).';
+  'Read-time validity horizon: the app layer does not query rows whose valid_until has passed. The row remains for audit (01 4.6).';
 COMMENT ON COLUMN backoffice.role_assignments.revoked_at IS
-  'Thoi diem thu hoi co chu dich — la UPDATE co audit, khong DELETE (SR-007/AC-006).';
+  'Deliberate revocation timestamp — an audited UPDATE, not DELETE (SR-007/AC-006).';
 
 CREATE INDEX IF NOT EXISTS role_assignments_staff_idx
   ON backoffice.role_assignments (staff_sub);
@@ -392,13 +392,13 @@ CREATE TABLE IF NOT EXISTS backoffice.authorization_audit (
 );
 
 COMMENT ON TABLE backoffice.authorization_audit IS
-  'Audit append-only (SR-013, SR-015, invariant 12). UPDATE/DELETE bi chan hai lop: runtime khong co grant (0002), va trigger raise exception.';
+  'Append-only audit (SR-013, SR-015, invariant 12). UPDATE/DELETE are blocked in two layers: the runtime role has no grant (0002) and a trigger raises an exception.';
 COMMENT ON COLUMN backoffice.authorization_audit.actor_sub IS
-  'sub cua actor, co the NULL khi thao tac he thong. Khong FK de audit ton tai duoc bat ke thay doi nao cua staff directory.';
+  'Actor sub, may be NULL for system operations. No FK so audit survives any change to the staff directory.';
 COMMENT ON COLUMN backoffice.authorization_audit.context IS
-  'Chi payload da loc (SR-014). CHECK la soft-check top-level key — khong la substitute cho scrubbing o app layer.';
+  'Sanitized payload only (SR-014). The CHECK is a soft-check on top-level keys — not a substitute for app-layer scrubbing.';
 COMMENT ON COLUMN backoffice.authorization_audit.outcome IS
-  'Ket qua operation: success | failure | denied. Deny cung phai co audit (SR-018) — deny im lang la mat tin hieu dieu tra.';
+  'Operation outcome: success | failure | denied. Denials must also be audited (SR-018) — a silent deny loses the investigation signal.';
 
 -- Truy vấn phục vụ đường đọc audit thường nhất: theo actor, sắp theo thời
 -- điểm, bỏ hàng NULL actor vì partial index chỉ phủ các hàng có actor.
@@ -433,7 +433,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION backoffice.authorization_audit_append_only() IS
-  'Chan UPDATE/DELETE tren audit bang exception tuyet doi; INSERT van mo de ghi du value (SR-018). Lop 2; lop 1 la grant o 0002.';
+  'Blocks UPDATE/DELETE on the audit with an absolute exception; INSERT stays open so every value gets recorded (SR-018). Layer 2; layer 1 is the grant in 0002.';
 
 DROP TRIGGER IF EXISTS authorization_audit_append_only ON backoffice.authorization_audit;
 CREATE TRIGGER authorization_audit_append_only
