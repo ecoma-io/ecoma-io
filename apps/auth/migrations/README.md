@@ -257,12 +257,16 @@ SELECT table_name, column_name
 --     Kỳ vọng đúng 4 dòng: attempts, last_error, published_at, status
 
 -- (3) AC-026 — không FK chéo database, không postgres_fdw, không dblink.
+--     Loại trừ schema nội bộ `_timescaledb_*` của extension TimescaleDB: platform image
+--     preload `timescaledb`, nên extension tự cài vào `db-auth` và FK nội bộ của nó nằm
+--     ngoài schema `auth` một cách hợp lệ (cùng assertion ở `0009`).
 SELECT count(*) FROM pg_extension
  WHERE extname IN ('postgres_fdw', 'dblink', 'file_fdw');                     -- phải = 0
 SELECT count(*) FROM pg_constraint con
  JOIN pg_class c ON c.oid = con.conrelid
  JOIN pg_namespace n ON n.oid = c.relnamespace
- WHERE con.contype = 'f' AND n.nspname <> 'auth';                             -- phải = 0
+ WHERE con.contype = 'f' AND n.nspname <> 'auth'
+   AND n.nspname !~ '^_timescaledb_';                                         -- phải = 0
 
 -- (4) AC-028 — signing_keys không có private key material.
 SELECT count(*) FROM information_schema.columns
