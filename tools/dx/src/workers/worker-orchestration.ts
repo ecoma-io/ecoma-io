@@ -137,9 +137,9 @@ export function discoveryToWorkerEntry(discovered: DiscoveredWorkerEntry): MailW
   // multi-DB là thay đổi hợp đồng interface, làm tường minh.
   if (discovered.databaseNames.length > 1) {
     throw new Error(
-      `app '${discovered.entryName}' khai ${discovered.databaseNames.length} D1 database ` +
-        `(${discovered.databaseNames.join(', ')}) — bridge MailWorkerEntry chỉ hỗ trợ ` +
-        'một database; mở rộng sang databaseNames[] trên MailWorkerEntry trước khi khai thêm D1',
+      `app '${discovered.entryName}' declares ${discovered.databaseNames.length} D1 databases ` +
+        `(${discovered.databaseNames.join(', ')}) — the MailWorkerEntry bridge only supports ` +
+        'one database; extend MailWorkerEntry to databaseNames[] before declaring more D1',
     );
   }
   // Default `''` trong destructuring đã bảo đảm chuỗi — `?? ''` là biểu thức
@@ -584,15 +584,17 @@ export async function startWorkerRuntime(
   );
   if (aliveEntries.length > 0) {
     throw new Error(
-      `local worker runtime đã chạy (alive: ${aliveEntries.map((e) => e.name).join(', ')}) — ` +
-        'dùng `pnpm dx local-worker-status` để xem, hoặc `pnpm dx local-worker-down` trước khi up lại',
+      `local worker runtime is already running (alive: ${aliveEntries.map((e) => e.name).join(', ')}) — ` +
+        'use `pnpm dx local-worker-status` to inspect, or `pnpm dx local-worker-down` before upping again',
     );
   }
   const discovered = MAIL_WORKER_ENTRIES(worktreeRoot);
   let entries = discovered;
   if (options.entryFilter !== undefined) {
     if (options.entryFilter.length === 0) {
-      throw new Error('entryFilter rỗng — boot 0 entry là lỗi caller, không phải runtime rỗng');
+      throw new Error(
+        'entryFilter is empty — booting 0 entries is a caller bug, not an empty runtime',
+      );
     }
     const known = discovered.map((entry) => entry.entryName);
     const knownSet = new Set(known);
@@ -601,7 +603,7 @@ export async function startWorkerRuntime(
       // `known` đã theo thứ tự alphabet của scan (discovery sort appDirs) —
       // display không cần sort thêm; rule no-array-sort cấm `.sort()`.
       throw new Error(
-        `entryFilter nêu entry không thuộc discovered runtime: ${unknown.join(', ')} — ` +
+        `entryFilter names entries that are not in the discovered runtime: ${unknown.join(', ')} — ` +
           `discovered: ${known.join(', ')}`,
       );
     }
@@ -977,7 +979,7 @@ export function statusWorkerRuntime(options: { worktreeRoot: string }): WorkerSt
     discovered = MAIL_WORKER_ENTRIES(worktreeRoot);
   } catch (error) {
     console.warn(
-      `[local-worker-status] discovery fail — mọi entry coi như non-standard: ` +
+      `[local-worker-status] discovery failed — treating every entry as non-standard: ` +
         `${error instanceof Error ? error.message : String(error)}`,
     );
   }

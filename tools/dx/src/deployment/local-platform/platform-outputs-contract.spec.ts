@@ -11,18 +11,18 @@ import {
 } from './platform-outputs-contract.js';
 
 describe('buildRootHost', () => {
-  it('ghép hostname với port thực tế — `fbi.com:<port>`', () => {
+  it('joins the hostname with the actual port — `fbi.com:<port>`', () => {
     expect(buildRootHost(32768)).toBe('fbi.com:32768');
     expect(buildRootHost(44301)).toBe('fbi.com:44301');
   });
 
-  it('hostname là hằng số local đã chốt', () => {
+  it('the hostname is the agreed local constant', () => {
     expect(LOCAL_ROOT_HOSTNAME).toBe('fbi.com');
   });
 });
 
 describe('traefik-dynamic.yml consistency', () => {
-  it('cert filename trong dynamic config khớp LOCAL_ROOT_HOSTNAME — hai nguồn sự thật bị khóa lại', () => {
+  it('the cert filename in the dynamic config matches LOCAL_ROOT_HOSTNAME — the two sources of truth are locked together', () => {
     // `deploys/platform-deploy/index.ts` suy tên cert từ `LOCAL_ROOT_HOSTNAME`,
     // còn `traefik-dynamic.yml` hardcode — lệch một chữ là MỌI worktree sập
     // (Traefik không có certificate trong store). Test đọc chính file YAML và
@@ -53,7 +53,7 @@ describe('traefik-dynamic.yml consistency', () => {
 });
 
 describe('extractTraefikHostPort', () => {
-  it('đọc external của đúng port HTTPS nội bộ', () => {
+  it('reads the external of the exact internal HTTPS port', () => {
     expect(
       extractTraefikHostPort([
         { internal: 8080, external: 39000 },
@@ -62,28 +62,26 @@ describe('extractTraefikHostPort', () => {
     ).toBe(39001);
   });
 
-  it('fail-closed khi ports undefined', () => {
-    expect(() => extractTraefikHostPort(undefined)).toThrow(/chưa sẵn sàng/u);
+  it('fail-closed when ports is undefined', () => {
+    expect(() => extractTraefikHostPort(undefined)).toThrow(/not ready/u);
   });
 
-  it('fail-closed khi port HTTPS không có external (Docker chưa cấp)', () => {
+  it('fail-closed when the HTTPS port has no external (Docker has not assigned one)', () => {
     expect(() => extractTraefikHostPort([{ internal: TRAEFIK_INTERNAL_PORT }])).toThrow(
-      /chưa sẵn sàng/u,
+      /not ready/u,
     );
     expect(() =>
       extractTraefikHostPort([{ internal: TRAEFIK_INTERNAL_PORT, external: 0 }]),
-    ).toThrow(/chưa sẵn sàng/u);
+    ).toThrow(/not ready/u);
   });
 
-  it('fail-closed với NaN — so sánh <= với NaN luôn false, phải chặn bằng Number.isInteger', () => {
+  it('fail-closed with NaN — a <= comparison against NaN is always false, so Number.isInteger must guard', () => {
     expect(() =>
       extractTraefikHostPort([{ internal: TRAEFIK_INTERNAL_PORT, external: Number.NaN }]),
-    ).toThrow(/chưa sẵn sàng/u);
+    ).toThrow(/not ready/u);
   });
 
-  it('fail-closed khi không có port nào khớp HTTPS nội bộ', () => {
-    expect(() => extractTraefikHostPort([{ internal: 80, external: 39002 }])).toThrow(
-      /chưa sẵn sàng/u,
-    );
+  it('fail-closed when no port matches the internal HTTPS port', () => {
+    expect(() => extractTraefikHostPort([{ internal: 80, external: 39002 }])).toThrow(/not ready/u);
   });
 });

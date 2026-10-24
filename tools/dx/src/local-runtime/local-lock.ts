@@ -223,8 +223,8 @@ export function acquireLocalDeployLock(options: AcquireOptions = {}): () => void
     }
   }
   throw new Error(
-    'Một lệnh local deploy/cleanup khác đang chạy (lock bị giữ). ' +
-      'Chờ lệnh đó kết thúc rồi chạy lại, hoặc xoá lock mồ côi ' +
-      `${lockPath} nếu process chủ đã chết.`,
+    'Another local deploy/cleanup command is running (lock held). ' +
+      'Wait for it to finish and retry, or remove the orphaned lock ' +
+      `${lockPath} if the owning process has died.`,
   );
 }

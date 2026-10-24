@@ -285,16 +285,16 @@ export function parseJsonc(text: string): unknown {
   // block comment/chuỗi không đóng nuốt toàn bộ phần còn lại của file, author
   // committed config cần biết reachable lỗi ở đâu.
   if (finalState === 'blockComment') {
-    throw new Error('JSONC có block comment /* không đóng — kiểm lại committed config');
+    throw new Error('JSONC has a block comment that is unterminated — check the committed config');
   }
   if (finalState === 'string') {
-    throw new Error('JSONC có chuỗi " chưa đóng — kiểm lại committed config');
+    throw new Error('JSONC has a string that is unterminated — check the committed config');
   }
   // 'lineComment' ở EOF là bình thường (// comment cuối file), không phải lỗi.
   try {
     return JSON.parse(output);
   } catch (error) {
-    throw new Error(`không parse được JSONC: ${(error as Error).message}`, { cause: error });
+    throw new Error(`failed to parse JSONC: ${(error as Error).message}`, { cause: error });
   }
 }
 
@@ -313,8 +313,8 @@ const RESOURCE_IDENTIFIER_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*$/u;
 export function validateDatabaseIdentifier(value: string): string {
   if (!RESOURCE_IDENTIFIER_PATTERN.test(value)) {
     throw new Error(
-      `database identifier không hợp lệ: '${value}' — chỉ chấp nhận [A-Za-z][A-Za-z0-9_-]* ` +
-        '(yargs parse mọi token --flag bất kể vị trí, identifier lệch chuẩn là flag smuggling)',
+      `invalid database identifier: '${value}' — only [A-Za-z][A-Za-z0-9_-]* is accepted ` +
+        '(yargs parses --flag tokens anywhere, so a malformed identifier is flag smuggling)',
     );
   }
   return value;
@@ -344,7 +344,7 @@ function assertNoRemoteTrue(value: unknown, path: string, containerKey?: string)
     const truthyRemoteString = typeof val === 'string' && val.trim().toLowerCase() === 'true';
     if (key === 'remote' && (val === true || val === 'true' || truthyRemoteString)) {
       throw new Error(
-        `wrangler config chứa 'remote: ${String(val)}' tại ${childPath} — PR3 không cho phép remote mode`,
+        `wrangler config contains 'remote: ${String(val)}' at ${childPath} — PR3 does not allow remote mode`,
       );
     }
     // `id` chỉ chặn trong container resource; `database_id`/`preview_database_id`
@@ -358,8 +358,8 @@ function assertNoRemoteTrue(value: unknown, path: string, containerKey?: string)
       val.trim().length > 0
     ) {
       throw new Error(
-        `wrangler config chứa resource identifier remote '${key}: ${val}' tại ${childPath} — ` +
-          'local runtime không được resolve tới tài nguyên remote',
+        `wrangler config contains a remote resource identifier '${key}: ${val}' at ${childPath} — ` +
+          'the local runtime must not resolve to remote resources',
       );
     }
     assertNoRemoteTrue(val, childPath, key);
@@ -368,23 +368,23 @@ function assertNoRemoteTrue(value: unknown, path: string, containerKey?: string)
 
 export function validateCommittedWranglerConfig(config: unknown): CommittedWranglerConfig {
   if (config === null || typeof config !== 'object' || Array.isArray(config)) {
-    throw new Error('wrangler config phải là một object');
+    throw new Error('wrangler config must be an object');
   }
   const c = config as Record<string, unknown>;
   if (typeof c.name !== 'string' || c.name.trim().length === 0) {
-    throw new Error("wrangler config thiếu 'name' (string không rỗng)");
+    throw new Error("wrangler config is missing 'name' (non-empty string)");
   }
   if (typeof c.main !== 'string' || c.main.trim().length === 0) {
-    throw new Error("wrangler config thiếu 'main' (string không rỗng)");
+    throw new Error("wrangler config is missing 'main' (non-empty string)");
   }
   if (typeof c.compatibility_date !== 'string' || c.compatibility_date.trim().length === 0) {
-    throw new Error("wrangler config thiếu 'compatibility_date' (string không rỗng)");
+    throw new Error("wrangler config is missing 'compatibility_date' (non-empty string)");
   }
   assertNoRemoteTrue(config, '');
   // account_id không được dùng trong local runtime — tránh resolve tới account thật.
   if (typeof c.account_id === 'string' && c.account_id.trim().length > 0) {
     throw new Error(
-      "wrangler config khai 'account_id' — local runtime không được resolve tới account thật",
+      "wrangler config declares 'account_id' — the local runtime must not resolve to a real account",
     );
   }
   return c as CommittedWranglerConfig;
@@ -393,13 +393,13 @@ export function validateCommittedWranglerConfig(config: unknown): CommittedWrang
 export function loadCommittedWranglerConfig(configPath: string): LoadedCommittedConfig {
   const absolute = resolve(configPath);
   if (!existsSync(absolute)) {
-    throw new Error(`committed wrangler config không tồn tại: ${absolute}`);
+    throw new Error(`committed wrangler config does not exist: ${absolute}`);
   }
   let raw: string;
   try {
     raw = readFileSync(absolute, 'utf8');
   } catch (error) {
-    throw new Error(`không đọc được committed wrangler config: ${(error as Error).message}`, {
+    throw new Error(`cannot read the committed wrangler config: ${(error as Error).message}`, {
       cause: error,
     });
   }
@@ -439,7 +439,7 @@ export function generateWorkerConfig(
   options: GenerateWorkerConfigOptions,
 ): GeneratedWorkerConfigResult {
   if (options.remote === true) {
-    throw new Error('generateWorkerConfig: remote mode không được phép (PR3 fail-closed)');
+    throw new Error('generateWorkerConfig: remote mode is not allowed (PR3 fail-closed)');
   }
   const normalizedRoot = normalizeWorktreeRoot(options.worktreeRoot);
   const namespace = worktreeNamespace(normalizedRoot);
@@ -510,7 +510,7 @@ export function generateWorkerConfig(
     const requested = options.port;
     if (!Number.isInteger(requested) || requested < 1024 || requested > 65535) {
       throw new Error(
-        `generateWorkerConfig: port không hợp lệ: ${String(requested)} — phải là integer trong [1024, 65535]`,
+        `generateWorkerConfig: invalid port: ${String(requested)} — must be an integer in [1024, 65535]`,
       );
     }
   }
@@ -544,7 +544,7 @@ export function generateWorkerConfig(
     } catch {
       // ignore
     }
-    throw new Error(`không ghi được generated config: ${(error as Error).message}`, {
+    throw new Error(`cannot write the generated config: ${(error as Error).message}`, {
       cause: error,
     });
   }
@@ -695,13 +695,13 @@ function runWrangler(
   });
   if (result.error) {
     if ((result.error as NodeJS.ErrnoException).code === 'ETIMEDOUT') {
-      throw new Error(`wrangler ${args.join(' ')} vượt quá timeout 5 phút — abort`);
+      throw new Error(`wrangler ${args.join(' ')} exceeded the 5 minute timeout — aborting`);
     }
-    throw new Error(`wrangler không chạy được: ${result.error.message}`);
+    throw new Error(`wrangler could not run: ${result.error.message}`);
   }
   if (result.status !== 0) {
-    const detail = (result.stderr ?? '').trim() || (result.stdout ?? '').trim() || 'lý do không rõ';
-    throw new Error(`wrangler ${args.join(' ')} thất bại:\n${detail}`);
+    const detail = (result.stderr ?? '').trim() || (result.stdout ?? '').trim() || 'unknown reason';
+    throw new Error(`wrangler ${args.join(' ')} failed:\n${detail}`);
   }
 }
 
@@ -753,26 +753,26 @@ export function assertDatabaseNameInConfig(configPath: string, databaseName: str
     )
     .join(', ');
   throw new Error(
-    `database '${databaseName}' không khớp binding/database_name nào trong d1_databases của ` +
-      `${configPath} (known: ${known || 'trống'}) — từ chối gọi wrangler với tên không nằm trong config`,
+    `database '${databaseName}' matches no binding/database_name in the d1_databases of ` +
+      `${configPath} (known: ${known || 'empty'}) — refusing to call wrangler with a name not present in the config`,
   );
 }
 
 export function applyLocalD1Seeds(options: ApplyLocalSeedsOptions): void {
   if (options.remote === true) {
-    throw new Error('applyLocalD1Seeds: remote mode không được phép (PR3 fail-closed)');
+    throw new Error('applyLocalD1Seeds: remote mode is not allowed (PR3 fail-closed)');
   }
   // `seedFiles: []` phải fail-loud (OCR low finding): pattern lệch/ glob sai
   // để lại state D1 chưa seed, "thành công" âm thầm => bug biểu hiện muộn ở
   // tầng khác khó truy vết.
   if (options.seedFiles.length === 0) {
     throw new Error(
-      'applyLocalD1Seeds: seedFiles rỗng — không seed nào được áp, từ chối chạy thầm lặng (fail-closed)',
+      'applyLocalD1Seeds: seedFiles is empty — no seed would be applied, refusing to run silently (fail-closed)',
     );
   }
   const configPath = resolve(options.configPath);
   if (!existsSync(configPath)) {
-    throw new Error(`config không tồn tại: ${configPath}`);
+    throw new Error(`config does not exist: ${configPath}`);
   }
   const persistTo = resolvePersistDir(options.persistTo);
   assertDatabaseNameInConfig(configPath, validateDatabaseIdentifier(options.databaseName));
@@ -782,7 +782,7 @@ export function applyLocalD1Seeds(options: ApplyLocalSeedsOptions): void {
   for (const seedFile of options.seedFiles) {
     const absoluteSeed = resolve(seedFile);
     if (!existsSync(absoluteSeed)) {
-      throw new Error(`seed file không tồn tại: ${absoluteSeed}`);
+      throw new Error(`seed file does not exist: ${absoluteSeed}`);
     }
     runWrangler(
       [
@@ -804,11 +804,11 @@ export function applyLocalD1Seeds(options: ApplyLocalSeedsOptions): void {
 
 export function applyLocalD1Migrations(options: ApplyLocalMigrationsOptions): void {
   if (options.remote === true) {
-    throw new Error('applyLocalD1Migrations: remote mode không được phép (PR3 fail-closed)');
+    throw new Error('applyLocalD1Migrations: remote mode is not allowed (PR3 fail-closed)');
   }
   const configPath = resolve(options.configPath);
   if (!existsSync(configPath)) {
-    throw new Error(`config không tồn tại: ${configPath}`);
+    throw new Error(`config does not exist: ${configPath}`);
   }
   const persistTo = resolvePersistDir(options.persistTo);
   assertDatabaseNameInConfig(configPath, validateDatabaseIdentifier(options.databaseName));

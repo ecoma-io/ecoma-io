@@ -61,7 +61,7 @@ export async function runLocalCommand(
 export function requireDirectoryRoot(raw: unknown): string | undefined {
   if (typeof raw !== 'string') return undefined;
   if (!statSync(raw).isDirectory()) {
-    throw new Error(`--worktree-root không phải thư mục: ${raw}`);
+    throw new Error(`--worktree-root is not a directory: ${raw}`);
   }
   return raw;
 }

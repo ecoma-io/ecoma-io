@@ -37,7 +37,7 @@ afterAll(() => {
 });
 
 describe('resolveContext', () => {
-  it('mỗi worktree một namespace, stack và state backend riêng', () => {
+  it('each worktree gets its own namespace, stack, and state backend', () => {
     const a = resolveContext(tempWorktree());
     const b = resolveContext(tempWorktree());
     expect(a.namespace).not.toBe(b.namespace);
@@ -45,14 +45,14 @@ describe('resolveContext', () => {
     expect(a.stateUrl).not.toBe(b.stateUrl);
   });
 
-  it('stack name tuân contract local-<ns> và state nằm trong worktree (ngoài Git)', () => {
+  it('stack name follows the local-<ns> contract and state lives inside the worktree (outside Git)', () => {
     const root = tempWorktree();
     const ctx = resolveContext(root);
     expect(ctx.stackName).toBe(`local-${worktreeNamespace(root)}`);
     expect(ctx.stateUrl.startsWith(`file://${root}`)).toBe(true);
   });
 
-  it('stateUrl là file URL đã encode đúng — ký tự đặc biệt trong path không vỡ backend URL', () => {
+  it('stateUrl is a correctly encoded file URL — special chars in the path do not break the backend URL', () => {
     // `pathToFileURL` encode `%` v.v. — nối chuỗi `file://${root}` với path chứa
     // `%` sẽ tạo URL sai mà Pulumi CLI parse lỗi hoặc trỏ sang thư mục khác.
     const parent = mkdtempSync(join(tmpdir(), 'pulumi-ctx-'));
@@ -64,7 +64,7 @@ describe('resolveContext', () => {
     expect(ctx.stateUrl).not.toContain(' %');
   });
 
-  it('hai worktree có đường dẫn khác nhau không bao giờ cùng state dir — kể cả sau normalize', () => {
+  it('two worktrees with different paths never share a state dir — even after normalize', () => {
     const root = tempWorktree();
     const ctx1 = resolveContext(root);
     // Cùng thư mục qua đường dẫn có trailing slash và path tương đối phải ra
@@ -78,14 +78,14 @@ describe('resolveContext', () => {
 });
 
 describe('fullStackRef', () => {
-  it('stack ref đầy đủ theo format organization/<project>/<stack> của backend file://', () => {
+  it('full stack ref follows the organization/<project>/<stack> format of the file:// backend', () => {
     const ctx = resolveContext(tempWorktree());
     expect(fullStackRef('platform-deploy', ctx)).toBe(
       `organization/platform-deploy/${ctx.stackName}`,
     );
   });
 
-  it('hai worktree → hai stack ref khác nhau cho cùng project', () => {
+  it('two worktrees → two different stack refs for the same project', () => {
     const a = fullStackRef('platform-deploy', resolveContext(tempWorktree()));
     const b = fullStackRef('platform-deploy', resolveContext(tempWorktree()));
     expect(a).not.toBe(b);
@@ -208,7 +208,9 @@ describe('resolveLocalPassphrase', () => {
     mkdirSync(stacksDir, { recursive: true });
     writeFileSync(join(stacksDir, 'local-test.json'), '{}', 'utf8');
     expect(hasPulumiState(root)).toBe(true);
-    expect(() => resolveLocalPassphrase(root, { create: true })).toThrow(/đã có Pulumi state/u);
+    expect(() => resolveLocalPassphrase(root, { create: true })).toThrow(
+      /already has local Pulumi state/u,
+    );
   });
 
   it('new stack (no state) with no passphrase → generates and persists', () => {
@@ -318,13 +320,13 @@ describe('ensureStack — real Pulumi subprocess isolation', () => {
   });
 });
 
-describe('pulumiRun — prepareStack là opt-in', () => {
+describe('pulumiRun — prepareStack is opt-in', () => {
   // Mặc định KHÔNG được chuẩn bị stack: lệnh đọc/teardown quên truyền cờ không
   // bao giờ được biến thành mutation (mkdir + stack init) trên worktree chưa
   // từng deploy. Chạy CLI thật khi có mặt; thiếu CLI thì skip (giống suite trên).
   const hasCli = spawnSync('pulumi', ['version'], { encoding: 'utf8' }).status === 0;
 
-  it('lệnh đọc KHÔNG truyền prepareStack → không tạo state dir, không stack init', () => {
+  it('a read command WITHOUT prepareStack → no state dir created, no stack init', () => {
     if (!hasCli) return; // skip im lặng — documented limitation
     const wt = tempWorktree();
     const ctx = resolveContext(wt);
@@ -341,12 +343,12 @@ describe('pulumiRun — prepareStack là opt-in', () => {
     // init là exit != 0) — điều cần assert KHÔNG phải exit code mà là side
     // effect: không có state dir nào được tạo, không có stack nào được init.
     expect(() => pulumiRun(projDir, 'optinspec', ['stack', 'export'], ctx, env)).toThrow(
-      /thất bại|không chạy được/u,
+      /failed|could not run/u,
     );
     expect(existsSync(localStateDir(wt))).toBe(false);
   });
 
-  it('lệnh mutation truyền prepareStack: true → state dir + stack được tạo', () => {
+  it('a mutation command with prepareStack: true → state dir + stack are created', () => {
     if (!hasCli) return; // skip im lặng — documented limitation
     const wt = tempWorktree();
     const ctx = resolveContext(wt);

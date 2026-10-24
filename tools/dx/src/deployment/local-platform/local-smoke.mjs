@@ -92,7 +92,7 @@ function usageError(message) {
 function parsePositiveInt(value, flag) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) {
-    usageError(`${flag} phải là số nguyên dương: ${value}`);
+    usageError(`${flag} must be a positive integer: ${value}`);
   }
   return parsed;
 }
@@ -102,12 +102,12 @@ function parsePositiveInt(value, flag) {
 function parseHostPort(value, label) {
   const separator = value.lastIndexOf(':');
   if (separator === -1 || separator === 0) {
-    usageError(`${label} không đúng dạng <hostname>:<port>: ${value}`);
+    usageError(`${label} must be in <hostname>:<port> form: ${value}`);
   }
   const hostname = value.slice(0, separator);
   const port = Number(value.slice(separator + 1));
   if (!Number.isInteger(port) || port <= 0 || port > 65535) {
-    usageError(`port không hợp lệ trong ${label}: ${value}`);
+    usageError(`invalid port in ${label}: ${value}`);
   }
   return { hostname, port };
 }
@@ -127,7 +127,7 @@ for (let i = 0; i < args.length; i++) {
   const inlineValue = eq === -1 ? undefined : arg.slice(eq + 1);
   const takeValue = () => {
     if (inlineValue !== undefined) return inlineValue;
-    if (i + 1 >= args.length) usageError(`${flag} cần một giá trị`);
+    if (i + 1 >= args.length) usageError(`${flag} requires a value`);
     i += 1;
     return args[i];
   };
@@ -142,8 +142,8 @@ for (let i = 0; i < args.length; i++) {
       requestTimeoutMs = parsePositiveInt(takeValue(), flag);
       break;
     default:
-      if (flag.startsWith('--')) usageError(`flag không hỗ trợ: ${flag}`);
-      if (rootHostArg !== undefined) usageError(`thừa argument: ${flag}`);
+      if (flag.startsWith('--')) usageError(`unsupported flag: ${flag}`);
+      if (rootHostArg !== undefined) usageError(`unexpected argument: ${flag}`);
       rootHostArg = flag;
   }
 }
@@ -171,19 +171,17 @@ function classifyRequestError(error, pathname) {
     typeof code === 'string' &&
     (code.startsWith('ERR_TLS_') || code.startsWith('ERR_SSL_') || TLS_ERROR_CODES.has(code))
   ) {
-    return new VerificationFailure(
-      `GET ${pathname}: TLS/certificate không hợp lệ — ${error.message}`,
-    );
+    return new VerificationFailure(`GET ${pathname}: invalid TLS/certificate — ${error.message}`);
   }
   // AbortSignal.timeout hủy request: Node báo AbortError/ABORT_ERR với cause
   // TimeoutError — đây là request timeout của ta, không phải lỗi server.
   if (error.name === 'TimeoutError' || error.code === 'ABORT_ERR' || error.name === 'AbortError') {
     return new RetryableError(
-      `GET ${pathname}: timeout ${requestTimeoutMs}ms — server chưa trả lời`,
+      `GET ${pathname}: timeout ${requestTimeoutMs}ms — server did not respond`,
     );
   }
   if (typeof code === 'string' && RETRYABLE_ERROR_CODES.has(code)) {
-    return new RetryableError(`GET ${pathname}: ${code} — server chưa nghe/chưa sẵn sàng`);
+    return new RetryableError(`GET ${pathname}: ${code} — server not listening/not ready yet`);
   }
   // Mọi lỗi ngoài danh sách retry là fail-closed — không đoán thêm chữ ký nào.
   return new VerificationFailure(`GET ${pathname}: ${error.message}`);
@@ -226,8 +224,8 @@ function requestStep(pathname) {
         if (response.socket?.authorized !== true) {
           reject(
             new VerificationFailure(
-              `GET ${pathname}: TLS không được xác minh — ${
-                response.socket?.authorizationError ?? 'socket không có trạng thái verify'
+              `GET ${pathname}: TLS not verified — ${
+                response.socket?.authorizationError ?? 'socket has no verify status'
               }`,
             ),
           );
@@ -244,7 +242,7 @@ function requestStep(pathname) {
           request.destroy();
           reject(
             new RetryableError(
-              `GET ${pathname}: response bị ngắt giữa chừng — server chưa ổn định`,
+              `GET ${pathname}: response interrupted midway — server not stable yet`,
             ),
           );
         });
@@ -257,7 +255,7 @@ function requestStep(pathname) {
           if (RETRYABLE_STATUSES.has(result.status)) {
             reject(
               new RetryableError(
-                `GET ${pathname}: status ${result.status} — upstream chưa sẵn sàng`,
+                `GET ${pathname}: status ${result.status} — upstream not ready yet`,
               ),
             );
           } else {
@@ -276,27 +274,27 @@ async function verifyChain() {
   // đều là broken và không được nuốt.
   const root = await requestStep('/');
   if (root.status !== 302) {
-    throw new VerificationFailure(`GET /: mong status 302, nhận ${root.status}`);
+    throw new VerificationFailure(`GET /: expected status 302, got ${root.status}`);
   }
   if (root.headers.location !== REDIRECT_PATH) {
     throw new VerificationFailure(
-      `GET /: mong location '${REDIRECT_PATH}', nhận ${JSON.stringify(root.headers.location)}`,
+      `GET /: expected location '${REDIRECT_PATH}', got ${JSON.stringify(root.headers.location)}`,
     );
   }
 
   // Bước 2 — `/en` phải là HTML thật, đánh dấu bằng title ổn định của home.
   const en = await requestStep(REDIRECT_PATH);
   if (!(en.status >= 200 && en.status < 300)) {
-    throw new VerificationFailure(`GET ${REDIRECT_PATH}: mong 2xx, nhận ${en.status}`);
+    throw new VerificationFailure(`GET ${REDIRECT_PATH}: expected 2xx, got ${en.status}`);
   }
   const contentType = en.headers['content-type'] ?? '';
   if (!contentType.includes('text/html')) {
     throw new VerificationFailure(
-      `GET ${REDIRECT_PATH}: mong content-type text/html, nhận '${contentType}'`,
+      `GET ${REDIRECT_PATH}: expected content-type text/html, got '${contentType}'`,
     );
   }
   if (!en.body.includes(TITLE_MARKER)) {
-    throw new VerificationFailure(`GET ${REDIRECT_PATH}: body thiếu '${TITLE_MARKER}'`);
+    throw new VerificationFailure(`GET ${REDIRECT_PATH}: body missing '${TITLE_MARKER}'`);
   }
 }
 
@@ -311,12 +309,12 @@ for (;;) {
     // đi qua `smoke FAILED` rồi vẫn kịp in `smoke OK` (exit code != 0 nhưng
     // stdout vẫn khen là bug từng khiến log mâu thuẫn với nhau).
     console.log(
-      `smoke OK: 302 → 200 sau ${Date.now() - startedAt}ms — TLS hợp lệ với certificate local`,
+      `smoke OK: 302 → 200 after ${Date.now() - startedAt}ms — TLS valid with the local certificate`,
     );
     break;
   } catch (error) {
     if (!(error instanceof RetryableError)) {
-      console.error(`smoke FAILED sau ${Date.now() - startedAt}ms: ${error.message}`);
+      console.error(`smoke FAILED after ${Date.now() - startedAt}ms: ${error.message}`);
       // `exitCode` + break thay vì `process.exit()`: stderr nối pipe là BẤT
       // ĐỒNG BỘ trên một số nền tảng — `process.exit` ngay sau `console.error`
       // có thể cắt mất chính dòng `smoke FAILED` là lý do duy nhất để chẩn
@@ -329,7 +327,7 @@ for (;;) {
   const remainingMs = budgetMs - (Date.now() - startedAt);
   if (remainingMs <= 0) {
     console.error(
-      `smoke FAILED sau ${Date.now() - startedAt}ms (hết budget ${budgetMs}ms): ${failure.message}`,
+      `smoke FAILED after ${Date.now() - startedAt}ms (budget exhausted ${budgetMs}ms): ${failure.message}`,
     );
     process.exitCode = 1;
     break;
@@ -339,7 +337,7 @@ for (;;) {
   // đã tuyên bố với caller.
   const sleepMs = Math.min(backoffMs, remainingMs);
   console.error(
-    `smoke RETRY sau ${Date.now() - startedAt}ms: ${failure.message} — thử lại sau ${sleepMs}ms`,
+    `smoke RETRY after ${Date.now() - startedAt}ms: ${failure.message} — retrying in ${sleepMs}ms`,
   );
   await new Promise((resolve) => {
     setTimeout(resolve, sleepMs);

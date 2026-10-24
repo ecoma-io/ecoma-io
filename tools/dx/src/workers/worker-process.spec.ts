@@ -670,7 +670,7 @@ describe('scanWorkerProcesses / deleteStaleWorkerMetadata / terminateStaleWorker
     // Same identity, live pid → rejected.
     expect(() =>
       startWorkerProcess({ name: 'dup', argv: args, cwd: dir, env: {}, stateDir: dir }),
-    ).toThrow(/đã chạy/u);
+    ).toThrow(/already running/u);
 
     // Different identity, live pid → rejected with identity mismatch.
     expect(() =>

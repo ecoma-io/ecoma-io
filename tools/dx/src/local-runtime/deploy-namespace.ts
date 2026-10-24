@@ -116,7 +116,7 @@ export type DeployResourceKind =
  */
 export function dockerResourceName(namespace: string, kind: DeployResourceKind): string {
   if (!/^[a-z0-9][a-z0-9_-]*$/u.test(namespace)) {
-    throw new Error(`namespace không hợp lệ cho Docker name: ${namespace}`);
+    throw new Error(`invalid namespace for Docker name: ${namespace}`);
   }
   return `${RESOURCE_PREFIX}-${namespace}-${kind}`;
 }

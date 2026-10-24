@@ -51,7 +51,7 @@ export default defineCommand({
       if (incomplete.length > 0) {
         console.error(
           `[local-worker-down] partial failure: ${incomplete.length} entry(ies) kept-evidence — ` +
-            'process/file còn sống hoặc bằng chứng không đủ để xoá an toàn',
+            'process/file still alive or insufficient evidence for a safe delete',
         );
         process.exitCode = 1;
       }

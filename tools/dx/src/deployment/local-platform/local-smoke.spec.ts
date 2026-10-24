@@ -183,7 +183,7 @@ describe('local-smoke.mjs input contract', () => {
   it('port not a number → exit 2', async () => {
     const result = await run(['fbi.com:notaport']);
     expect(result.status).toBe(2);
-    expect(result.stderr).toContain('port không hợp lệ');
+    expect(result.stderr).toContain('invalid port');
   });
 
   it('port out of range → exit 2', async () => {
@@ -224,7 +224,7 @@ describe('local-smoke.mjs HTTPS verification chain', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('smoke OK');
     expect(result.stdout).toContain('302 → 200');
-    expect(result.stdout).toContain('TLS hợp lệ với certificate local');
+    expect(result.stdout).toContain('TLS valid with the local certificate');
     // stdout và stderr là hai hợp đồng riêng: thành công thì stdout khen,
     // stderr không có dòng FAILED/RETRY nào.
     expect(result.stderr).not.toContain('smoke FAILED');
@@ -242,7 +242,7 @@ describe('local-smoke.mjs HTTPS verification chain', () => {
     });
     const result = await run(fixtureArgs(port, FAST));
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("mong location '/en'");
+    expect(result.stderr).toContain("expected location '/en'");
     expect(result.stderr).not.toContain('smoke RETRY');
   });
 
@@ -257,7 +257,7 @@ describe('local-smoke.mjs HTTPS verification chain', () => {
     });
     const result = await run(fixtureArgs(port, FAST));
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('mong status 302, nhận 200');
+    expect(result.stderr).toContain('expected status 302, got 200');
   });
 
   it('root returns 404 → retried, then exit 1 at budget exhaustion', async () => {
@@ -269,7 +269,7 @@ describe('local-smoke.mjs HTTPS verification chain', () => {
     });
     const result = await run(fixtureArgs(port, FAST));
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('hết budget');
+    expect(result.stderr).toContain('budget exhausted');
   });
 
   it('/en returns 404 → retried, then exit 1 at budget exhaustion', async () => {
@@ -283,7 +283,7 @@ describe('local-smoke.mjs HTTPS verification chain', () => {
     });
     const result = await run(fixtureArgs(port, FAST));
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('hết budget');
+    expect(result.stderr).toContain('budget exhausted');
   });
 
   it('/en returns 500 → exit 1 fast without retry (SSR error is not "not ready")', async () => {
@@ -297,7 +297,7 @@ describe('local-smoke.mjs HTTPS verification chain', () => {
     });
     const result = await run(fixtureArgs(port, FAST));
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('mong 2xx, nhận 500');
+    expect(result.stderr).toContain('expected 2xx, got 500');
     // 500 phải fail tức thời: không một dòng RETRY nào, không đợi budget.
     expect(result.stderr).not.toContain('smoke RETRY');
     expect(result.ms).toBeLessThan(3000);
@@ -333,7 +333,7 @@ describe('local-smoke.mjs HTTPS verification chain', () => {
     const result = await run(fixtureArgs(port, ['--budget-ms', '500']));
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('smoke FAILED');
-    expect(result.stderr).toContain('hết budget 500ms');
+    expect(result.stderr).toContain('budget exhausted 500ms');
     expect(result.stderr).toContain('status 502');
   });
 
@@ -359,7 +359,7 @@ describe('local-smoke.mjs HTTPS verification chain', () => {
       ...FAST,
     ]);
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('TLS/certificate không hợp lệ');
+    expect(result.stderr).toContain('invalid TLS/certificate');
     expect(result.stderr).not.toContain('smoke RETRY');
   });
 
@@ -431,7 +431,7 @@ describe('local-smoke.mjs smoke OK contract', () => {
     const result = await run(fixtureArgs(port, FAST));
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('smoke FAILED');
-    expect(result.stderr).toContain('mong 2xx, nhận 500');
+    expect(result.stderr).toContain('expected 2xx, got 500');
     // stdout KHÔNG bao giờ khen khi verify chưa từng thành công.
     expect(result.stdout).not.toContain('smoke OK');
     expect(result.stdout).not.toContain('302 → 200');
@@ -446,7 +446,7 @@ describe('local-smoke.mjs smoke OK contract', () => {
     const result = await run(fixtureArgs(port, ['--budget-ms', '500']));
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('smoke FAILED');
-    expect(result.stderr).toContain('hết budget 500ms');
+    expect(result.stderr).toContain('budget exhausted 500ms');
     expect(result.stderr).toContain('status 502');
     expect(result.stdout).not.toContain('smoke OK');
   });

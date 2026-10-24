@@ -91,9 +91,9 @@ export function extractTraefikHostPort(
     https.external <= 0
   ) {
     throw new Error(
-      `Traefik host port chưa sẵn sàng trong outputs: ` +
-        `cần ContainerPort(internal=${TRAEFIK_INTERNAL_PORT}) có external hợp lệ, ` +
-        `thấy ${JSON.stringify(ports)}`,
+      `Traefik host port not ready in outputs: ` +
+        `need ContainerPort(internal=${TRAEFIK_INTERNAL_PORT}) with a valid external, ` +
+        `got ${JSON.stringify(ports)}`,
     );
   }
   return https.external;

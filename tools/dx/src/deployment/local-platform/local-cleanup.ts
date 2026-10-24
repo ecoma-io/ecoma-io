@@ -151,14 +151,14 @@ export function dockerInspectLabels(
   if (result.status !== 0) {
     return {
       labels: {},
-      failure: result.stderr.trim() || result.stdout.trim() || 'docker inspect thất bại',
+      failure: result.stderr.trim() || result.stdout.trim() || 'docker inspect failed',
     };
   }
   let parsed: { Labels?: Record<string, string>; Config?: { Labels?: Record<string, string> } };
   try {
     parsed = JSON.parse(result.stdout.trim()) as typeof parsed;
   } catch {
-    return { labels: {}, failure: 'docker inspect trả JSON không parse được' };
+    return { labels: {}, failure: 'docker inspect returned unparseable JSON' };
   }
   const labels = parsed.Labels ?? parsed.Config?.Labels ?? {};
   return { labels };
@@ -215,7 +215,7 @@ function execDockerRemove(
   if (result.status === 0) return { ok: true };
   return {
     ok: false,
-    stderr: result.stderr.trim() || result.stdout.trim() || 'docker rm thất bại',
+    stderr: result.stderr.trim() || result.stdout.trim() || 'docker rm failed',
   };
 }
 
@@ -238,27 +238,30 @@ export function decideResourceAction(
     case 'missing':
       return {
         action: 'skipped',
-        reason: `không có label ${LABEL_MANAGED_BY}=${LABEL_MANAGED_BY_VALUE} — ngoài quản lý DX`,
+        reason: `no ${LABEL_MANAGED_BY}=${LABEL_MANAGED_BY_VALUE} label — outside DX management`,
       };
     case 'malformed':
-      return { action: 'skipped', reason: `metadata không đầy đủ: ${ownership.detail}` };
+      return { action: 'skipped', reason: `incomplete metadata: ${ownership.detail}` };
     case 'unknown':
-      return { action: 'skipped', reason: `metadata không đọc được: ${ownership.detail}` };
+      return { action: 'skipped', reason: `unreadable metadata: ${ownership.detail}` };
     case 'owned': {
       const presence = opts.worktreePresence(ownership.worktreePath);
       if (presence === 'present') {
-        return { action: 'kept', reason: `worktree còn tồn tại (${ownership.worktreePath})` };
+        return { action: 'kept', reason: `worktree still exists (${ownership.worktreePath})` };
       }
       if (presence === 'unknown') {
         return {
           action: 'kept',
           reason:
-            `không xác định được worktree có tồn tại hay không (${ownership.worktreePath}) — ` +
-            'fail-closed, giữ resource',
+            `cannot determine whether the worktree exists (${ownership.worktreePath}) — ` +
+            'fail-closed, keeping the resource',
         };
       }
       if (kind === POSTGRES_VOLUME_KIND) {
-        return { action: 'kept', reason: 'volume PostgreSQL persistent — cleanup không xoá' };
+        return {
+          action: 'kept',
+          reason: 'persistent PostgreSQL volume — cleanup does not delete it',
+        };
       }
       return { action: 'remove' };
     }
@@ -289,8 +292,8 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
     return {
       entries,
       errors: [
-        'Docker daemon không trả lời — không quét được resource. ' +
-          `Chi tiết: ${info.stderr.trim() || info.stdout.trim() || 'docker info thất bại'}`,
+        'Docker daemon not responding — cannot scan for resources. ' +
+          `Detail: ${info.stderr.trim() || info.stdout.trim() || 'docker info failed'}`,
       ],
     };
   }
@@ -344,7 +347,7 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
     const list = dockerList(dockerType, filter.env, dockerExec);
     if (list.status !== 0) {
       errors.push(
-        `docker ${dockerType} ls thất bại: ${list.stderr.trim() || list.stdout.trim() || 'lý do không rõ'}`,
+        `docker ${dockerType} ls failed: ${list.stderr.trim() || list.stdout.trim() || 'unknown reason'}`,
       );
       continue;
     }
@@ -390,7 +393,7 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
           kind,
           name,
           action: 'skipped',
-          reason: `không inspect được labels (${failure})`,
+          reason: `could not inspect labels (${failure})`,
         });
         continue;
       }
@@ -407,7 +410,7 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
           name,
           worktreePath: ownership.worktreePath,
           action: 'skipped',
-          reason: `ngoài worktree filter (${ownership.worktreePath})`,
+          reason: `outside the worktree filter (${ownership.worktreePath})`,
         });
         continue;
       }
@@ -419,7 +422,7 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
             name,
             worktreePath: ownership.state === 'owned' ? ownership.worktreePath : undefined,
             action: 'would-remove',
-            reason: 'mồ côi (worktree không còn trên đĩa) — dry-run, không xoá',
+            reason: 'orphaned (worktree no longer on disk) — dry-run, not deleting',
           });
           continue;
         }
@@ -430,16 +433,18 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
             name,
             worktreePath: ownership.state === 'owned' ? ownership.worktreePath : undefined,
             action: 'removed',
-            reason: 'mồ côi (worktree không còn trên đĩa)',
+            reason: 'orphaned (worktree no longer on disk)',
           });
         } else {
           entries.push({
             kind,
             name,
             action: 'kept',
-            reason: `lệnh xoá thất bại: ${outcome.stderr ?? 'lý do không rõ'}`,
+            reason: `remove command failed: ${outcome.stderr ?? 'unknown reason'}`,
           });
-          errors.push(`xoá ${dockerType} ${name} thất bại: ${outcome.stderr ?? 'lý do không rõ'}`);
+          errors.push(
+            `failed to remove ${dockerType} ${name}: ${outcome.stderr ?? 'unknown reason'}`,
+          );
         }
       } else {
         entries.push({

@@ -138,11 +138,11 @@ export function lookupPostgresPassword(result: ExecResult): PostgresPasswordLook
       return {
         state: 'error',
         detail:
-          'Pulumi trả về chuỗi masking `[secret]` thay vì mật khẩu thật — stack config ' +
-          'đang ở trạng thái không đọc được giá trị thật. Cung cấp passphrase đúng qua ' +
-          'PULUMI_CONFIG_PASSPHRASE rồi chạy lại; nếu vẫn masked, xem ' +
-          'docs/services/local-platform/03-operations.md (mục Migration legacy ' +
-          'postgres:password).',
+          'Pulumi returned the `[secret]` masking string instead of the real password — the ' +
+          'stack config is in a state where the real value cannot be read. Supply the ' +
+          'correct passphrase via PULUMI_CONFIG_PASSPHRASE and retry; if it is still ' +
+          'masked, see docs/services/local-platform/03-operations.md (section Migration ' +
+          'legacy postgres:password).',
       };
     }
     return { state: 'found', password };
@@ -156,10 +156,10 @@ export function lookupPostgresPassword(result: ExecResult): PostgresPasswordLook
   return {
     state: 'error',
     detail:
-      `pulumi config get thất bại (exit ${String(result.status)}). Chạy tay ` +
-      `'pulumi config get ${POSTGRES_PASSWORD_CONFIG_KEY} --stack <stack-ref>' trong ` +
-      'deploys/platform-deploy để xem stderr gốc — output của lệnh này không được log ' +
-      'vì có thể chứa mật khẩu.',
+      `pulumi config get failed (exit ${String(result.status)}). Run ` +
+      `'pulumi config get ${POSTGRES_PASSWORD_CONFIG_KEY} --stack <stack-ref>' manually in ` +
+      'deploys/platform-deploy to see the original stderr — the output of this command is ' +
+      'not logged because it may contain the password.',
   };
 }
 
@@ -197,7 +197,7 @@ export function probePostgresVolume(
     .split('\n')
     .map((line) => line.trim())
     .find((line) => line.length > 0);
-  return { state: 'unknown', detail: firstLine ?? 'lỗi Docker không xác định' };
+  return { state: 'unknown', detail: firstLine ?? 'unknown Docker error' };
 }
 
 /** Tên Nx project của các deploy unit — dùng cho stack ref đầy đủ và exec cwd. */
@@ -236,8 +236,8 @@ export function upsertLocalEnv(
   for (const [, value] of entries) {
     if (value.includes('\n') || value.includes('\r')) {
       throw new Error(
-        'upsertLocalEnv: giá trị của một key sở hữu chứa ký tự newline (\\n/\\r) — ' +
-          'từ chối ghi để không làm hỏng cấu trúc file .env.',
+        'upsertLocalEnv: an owned key value contains a newline character (\\n/\\r) — ' +
+          'refusing to write so the .env file structure is not corrupted.',
       );
     }
   }
@@ -304,14 +304,14 @@ export function readPlatformOutputs(
   try {
     outputs = JSON.parse(stdout ?? '') as Record<string, unknown>;
   } catch {
-    throw new Error(`Outputs của platform stack không parse được JSON:\n${stdout}`);
+    throw new Error(`Failed to parse platform stack outputs as JSON:\n${stdout}`);
   }
   const rawPort = outputs['traefikHostPort'];
   // Port đo được là số nguyên dương — một giá trị `undefined`/`0`/string lọt
   // qua đây sẽ sinh `fbi.com:NaN` ở smoke test, nên chặn tại nguồn.
   if (typeof rawPort !== 'number' || !Number.isInteger(rawPort) || rawPort <= 0) {
     throw new Error(
-      `Output traefikHostPort không hợp lệ: ${JSON.stringify(rawPort)} — platform chưa up đầy đủ?`,
+      `Invalid traefikHostPort output: ${JSON.stringify(rawPort)} — platform not fully up yet?`,
     );
   }
   return { traefikHostPort: rawPort, rootHost: buildRootHost(rawPort) };
@@ -464,8 +464,8 @@ export function runNxOrchestratedDeploy(
   }
   if (passphrase.kind === 'none') {
     console.error(
-      '[local-deploy] không resolve được passphrase cho worktree đã có state — cung cấp ' +
-        'PULUMI_CONFIG_PASSPHRASE rồi chạy lại.',
+      '[local-deploy] could not resolve the passphrase for a worktree that already has ' +
+        'state — supply PULUMI_CONFIG_PASSPHRASE and retry.',
     );
     return 1;
   }
@@ -484,7 +484,7 @@ export function runNxOrchestratedDeploy(
   if (run.status !== 0) {
     if (run.status === null) {
       console.error(
-        `[local-deploy] nx run-many không chạy được: ${describeSpawnFailure({
+        `[local-deploy] nx run-many could not run: ${describeSpawnFailure({
           status: run.status,
           stdout: run.stdout ?? '',
           stderr: run.stderr ?? '',
@@ -494,12 +494,12 @@ export function runNxOrchestratedDeploy(
       );
     } else {
       console.error(
-        `[local-deploy] Nx Task Graph thất bại (exit ${run.status}) — task lỗi và stderr của nó in phía trên.`,
+        `[local-deploy] Nx Task Graph failed (exit ${run.status}) — the failing task and its stderr are printed above.`,
       );
     }
     return 1;
   }
-  console.log('[local-deploy] Nx Task Graph hoàn tất — toàn bộ bước local đã xanh.');
+  console.log('[local-deploy] Nx Task Graph finished — all local steps are green.');
   return 0;
 }
 
@@ -544,7 +544,7 @@ function runProjectStep(
     return true;
   } catch (error) {
     console.error(
-      `[local-deploy] ${label} thất bại: ${error instanceof Error ? error.message : String(error)}`,
+      `[local-deploy] ${label} failed: ${error instanceof Error ? error.message : String(error)}`,
     );
     return false;
   }
@@ -597,9 +597,9 @@ export function resolvePostgresPassword(
     return {
       ok: false,
       error:
-        `Đọc ${POSTGRES_PASSWORD_CONFIG_KEY} từ stack config thất bại: ${lookup.detail}\n` +
-        'Không sinh mật khẩu mới khi không đọc được mật khẩu đang có — làm vậy sẽ khoá ' +
-        'Postgres khỏi volume đã init.',
+        `Failed to read ${POSTGRES_PASSWORD_CONFIG_KEY} from stack config: ${lookup.detail}\n` +
+        'Do not generate a new password when the existing one cannot be read — doing so ' +
+        'would lock Postgres out of the initialized volume.',
     };
   }
 
@@ -610,14 +610,15 @@ export function resolvePostgresPassword(
     return {
       ok: false,
       error:
-        `Volume PostgreSQL ${volumeName} đã tồn tại nhưng stack config không có ` +
-        `${POSTGRES_PASSWORD_CONFIG_KEY}. Volume được init bằng một mật khẩu đã không ` +
-        'còn trong config (thường do `pulumi stack rm` xoá config nhưng volume `retainOnDelete` ' +
-        'còn lại). Sinh mật khẩu mới sẽ KHÔNG khớp volume này và mọi kết nối sẽ nhận ' +
+        `PostgreSQL volume ${volumeName} already exists but stack config has no ` +
+        `${POSTGRES_PASSWORD_CONFIG_KEY}. The volume was initialized with a password that is ` +
+        'no longer in config (usually because `pulumi stack rm` removed the config while the ' +
+        '`retainOnDelete` volume remained). Generating a new password will NOT match this ' +
+        'volume and every connection will get ' +
         '`password authentication failed`.\n' +
-        'Cách khắc phục: khôi phục mật khẩu cũ vào stack config, hoặc xoá volume để bắt đầu ' +
-        'lại từ dữ liệu rỗng:\n' +
-        `  pnpm dx local-destroy --remove-data   # XOÁ dữ liệu vĩnh viễn — cân nhắc kỹ\n` +
+        'Remediation: restore the old password into stack config, or delete the volume to ' +
+        'start over from empty data:\n' +
+        `  pnpm dx local-destroy --remove-data   # DELETES data permanently — think twice\n` +
         `  pnpm dx local-deploy`,
     };
   }
@@ -625,9 +626,9 @@ export function resolvePostgresPassword(
     return {
       ok: false,
       error:
-        `Không kiểm được volume PostgreSQL ${volumeName}: ${volume.detail}\n` +
-        'Không sinh mật khẩu mới khi chưa xác nhận được volume có tồn tại hay không — ' +
-        'sinh mật khẩu mới có thể tạo ra mật khẩu không khớp volume đã init.',
+        `Cannot probe PostgreSQL volume ${volumeName}: ${volume.detail}\n` +
+        'Do not generate a new password before confirming whether the volume exists — ' +
+        'a generated password may not match the initialized volume.',
     };
   }
 
@@ -660,7 +661,7 @@ export function resolvePostgresPassword(
   if (set.status !== 0) {
     return {
       ok: false,
-      error: `pulumi config set ${POSTGRES_PASSWORD_CONFIG_KEY} thất bại:\n${set.stderr}`,
+      error: `pulumi config set ${POSTGRES_PASSWORD_CONFIG_KEY} failed:\n${set.stderr}`,
     };
   }
   return { ok: true, password, generated: true };
@@ -784,7 +785,7 @@ async function runApply(
     postgresPassword = resolution.password;
     if (resolution.generated) {
       console.log(
-        '[local-deploy] postgres:password đã sinh ngẫu nhiên và lưu trong stack config local.',
+        '[local-deploy] postgres:password generated randomly and stored in the local stack config.',
       );
     }
   } catch (error) {
@@ -812,7 +813,7 @@ async function runApply(
   }
 
   // 2. Đọc outputs thực tế (port do Docker cấp chỉ tồn tại sau up).
-  console.log('[local-deploy] đọc outputs platform…');
+  console.log('[local-deploy] reading platform outputs…');
   let outputs: { traefikHostPort: number; rootHost: string };
   try {
     outputs = readPlatformOutputs(projectDir(PLATFORM_PROJECT), ctx, env);
@@ -833,8 +834,8 @@ async function runApply(
     [POSTGRES_PASSWORD_ENV_KEY]: postgresPassword,
   });
   console.log(
-    `[local-deploy] ${ROOT_HOST_ENV_KEY}=${outputs.rootHost} và ` +
-      `${POSTGRES_PASSWORD_ENV_KEY} đã ghi vào ${envPath}`,
+    `[local-deploy] ${ROOT_HOST_ENV_KEY}=${outputs.rootHost} and ` +
+      `${POSTGRES_PASSWORD_ENV_KEY} written to ${envPath}`,
   );
 
   // Mật khẩu hai role của db-backoffice — sinh ngẫu nhiên bằng API mật mã an toàn.
@@ -866,7 +867,7 @@ async function runApply(
     );
     if (setResult.status !== 0) {
       console.error(
-        `[local-deploy] backoffice config set ${configKey} thất bại:\\n${setResult.stderr}`,
+        `[local-deploy] backoffice config set ${configKey} failed:\n${setResult.stderr}`,
       );
       return 1;
     }
@@ -1010,7 +1011,7 @@ async function runApply(
       );
       if (setResult.status !== 0) {
         console.error(
-          `[local-deploy] ${project} config set ${configKey} thất bại:\n${setResult.stderr}`,
+          `[local-deploy] ${project} config set ${configKey} failed:\n${setResult.stderr}`,
         );
         return 1;
       }
@@ -1043,15 +1044,15 @@ async function runApply(
       process.env,
     );
     if (smoke.status !== 0) {
-      console.error(`[local-deploy] smoke HTTPS thất bại:\n${smoke.stdout}\n${smoke.stderr}`);
+      console.error(`[local-deploy] smoke HTTPS failed:\n${smoke.stdout}\n${smoke.stderr}`);
       return 1;
     }
     console.log(`[local-deploy] smoke OK: https://${outputs.rootHost}/`);
   }
 
   console.log(
-    `[local-deploy] hoàn tất — truy cập https://${outputs.rootHost}/ ` +
-      `(certificate local cần được trust thủ công trên máy developer).`,
+    `[local-deploy] done — open https://${outputs.rootHost}/ ` +
+      `(the local certificate must be trusted manually on the developer machine).`,
   );
   return 0;
 }
@@ -1082,16 +1083,16 @@ async function runApply(
  * chạy với `prepareStack: false`.
  */
 function runPreview(ctx: LocalDeployContext, env: NodeJS.ProcessEnv): number {
-  console.log('[local-deploy] preview (read-only) — kiểm prerequisites…');
+  console.log('[local-deploy] preview (read-only) — checking prerequisites…');
 
   // State dir là chính bằng chứng "worktree đã từng deploy" và backend `file://`
   // cũng đòi thư mục tồn tại trước (PU11). Check bằng chứng PHẢI chạy trước:
   // thiếu thì báo đúng contract thay vì để CLI fail chung chung.
   if (!existsSync(localStateDir(ctx.worktreeRoot))) {
     console.error(
-      `[local-deploy] preview: worktree chưa từng deploy (không có .pulumi-local-state) — ` +
-        'preview là read-only, KHÔNG tự khởi tạo state/stack/secret. Chạy `pnpm dx ' +
-        'local-deploy` (apply) trước rồi mới preview được.',
+      `[local-deploy] preview: this worktree has never deployed (no .pulumi-local-state) — ` +
+        'preview is read-only and will NOT initialize state/stack/secret. Run `pnpm dx ' +
+        'local-deploy` (apply) first before previewing.',
     );
     return 1;
   }
@@ -1105,19 +1106,21 @@ function runPreview(ctx: LocalDeployContext, env: NodeJS.ProcessEnv): number {
       break;
     case 'no-stack':
       console.error(
-        '[local-deploy] preview: chưa có platform stack trong backend — preview không tự ' +
-          'init stack. Chạy `pnpm dx local-deploy` trước.',
+        '[local-deploy] preview: no platform stack in the backend — preview does not ' +
+          'init stacks. Run `pnpm dx local-deploy` first.',
       );
       return 1;
     case 'no-outputs':
       console.error(
-        '[local-deploy] preview: platform stack tồn tại nhưng chưa up lần nào (outputs ' +
-          'rỗng) — chưa có wiring để preview. Chạy `pnpm dx local-deploy` (apply) trước.',
+        '[local-deploy] preview: the platform stack exists but has never been up (outputs ' +
+          'empty) — nothing to preview yet. Run `pnpm dx local-deploy` (apply) first.',
       );
       return 1;
     case 'backend-error':
     case 'parse-error':
-      console.error(`[local-deploy] preview: lỗi Pulumi/backend đọc platform: ${platform.detail}`);
+      console.error(
+        `[local-deploy] preview: Pulumi/backend error reading platform: ${platform.detail}`,
+      );
       return 1;
   }
 
@@ -1133,13 +1136,13 @@ function runPreview(ctx: LocalDeployContext, env: NodeJS.ProcessEnv): number {
     ),
   );
   if (homeCheck.state === 'backend-error' || homeCheck.state === 'parse-error') {
-    console.error(`[local-deploy] preview: lỗi Pulumi/backend đọc home: ${homeCheck.detail}`);
+    console.error(`[local-deploy] preview: Pulumi/backend error reading home: ${homeCheck.detail}`);
     return 1;
   }
   if (homeCheck.state === 'no-stack') {
     console.error(
-      '[local-deploy] preview: chưa có home stack — worktree chưa apply đủ. Chạy `pnpm dx ' +
-        'local-deploy` (apply) trước; preview KHÔNG tự tạo stack.',
+      '[local-deploy] preview: no home stack — the worktree has not been fully applied. Run `pnpm dx ' +
+        'local-deploy` (apply) first; preview does NOT create stacks.',
     );
     return 1;
   }
@@ -1154,14 +1157,14 @@ function runPreview(ctx: LocalDeployContext, env: NodeJS.ProcessEnv): number {
   );
   if (backofficeCheck.state === 'backend-error' || backofficeCheck.state === 'parse-error') {
     console.error(
-      `[local-deploy] preview: lỗi Pulumi/backend đọc backoffice: ${backofficeCheck.detail}`,
+      `[local-deploy] preview: Pulumi/backend error reading backoffice: ${backofficeCheck.detail}`,
     );
     return 1;
   }
   if (backofficeCheck.state === 'no-stack') {
     console.error(
-      '[local-deploy] preview: chưa có backoffice stack — worktree chưa apply đủ. Chạy `pnpm dx ' +
-        'local-deploy` (apply) trước; preview KHÔNG tự tạo stack.',
+      '[local-deploy] preview: no backoffice stack — the worktree has not been fully applied. Run `pnpm dx ' +
+        'local-deploy` (apply) first; preview does NOT create stacks.',
     );
     return 1;
   }
@@ -1184,9 +1187,9 @@ function runPreview(ctx: LocalDeployContext, env: NodeJS.ProcessEnv): number {
   });
   if (!homeOk) {
     console.error(
-      '[local-deploy] home preview thất bại — platform ĐÃ preview, home KHÔNG được preview ' +
-        '(không có gì được apply). Xem lỗi pulumi phía trên; nếu thiếu config ' +
-        '`namespace:platformStackRef` của home stack, chạy `pnpm dx local-deploy` (apply) trước.',
+      '[local-deploy] home preview failed — platform WAS previewed, home was NOT previewed ' +
+        '(nothing was applied). See the pulumi error above; if the home stack is missing ' +
+        '`namespace:platformStackRef` config, run `pnpm dx local-deploy` (apply) first.',
     );
     return 1;
   }
@@ -1204,15 +1207,15 @@ function runPreview(ctx: LocalDeployContext, env: NodeJS.ProcessEnv): number {
   );
   if (!backofficeOk) {
     console.error(
-      '[local-deploy] backoffice preview thất bại — platform/home ĐÃ preview, backoffice KHÔNG được preview ' +
-        '(không có gì được apply). Xem lỗi pulumi phía trên.',
+      '[local-deploy] backoffice preview failed — platform/home WERE previewed, backoffice was NOT previewed ' +
+        '(nothing was applied). See the pulumi error above.',
     );
     return 1;
   }
 
   console.log(
-    '[local-deploy] preview xong (platform + home) — read-only: không apply, không ghi ' +
-      'state/config/.env, không đụng Docker.',
+    '[local-deploy] preview done (platform + home) — read-only: no apply, no writes to ' +
+      'state/config/.env, no Docker interaction.',
   );
   return 0;
 }
@@ -1245,7 +1248,7 @@ export function localDestroy(options: { worktreeRoot?: string; removeData?: bool
   // từng được ghi). State dir chưa tồn tại = chắc chắn chưa có gì để xoá.
   if (!existsSync(localStateDir(ctx.worktreeRoot))) {
     console.log(
-      `[local-deploy] worktree chưa từng deploy (không có ${'.pulumi-local-state'}) — destroy là no-op.`,
+      `[local-deploy] this worktree has never deployed (no ${'.pulumi-local-state'}) — destroy is a no-op.`,
     );
     return 0;
   }
@@ -1257,9 +1260,9 @@ export function localDestroy(options: { worktreeRoot?: string; removeData?: bool
   const passphrase = resolveLocalPassphrase(ctx.worktreeRoot, { create: false });
   if (passphrase.kind === 'none') {
     console.error(
-      '[local-destroy] Không tìm thấy passphrase cho local stack của worktree này. ' +
-        'Worktree đã deploy bằng passphrase của developer — cung cấp lại qua ' +
-        '`PULUMI_CONFIG_PASSPHRASE` (hoặc `PULUMI_CONFIG_PASSPHRASE_FILE`) để destroy được.',
+      '[local-destroy] No passphrase found for the local stack of this worktree. ' +
+        'The worktree was deployed with the developer passphrase — supply it again via ' +
+        '`PULUMI_CONFIG_PASSPHRASE` (or `PULUMI_CONFIG_PASSPHRASE_FILE`) to destroy.',
     );
     return 1;
   }
@@ -1291,7 +1294,7 @@ function runDestroySteps(
   // rõ. Kết quả là 5 stack theo đúng dependency nghịch:
   // auth → account → backoffice → home → platform.
   const destroyOrder = localDestroyStackOrder();
-  console.log(`[local-deploy] thứ tự destroy (nghịch của dependsOn): ${destroyOrder.join(' → ')}`);
+  console.log(`[local-deploy] destroy order (reverse of dependsOn): ${destroyOrder.join(' → ')}`);
 
   let allOk = true;
   for (const project of destroyOrder) {
@@ -1328,27 +1331,29 @@ function runDestroySteps(
   }
   if (destroyFailed && options.removeData === true) {
     console.error(
-      '[local-deploy] destroy Pulumi không hoàn tất (stderr phía trên) — vẫn tiếp tục ' +
-        'xoá volume theo yêu cầu --remove-data. Resources còn sót trong state (nếu còn) ' +
-        'không được dọn; kiểm lại như cầu.',
+      '[local-deploy] Pulumi destroy did not complete (stderr above) — continuing to ' +
+        'delete the volume as requested by --remove-data. Resources left in state (if any) ' +
+        'are not cleaned up; re-check manually.',
     );
   }
 
   if (options.removeData === true) {
     console.warn(
-      `[local-deploy] CẢNH BÁO: xoá volume PostgreSQL ${volumeName} — dữ liệu database ` +
-        `local của worktree này bị mất vĩnh viễn.`,
+      `[local-deploy] WARNING: deleting PostgreSQL volume ${volumeName} — the local database ` +
+        `data of this worktree will be permanently lost.`,
     );
     const vol = exec('docker', ['volume', 'rm', volumeName], ROOT_DIR, process.env);
     if (vol.status !== 0) {
-      console.error(`[local-deploy] xoá volume thất bại (có thể đã bị xoá):\n${vol.stderr}`);
+      console.error(
+        `[local-deploy] volume deletion failed (it may already be gone):\n${vol.stderr}`,
+      );
       return 1;
     }
-    console.log(`[local-deploy] volume ${volumeName} đã xoá.`);
+    console.log(`[local-deploy] volume ${volumeName} deleted.`);
   } else {
     console.log(
-      `[local-deploy] volume PostgreSQL ${volumeName} được GIỮ (dữ liệu còn nguyên). ` +
-        `Muốn xoá: chạy lại với --remove-data.`,
+      `[local-deploy] PostgreSQL volume ${volumeName} KEPT (data intact). ` +
+        `To delete it: run again with --remove-data.`,
     );
   }
   return 0;
@@ -1401,7 +1406,7 @@ export function classifyStackOutput(result: ExecResult): PlatformStatusResult {
   if (result.status === null) {
     return {
       state: 'backend-error',
-      detail: `pulumi không chạy được: ${describeSpawnFailure(result)}`,
+      detail: `pulumi could not run: ${describeSpawnFailure(result)}`,
     };
   }
   if (
@@ -1417,7 +1422,7 @@ export function classifyStackOutput(result: ExecResult): PlatformStatusResult {
     .split('\n')
     .map((line) => line.trim())
     .find((line) => line.length > 0);
-  return { state: 'backend-error', detail: firstLine ?? 'lỗi Pulumi không xác định' };
+  return { state: 'backend-error', detail: firstLine ?? 'unknown Pulumi error' };
 }
 
 /** Truy vấn trạng thái stack platform — read-only, qua context đúng worktree. */
@@ -1471,7 +1476,7 @@ export function localStatus(options: { worktreeRoot?: string }): number {
     const hasPassword = readFileSync(envPath, 'utf8')
       .split('\n')
       .some((entry) => entry.startsWith(`${POSTGRES_PASSWORD_ENV_KEY}=`));
-    console.log(`.env ${POSTGRES_PASSWORD_ENV_KEY}: ${hasPassword ? 'đã có' : 'chưa có'}`);
+    console.log(`.env ${POSTGRES_PASSWORD_ENV_KEY}: ${hasPassword ? 'set' : 'not set'}`);
   }
 
   // Passphrase: dùng file của worktree nếu có, không thì biến môi trường.
@@ -1485,12 +1490,12 @@ export function localStatus(options: { worktreeRoot?: string }): number {
   const status = queryPlatformStatus(ctx, env);
   switch (status.state) {
     case 'no-stack': {
-      console.log('platform:       chưa có stack trong backend — chạy pnpm dx local-deploy');
+      console.log('platform:       no stack in the backend — run pnpm dx local-deploy');
       return 0;
     }
     case 'no-outputs': {
       console.log(
-        'platform:       stack có sẵn nhưng chưa up (outputs rỗng) — chạy pnpm dx local-deploy',
+        'platform:       stack exists but has never been up (outputs empty) — run pnpm dx local-deploy',
       );
       return 0;
     }
@@ -1499,11 +1504,11 @@ export function localStatus(options: { worktreeRoot?: string }): number {
       return 0;
     }
     case 'parse-error': {
-      console.error(`[local-status] outputs platform không parse được JSON: ${status.detail}`);
+      console.error(`[local-status] failed to parse platform outputs as JSON: ${status.detail}`);
       return 1;
     }
     case 'backend-error': {
-      console.error(`[local-status] lỗi Pulumi/backend: ${status.detail}`);
+      console.error(`[local-status] Pulumi/backend error: ${status.detail}`);
       return 1;
     }
   }

@@ -118,7 +118,7 @@ export function isValidEntryName(name: string): boolean {
 export function metadataPathOf(stateDir: string, name: string): string {
   if (!isValidEntryName(name)) {
     throw new Error(
-      `invalid worker entry name '${name}' — chỉ chấp nhận [A-Za-z0-9._-], không vượt ra ngoài stateDir`,
+      `invalid worker entry name '${name}' — only [A-Za-z0-9._-] is accepted, cannot escape the stateDir`,
     );
   }
   return join(stateDir, `${name}.json`);
@@ -257,7 +257,7 @@ function acquireWorkerEntryLock(metadataPath: string, name: string): () => void 
     return release;
   }
   throw new Error(
-    `worker process '${name}' đang được spawn bởi caller khác (entry lock bị giữ) — thử lại sau`,
+    `worker process '${name}' is being spawned by another caller (entry lock held) — retry later`,
   );
 }
 
@@ -323,11 +323,11 @@ export function startWorkerProcess(options: StartOptions): WorkerProcessHandle {
     ) {
       if (sameIdentity(existing.argv, options.argv)) {
         throw new Error(
-          `worker process '${options.name}' đã chạy (pid ${existing.pid}) — không spawn đè`,
+          `worker process '${options.name}' is already running (pid ${existing.pid}) — not spawning over it`,
         );
       }
       throw new Error(
-        `stateDir đã có entry '${options.name}' với identity khác (pid ${existing.pid}) — không ghi đè`,
+        `stateDir already has entry '${options.name}' with a different identity (pid ${existing.pid}) — not overwriting`,
       );
     }
   } catch (error) {

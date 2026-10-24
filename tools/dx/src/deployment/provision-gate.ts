@@ -24,13 +24,13 @@ import { join } from 'node:path';
 /** Tên Pulumi project khai trong manifest, hoặc lý do không dùng được. */
 export function readPulumiProjectName(manifest: string): { name: string } | { error: string } {
   if (!existsSync(manifest)) {
-    return { error: `không tìm thấy Pulumi.yaml tại ${manifest}` };
+    return { error: `Pulumi.yaml not found at ${manifest}` };
   }
   const name = readFileSync(manifest, 'utf8')
     .match(/^name:\s*(.+)$/mu)?.[1]
     ?.trim();
   if (!name) {
-    return { error: `${manifest} không khai báo trường name:` };
+    return { error: `${manifest} does not declare a name: field` };
   }
   return { name };
 }
@@ -73,6 +73,6 @@ export function provisionGate(projectRoot: string = process.cwd()): number {
       `[provision] ${result.name} is a scaffold — no managed resources; nothing to provision.`,
     );
   }
-  console.log(`[provision] ${result.name} — dry-run, không provision gì.`);
+  console.log(`[provision] ${result.name} — dry-run, provisions nothing.`);
   return 0;
 }

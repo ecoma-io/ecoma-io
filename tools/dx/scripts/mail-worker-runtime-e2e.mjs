@@ -129,7 +129,7 @@ async function pollUntil(description, fn, { timeoutMs = 60_000, intervalMs = 1_0
     }
     if (Date.now() >= deadline) {
       throw new Error(
-        `timeout ${timeoutMs}ms chờ ${description} — cuối: ${lastError ?? 'never ran'}`,
+        `timeout ${timeoutMs}ms waiting for ${description} — last: ${lastError ?? 'never ran'}`,
       );
     }
     await sleep(intervalMs);
@@ -172,7 +172,7 @@ function runD1Sql(configPath, database, sql) {
   ]);
   const parsed = JSON.parse(out);
   const rows = parsed[0]?.results;
-  assert(Array.isArray(rows), `wrangler d1 execute không trả results cho: ${sql.slice(0, 80)}`);
+  assert(Array.isArray(rows), `wrangler d1 execute returned no results for: ${sql.slice(0, 80)}`);
   return rows;
 }
 
@@ -233,7 +233,7 @@ async function triggerCron(baseUrl, cron) {
     `${baseUrl}/cdn-cgi/local/scheduled?format=json&cron=${encodeURIComponent(cron)}`,
     { method: 'POST' },
   );
-  assert(response.ok, `cron trigger trên ${baseUrl} → HTTP ${response.status}`);
+  assert(response.ok, `cron trigger on ${baseUrl} → HTTP ${response.status}`);
   await response.body?.cancel();
 }
 
@@ -411,7 +411,7 @@ async function startFixtureProducer(port) {
   for (;;) {
     if (child.exitCode !== null || child.signalCode !== null) {
       throw new Error(
-        `fixture producer exit sớm (code ${child.exitCode}, signal ${child.signalCode}) — output cuối: ${output.slice(-800)}`,
+        `fixture producer exited early (code ${child.exitCode}, signal ${child.signalCode}) — last output: ${output.slice(-800)}`,
       );
     }
     try {
@@ -428,9 +428,7 @@ async function startFixtureProducer(port) {
       } catch {
         // group đã chết
       }
-      throw new Error(
-        `fixture producer không ready trong 60s — output cuối: ${output.slice(-800)}`,
-      );
+      throw new Error(`fixture producer not ready within 60s — last output: ${output.slice(-800)}`);
     }
     await sleep(250);
   }
@@ -521,7 +519,7 @@ async function main() {
       assert(
         out.includes('worker transactional-mail ready at') &&
           out.includes('worker transactional-mailer-job ready at'),
-        `local-worker-up không in đủ hai entry ready:\n${out}`,
+        `local-worker-up did not print both entries ready:\n${out}`,
       );
     });
 
@@ -531,11 +529,11 @@ async function main() {
       const control = endpoints['transactional-mail'];
       assert(
         typeof control === 'string',
-        `thiếu endpoint control plane: ${JSON.stringify(endpoints)}`,
+        `missing control plane endpoint: ${JSON.stringify(endpoints)}`,
       );
       assert(
         typeof endpoints['transactional-mailer-job'] === 'string',
-        `thiếu endpoint mailer-job: ${JSON.stringify(endpoints)}`,
+        `missing mailer-job endpoint: ${JSON.stringify(endpoints)}`,
       );
       const health = await fetch(`${control}/health`);
       assert(health.ok, `/health control plane → HTTP ${health.status}`);
@@ -558,7 +556,7 @@ async function main() {
       });
       assert(
         forbidden.status === 403,
-        `ký bằng secret mailer-job phải 403 (không có message.create), nhận ${forbidden.status}: ${JSON.stringify(forbidden.json)}`,
+        `signing with the mailer-job secret must be 403 (no message.create), got ${forbidden.status}: ${JSON.stringify(forbidden.json)}`,
       );
     });
 
@@ -581,7 +579,7 @@ async function main() {
       );
       assert(
         typeof created.json.delivery_id === 'string' && created.json.delivery_id.startsWith('dlv_'),
-        `delivery_id thiếu/sai prefix: ${JSON.stringify(created.json)}`,
+        `delivery_id missing or wrong prefix: ${JSON.stringify(created.json)}`,
       );
       return created.json.delivery_id;
     });
@@ -616,7 +614,7 @@ async function main() {
       )[0];
       assert(
         jobRow?.provider_message_id === FAKE_PROVIDER_MESSAGE_ID,
-        `provider_message_id phải là ${FAKE_PROVIDER_MESSAGE_ID}, nhận ${JSON.stringify(jobRow)}`,
+        `provider_message_id must be ${FAKE_PROVIDER_MESSAGE_ID}, got ${JSON.stringify(jobRow)}`,
       );
       // Consumer báo outcome về control plane qua report sweep (cron consumer)
       // — control plane cập nhật `mail_messages.status` sau khi nhận outcome.
@@ -679,23 +677,23 @@ async function main() {
       )[0];
       assert(
         eventRow?.event_type === 'delivered',
-        `event_type phải 'delivered': ${JSON.stringify(eventRow)}`,
+        `event_type must be 'delivered': ${JSON.stringify(eventRow)}`,
       );
       assert(
         eventRow?.delivery_id === deliveryId,
-        `delivery_id correlate phải '${deliveryId}', nhận ${JSON.stringify(eventRow?.delivery_id)}`,
+        `delivery_id correlate must be '${deliveryId}', got ${JSON.stringify(eventRow?.delivery_id)}`,
       );
-      assert(eventRow?.terminal === 1, `terminal phải 1: ${JSON.stringify(eventRow)}`);
+      assert(eventRow?.terminal === 1, `terminal must be 1: ${JSON.stringify(eventRow)}`);
       assert(
         eventRow?.reason_token === null,
-        `delivered không mang reason token: ${JSON.stringify(eventRow)}`,
+        `delivered must not carry a reason token: ${JSON.stringify(eventRow)}`,
       );
       const dupCount = runD1Sql(
         JOB_GENERATED_CONFIG,
         'mail-job',
         `SELECT COUNT(*) AS n FROM mail_lifecycle_events WHERE event_id = '${eventId}'`,
       )[0]?.n;
-      assert(dupCount === 1, `dedupe: đúng 1 row cho event_id, nhận ${dupCount}`);
+      assert(dupCount === 1, `dedupe: exactly 1 row for the event_id, got ${dupCount}`);
       return `event ${eventId.slice(0, 8)}… correlated`;
     });
 
@@ -708,7 +706,7 @@ async function main() {
       const out = run('pnpm', ['dx', 'local-worker-down']);
       assert(
         (out.match(/terminated/gu) ?? []).length >= 2,
-        `down không báo terminated đủ hai entry:\n${out}`,
+        `down did not report terminated for both entries:\n${out}`,
       );
     });
 
@@ -727,12 +725,12 @@ async function main() {
       }
       assert(
         orphans.length === 0,
-        `còn ${orphans.length} process orphan của worktree: ${orphans.join(', ')}`,
+        `${orphans.length} orphaned process(es) of the worktree remain: ${orphans.join(', ')}`,
       );
       assert(
         !existsSync(join(STATE_DIR, 'transactional-mail.json')) &&
           !existsSync(join(STATE_DIR, 'transactional-mailer-job.json')),
-        'metadata stateDir chưa được dọn sau down',
+        'stateDir metadata not cleaned up after down',
       );
     });
   } catch (error) {
@@ -741,7 +739,7 @@ async function main() {
       `${SCRIPT_TAG} FAIL: ${error?.stack ?? String(error)}\n` +
         `${SCRIPT_TAG} steps: ${JSON.stringify(STEP_RESULTS)}\n` +
         (fixture !== null
-          ? `${SCRIPT_TAG} fixture output cuối: ${fixture.outputText().slice(-800)}\n`
+          ? `${SCRIPT_TAG} fixture last output: ${fixture.outputText().slice(-800)}\n`
           : ''),
     );
   } finally {
@@ -758,13 +756,13 @@ async function main() {
       try {
         run('pnpm', ['dx', 'local-worker-down']);
       } catch (cleanupError) {
-        process.stderr.write(`${SCRIPT_TAG} teardown sau fail cũng lỗi: ${cleanupError}\n`);
+        process.stderr.write(`${SCRIPT_TAG} teardown after failure also failed: ${cleanupError}\n`);
       }
     }
   }
 
   if (stepFailed) process.exit(1);
-  process.stdout.write(`${SCRIPT_TAG} E2E PASS — ${STEP_RESULTS.length} bước đạt\n`);
+  process.stdout.write(`${SCRIPT_TAG} E2E PASS — ${STEP_RESULTS.length} steps passed\n`);
   process.exit(0);
 }
 

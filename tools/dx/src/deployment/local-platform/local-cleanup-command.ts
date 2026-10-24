@@ -57,14 +57,14 @@ export default defineCommand({
 });
 
 function printReport(report: CleanupReport): void {
-  console.log('[local-cleanup] kết quả:');
+  console.log('[local-cleanup] results:');
   for (const entry of report.entries) {
     console.log(
       `  ${entry.action.padEnd(13)} ${entry.kind.padEnd(16)} ${entry.name} — ${entry.reason}`,
     );
   }
   if (report.entries.length === 0) {
-    console.log('  (không có resource ecoma nào trên host)');
+    console.log('  (no ecoma resources on this host)');
   }
   if (report.errors.length > 0) {
     for (const error of report.errors) {

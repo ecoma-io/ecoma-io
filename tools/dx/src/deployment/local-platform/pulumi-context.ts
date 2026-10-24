@@ -151,9 +151,9 @@ export function exec(
 export function describeSpawnFailure(result: ExecResult): string {
   if (result.error !== undefined && result.error !== null) return result.error.message;
   if (result.signal !== undefined && result.signal !== null) {
-    return `process bị signal kill: ${result.signal}`;
+    return `process killed by signal: ${result.signal}`;
   }
-  return 'lý do không rõ';
+  return 'unknown reason';
 }
 
 /**
@@ -188,9 +188,9 @@ export function execStreaming(
   });
   if (result.status !== 0) {
     if (result.status === null) {
-      throw new Error(`${command} ${label} không chạy được: ${describeSpawnFailure(result)}`);
+      throw new Error(`${command} ${label} could not run: ${describeSpawnFailure(result)}`);
     }
-    throw new Error(`${command} ${label} thất bại:\n${result.stderr ?? ''}`);
+    throw new Error(`${command} ${label} failed:\n${result.stderr ?? ''}`);
   }
 }
 
@@ -318,13 +318,13 @@ export function writeWorktreePassphrase(worktreeRoot: string, value: string): st
         persisted = readFileSync(path, 'utf8').trim();
       } catch (readError) {
         throw new Error(
-          `Passphrase file ${path} tồn tại nhưng không đọc được — không thể resolve passphrase an toàn.`,
+          `Passphrase file ${path} exists but cannot be read — unable to resolve a passphrase safely.`,
           { cause: readError },
         );
       }
       if (persisted.length === 0) {
         throw new Error(
-          `Passphrase file ${path} tồn tại nhưng rỗng/malformed — không thể resolve passphrase an toàn.`,
+          `Passphrase file ${path} exists but is empty/malformed — unable to resolve a passphrase safely.`,
           { cause: error },
         );
       }
@@ -424,12 +424,12 @@ export function resolveLocalPassphrase(
     // developer cung cấp passphrase qua biến môi trường.
     if (hasPulumiState(worktreeRoot)) {
       throw new Error(
-        'Worktree này đã có Pulumi state local nhưng không tìm thấy passphrase ' +
-          '(không có file .pulumi-local-passphrase và không có ' +
-          'PULUMI_CONFIG_PASSPHRASE/PULUMI_CONFIG_PASSPHRASE_FILE). Sinh passphrase ' +
-          'mới sẽ không unlock được state cũ. Cung cấp lại passphrase đúng qua ' +
-          'PULUMI_CONFIG_PASSPHRASE (hoặc PULUMI_CONFIG_PASSPHRASE_FILE), hoặc xoá ' +
-          'state + volume để bắt đầu lại.',
+        'This worktree already has local Pulumi state but no passphrase was found ' +
+          '(no .pulumi-local-passphrase file and no ' +
+          'PULUMI_CONFIG_PASSPHRASE/PULUMI_CONFIG_PASSPHRASE_FILE). Generating a new ' +
+          'passphrase will not unlock the old state. Supply the correct passphrase again via ' +
+          'PULUMI_CONFIG_PASSPHRASE (or PULUMI_CONFIG_PASSPHRASE_FILE), or delete the ' +
+          'state + volume to start over.',
       );
     }
     const generated = generatePassphrase();
@@ -522,7 +522,7 @@ export function ensureStack(
     );
     if (select.status !== 0) {
       throw new Error(
-        `pulumi stack init/select ${ctx.stackName} thất bại:\n${init.stderr}\n${select.stderr}`,
+        `pulumi stack init/select ${ctx.stackName} failed:\n${init.stderr}\n${select.stderr}`,
       );
     }
   }
@@ -569,9 +569,9 @@ export function pulumiRun(
     if (run.status === null) {
       // spawnSync không chạy được process (ENOENT, EACCES) hoặc process bị
       // signal kill (OOM) — stdout/stderr rỗng, phải báo từ `error`/`signal`.
-      throw new Error(`pulumi ${args[0] ?? ''} không chạy được: ${describeSpawnFailure(run)}`);
+      throw new Error(`pulumi ${args[0] ?? ''} could not run: ${describeSpawnFailure(run)}`);
     }
-    throw new Error(`pulumi ${args[0] ?? ''} thất bại:\n${run.stderr || run.stdout}`);
+    throw new Error(`pulumi ${args[0] ?? ''} failed:\n${run.stderr || run.stdout}`);
   }
   return run.stdout;
 }

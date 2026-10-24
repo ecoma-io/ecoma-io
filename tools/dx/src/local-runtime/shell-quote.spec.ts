@@ -57,7 +57,9 @@ function shellFirstArgument(quoted: string): string {
   // Bỏ newline cuối của printf — mọi phần khác là nguyên văn argument.
   const stdout = run.stdout;
   if (!stdout.endsWith('\n')) {
-    throw new Error(`shell probe không in newline cuối (stdout=${JSON.stringify(stdout)})`);
+    throw new Error(
+      `shell probe did not print a trailing newline (stdout=${JSON.stringify(stdout)})`,
+    );
   }
   return stdout.slice(0, -1);
 }
@@ -128,7 +130,7 @@ describe('shellQuote', () => {
   });
 
   it('round-trips unicode', () => {
-    const value = 'tiếng Việt với dấu: ếMech latin éxtra — ✓';
+    const value = 'unicode with diacritics: ếMech latin éxtra — ✓';
     expect(shellFirstArgument(shellQuote(value))).toBe(value);
   });
 
