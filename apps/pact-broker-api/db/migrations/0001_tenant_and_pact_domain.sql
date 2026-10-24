@@ -469,7 +469,7 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  RAISE EXCEPTION 'audit_events la bang audit append-only: UPDATE bi tu choi (SR-008)'
+  RAISE EXCEPTION 'audit_events is an append-only audit table: UPDATE is refused (SR-008)'
     USING ERRCODE = 'integrity_constraint_violation';
 END;
 $$;

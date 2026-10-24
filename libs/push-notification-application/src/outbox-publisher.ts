@@ -117,7 +117,7 @@ export function buildDeliveryCommand(input: {
 }): DeliveryCommandV1 {
   const payload = parsePayload(input.payloadJson);
   if (payload === null) {
-    throw new Error('buildDeliveryCommand: payload_json không hợp lệ theo schema FR-013.');
+    throw new Error('buildDeliveryCommand: payload_json is invalid against the FR-013 schema.');
   }
   return deliveryCommandV1({
     delivery_id: input.deliveryId,

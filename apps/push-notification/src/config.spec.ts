@@ -141,7 +141,7 @@ describe('resolvePushNotificationConfig — fails closed on the six SLA paramete
         // ⚠️ Cờ `u` bắt buộc của repo: không có nó, một regex gặp một "từ" tiếng Việt không
         // dấu đúng là sẽ khớp sai — `[\s\S]` không cần nó nhưng toàn bộ mẫu ở đây được viết
         // theo cùng quy tắc để không có hai kiểu regex trong cùng một file.
-        new RegExp(`Thiếu hoặc sai cấu hình bắt buộc[\\s\\S]*${variable}`, 'u'),
+        new RegExp(`Missing or invalid required configuration[\\s\\S]*${variable}`, 'u'),
       );
       // ⚠️ Cùng lúc, **không** tên biến khác của SLA nào xuất hiện trong thông điệp. Đây là
       // kiểm bổ sung cho `toHaveLength(1)` ở trên nhưng gắn với **nội dung** thông điệp, nơi
@@ -350,5 +350,5 @@ function missingOnlyMessage(variable: string): string {
   } catch (error: unknown) {
     return (error as Error).message;
   }
-  throw new Error(`resolvePushNotificationConfig không ném khi thiếu ${variable}.`);
+  throw new Error(`resolvePushNotificationConfig did not throw while ${variable} is missing.`);
 }

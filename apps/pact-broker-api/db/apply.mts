@@ -97,7 +97,7 @@ async function main(): Promise<void> {
 
   if (databaseUrl === undefined || databaseUrl === '') {
     console.error(
-      'DATABASE_URL chua duoc dat. Migration chay tu CI runner bang role migrator, khong chay tu Worker (HD6: Hyperdrive khong ho tro advisory lock).',
+      'DATABASE_URL is not set. Migrations run from the CI runner with the migrator role, never from the Worker (HD6: Hyperdrive does not support advisory locks).',
     );
     process.exit(1);
   }
@@ -110,7 +110,7 @@ async function main(): Promise<void> {
   try {
     await client.connect();
   } catch (error) {
-    console.error('Khong ket noi duoc toi database:', (error as Error).message);
+    console.error('Cannot connect to the database:', (error as Error).message);
     process.exit(1);
   }
 

@@ -223,7 +223,7 @@ export async function createNotification(
     return {
       ok: false,
       reason: CREATE_NOTIFICATION_REJECTION.AppMismatch,
-      detail: 'App trong body không khớp app của authenticated principal.',
+      detail: 'The app in the body does not match the authenticated principal app.',
     };
   }
 
@@ -232,14 +232,14 @@ export async function createNotification(
     return {
       ok: false,
       reason: CREATE_NOTIFICATION_REJECTION.IdempotencyKeyMissing,
-      detail: 'Thiếu Idempotency-Key.',
+      detail: 'Missing Idempotency-Key.',
     };
   }
   if (command.idempotencyKey.length > config.engineering.maxIdempotencyKeyLength) {
     return {
       ok: false,
       reason: CREATE_NOTIFICATION_REJECTION.IdempotencyKeyTooLong,
-      detail: `Idempotency-Key vượt trần ${config.engineering.maxIdempotencyKeyLength} ký tự.`,
+      detail: `The Idempotency-Key exceeds the ${config.engineering.maxIdempotencyKeyLength} character cap.`,
     };
   }
 
@@ -261,7 +261,7 @@ export async function createNotification(
     return {
       ok: false,
       reason: CREATE_NOTIFICATION_REJECTION.IdempotencyKeyConflict,
-      detail: 'Idempotency-Key đã dùng cho một request khác.',
+      detail: 'The Idempotency-Key was already used by another request.',
     };
   }
 
@@ -293,7 +293,7 @@ export async function createNotification(
     return {
       ok: false,
       reason: CREATE_NOTIFICATION_REJECTION.RateLimited,
-      detail: 'Vượt rate limit của App trong cửa sổ hiện tại.',
+      detail: 'The app rate limit for the current window is exceeded.',
     };
   }
 
@@ -306,7 +306,7 @@ export async function createNotification(
     return {
       ok: false,
       reason: CREATE_NOTIFICATION_REJECTION.FanoutLimitExceeded,
-      detail: 'Số recipient vượt trần fan-out của App.',
+      detail: 'The number of recipients exceeds the app fan-out cap.',
     };
   }
 
@@ -323,7 +323,7 @@ export async function createNotification(
     return {
       ok: false,
       reason: CREATE_NOTIFICATION_REJECTION.NoEligibleSubscription,
-      detail: 'Không recipient nào có subscription active eligible.',
+      detail: 'No recipient has an eligible active subscription.',
     };
   }
 
@@ -406,13 +406,13 @@ export async function createNotification(
       return {
         ok: false,
         reason: CREATE_NOTIFICATION_REJECTION.IdempotencyKeyConflict,
-        detail: 'Idempotency-Key đã dùng cho một request khác.',
+        detail: 'The Idempotency-Key was already used by another request.',
       };
     }
     return {
       ok: false,
       reason: CREATE_NOTIFICATION_REJECTION.StorageFailure,
-      detail: 'Không persist được notification (lỗi storage hoặc đua idempotency).',
+      detail: 'The notification could not be persisted (storage error or idempotency race).',
     };
   }
 
@@ -512,7 +512,8 @@ async function routeRecipients(
           return {
             ok: false,
             reason: CREATE_NOTIFICATION_REJECTION.StorageFailure,
-            detail: 'Subscription record sai shape — từ chối thay vì gửi sai nơi.',
+            detail:
+              'The subscription record has the wrong shape — rejecting instead of sending to the wrong place.',
           };
         }
         // `no_eligible_subscription` / `malformed_selector`: device này không có gì để gửi.
@@ -554,7 +555,7 @@ async function routeRecipients(
     return {
       ok: false,
       reason: CREATE_NOTIFICATION_REJECTION.FanoutLimitExceeded,
-      detail: 'Số delivery sau routing vượt trần fan-out của App.',
+      detail: 'The number of deliveries after routing exceeds the app fan-out cap.',
     };
   }
 

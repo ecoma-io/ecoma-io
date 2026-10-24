@@ -173,14 +173,15 @@ export async function registerDevice(
       return {
         ok: false,
         reason: INVENTORY_REJECTION.AppMismatch,
-        detail: 'Device thuộc app khác — FR-001/FR-007 cấm dùng chéo app.',
+        detail: 'The device belongs to another app — FR-001/FR-007 forbid cross-app use.',
       };
     }
     if (existing.userId !== command.userId) {
       return {
         ok: false,
         reason: INVENTORY_REJECTION.DeviceOwnedByAnotherUser,
-        detail: 'Device đã thuộc user khác — một device không đổi chủ qua đăng ký lại.',
+        detail:
+          'The device already belongs to another user — a device does not change owner by re-registering.',
       };
     }
     // Idempotent: `created: false` để route trả `200` thay vì `201`.
@@ -207,7 +208,7 @@ export async function registerDevice(
     return {
       ok: false,
       reason: INVENTORY_REJECTION.StorageFailure,
-      detail: 'Không ghi được device.',
+      detail: 'The device could not be written.',
     };
   }
 }
@@ -233,7 +234,7 @@ export async function getDevice(
     return {
       ok: false,
       reason: INVENTORY_REJECTION.InvalidPayload,
-      detail: 'Thiếu `deviceId`.',
+      detail: 'Missing `deviceId`.',
     };
   }
   const device = await deps.ports.devices.findById(command.deviceId);
@@ -241,14 +242,14 @@ export async function getDevice(
     return {
       ok: false,
       reason: INVENTORY_REJECTION.DeviceNotFound,
-      detail: 'Device không tồn tại.',
+      detail: 'The device does not exist.',
     };
   }
   if (device.app !== command.authenticatedApp) {
     return {
       ok: false,
       reason: INVENTORY_REJECTION.AppMismatch,
-      detail: 'Device thuộc app khác — FR-001/FR-007 cấm dùng chéo app.',
+      detail: 'The device belongs to another app — FR-001/FR-007 forbid cross-app use.',
     };
   }
   return { ok: true, value: device };
@@ -289,7 +290,7 @@ export async function unregisterDevice(
     return {
       ok: false,
       reason: INVENTORY_REJECTION.InvalidPayload,
-      detail: 'Thiếu `deviceId`.',
+      detail: 'Missing `deviceId`.',
     };
   }
 
@@ -298,14 +299,14 @@ export async function unregisterDevice(
     return {
       ok: false,
       reason: INVENTORY_REJECTION.DeviceNotFound,
-      detail: 'Device không tồn tại.',
+      detail: 'The device does not exist.',
     };
   }
   if (device.app !== command.authenticatedApp) {
     return {
       ok: false,
       reason: INVENTORY_REJECTION.AppMismatch,
-      detail: 'Device thuộc app khác — FR-001/FR-007 cấm dùng chéo app.',
+      detail: 'The device belongs to another app — FR-001/FR-007 forbid cross-app use.',
     };
   }
 
@@ -356,7 +357,7 @@ export async function unregisterDevice(
       return {
         ok: false,
         reason: INVENTORY_REJECTION.StorageFailure,
-        detail: 'Không disable được subscription của device.',
+        detail: 'The subscriptions of the device could not be disabled.',
       };
     }
   }
@@ -442,7 +443,7 @@ export async function registerSubscription(
     return {
       ok: false,
       reason: INVENTORY_REJECTION.InvalidPayload,
-      detail: `Transport \`${transport}\` chưa triển khai ở v1 (§2.2 non-goal).`,
+      detail: `Transport \`${transport}\` is not implemented in v1 (§2.2 non-goal).`,
     };
   }
 
@@ -451,14 +452,14 @@ export async function registerSubscription(
     return {
       ok: false,
       reason: INVENTORY_REJECTION.EndpointRejected,
-      detail: `Endpoint không hợp lệ (${endpoint.reason}).`,
+      detail: `The endpoint is invalid (${endpoint.reason}).`,
     };
   }
   if (!isNonEmptyString(command.p256dh) || !isNonEmptyString(command.auth)) {
     return {
       ok: false,
       reason: INVENTORY_REJECTION.InvalidPayload,
-      detail: 'Cần `p256dh` và `auth` không rỗng.',
+      detail: 'Non-empty `p256dh` and `auth` are required.',
     };
   }
 
@@ -468,14 +469,14 @@ export async function registerSubscription(
       ok: false,
       reason: INVENTORY_REJECTION.DeviceNotFound,
       detail:
-        'Device chưa được đăng ký — §5.1: không có device_id hợp lệ thì không tạo subscription.',
+        'The device is not registered — §5.1: no subscription is created without a valid device_id.',
     };
   }
   if (device.app !== command.authenticatedApp) {
     return {
       ok: false,
       reason: INVENTORY_REJECTION.AppMismatch,
-      detail: 'Device thuộc app khác — FR-001/FR-007 cấm dùng chéo app.',
+      detail: 'The device belongs to another app — FR-001/FR-007 forbid cross-app use.',
     };
   }
   // ⚠️ `push_subscriptions` mang **cả** `user_id` và `device_id`, và routing đi
@@ -486,7 +487,8 @@ export async function registerSubscription(
     return {
       ok: false,
       reason: INVENTORY_REJECTION.DeviceOwnedByAnotherUser,
-      detail: 'Device thuộc user khác — subscription phải gắn vào user sở hữu device.',
+      detail:
+        'The device belongs to another user — the subscription must attach to the user who owns the device.',
     };
   }
 
@@ -586,21 +588,21 @@ function validateDeviceShape(
     return {
       ok: false,
       reason: INVENTORY_REJECTION.AppMismatch,
-      detail: 'Chưa xác thực được `app` — không có principal thì không có namespace.',
+      detail: '`app` could not be authenticated — no principal means no namespace.',
     };
   }
   if (!isNonEmptyString(command.deviceId)) {
     return {
       ok: false,
       reason: INVENTORY_REJECTION.InvalidPayload,
-      detail: 'Thiếu `device_id` — §5.1: client tạo và giữ định danh này.',
+      detail: 'Missing `device_id` — §5.1: the client creates and holds this identifier.',
     };
   }
   if (!isNonEmptyString(command.userId)) {
     return {
       ok: false,
       reason: INVENTORY_REJECTION.InvalidPayload,
-      detail: 'Thiếu `user_id` — FR-002: device luôn dưới một user.',
+      detail: 'Missing `user_id` — FR-002: a device always lives under a user.',
     };
   }
   return null;
@@ -613,21 +615,22 @@ function validateSubscriptionShape(
     return {
       ok: false,
       reason: INVENTORY_REJECTION.AppMismatch,
-      detail: 'Chưa xác thực được `app` — không có principal thì không có namespace.',
+      detail: '`app` could not be authenticated — no principal means no namespace.',
     };
   }
   if (!isNonEmptyString(command.deviceId) || !isNonEmptyString(command.userId)) {
     return {
       ok: false,
       reason: INVENTORY_REJECTION.InvalidPayload,
-      detail: 'Cần `device_id` và `user_id` không rỗng.',
+      detail: 'Non-empty `device_id` and `user_id` are required.',
     };
   }
   if (!isNonEmptyString(command.vapidKeyId)) {
     return {
       ok: false,
       reason: INVENTORY_REJECTION.InvalidPayload,
-      detail: 'Thiếu `vapid_key_id` — FR-006: subscription gắn với key pair dùng lúc tạo.',
+      detail:
+        'Missing `vapid_key_id` — FR-006: the subscription binds to the key pair used at creation.',
     };
   }
   return null;
@@ -664,7 +667,7 @@ async function resolveVapidKeyId(
       ok: false,
       reason: INVENTORY_REJECTION.NoProviderForScope,
       detail:
-        'App chưa có provider primary cho transport này — subscription sẽ không nhận delivery.',
+        'The app has no primary provider for this transport — the subscription would not receive deliveries.',
     };
   }
   // Tên `credentialRecord` (không phải `credential`) là có chủ đích: giá trị là
@@ -684,14 +687,14 @@ async function resolveVapidKeyId(
       ok: false,
       reason: INVENTORY_REJECTION.VapidKeyUnavailable,
       detail:
-        'VAPID key không thuộc provider primary của app — không thể đăng ký subscription trên key này.',
+        'The VAPID key does not belong to the app primary provider — subscriptions cannot be registered on this key.',
     };
   }
   if (credentialRecord.status !== 'active') {
     return {
       ok: false,
       reason: INVENTORY_REJECTION.VapidKeyUnavailable,
-      detail: `VAPID key đang \`${credentialRecord.status}\` — §7.2: không tạo subscription mới trên key này.`,
+      detail: `The VAPID key is \`${credentialRecord.status}\` — §7.2: no new subscription is created on this key.`,
     };
   }
   return credentialRecord.vapidKeyId;
@@ -737,7 +740,7 @@ async function resolveRegistration(
       return {
         ok: false,
         reason: INVENTORY_REJECTION.StorageFailure,
-        detail: 'Không ghi được subscription.',
+        detail: 'The subscription could not be written.',
       };
     }
   }
@@ -746,7 +749,8 @@ async function resolveRegistration(
     return {
       ok: false,
       reason: INVENTORY_REJECTION.AppMismatch,
-      detail: 'Endpoint đã thuộc app khác — một endpoint là một định danh duy nhất.',
+      detail:
+        'The endpoint already belongs to another app — one endpoint is one unique identifier.',
     };
   }
   // ⚠️ Endpoint đã ở trên một device khác **cùng app**. `reactivateWithNewSecret` chỉ ghi
@@ -758,7 +762,7 @@ async function resolveRegistration(
       ok: false,
       reason: INVENTORY_REJECTION.EndpointOwnedByAnotherDevice,
       detail:
-        'Endpoint đã thuộc device khác của cùng app — subscription gắn với device đã đăng ký.',
+        'The endpoint already belongs to another device of the same app — a subscription is attached to a registered device.',
     };
   }
 
@@ -779,7 +783,7 @@ async function resolveRegistration(
       ok: false,
       reason: INVENTORY_REJECTION.SubscriptionExpired,
       detail:
-        'Subscription đã hết hạn (expired) — không hồi sinh được (§5.2). Client phải subscribe lại để có endpoint mới.',
+        'The subscription has expired — it cannot be revived (§5.2). The client must subscribe again to get a new endpoint.',
     };
   }
 
@@ -809,13 +813,13 @@ async function resolveRegistration(
     return {
       ok: false,
       reason: INVENTORY_REJECTION.StorageFailure,
-      detail: 'Không hồi sinh được subscription — trạng thái đã đổi sau khi đọc.',
+      detail: 'The subscription could not be revived — the state changed after it was read.',
     };
   } catch {
     return {
       ok: false,
       reason: INVENTORY_REJECTION.StorageFailure,
-      detail: 'Không hồi sinh được subscription.',
+      detail: 'The subscription could not be revived.',
     };
   }
 }
@@ -828,7 +832,7 @@ async function findSubscriptionInScope(
     return {
       ok: false,
       reason: INVENTORY_REJECTION.InvalidPayload,
-      detail: 'Thiếu `subscriptionId`.',
+      detail: 'Missing `subscriptionId`.',
     };
   }
   // Cố ý tra **không** lọc `app` (xem `DeviceRepository.findById`), rồi kiểm trên record: hai
@@ -839,14 +843,14 @@ async function findSubscriptionInScope(
     return {
       ok: false,
       reason: INVENTORY_REJECTION.SubscriptionNotFound,
-      detail: 'Subscription không tồn tại.',
+      detail: 'The subscription does not exist.',
     };
   }
   if (subscription.app !== command.authenticatedApp) {
     return {
       ok: false,
       reason: INVENTORY_REJECTION.AppMismatch,
-      detail: 'Subscription thuộc app khác — FR-001/FR-007 cấm dùng chéo app.',
+      detail: 'The subscription belongs to another app — FR-001/FR-007 forbid cross-app use.',
     };
   }
   return { ok: true, value: subscription };
@@ -866,7 +870,7 @@ async function applyDisable(
     return {
       ok: false,
       reason: INVENTORY_REJECTION.SubscriptionExpired,
-      detail: `Subscription đã ở trạng thái không thể disable (${target.status}).`,
+      detail: `The subscription is already in a state that cannot be disabled (${target.status}).`,
     };
   }
 
@@ -887,7 +891,7 @@ async function applyDisable(
           return {
             ok: false,
             reason: INVENTORY_REJECTION.SubscriptionNotFound,
-            detail: 'Subscription không còn tồn tại sau khi đọc.',
+            detail: 'The subscription no longer exists after it was read.',
           };
         }
         updated = raced;
@@ -898,7 +902,7 @@ async function applyDisable(
       return {
         ok: false,
         reason: INVENTORY_REJECTION.StorageFailure,
-        detail: 'Không disable được subscription.',
+        detail: 'The subscription could not be disabled.',
       };
     }
   }
@@ -926,7 +930,7 @@ async function applyDisable(
     return {
       ok: false,
       reason: INVENTORY_REJECTION.StorageFailure,
-      detail: 'Không ghi được audit cho thao tác disable.',
+      detail: 'The audit for the disable operation could not be written.',
     };
   }
   return { ok: true, value: toSubscriptionView(updated) };

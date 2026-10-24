@@ -43,7 +43,9 @@ export function assertValidCodeVerifier(codeVerifier: string): void {
     codeVerifier.length > MAX_CODE_VERIFIER_LENGTH ||
     !CODE_VERIFIER_RE.test(codeVerifier)
   ) {
-    throw OAuthProtocolError.directInvalidRequest('code_verifier khong dung dinh dang RFC 7636');
+    throw OAuthProtocolError.directInvalidRequest(
+      'code_verifier does not match the RFC 7636 format',
+    );
   }
 }
 
@@ -94,16 +96,16 @@ export function parseCodeChallenge(params: {
       : OAuthProtocolError.directInvalidRequest(detail);
 
   if (codeChallengeMethod === undefined) {
-    throw fail('thieu code_challenge_method');
+    throw fail('missing code_challenge_method');
   }
   if (codeChallengeMethod !== SUPPORTED_CODE_CHALLENGE_METHOD) {
-    throw fail(`code_challenge_method phai la ${SUPPORTED_CODE_CHALLENGE_METHOD}`);
+    throw fail(`code_challenge_method must be ${SUPPORTED_CODE_CHALLENGE_METHOD}`);
   }
   if (codeChallenge === undefined) {
-    throw fail('thieu code_challenge');
+    throw fail('missing code_challenge');
   }
   if (!CODE_CHALLENGE_RE.test(codeChallenge)) {
-    throw fail('code_challenge khong dung dinh dang S256');
+    throw fail('code_challenge does not match the S256 format');
   }
 
   return { codeChallenge, codeChallengeMethod: SUPPORTED_CODE_CHALLENGE_METHOD };

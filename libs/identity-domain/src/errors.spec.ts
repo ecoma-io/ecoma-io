@@ -5,10 +5,10 @@ import { DOMAIN_ERROR_MESSAGES, domainError, isDomainError, type DomainErrorCode
 const ALL_CODES = Object.keys(DOMAIN_ERROR_MESSAGES) as DomainErrorCode[];
 
 describe('domainError', () => {
-  it('returns a stable code with a short Vietnamese message', () => {
+  it('returns a stable code with a short English message', () => {
     const error = domainError('session_expired');
     expect(error.code).toBe('session_expired');
-    expect(error.message).toBe('Phiên đã hết hạn.');
+    expect(error.message).toBe('Session has expired.');
   });
 
   it('gives every taxonomy code a non-empty message', () => {

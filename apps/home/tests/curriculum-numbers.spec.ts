@@ -62,7 +62,7 @@ function parameterTable(body: string): Map<string, number> {
   if (start === -1) throw new Error('parameter table header not found');
 
   for (const line of lines.slice(start + 1)) {
-    if (!/^\s*\|/u.test(line)) break; // hết bảng
+    if (!/^\s*\|/u.test(line)) break; // end of table
     const cells = line
       .trim()
       .replace(/^\||\|$/gu, '')

@@ -57,7 +57,7 @@ describe('docs UI strings', () => {
     }
   });
 
-  it('localizes the TOC label as Nội dung and the pager labels as Trước / Tiếp', () => {
+  it('localizes the TOC label and the pager labels in the vi locale', () => {
     const vi = docsUiStrings('vi');
     expect(vi.onThisPage).toBe('Nội dung');
     expect(vi.previous).toBe('Trước');

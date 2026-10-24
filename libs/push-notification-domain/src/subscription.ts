@@ -133,14 +133,14 @@ export function disableSubscription(
     return {
       ok: false,
       reason: 'unknown_status',
-      detail: 'Subscription status nằm ngoài vocabulary của domain.',
+      detail: 'Subscription status is outside the domain vocabulary.',
     };
   }
   if (!isSubscriptionDisableCause(cause)) {
     return {
       ok: false,
       reason: 'unknown_cause',
-      detail: 'Subscription disable cause nằm ngoài vocabulary của domain.',
+      detail: 'Subscription disable cause is outside the domain vocabulary.',
     };
   }
   if (status === SUBSCRIPTION_STATUS.Active) {
@@ -162,7 +162,7 @@ export function disableSubscription(
   return {
     ok: false,
     reason: 'invalid_status',
-    detail: 'Subscription expired không có transition sang disabled theo model.',
+    detail: 'An expired subscription has no transition to disabled in the model.',
   };
 }
 
@@ -183,7 +183,7 @@ export function expireSubscription(status: SubscriptionStatus): ExpireSubscripti
     return {
       ok: false,
       reason: 'unknown_status',
-      detail: 'Subscription status nằm ngoài vocabulary của domain.',
+      detail: 'Subscription status is outside the domain vocabulary.',
     };
   }
   if (status === SUBSCRIPTION_STATUS.Active) {
@@ -196,6 +196,6 @@ export function expireSubscription(status: SubscriptionStatus): ExpireSubscripti
   return {
     ok: false,
     reason: 'invalid_status',
-    detail: 'Chỉ subscription active mới chuyển sang expired theo model.',
+    detail: 'Only an active subscription transitions to expired in the model.',
   };
 }

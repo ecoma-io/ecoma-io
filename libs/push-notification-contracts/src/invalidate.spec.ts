@@ -169,7 +169,7 @@ describe('invalidate object shape policy (A1)', () => {
   ] as const)('rejects a 200 body that is %s', (_label, value) => {
     const checked = validateInvalidateAck(value);
     expect(checked.ok).toBe(false);
-    expectRejectedBy(checked, 'invalid_payload', 'object JSON');
+    expectRejectedBy(checked, 'invalid_payload', 'JSON object');
   });
 
   it('rejects a getter on subscription_id without invoking it', () => {

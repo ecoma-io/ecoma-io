@@ -83,7 +83,7 @@ export const appComponents: Record<string, Component> = Object.fromEntries(
 function bound<T>(name: string): T {
   const value = (globalThis as Record<string, unknown>)[name];
   if (typeof value !== 'function') {
-    throw new Error(`Global '${name}' chưa được cài — xem tests/nuxt-globals.ts`);
+    throw new Error(`Global '${name}' is not installed — see tests/nuxt-globals.ts`);
   }
   return value as T;
 }

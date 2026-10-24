@@ -115,7 +115,7 @@ describe('WebCryptoCredentialCipher — wrong key and corrupted ciphertext', () 
     });
 
     await expect(wrongKeyRing.decrypt(written.ciphertext, 'K1')).rejects.toThrowError(
-      /Giải mã credential thất bại/u,
+      /Credential decryption failed/u,
     );
   });
 
@@ -128,7 +128,7 @@ describe('WebCryptoCredentialCipher — wrong key and corrupted ciphertext', () 
     tampered[tampered.length - 1] = (tampered[tampered.length - 1] ?? 0) ^ 0xff;
 
     await expect(cipher.decrypt(tampered, 'K1')).rejects.toThrowError(
-      /Giải mã credential thất bại/u,
+      /Credential decryption failed/u,
     );
   });
 
@@ -137,7 +137,7 @@ describe('WebCryptoCredentialCipher — wrong key and corrupted ciphertext', () 
     // authentication — hai remediation hoàn toàn khác nhau lọt chung một thông điệp.
     const cipher = k1Only();
     await expect(cipher.decrypt(new Uint8Array(8), 'K1')).rejects.toThrowError(
-      /Giải mã credential thất bại/u,
+      /Credential decryption failed/u,
     );
   });
 
@@ -201,7 +201,7 @@ describe('WebCryptoCredentialCipher — routing follows the version of the recor
     // ⚠️ Và record mới **không** đọc được bằng `K1` — đó là bằng chứng nó thật sự mã hoá bằng
     // `K2` chứ không chỉ ghi nhãn version.
     await expect(afterRotation.decrypt(sealed.ciphertext, 'K1')).rejects.toThrowError(
-      /Giải mã credential thất bại/u,
+      /Credential decryption failed/u,
     );
   });
 
@@ -291,11 +291,11 @@ describe('WebCryptoCredentialCipher — fails early on initialisation', () => {
         keysByVersion: { K1: rootKeyK1(), K7: new Uint8Array(16) },
         currentVersion: 'K1',
       });
-      message = `constructor không ném; đối tượng là ${typeof leaked}.`;
+      message = `constructor did not throw; the object is ${typeof leaked}.`;
     } catch (error: unknown) {
       message = (error as Error).message;
     }
-    expect(message).not.toContain('constructor không ném');
+    expect(message).not.toContain('constructor did not throw');
     expect(message).toContain('K7');
     expect(message).not.toContain('K1');
   });

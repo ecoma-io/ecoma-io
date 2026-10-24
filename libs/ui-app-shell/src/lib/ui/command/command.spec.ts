@@ -29,7 +29,7 @@ function onlyId(registry: ReadonlyMap<string, unknown>): string {
   const keys = [...registry.keys()];
 
   if (keys.length !== 1) {
-    throw new Error(`Cần đúng một khoá trong registry, đang có ${String(keys.length)}`);
+    throw new Error(`expected exactly one key in the registry, got ${String(keys.length)}`);
   }
 
   return keys.at(0) ?? '';
@@ -41,7 +41,7 @@ function idOfText(command: NonNullable<ReturnType<typeof useCommand>>, text: str
     if (value === text) return id;
   }
 
-  throw new Error(`Không có item nào đăng ký text "${text}" trong allItems`);
+  throw new Error(`no item registered with text "${text}" in allItems`);
 }
 
 /** Host render `items` từ một `ref` để điều khiển được lúc item mount. */
@@ -87,7 +87,7 @@ function mountCommand(initial: string[]) {
    */
   const command = (): NonNullable<ReturnType<typeof useCommand>> => {
     if (api === null) {
-      throw new Error('useCommand() chưa chạy — Capture không nằm trong cây Command');
+      throw new Error('useCommand() has not run — Capture is not inside the Command tree');
     }
 
     return api;

@@ -125,7 +125,7 @@ function makeIssuanceGate(
           errorCode: 'access_denied',
           details: { reason: 'account_status' },
         });
-        throw new Error(`issuance gate: account status "${status}" khong cho phep cap token`);
+        throw new Error(`issuance gate: account status "${status}" does not allow token issuance`);
       }
       const revocation = await checkRevocationAtIssuance(postgresClient, {
         sub: accountId,

@@ -78,7 +78,7 @@ function assertOptionalParamByteLimit(
   }
   const byteLength = new TextEncoder().encode(value).length;
   if (byteLength > maxBytes) {
-    throw OAuthProtocolError.directInvalidRequest(`${field} vuot gioi han ${maxBytes} byte`);
+    throw OAuthProtocolError.directInvalidRequest(`${field} exceeds the ${maxBytes}-byte limit`);
   }
 }
 
@@ -119,7 +119,7 @@ export function parseAuthorizationRequest(params: {
   // lỗi tới một URI tùy ý. Đó là lý do ranh giới nằm ở đâu *sau* bước xác minh,
   // chứ không phải ở việc check cái gì trước.
   if (params.responseType === undefined) {
-    throw OAuthProtocolError.directInvalidRequest('thieu response_type');
+    throw OAuthProtocolError.directInvalidRequest('missing response_type');
   }
   if (params.responseType !== SUPPORTED_RESPONSE_TYPE) {
     throw OAuthProtocolError.directInvalidRequest(
@@ -130,11 +130,11 @@ export function parseAuthorizationRequest(params: {
   // Bắt buộc, không có giá trị mặc định: thiếu `client_id` thì không xác định
   // được client nào để tra bảng đăng ký.
   if (params.clientId === undefined || params.clientId === '') {
-    throw OAuthProtocolError.directInvalidRequest('thieu client_id');
+    throw OAuthProtocolError.directInvalidRequest('missing client_id');
   }
 
   if (params.redirectUri === undefined || params.redirectUri === '') {
-    throw OAuthProtocolError.directInvalidRequest('thieu redirect_uri');
+    throw OAuthProtocolError.directInvalidRequest('missing redirect_uri');
   }
   assertWellFormedRedirectUri(params.redirectUri);
 
@@ -195,7 +195,7 @@ export function filterAllowedScopes(
   const granted: string[] = [];
   for (const item of requested) {
     if (!allowed.has(item)) {
-      throw fail(`scope khong duoc phep: ${item}`);
+      throw fail(`scope is not allowed: ${item}`);
     }
     granted.push(item);
   }
@@ -225,6 +225,6 @@ export function assertRegisteredRedirectUri(
   );
 
   if (!matched) {
-    throw OAuthProtocolError.directInvalidRequest('redirect_uri khong khop ban dang ky');
+    throw OAuthProtocolError.directInvalidRequest('redirect_uri does not match its registration');
   }
 }

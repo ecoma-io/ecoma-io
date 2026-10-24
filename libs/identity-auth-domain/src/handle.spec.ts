@@ -108,9 +108,9 @@ describe('deriveHandle', () => {
       deriveHandle({
         key: K_AUTH,
         transactionId: TX_A,
-        domain: 'khong-ton-tai' as (typeof HANDLE_DOMAINS)[keyof typeof HANDLE_DOMAINS],
+        domain: 'nonexistent' as (typeof HANDLE_DOMAINS)[keyof typeof HANDLE_DOMAINS],
       }),
-    ).rejects.toThrow(/domain khong hop le/u);
+    ).rejects.toThrow(/domain is not valid/u);
   });
 
   it('rejects a key of the wrong length', async () => {

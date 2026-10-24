@@ -150,7 +150,7 @@ export async function insertGrant(tx: Queryable, input: NewGrantInput): Promise<
   );
   const row = rows[0];
   if (row === undefined) {
-    throw new Error('INSERT oauth_grants khong tra ve id');
+    throw new Error('INSERT oauth_grants returned no id');
   }
   return row.id;
 }
@@ -201,7 +201,7 @@ export async function insertConsentDecision(
   );
   const row = rows[0];
   if (row === undefined) {
-    throw new Error('INSERT oauth_consent_decisions khong tra ve id');
+    throw new Error('INSERT oauth_consent_decisions returned no id');
   }
   return row.id;
 }

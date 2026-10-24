@@ -505,7 +505,7 @@ describe('makeNonceGuard against a real PostgreSQL', () => {
       );
       const stored = rows[0];
       if (stored === undefined) {
-        throw new Error('verifyRequest bao ok nhung khong co dong nonce nao duoc ghi');
+        throw new Error('verifyRequest reported ok but no nonce row was written');
       }
 
       // Neo theo envelope: offset = skew + buffer, cộng/trừ dung sai đồng hồ giữa

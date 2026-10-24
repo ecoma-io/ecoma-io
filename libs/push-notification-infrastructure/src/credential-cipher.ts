@@ -41,7 +41,7 @@ const AES_256_KEY_BYTES = 32;
 
 /** Thông điệp của lỗi giải mã — **không** chứa ciphertext, key hay version. */
 const DECRYPT_FAILED =
-  'Giải mã credential thất bại: sai khóa, sai version, hoặc ciphertext đã bị can thiệp.';
+  'Credential decryption failed: wrong key, wrong version, or tampered ciphertext.';
 
 export interface CredentialCipherOptions {
   /**
@@ -71,10 +71,10 @@ export class WebCryptoCredentialCipher implements CredentialCipher {
 
   constructor(options: CredentialCipherOptions) {
     if (typeof options.currentVersion !== 'string' || options.currentVersion === '') {
-      throw new Error('WebCryptoCredentialCipher: currentVersion là bắt buộc.');
+      throw new Error('WebCryptoCredentialCipher: currentVersion is required.');
     }
     if (!isRecord(options.keysByVersion) || Object.keys(options.keysByVersion).length === 0) {
-      throw new Error('WebCryptoCredentialCipher: phải có ít nhất một root key theo version.');
+      throw new Error('WebCryptoCredentialCipher: at least one root key per version is required.');
     }
     const current = options.keysByVersion[options.currentVersion];
     if (current === undefined) {
@@ -82,7 +82,7 @@ export class WebCryptoCredentialCipher implements CredentialCipher {
       // giữa một rotation và đã có credential trong DB cần `K2` nhưng `K2` không có trong
       // keyring — tức mất khả năng ký VAPID khi đang cần nhất.
       throw new Error(
-        `WebCryptoCredentialCipher: currentVersion "${options.currentVersion}" không có trong keyring.`,
+        `WebCryptoCredentialCipher: currentVersion "${options.currentVersion}" is not in the keyring.`,
       );
     }
     for (const [version, key] of Object.entries(options.keysByVersion)) {
@@ -96,7 +96,7 @@ export class WebCryptoCredentialCipher implements CredentialCipher {
     if (typeof plaintext !== 'string' || plaintext === '') {
       // Một credential rỗng sẽ mã hoá thành một record mà giải mã ra `''`, và sau đó
       // provider handshake fail với một lỗi không truy được về chỗ gốc.
-      throw new Error('CredentialCipher.encrypt: plaintext phải là chuỗi không rỗng.');
+      throw new Error('CredentialCipher.encrypt: plaintext must be a non-empty string.');
     }
     const key = await this.#rawKey(this.#currentVersion);
     // IV ngẫu nhiên 12 byte cho **mỗi** lần mã hoá. Dùng IV cố định sẽ phá tan thuộc tính
@@ -125,7 +125,7 @@ export class WebCryptoCredentialCipher implements CredentialCipher {
       // Version không có trong keyring là một **cấu hình sai**, không phải một credential
       // hỏng — hai lỗi này dẫn tới hai remediation hoàn toàn khác nhau (thêm key vào keyring
       // vs. kiểm tra ciphertext), nên thông điệp phải phân biệt.
-      throw new Error(`Giải mã credential thất bại: không có root key cho version "${version}".`);
+      throw new Error(`Credential decryption failed: no root key for version "${version}".`);
     }
     const iv = ciphertext.subarray(0, IV_LENGTH_BYTES);
     const body = ciphertext.subarray(IV_LENGTH_BYTES);
@@ -149,7 +149,7 @@ export class WebCryptoCredentialCipher implements CredentialCipher {
   async #rawKey(version: string): Promise<CryptoKey> {
     const material = this.#keysByVersion[version];
     if (material === undefined) {
-      throw new Error(`Giải mã credential thất bại: không có root key cho version "${version}".`);
+      throw new Error(`Credential decryption failed: no root key for version "${version}".`);
     }
     // Cache theo instance: import lại cùng một key ở mỗi lần ghi là công việc thừa, và
     // `CryptoKey` không giữ secret ra ngoài nên không tạo rủi ro node-local state.
@@ -178,11 +178,11 @@ export class WebCryptoCredentialCipher implements CredentialCipher {
 
 function assertKeyLength(version: string, key: Uint8Array | undefined): void {
   if (!(key instanceof Uint8Array)) {
-    throw new Error(`WebCryptoCredentialCipher: root key "${version}" không phải Uint8Array.`);
+    throw new Error(`WebCryptoCredentialCipher: root key "${version}" is not a Uint8Array.`);
   }
   if (key.byteLength !== AES_256_KEY_BYTES) {
     throw new Error(
-      `WebCryptoCredentialCipher: root key "${version}" phải đúng ${AES_256_KEY_BYTES} byte (AES-256), nhận ${key.byteLength}.`,
+      `WebCryptoCredentialCipher: root key "${version}" must be exactly ${AES_256_KEY_BYTES} bytes (AES-256), got ${key.byteLength}.`,
     );
   }
 }

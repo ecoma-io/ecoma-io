@@ -40,7 +40,7 @@ function byteaToBase64Url(value: unknown, column: string): string {
   // dạng khác là lỗi hợp đồng của driver, không phải dữ liệu xấu — ném thay
   // vì diễn giải.
   if (!(value instanceof Uint8Array)) {
-    throw new TypeError(`cot ${column} phai la bytea (Uint8Array), nhan duoc hinh dang khac`);
+    throw new TypeError(`column ${column} must be bytea (Uint8Array), got a different shape`);
   }
   return bytesToBase64Url(value);
 }

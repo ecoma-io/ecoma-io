@@ -157,7 +157,7 @@ export function createPostgresClient(
   options?: { readonly connectTimeoutSeconds?: number },
 ): PostgresClientLike {
   if (typeof binding.connectionString !== 'string' || binding.connectionString === '') {
-    throw new AuthConfigurationError('Hyperdrive binding khong co connectionString');
+    throw new AuthConfigurationError('the Hyperdrive binding has no connectionString');
   }
   assertConnectTimeoutSeconds(options?.connectTimeoutSeconds);
 
@@ -227,7 +227,7 @@ function assertConnectTimeoutSeconds(value: number | undefined): void {
   }
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     throw new AuthConfigurationError(
-      'connectTimeoutSeconds phai la so huu han duong (giay); bo trong de giu mac dinh cua driver',
+      'connectTimeoutSeconds must be a finite positive number (seconds); leave it unset to keep the driver default',
     );
   }
 }
@@ -243,7 +243,7 @@ function assertConnectTimeoutSeconds(value: number | undefined): void {
 export function assertQueryCacheDisabled(configCachingEnabled: boolean): void {
   if (configCachingEnabled) {
     throw new AuthConfigurationError(
-      'Hyperdrive query cache phai OFF: cache khong invalidate khi ghi, nen authorization code da tieu thu van tra ve tu cache',
+      'Hyperdrive query cache must be OFF: the cache does not invalidate on write, so a consumed authorization code would still be served from cache',
     );
   }
 }
@@ -358,7 +358,7 @@ export async function recordNonce(
   // được diễn giải.
   if (!Array.isArray(inserted)) {
     throw new NonceStoreContractError(
-      'Queryable phai tra ve mang hang (postgres.js); hinh dang khac lam replay guard sai im lang',
+      'Queryable must return a frozen array (postgres.js); any other shape silently breaks the replay guard',
     );
   }
   return inserted.length === 0;

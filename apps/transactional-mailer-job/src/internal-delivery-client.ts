@@ -129,12 +129,12 @@ export function resolveInternalAuthSecret(env: Readonly<Record<string, unknown>>
   const value = env[INTERNAL_AUTH_SECRET_ENV];
   if (value === undefined) {
     throw new InternalDeliveryConfigError(
-      `Thieu Worker Secret ${INTERNAL_AUTH_SECRET_ENV}. Chua the nao goi private delivery interface.`,
+      `Worker Secret ${INTERNAL_AUTH_SECRET_ENV} is missing. The private delivery interface cannot be called.`,
     );
   }
   if (typeof value !== 'string') {
     throw new InternalDeliveryConfigError(
-      `${INTERNAL_AUTH_SECRET_ENV} phai la chuoi, nhan duoc ${typeof value}.`,
+      `${INTERNAL_AUTH_SECRET_ENV} must be a string, got ${typeof value}.`,
     );
   }
   assertUsableSecret(value);
@@ -176,12 +176,12 @@ function assertUsableSecret(secret: string): void {
   }
   if (secret.trim().length === 0) {
     throw new InternalDeliveryConfigError(
-      `Worker Secret ${INTERNAL_AUTH_SECRET_ENV} chi chua khoang trang, khong phai gia tri hop le.`,
+      `Worker Secret ${INTERNAL_AUTH_SECRET_ENV} is whitespace only, not a valid value.`,
     );
   }
   if (containsLoneSurrogate(secret)) {
     throw new InternalDeliveryConfigError(
-      `Worker Secret ${INTERNAL_AUTH_SECRET_ENV} chua lone surrogate, khong phai gia tri hop le.`,
+      `Worker Secret ${INTERNAL_AUTH_SECRET_ENV} contains a lone surrogate, not a valid value.`,
     );
   }
 }
@@ -224,7 +224,7 @@ function containsLoneSurrogate(value: string): boolean {
 function deliveryRoute(deliveryId: string, suffix: string): string {
   if (typeof deliveryId !== 'string' || deliveryId.length === 0) {
     throw new InternalDeliveryRequestError(
-      'delivery_id rong hoac khong phai chuoi',
+      'delivery_id is empty or not a string',
       'invalid-delivery-id',
     );
   }
@@ -235,7 +235,7 @@ function deliveryRoute(deliveryId: string, suffix: string): string {
     // `encodeURIComponent` ném `URIError` với surrogate lẻ (`"\uD800"`). Đó là input hỏng,
     // không phải lỗi hệ thống — cùng một lớp lỗi với `delivery_id` rỗng.
     throw new InternalDeliveryRequestError(
-      'delivery_id khong ma hoa duoc thanh mot phan doan path',
+      'delivery_id cannot be encoded as a path segment',
       'invalid-delivery-id',
     );
   }
@@ -316,7 +316,7 @@ export class InternalDeliveryClient {
     if (!validated.ok) {
       const detail = validated.detail;
       throw new InternalDeliveryRequestError(
-        `Outcome khong hop le theo contract (${validated.reason}${detail === undefined ? '' : `: ${detail}`})`,
+        `Outcome is invalid against the contract (${validated.reason}${detail === undefined ? '' : `: ${detail}`})`,
         validated.reason,
         detail,
       );

@@ -118,7 +118,7 @@ async function seedGrant(migrator: postgres.Sql, sub: string): Promise<string> {
   `;
   const grantId = rows[0]?.id;
   if (grantId === undefined) {
-    throw new Error('seed grant khong tra ve id');
+    throw new Error('seed grant returned no id');
   }
   await migrator`
     INSERT INTO auth.client_grant_scopes (grant_id, scope)

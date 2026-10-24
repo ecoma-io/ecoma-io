@@ -91,18 +91,18 @@ export function assertWellFormedRedirectUri(redirectUri: string): void {
   try {
     url = new URL(redirectUri);
   } catch {
-    throw OAuthProtocolError.directInvalidRequest('redirect_uri khong phai URL hop le');
+    throw OAuthProtocolError.directInvalidRequest('redirect_uri is not a valid URL');
   }
 
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    throw OAuthProtocolError.directInvalidRequest('redirect_uri phai dung http hoac https');
+    throw OAuthProtocolError.directInvalidRequest('redirect_uri must use http or https');
   }
 
   // Fragment KHÔNG được phép trong redirect URI đăng ký: browser cắt fragment
   // khi chuyển hướng, nên nó không bao giờ tới được server — một URI mang
   // fragment là URI mà không ai thực sự kiểm soát được phần cuối.
   if (url.hash !== '') {
-    throw OAuthProtocolError.directInvalidRequest('redirect_uri khong duoc chua fragment');
+    throw OAuthProtocolError.directInvalidRequest('redirect_uri must not contain a fragment');
   }
 
   // http chỉ hợp lệ cho loopback của client native (RFC 8252).

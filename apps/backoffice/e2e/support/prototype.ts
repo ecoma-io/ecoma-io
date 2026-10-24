@@ -36,7 +36,7 @@ export async function waitForRouteReady(page: Page, path: string): Promise<void>
   const testId = READY_TEST_IDS[path];
 
   if (testId === undefined) {
-    throw new Error(`Không có tín hiệu ready cho route "${path}".`);
+    throw new Error(`No ready signal for route "${path}".`);
   }
 
   await page.getByTestId(testId).waitFor({ state: 'visible' });

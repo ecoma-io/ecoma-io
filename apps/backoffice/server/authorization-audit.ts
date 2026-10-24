@@ -179,7 +179,7 @@ export async function recordDecision(client: Client, input: DecisionAuditInput):
     // không có bản ghi audit mồ côi định danh. Đường "actor không xác định
     // được" dùng {@link recordAuthorizationFailure} (outcome `failure`,
     // `actor_sub` NULL) — có dấu vết mà không bịa đặt danh tính.
-    throw new TypeError('authorization audit yêu cầu actorSub là BackofficeAccountId hợp lệ');
+    throw new TypeError('authorization audit requires actorSub to be a valid BackofficeAccountId');
   }
 
   // ⚠️ Outcome chỉ một giá trị ở hook deny này (`denied`): allow path KHÔNG
@@ -190,7 +190,7 @@ export async function recordDecision(client: Client, input: DecisionAuditInput):
   // ghi "đã xảy ra gì", KHÔNG thay thế enforcement).
   if (input.decision.allowed) {
     throw new TypeError(
-      'recordDecision chỉ ghi denied; allow của privileged operation dùng recordPrivilegedSuccess',
+      'recordDecision only records denied; allow of a privileged operation uses recordPrivilegedSuccess',
     );
   }
 
@@ -228,7 +228,7 @@ export async function recordStaleWriteDenial(
   input: EnforcementDenialAuditInput,
 ): Promise<void> {
   if (!isBackofficeAccountId(input.actorSub)) {
-    throw new TypeError('authorization audit yêu cầu actorSub là BackofficeAccountId hợp lệ');
+    throw new TypeError('authorization audit requires actorSub to be a valid BackofficeAccountId');
   }
 
   await writeAuditRow(client, {
@@ -302,7 +302,7 @@ export async function recordPrivilegedSuccess(
   input: PrivilegedOperationAuditInput,
 ): Promise<void> {
   if (!isBackofficeAccountId(input.actorSub)) {
-    throw new TypeError('authorization audit yêu cầu actorSub là BackofficeAccountId hợp lệ');
+    throw new TypeError('authorization audit requires actorSub to be a valid BackofficeAccountId');
   }
 
   await client.query(
@@ -347,7 +347,7 @@ interface AuditRow {
  */
 async function writeAuditRow(client: Client, row: AuditRow): Promise<void> {
   if (row.targetSub !== undefined && !isBackofficeAccountId(row.targetSub)) {
-    throw new TypeError('authorization audit yêu cầu targetSub là BackofficeAccountId hợp lệ');
+    throw new TypeError('authorization audit requires targetSub to be a valid BackofficeAccountId');
   }
 
   assertBoundedCorrelationId(row.requestId, 'requestId');
@@ -378,7 +378,7 @@ async function writeAuditRow(client: Client, row: AuditRow): Promise<void> {
 function assertBoundedCorrelationId(value: string | undefined, field: string): void {
   if (value !== undefined && value.length > AUTHORIZATION_AUDIT_ID_MAX_LENGTH) {
     throw new TypeError(
-      `authorization audit yêu cầu ${field} dài tối đa ${AUTHORIZATION_AUDIT_ID_MAX_LENGTH} ký tự`,
+      `authorization audit requires ${field} to be at most ${AUTHORIZATION_AUDIT_ID_MAX_LENGTH} characters`,
     );
   }
 }

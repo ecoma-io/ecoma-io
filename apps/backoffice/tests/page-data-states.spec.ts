@@ -197,14 +197,14 @@ describe.each(PAGES)('data page $name', (page) => {
 
     // Hỏng ở mức adapter (mọi phương thức của nó), không phải một lời gọi đơn lẻ: đường
     // lỗi của page không được phụ thuộc vào chuyện test reject đúng một promise nào.
-    await fake.failAll(new Error('đọc dữ liệu thất bại'));
+    await fake.failAll(new Error('data read failed'));
     await flush();
 
     const error = wrapper.get(ERROR);
     expect(error.attributes('role')).toBe('alert');
     expect(error.text()).toContain(en.states.errorTitle);
     expect(error.text()).toContain(en.states.errorBody);
-    expect(wrapper.get(ERROR_DETAIL).text()).toBe('đọc dữ liệu thất bại');
+    expect(wrapper.get(ERROR_DETAIL).text()).toBe('data read failed');
 
     // Lỗi không được biến thành dữ liệu rỗng, và cũng không được biến thành thành công.
     expect(wrapper.find(page.empty).exists()).toBe(false);
@@ -220,7 +220,7 @@ describe.each(PAGES)('data page $name', (page) => {
     const fake = adapterFor();
     const { wrapper, flush } = await mountBackofficePage(page.component, { adapter: fake.adapter });
 
-    page.firstCall(fake).reject(new Error('lần đầu hỏng'));
+    page.firstCall(fake).reject(new Error('first call failed'));
     await flush();
     expect(wrapper.get(ERROR_RETRY).text()).toBe(en.states.retry);
 
@@ -248,7 +248,7 @@ describe.each(PAGES)('data page $name', (page) => {
     const fake = adapterFor({ isPreview: false });
     const { wrapper, flush } = await mountBackofficePage(page.component, { adapter: fake.adapter });
 
-    page.firstCall(fake).reject(new Error('adapter thật hỏng'));
+    page.firstCall(fake).reject(new Error('real adapter failed'));
     await flush();
 
     expect(wrapper.find(ERROR).exists()).toBe(true);

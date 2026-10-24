@@ -31,15 +31,18 @@ describe('createBackofficeAdapter', () => {
     expect(createBackofficeAdapter('unavailable').isPreview).toBe(false);
   });
 
-  it.each(READ_METHODS)('%s reject với mã lỗi ổn định, không trả dữ liệu', async (method) => {
-    const adapter = createBackofficeAdapter('unavailable');
+  it.each(READ_METHODS)(
+    '%s rejects with a stable error code and returns no data',
+    async (method) => {
+      const adapter = createBackofficeAdapter('unavailable');
 
-    await expect(adapter[method]()).rejects.toMatchObject({
-      code: BACKOFFICE_BACKEND_UNAVAILABLE_CODE,
-    });
-  });
+      await expect(adapter[method]()).rejects.toMatchObject({
+        code: BACKOFFICE_BACKEND_UNAVAILABLE_CODE,
+      });
+    },
+  );
 
-  it.each(READ_METHODS)('%s không bao giờ trả mảng rỗng như một kết quả hợp lệ', async (method) => {
+  it.each(READ_METHODS)('%s never returns an empty array as a valid result', async (method) => {
     const adapter = createBackofficeAdapter('unavailable');
 
     const outcome = await adapter[method]().then(

@@ -29,7 +29,7 @@
  */
 module.exports = function PgNativeUnavailable() {
   throw new Error(
-    'pg-native không dùng được trên Workers: binding native không tồn tại trong ' +
-      'isolate của Cloudflare. App phải dùng client JS của pg.',
+    'pg-native is not usable on Workers: the native binding does not exist in the ' +
+      'Cloudflare isolate. The app must use the JS client of pg.',
   );
 };

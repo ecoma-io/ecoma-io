@@ -2,7 +2,7 @@
  * Taxonomy lỗi của tầng domain `backoffice`.
  *
  * Source of truth (pattern): `libs/identity-domain/src/errors.ts` — một domain
- * error chỉ mang `code` ổn định + `message` tiếng Việt ngắn gọn, không field nào
+ * error chỉ mang `code` ổn định + `message` tiếng Anh ngắn gọn, không field nào
  * cho identifier/token/secret hay payload tuỳ ý.
  *
  * Ràng buộc nguồn ở phía `backoffice`:
@@ -34,22 +34,22 @@ export type BackofficeDomainErrorCode =
   | 'invalid_transition';
 
 /**
- * Message tiếng Việt của từng mã, viết tắt trong bảng để factory đọc từ
+ * Message tiếng Anh của từng mã, viết tắt trong bảng để factory đọc từ
  * một nguồn duy nhất — không có đường nào để call site tự ghép câu chữ.
  */
 export const BACKOFFICE_DOMAIN_ERROR_MESSAGES: Record<BackofficeDomainErrorCode, string> = {
-  invalid_account_id: 'Account ID không hợp lệ.',
-  invalid_staff_status: 'Staff status không hợp lệ.',
-  staff_terminated: 'Staff membership đã bị chấm dứt.',
-  staff_suspended: 'Staff membership đang bị tạm dừng.',
-  staff_not_found: 'Không tìm thấy staff entry.',
-  role_not_found: 'Không tìm thấy role.',
-  permission_not_in_catalog: 'Permission không có trong catalog.',
-  invalid_assignment_window: 'Cửa sổ hiệu lực của assignment không hợp lệ.',
-  invalid_transition: 'Chuyển trạng thái không hợp lệ.',
+  invalid_account_id: 'Invalid account ID.',
+  invalid_staff_status: 'Invalid staff status.',
+  staff_terminated: 'The staff membership has been terminated.',
+  staff_suspended: 'The staff membership is suspended.',
+  staff_not_found: 'Staff entry not found.',
+  role_not_found: 'Role not found.',
+  permission_not_in_catalog: 'Permission is not in the catalog.',
+  invalid_assignment_window: 'The assignment validity window is invalid.',
+  invalid_transition: 'Invalid state transition.',
 };
 
-/** Error domain: `code` ổn định + `message` tiếng Việt ngắn gọn. */
+/** Error domain: `code` ổn định + `message` tiếng Anh ngắn gọn. */
 export interface BackofficeDomainError {
   readonly code: BackofficeDomainErrorCode;
   readonly message: string;
@@ -71,7 +71,7 @@ export function backofficeDomainError(code: BackofficeDomainErrorCode): Backoffi
     ? BACKOFFICE_DOMAIN_ERROR_MESSAGES[code]
     : undefined;
   if (message === undefined) {
-    throw new TypeError(`Backoffice domain error code không hợp lệ: ${String(code)}`);
+    throw new TypeError(`Invalid backoffice domain error code: ${String(code)}`);
   }
   return { code, message };
 }

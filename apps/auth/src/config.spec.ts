@@ -414,7 +414,7 @@ describe('resolveInternalSecret — the resolver of the internal envelope', () =
   it('throws for an unknown kid, so the lib turns it into bad_signature (fail-closed)', async () => {
     const config = await loadAuthConfig(makeEnv({ AUTH_INTERNAL_KID: '0123abcd' }));
     const resolve = resolveInternalSecret(config);
-    await expect(resolve('ffffffff')).rejects.toThrow(/khong co trong registry/u);
+    await expect(resolve('ffffffff')).rejects.toThrow(/not in the internal secret registry/u);
   });
 
   it('treats every kid as unknown when no kid is configured, so a kid-carrying envelope is bad_signature', async () => {
@@ -422,7 +422,7 @@ describe('resolveInternalSecret — the resolver of the internal envelope', () =
     // fail-closed, KHÔNG phải "chấp nhận bằng secret mặc định".
     const config = await loadAuthConfig(makeEnv());
     const resolve = resolveInternalSecret(config);
-    await expect(resolve('0123abcd')).rejects.toThrow(/khong co trong registry/u);
+    await expect(resolve('0123abcd')).rejects.toThrow(/not in the internal secret registry/u);
   });
 
   /**

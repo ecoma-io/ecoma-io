@@ -394,7 +394,7 @@ function buildTransactionalMailConfig(env: TransactionalMailEnv): TransactionalM
 function requireCredentialSecret(value: unknown, variableName: string): string {
   if (typeof value !== 'string' || value.length === 0) {
     throw new TransactionalMailConfigError(
-      `Worker Secret ${variableName} chua duoc dat; transactional-mail KHONG cap credential`,
+      `Worker Secret ${variableName} is not set; transactional-mail issues no credential`,
     );
   }
   assertCredentialSecretShape(value, variableName);
@@ -412,12 +412,12 @@ function requireCredentialSecret(value: unknown, variableName: string): string {
 function assertCredentialSecretShape(value: string, variableName: string): void {
   if (value.trim() === '') {
     throw new TransactionalMailConfigError(
-      `Worker Secret ${variableName} chi co khoang trang; transactional-mail tu choi`,
+      `Worker Secret ${variableName} is whitespace only; transactional-mail refuses it`,
     );
   }
   if (containsLoneSurrogate(value)) {
     throw new TransactionalMailConfigError(
-      `Worker Secret ${variableName} chua lone surrogate; transactional-mail tu choi`,
+      `Worker Secret ${variableName} contains a lone surrogate; transactional-mail refuses it`,
     );
   }
 }
@@ -501,8 +501,8 @@ function loadCredentialRegistry(env: TransactionalMailEnv): {
 
   if (duplicatedVariableNames.size > 0) {
     throw new TransactionalMailConfigError(
-      `Worker Secret sau co gia tri trung nhau: ${[...duplicatedVariableNames].join(', ')}; ` +
-        'credential registry phai fail-closed vi envelope khong mang key id',
+      `Worker Secrets share duplicate values: ${[...duplicatedVariableNames].join(', ')}; ` +
+        'the credential registry must fail closed because the envelope carries no key id',
     );
   }
 
@@ -537,7 +537,7 @@ function loadCredentialRegistry(env: TransactionalMailEnv): {
 function parseFingerprintKeyring(raw: unknown): MailFingerprintKeyring {
   if (typeof raw !== 'string' || raw.length === 0) {
     throw new TransactionalMailConfigError(
-      `Worker Secret ${FINGERPRINT_KEYRING_ENV} chua duoc dat; khong sign duoc request_fingerprint`,
+      `Worker Secret ${FINGERPRINT_KEYRING_ENV} is not set; request_fingerprint cannot be signed`,
     );
   }
 
@@ -548,42 +548,42 @@ function parseFingerprintKeyring(raw: unknown): MailFingerprintKeyring {
     // ⚠️ KHÔNG nối message của `JSON.parse` vào đây: nó **chứa toàn bộ chuỗi JSON**, tức
     // khoá hex nếu parse hỏng vì một ký tự đó. Đây là đường rò secret vào error log.
     throw new TransactionalMailConfigError(
-      `Worker Secret ${FINGERPRINT_KEYRING_ENV} khong phai JSON hop le`,
+      `Worker Secret ${FINGERPRINT_KEYRING_ENV} is not valid JSON`,
     );
   }
 
   if (!isRecord(parsed)) {
     throw new TransactionalMailConfigError(
-      `Worker Secret ${FINGERPRINT_KEYRING_ENV} phai la JSON object`,
+      `Worker Secret ${FINGERPRINT_KEYRING_ENV} must be a JSON object`,
     );
   }
 
   const current = parsed['current'];
   if (typeof current !== 'string' || current.length === 0) {
     throw new TransactionalMailConfigError(
-      `Worker Secret ${FINGERPRINT_KEYRING_ENV} thieu truong "current"`,
+      `Worker Secret ${FINGERPRINT_KEYRING_ENV} is missing the "current" field`,
     );
   }
 
   const rawKeys = parsed['keys'];
   if (!isRecord(rawKeys)) {
     throw new TransactionalMailConfigError(
-      `Worker Secret ${FINGERPRINT_KEYRING_ENV} thieu truong "keys"`,
+      `Worker Secret ${FINGERPRINT_KEYRING_ENV} is missing the "keys" field`,
     );
   }
 
   const profileTags = Object.keys(rawKeys);
   if (profileTags.length === 0) {
     throw new TransactionalMailConfigError(
-      `Worker Secret ${FINGERPRINT_KEYRING_ENV} co "keys" rong`,
+      `Worker Secret ${FINGERPRINT_KEYRING_ENV} has an empty "keys"`,
     );
   }
   if (!Object.hasOwn(rawKeys, current)) {
     // ⚠️ Nêu **tên profile tag** (public: nó nằm trong mọi giá trị fingerprint đã persist),
     // không nêu giá trị khoá. Nêu tag là đủ để người vận hành biết đang trỏ vào chỗ nào.
     throw new TransactionalMailConfigError(
-      `Worker Secret ${FINGERPRINT_KEYRING_ENV}: "current" la profile "${current}" ` +
-        'khong ton tai trong "keys"',
+      `Worker Secret ${FINGERPRINT_KEYRING_ENV}: "current" is profile "${current}" ` +
+        'which does not exist in "keys"',
     );
   }
 
@@ -592,8 +592,8 @@ function parseFingerprintKeyring(raw: unknown): MailFingerprintKeyring {
     const keyHex = rawKeys[tag];
     if (typeof keyHex !== 'string' || !FINGERPRINT_KEY_HEX.test(keyHex)) {
       throw new TransactionalMailConfigError(
-        `Worker Secret ${FINGERPRINT_KEYRING_ENV}: khoa cua profile "${tag}" ` +
-          'phai la 64 ky tu hex chu thuong',
+        `Worker Secret ${FINGERPRINT_KEYRING_ENV}: the key of profile "${tag}" ` +
+          'must be 64 lowercase hex characters',
       );
     }
     keys.set(tag, hexToBytes(keyHex));
@@ -621,25 +621,25 @@ function parseSkewSeconds(raw: unknown): number {
   }
   if (typeof raw !== 'string') {
     throw new TransactionalMailConfigError(
-      `Worker Secret ${INTERNAL_AUTH_SKEW_ENV} phai la chuoi chu so thap phan`,
+      `Worker Secret ${INTERNAL_AUTH_SKEW_ENV} must be a decimal-digit string`,
     );
   }
   if (!/^\d+$/u.test(raw)) {
     // ⚠️ `Number('1e3')`, `Number(' 300 ')`, `Number('300.0')` đều ra một số hợp lệ trong
     // JS — regex mới chặn được mọi dạng mà `Number()` âm thầm chấp nhận.
     throw new TransactionalMailConfigError(
-      `Worker Secret ${INTERNAL_AUTH_SKEW_ENV} phai la chuoi chu so thap phan`,
+      `Worker Secret ${INTERNAL_AUTH_SKEW_ENV} must be a decimal-digit string`,
     );
   }
   const parsed = Number(raw);
   if (parsed < MIN_SKEW_SECONDS) {
     throw new TransactionalMailConfigError(
-      `Worker Secret ${INTERNAL_AUTH_SKEW_ENV} phai >= ${MIN_SKEW_SECONDS} giay`,
+      `Worker Secret ${INTERNAL_AUTH_SKEW_ENV} must be >= ${MIN_SKEW_SECONDS} seconds`,
     );
   }
   if (parsed > MAX_SKEW_SECONDS) {
     throw new TransactionalMailConfigError(
-      `Worker Secret ${INTERNAL_AUTH_SKEW_ENV} vuot tran ${MAX_SKEW_SECONDS} giay`,
+      `Worker Secret ${INTERNAL_AUTH_SKEW_ENV} exceeds the ${MAX_SKEW_SECONDS}-second ceiling`,
     );
   }
   return parsed;
@@ -663,7 +663,7 @@ function parseAllowedHosts(raw: unknown): readonly string[] {
   }
   if (typeof raw !== 'string') {
     throw new TransactionalMailConfigError(
-      `Var ${TEMPLATE_URL_ALLOWED_HOSTS_ENV} phai la chuoi hostname phan tach bang dau phay`,
+      `Var ${TEMPLATE_URL_ALLOWED_HOSTS_ENV} must be a comma-separated hostname list`,
     );
   }
   const hosts: string[] = [];
@@ -693,23 +693,23 @@ function requirePositiveInteger(env: TransactionalMailEnv, variableName: string)
   const raw = env[variableName];
   if (raw === undefined || raw === '') {
     throw new TransactionalMailConfigError(
-      `Worker Secret ${variableName} chua duoc dat; operational value khong co gia tri mac dinh`,
+      `Worker Secret ${variableName} is not set; operational values have no default`,
     );
   }
   if (typeof raw !== 'string') {
     throw new TransactionalMailConfigError(
-      `Worker Secret ${variableName} phai la chuoi chu so thap phan`,
+      `Worker Secret ${variableName} must be a decimal-digit string`,
     );
   }
   if (!/^\d+$/u.test(raw)) {
     throw new TransactionalMailConfigError(
-      `Worker Secret ${variableName} phai la chuoi chu so thap phan`,
+      `Worker Secret ${variableName} must be a decimal-digit string`,
     );
   }
   const parsed = Number(raw);
   if (!Number.isSafeInteger(parsed) || parsed < 1) {
     throw new TransactionalMailConfigError(
-      `Worker Secret ${variableName} phai la so nguyen duong (>= 1)`,
+      `Worker Secret ${variableName} must be a positive integer (>= 1)`,
     );
   }
   return parsed;

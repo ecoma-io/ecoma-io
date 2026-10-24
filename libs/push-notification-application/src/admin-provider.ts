@@ -191,7 +191,7 @@ export function validateWebPushConfiguration(
       return {
         ok: false,
         reason: ADMIN_REJECTION.ConfigurationInvalid,
-        detail: `configuration không được chứa khoá secret \`${forbidden}\` — đó là phần của credential, không phải configuration.`,
+        detail: `configuration must not contain the secret key \`${forbidden}\` — it is part of the credential, not the configuration.`,
       };
     }
   }
@@ -209,7 +209,7 @@ export function validateWebPushConfiguration(
     ok: false,
     reason: ADMIN_REJECTION.ConfigurationInvalid,
     detail:
-      'configuration phải chứa một trong `vapidSubject`/`vapid_subject`/`subject` là string không rỗng (claim `sub` của JWT VAPID).',
+      'configuration must contain one of `vapidSubject`/`vapid_subject`/`subject` as a non-empty string (the `sub` claim of the VAPID JWT).',
   };
 }
 
@@ -230,7 +230,7 @@ export function validateConfigurationForProviderType(
   return {
     ok: false,
     reason: ADMIN_REJECTION.ConfigurationInvalid,
-    detail: 'configuration được định nghĩa schema chỉ cho provider type `web-push` ở v1.',
+    detail: 'configuration has a schema defined only for the `web-push` provider type in v1.',
   };
 }
 
@@ -279,7 +279,8 @@ export async function createProvider(
     return {
       ok: false,
       reason: ADMIN_REJECTION.StateMismatch,
-      detail: 'Tuyên bố primary là operation riêng — tạo provider trước, rồi tuyên bố primary sau.',
+      detail:
+        'Claiming primary is a separate operation — create the provider first, then claim primary.',
     };
   }
 
@@ -321,7 +322,7 @@ export async function createProvider(
       return {
         ok: false,
         reason: mapping.reason,
-        detail: `provider ${created.providerId} đã tạo nhưng tuyên bố primary thất bại: ${mapping.detail}`,
+        detail: `provider ${created.providerId} was created but the primary claim failed: ${mapping.detail}`,
       };
     }
   }
@@ -369,7 +370,7 @@ export async function getProvider(
     return {
       ok: false,
       reason: ADMIN_REJECTION.ProviderNotFound,
-      detail: 'Provider không tồn tại trong app này.',
+      detail: 'The provider does not exist in this app.',
     };
   }
   return { ok: true, value: provider };
@@ -426,7 +427,7 @@ export async function updateProvider(
     return {
       ok: false,
       reason: ADMIN_REJECTION.ProviderNotFound,
-      detail: 'Provider không tồn tại trong app này.',
+      detail: 'The provider does not exist in this app.',
     };
   }
   await appendAudit(
@@ -486,7 +487,7 @@ export async function setProviderStatus(
     return {
       ok: false,
       reason: ADMIN_REJECTION.ProviderHeld,
-      detail: 'Provider đang emergency hold — phải release hold trước khi enable.',
+      detail: 'The provider is under emergency hold — release the hold before enabling.',
     };
   }
 
@@ -519,7 +520,7 @@ export async function setProviderStatus(
     return {
       ok: false,
       reason: ADMIN_REJECTION.StateMismatch,
-      detail: 'Trạng thái provider đã đổi sau khi đọc — thao tác không được áp dụng.',
+      detail: 'The provider state changed after it was read — the operation is not applied.',
     };
   }
 
@@ -609,7 +610,7 @@ async function applyHold(
     return {
       ok: false,
       reason: ADMIN_REJECTION.StateMismatch,
-      detail: 'Trạng thái hold đã đổi sau khi đọc — thao tác không được áp dụng.',
+      detail: 'The hold state changed after it was read — the operation is not applied.',
     };
   }
 
@@ -673,7 +674,7 @@ export async function claimProviderPrimary(
     return {
       ok: false,
       reason: target.emergencyHold ? ADMIN_REJECTION.ProviderHeld : ADMIN_REJECTION.StateMismatch,
-      detail: 'Provider không eligible — không thể là primary của scope.',
+      detail: 'The provider is not eligible — it cannot be the primary of the scope.',
     };
   }
 
@@ -689,7 +690,7 @@ export async function claimProviderPrimary(
     return {
       ok: false,
       reason: ADMIN_REJECTION.StateMismatch,
-      detail: `Scope đã có provider eligible khác (${remaining.provider.providerId}) — tuyên bố primary lúc này sẽ tạo ambiguity.`,
+      detail: `The scope already has another eligible provider (${remaining.provider.providerId}) — claiming primary now would create ambiguity.`,
     };
   }
   if (!remaining.ok && remaining.reason !== 'no_provider') {
@@ -699,7 +700,7 @@ export async function claimProviderPrimary(
     return {
       ok: false,
       reason: ADMIN_REJECTION.StateMismatch,
-      detail: `Scope không ở trạng thái có thể tuyên bố primary: ${remaining.reason}.`,
+      detail: `The scope is not in a state where primary can be claimed: ${remaining.reason}.`,
     };
   }
 
@@ -718,7 +719,8 @@ export async function claimProviderPrimary(
     return {
       ok: false,
       reason: ADMIN_REJECTION.StateMismatch,
-      detail: 'Tuyên bố primary bị index chặn — scope đã có admin khác tuyên bố trước.',
+      detail:
+        'The primary claim was blocked by an index — another admin already claimed the scope.',
     };
   }
 
@@ -815,7 +817,7 @@ export async function rotateCredential(
       ok: false,
       reason: ADMIN_REJECTION.VapidKeyPairMismatch,
       detail:
-        'public_key không khớp cặp khoá mà private_key ký được — dùng đúng cặp VAPID của `vapid_key_id` mới.',
+        'public_key does not match the key pair that private_key signs with — use the exact VAPID key pair of the new `vapid_key_id`.',
     };
   }
 
@@ -1156,7 +1158,7 @@ export async function runProviderTest(
         providerId: command.providerId,
         subscriptionId: command.subscriptionId,
         durationMs: 0,
-        detail: 'Target subscription khác transport mà provider phục vụ.',
+        detail: 'The target subscription uses a transport the provider does not serve.',
       },
     };
   }
@@ -1189,8 +1191,8 @@ export async function runProviderTest(
         durationMs: 0,
         detail:
           credential === null
-            ? 'Không resolve được credential cho vapid_key_id của target.'
-            : 'Credential của vapid_key_id của target đang ở trạng thái compromised.',
+            ? 'The credential for the target vapid_key_id could not be resolved.'
+            : 'The credential of the target vapid_key_id is in the compromised state.',
       },
     };
   }
@@ -1226,7 +1228,7 @@ export async function runProviderTest(
         providerId: command.providerId,
         subscriptionId: command.subscriptionId,
         durationMs: 0,
-        detail: 'Credential không giải mã được bằng keyring hiện tại.',
+        detail: 'The credential cannot be decrypted with the current keyring.',
       },
     };
   }
@@ -1259,7 +1261,7 @@ export async function runProviderTest(
         providerId: command.providerId,
         subscriptionId: command.subscriptionId,
         durationMs,
-        detail: 'Provider nhận test delivery.',
+        detail: 'The provider received the test delivery.',
       }
     : {
         result: probeOutcome.classification,
@@ -1312,14 +1314,14 @@ function checkProviderScope(
     return {
       ok: false,
       reason: ADMIN_REJECTION.ProviderNotFound,
-      detail: 'Provider không tồn tại.',
+      detail: 'The provider does not exist.',
     };
   }
   if (provider.app !== app) {
     return {
       ok: false,
       reason: ADMIN_REJECTION.AppMismatch,
-      detail: 'Provider thuộc app khác — FR-007 cấm dùng chéo app.',
+      detail: 'The provider belongs to another app — FR-007 forbids cross-app use.',
     };
   }
   return null;
@@ -1346,8 +1348,8 @@ function checkProviderScopeSupport(
     ok: false,
     reason: ADMIN_REJECTION.UnsupportedProviderScope,
     detail:
-      `Provider nằm ngoài scope thực thi v1 — control plane chỉ thực thi ` +
-      `type "${V1_EXECUTABLE_PROVIDER_TYPE}" với transport "${V1_EXECUTABLE_TRANSPORT}".`,
+      `Provider is outside the v1 execution scope — the control plane only executes ` +
+      `type "${V1_EXECUTABLE_PROVIDER_TYPE}" with transport "${V1_EXECUTABLE_TRANSPORT}".`,
   };
 }
 
@@ -1436,7 +1438,8 @@ async function checkEnablePreconditions(
     return {
       ok: false,
       reason: ADMIN_REJECTION.CredentialMissing,
-      detail: 'Provider chưa có credential `active` — không thể ký JWT VAPID cho subscription.',
+      detail:
+        'The provider has no `active` credential — the VAPID JWT for the subscription cannot be signed.',
     };
   }
 
@@ -1451,7 +1454,7 @@ async function checkEnablePreconditions(
       ok: false,
       reason: ADMIN_REJECTION.CredentialDecryptionFailed,
       detail:
-        'Credential `active` không giải mã được bằng root key version hiện tại — kiểm tra keyring.',
+        'The `active` credential cannot be decrypted with the current root key version — check the keyring.',
     };
   }
   return null;
@@ -1472,14 +1475,14 @@ function checkSubscriptionScope(
     return {
       ok: false,
       reason: ADMIN_REJECTION.SubscriptionNotFound,
-      detail: 'Subscription không tồn tại.',
+      detail: 'The subscription does not exist.',
     };
   }
   if (subscription.app !== app) {
     return {
       ok: false,
       reason: ADMIN_REJECTION.AppMismatch,
-      detail: 'Subscription thuộc app khác — FR-007 cấm dùng chéo app.',
+      detail: 'The subscription belongs to another app — FR-007 forbids cross-app use.',
     };
   }
   return null;
@@ -1549,7 +1552,7 @@ export async function listVapidPublicKeys(
     return {
       ok: false,
       reason: ADMIN_REJECTION.ProviderNotFound,
-      detail: 'Provider không tồn tại trong app này.',
+      detail: 'The provider does not exist in this app.',
     };
   }
   const credentials = await deps.ports.providerCredentials.listByProvider(

@@ -146,14 +146,14 @@ function readD1BindingName(): string {
   const first = config.d1_databases?.[0];
   if (first === undefined) {
     throw new Error(
-      'wrangler.jsonc không khai `d1_databases` — test không biết dùng database nào.',
+      'wrangler.jsonc does not declare `d1_databases` — the test cannot tell which database to use.',
     );
   }
   // ⚠️ Assert **một** binding: một app với hai D1 nghĩa là test chọn nhầm database và mọi
   // assertion vẫn xanh trong khi chạy trên storage không phải storage của control plane.
   if ((config.d1_databases?.length ?? 0) > 1) {
     throw new Error(
-      `wrangler.jsonc khai ${config.d1_databases?.length} D1; test chỉ hỗ trợ đúng một.`,
+      `wrangler.jsonc declares ${config.d1_databases?.length} D1 databases; the test supports exactly one.`,
     );
   }
   return first.binding;
@@ -210,7 +210,9 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   });
   const db = proxy.env[binding];
   if (db === undefined) {
-    throw new Error(`wrangler.jsonc khai binding \`${binding}\` nhưng proxy không cấp binding đó.`);
+    throw new Error(
+      `wrangler.jsonc declares binding \`${binding}\` but the proxy does not provide it.`,
+    );
   }
 
   // ⚠️ `batch` — **không** `exec` từng statement: `db.batch()` là transaction duy nhất của

@@ -409,7 +409,7 @@ describe('mid-flow state changes — issuance controls stay closed', () => {
       expect(grants).toHaveLength(1);
       const grantId = grants[0]?.id;
       if (grantId === undefined) {
-        throw new Error('decide khong de lai grant active');
+        throw new Error('decide did not leave the grant active');
       }
 
       // (2) Grant bị revoke giữa decide và thời điểm cấp code — KHÔNG có kiện

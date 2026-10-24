@@ -154,7 +154,7 @@ async function withFrozenTime<T>(fake: number, body: () => Promise<T>): Promise<
   }
 }
 
-describe('verifyAccessToken — happy path và matrix 401', () => {
+describe('verifyAccessToken — happy path and 401 matrix', () => {
   it('verifies a contract-conformant token and returns the sub', async () => {
     const token = await signAccessToken(primaryKey.privateKey as CryptoKey, PRIMARY_KID);
     const result = await verifyAccessToken(token, config());
@@ -218,7 +218,7 @@ describe('verifyAccessToken — happy path và matrix 401', () => {
   });
 });
 
-describe('verifyAccessToken — JWKS unavailable là 503, không phải 401', () => {
+describe('verifyAccessToken — JWKS unavailable is 503, not 401', () => {
   it('returns unavailable when the JWKS endpoint does not answer', async () => {
     // Port không có listener — fetch chết ngay. ⚠️ Token phải là JWT có header
     // parse được: lỗi parse (`JWSInvalid`) đến **trước** fetch JWKS và là
@@ -242,7 +242,7 @@ describe('verifyAccessToken — JWKS unavailable là 503, không phải 401', ()
  * `isFreshFor` của `jose` đọc `Date.now`) qua `withFrozenTime`, và đếm số lần
  * fetch thật ở fake server qua biến `jwksFetchCount`.
  */
-describe('verifyAccessToken — kid lạ: cooldown chặn re-fetch, hết cooldown thì fetch', () => {
+describe('verifyAccessToken — unknown kid: cooldown blocks re-fetch, fetch after cooldown', () => {
   /** Mốc "đã qua cả TTL lẫn cooldown" so với thời điểm gọi. */
   const PAST_ALL_WINDOWS_MS = JWKS_CACHE_TTL_SECONDS * 1000 + 60_000;
 

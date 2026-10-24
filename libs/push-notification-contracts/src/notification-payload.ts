@@ -72,7 +72,7 @@ export type NotificationPayloadValidation =
  */
 export function validateNotificationPayload(payload: unknown): NotificationPayloadValidation {
   if (!isPlainObject(payload)) {
-    return { ok: false, reason: 'invalid_payload', detail: 'payload phải là object JSON.' };
+    return { ok: false, reason: 'invalid_payload', detail: 'The payload must be a JSON object.' };
   }
   const record = payload;
 
@@ -83,18 +83,26 @@ export function validateNotificationPayload(payload: unknown): NotificationPaylo
 
   for (const field of REQUIRED_NOTIFICATION_PAYLOAD_FIELDS) {
     if (!Object.hasOwn(record, field)) {
-      return { ok: false, reason: 'missing_field', detail: `payload thiếu khoá: ${field}.` };
+      return {
+        ok: false,
+        reason: 'missing_field',
+        detail: `the payload is missing key: ${field}.`,
+      };
     }
   }
 
   if (typeof record.title !== 'string') {
-    return { ok: false, reason: 'invalid_field_type', detail: 'title phải là string.' };
+    return { ok: false, reason: 'invalid_field_type', detail: 'title must be a string.' };
   }
   if (typeof record.body !== 'string') {
-    return { ok: false, reason: 'invalid_field_type', detail: 'body phải là string.' };
+    return { ok: false, reason: 'invalid_field_type', detail: 'body must be a string.' };
   }
   if (Object.hasOwn(record, 'url') && typeof record.url !== 'string') {
-    return { ok: false, reason: 'invalid_field_type', detail: 'url phải là string khi có mặt.' };
+    return {
+      ok: false,
+      reason: 'invalid_field_type',
+      detail: 'url must be a string when present.',
+    };
   }
 
   const basePayload: NotificationPayload = {
@@ -109,7 +117,7 @@ export function validateNotificationPayload(payload: unknown): NotificationPaylo
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'data phải là object JSON không phải mảng khi có mặt.',
+      detail: 'data must be a JSON object, not an array, when present.',
     };
   }
 
@@ -121,7 +129,7 @@ export function validateNotificationPayload(payload: unknown): NotificationPaylo
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: `data chứa giá trị không tương thích JSON: ${copied.kind}.`,
+      detail: `data contains a JSON-incompatible value: ${copied.kind}.`,
     };
   }
 

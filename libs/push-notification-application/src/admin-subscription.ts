@@ -91,7 +91,7 @@ export async function disableSubscriptionByAdmin(
     return {
       ok: false,
       reason: ADMIN_REJECTION.StateMismatch,
-      detail: 'Trạng thái subscription đã đổi sau khi đọc — thao tác không được áp dụng.',
+      detail: 'The subscription state changed after it was read — the operation is not applied.',
     };
   }
 
@@ -145,7 +145,7 @@ export async function removeSubscriptionByAdmin(
       ok: false,
       reason: ADMIN_REJECTION.StateMismatch,
       detail:
-        'Subscription không ở trạng thái có thể revoke — có thể đã bị disable bởi nguyên nhân khác.',
+        'The subscription is not in a state that can be revoked — it may already have been disabled by another cause.',
     };
   }
 
@@ -180,14 +180,14 @@ export async function deleteProviderByAdmin(
     return {
       ok: false,
       reason: ADMIN_REJECTION.ProviderNotFound,
-      detail: 'Provider không tồn tại.',
+      detail: 'The provider does not exist.',
     };
   }
   if (provider.app !== input.app) {
     return {
       ok: false,
       reason: ADMIN_REJECTION.AppMismatch,
-      detail: 'Provider thuộc app khác — FR-007 cấm dùng chéo app.',
+      detail: 'The provider belongs to another app — FR-007 forbids cross-app use.',
     };
   }
 
@@ -205,7 +205,7 @@ export async function deleteProviderByAdmin(
     return {
       ok: false,
       reason: ADMIN_REJECTION.StateMismatch,
-      detail: 'Trạng thái provider đã đổi sau khi đọc — thao tác không được áp dụng.',
+      detail: 'The provider state changed after it was read — the operation is not applied.',
     };
   }
 
@@ -233,14 +233,14 @@ function checkScope(
     return {
       ok: false,
       reason: ADMIN_REJECTION.SubscriptionNotFound,
-      detail: 'Subscription không tồn tại.',
+      detail: 'The subscription does not exist.',
     };
   }
   if (subscription.app !== app) {
     return {
       ok: false,
       reason: ADMIN_REJECTION.AppMismatch,
-      detail: 'Subscription thuộc app khác — FR-007 cấm dùng chéo app.',
+      detail: 'The subscription belongs to another app — FR-007 forbids cross-app use.',
     };
   }
   return null;

@@ -83,7 +83,7 @@ export function isAccountStatusResponseValue(value: unknown): value is AccountSt
  */
 export function validateAccountStatusResponse(payload: unknown): AccountStatusValidation {
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
-    return { ok: false, reason: 'invalid_payload', detail: 'Response phải là object.' };
+    return { ok: false, reason: 'invalid_payload', detail: 'Response must be an object.' };
   }
   const record = payload as Record<string, unknown>;
 
@@ -92,7 +92,7 @@ export function validateAccountStatusResponse(payload: unknown): AccountStatusVa
       return {
         ok: false,
         reason: 'forbidden_field',
-        detail: `Response chứa trường định danh bị cấm: ${field}.`,
+        detail: `Response contains a forbidden identifier field: ${field}.`,
       };
     }
   }
@@ -104,7 +104,7 @@ export function validateAccountStatusResponse(payload: unknown): AccountStatusVa
       return {
         ok: false,
         reason: 'forbidden_field',
-        detail: `Response chứa trường ngoài contract: ${key}.`,
+        detail: `Response contains a field outside the contract: ${key}.`,
       };
     }
   }
@@ -113,7 +113,7 @@ export function validateAccountStatusResponse(payload: unknown): AccountStatusVa
     return {
       ok: false,
       reason: 'unknown_status',
-      detail: `status không thuộc tập hợp: ${String(record.status)}`,
+      detail: `status is outside the allowed set: ${String(record.status)}`,
     };
   }
 

@@ -204,7 +204,7 @@ describe.skipIf(!dockerAvailable)('self-elevation guard on db-backoffice (0004)'
            VALUES ($1, 'role_reader', $1)`,
           [ACTOR],
         ),
-      ).rejects.toThrow(/khong duoc tu gan role cho chinh minh/u);
+      ).rejects.toThrow(/must not grant a role to themselves/u);
     } finally {
       await runtime.end();
     }
@@ -227,7 +227,7 @@ describe.skipIf(!dockerAvailable)('self-elevation guard on db-backoffice (0004)'
            VALUES ($1, 'sys_reader', $2)`,
           [OTHER_STAFF, ACTOR],
         ),
-      ).rejects.toThrow(/khong duoc gan system-defined role/u);
+      ).rejects.toThrow(/must not grant a system-defined role/u);
     } finally {
       await runtime.end();
     }
@@ -249,7 +249,7 @@ describe.skipIf(!dockerAvailable)('self-elevation guard on db-backoffice (0004)'
           `INSERT INTO backoffice.role_assignments (staff_sub, role_id) VALUES ($1, 'role_reader')`,
           [OTHER_STAFF],
         ),
-      ).rejects.toThrow(/phai khai bao actor/u);
+      ).rejects.toThrow(/must declare an actor/u);
     } finally {
       await runtime.end();
     }
@@ -271,7 +271,7 @@ describe.skipIf(!dockerAvailable)('self-elevation guard on db-backoffice (0004)'
            VALUES ($1, 'role_reader', 'actor-with-a-payload')`,
           [OTHER_STAFF],
         ),
-      ).rejects.toThrow(/created_by_sub phai la Account ID dung dinh dang/u);
+      ).rejects.toThrow(/created_by_sub must be a well-formed Account ID/u);
     } finally {
       await runtime.end();
     }
@@ -323,7 +323,7 @@ describe.skipIf(!dockerAvailable)('self-elevation guard on db-backoffice (0004)'
             WHERE staff_sub = $1`,
           [OTHER_STAFF],
         ),
-      ).rejects.toThrow(/khong duoc thay doi revoked_at\/valid_until/u);
+      ).rejects.toThrow(/must not change revoked_at\/valid_until/u);
     } finally {
       await runtime.end();
     }
@@ -353,7 +353,7 @@ describe.skipIf(!dockerAvailable)('self-elevation guard on db-backoffice (0004)'
             WHERE staff_sub = $1`,
           [OTHER_STAFF],
         ),
-      ).rejects.toThrow(/khong duoc thay doi revoked_at\/valid_until/u);
+      ).rejects.toThrow(/must not change revoked_at\/valid_until/u);
     } finally {
       await runtime.end();
     }
@@ -377,7 +377,7 @@ describe.skipIf(!dockerAvailable)('self-elevation guard on db-backoffice (0004)'
             WHERE staff_sub = $1`,
           [OTHER_STAFF],
         ),
-      ).rejects.toThrow(/khong duoc thay doi revoked_at\/valid_until/u);
+      ).rejects.toThrow(/must not change revoked_at\/valid_until/u);
     } finally {
       await runtime.end();
     }
@@ -401,7 +401,7 @@ describe.skipIf(!dockerAvailable)('self-elevation guard on db-backoffice (0004)'
             WHERE staff_sub = $1`,
           [OTHER_STAFF],
         ),
-      ).rejects.toThrow(/khong duoc thay doi revoked_at\/valid_until/u);
+      ).rejects.toThrow(/must not change revoked_at\/valid_until/u);
     } finally {
       await runtime.end();
     }
@@ -426,7 +426,7 @@ describe.skipIf(!dockerAvailable)('self-elevation guard on db-backoffice (0004)'
       );
       await expect(
         runtime.query(`UPDATE backoffice.role_assignments SET role_id = 'sys_reader'`),
-      ).rejects.toThrow(/khong duoc gan system-defined role/u);
+      ).rejects.toThrow(/must not grant a system-defined role/u);
     } finally {
       await runtime.end();
     }
@@ -463,7 +463,7 @@ describe.skipIf(!dockerAvailable)('self-elevation guard on db-backoffice (0004)'
            VALUES ('role_reader', 'delivery.retired', $1)`,
           [ACTOR],
         ),
-      ).rejects.toThrow(/chi duoc gan permission dang active/u);
+      ).rejects.toThrow(/may only grant permissions that are active/u);
     } finally {
       await runtime.end();
     }
@@ -482,7 +482,7 @@ describe.skipIf(!dockerAvailable)('self-elevation guard on db-backoffice (0004)'
            VALUES ('role_reader', 'delivery.invented', $1)`,
           [ACTOR],
         ),
-      ).rejects.toThrow(/chi duoc gan permission dang active/u);
+      ).rejects.toThrow(/may only grant permissions that are active/u);
     } finally {
       await runtime.end();
     }
@@ -504,7 +504,7 @@ describe.skipIf(!dockerAvailable)('self-elevation guard on db-backoffice (0004)'
            VALUES ('sys_reader', 'staff.read', $1)`,
           [ACTOR],
         ),
-      ).rejects.toThrow(/khong duoc gan permission vao system-defined role/u);
+      ).rejects.toThrow(/must not add permissions to a system-defined role/u);
     } finally {
       await runtime.end();
     }
@@ -525,7 +525,7 @@ describe.skipIf(!dockerAvailable)('self-elevation guard on db-backoffice (0004)'
           `INSERT INTO backoffice.role_permissions (role_id, permission_id)
            VALUES ('role_reader', 'staff.read')`,
         ),
-      ).rejects.toThrow(/phai khai bao actor/u);
+      ).rejects.toThrow(/must declare an actor/u);
     } finally {
       await runtime.end();
     }
@@ -548,7 +548,7 @@ describe.skipIf(!dockerAvailable)('self-elevation guard on db-backoffice (0004)'
           `INSERT INTO backoffice.role_permissions (role_id, permission_id, created_by_sub)
            VALUES ('role_reader', 'staff.read', 'actor-with-a-payload')`,
         ),
-      ).rejects.toThrow(/created_by_sub phai la Account ID dung dinh dang/u);
+      ).rejects.toThrow(/created_by_sub must be a well-formed Account ID/u);
     } finally {
       await runtime.end();
     }
@@ -602,7 +602,7 @@ describe.skipIf(!dockerAvailable)('self-elevation guard on db-backoffice (0004)'
           `DELETE FROM backoffice.role_permissions
            WHERE role_id = 'sys_reader' AND permission_id = 'staff.read'`,
         ),
-      ).rejects.toThrow(/khong duoc xoa permission khoi/u);
+      ).rejects.toThrow(/must not remove permissions from/u);
     } finally {
       await runtime.end();
     }
@@ -632,7 +632,7 @@ describe.skipIf(!dockerAvailable)('self-elevation guard on db-backoffice (0004)'
           `DELETE FROM backoffice.role_permissions
            WHERE role_id = 'role_reader' AND permission_id = 'staff.read'`,
         ),
-      ).rejects.toThrow(/khong duoc xoa permission khoi/u);
+      ).rejects.toThrow(/must not remove permissions from/u);
     } finally {
       await runtime.end();
     }

@@ -65,7 +65,7 @@ export function validateV1ExecutionTransport(transport: unknown): ExecutionScope
   return {
     ok: false,
     reason: 'unsupported_transport',
-    detail: `transport nằm ngoài scope thực thi v1 — worker chỉ thực thi "${V1_EXECUTABLE_TRANSPORT}".`,
+    detail: `transport is outside the v1 execution scope — the worker only executes "${V1_EXECUTABLE_TRANSPORT}".`,
   };
 }
 
@@ -94,7 +94,7 @@ export function validateV1ExecutionMaterialScope(input: {
   return {
     ok: false,
     reason: 'unsupported_provider_type',
-    detail: `provider.type nằm ngoài scope thực thi v1 — worker chỉ thực thi "${V1_EXECUTABLE_PROVIDER_TYPE}".`,
+    detail: `provider.type is outside the v1 execution scope — the worker only executes "${V1_EXECUTABLE_PROVIDER_TYPE}".`,
   };
 }
 
@@ -166,9 +166,9 @@ function reflectIsArray(value: object): Reflection<boolean> {
 }
 
 /** Chi tiết hằng cho diagnostic khi trap của Proxy ném — không lấy gì từ đầu vào. */
-const HOSTILE_REFLECTION_DETAIL = 'object ném exception khi phản chiếu (Proxy trap).';
+const HOSTILE_REFLECTION_DETAIL = 'object threw an exception during reflection (Proxy trap).';
 /** `kind` hằng của `copyJsonCompatible` cho cùng trường hợp trên. */
-const HOSTILE_REFLECTION_KIND = 'object ném lỗi khi phản chiếu (Proxy trap)';
+const HOSTILE_REFLECTION_KIND = 'object threw during reflection (Proxy trap)';
 /** `field` hằng khi không có field nào để nêu — chuỗi này không lấy từ đầu vào. */
 const HOSTILE_REFLECTION_FIELD = '[reflection-error]';
 
@@ -327,7 +327,7 @@ export function scanJsonDataObject(
     return {
       ok: false,
       reason: 'invalid_payload',
-      detail: `${label} phải là object JSON.`,
+      detail: `${label} must be a JSON object.`,
       field: HOSTILE_REFLECTION_FIELD,
     };
   }
@@ -342,7 +342,7 @@ export function scanJsonDataObject(
       return {
         ok: false,
         reason: 'invalid_payload',
-        detail: `${label}: symbol key không phải JSON key ([non-string-key]).`,
+        detail: `${label}: symbol key is not a JSON key ([non-string-key]).`,
         field: '[non-string-key]',
       };
     }
@@ -351,7 +351,7 @@ export function scanJsonDataObject(
       return {
         ok: false,
         reason: 'unexpected_field',
-        detail: `${label} chứa field ngoài contract: ${field}.`,
+        detail: `${label} contains a field outside the contract: ${field}.`,
         field,
       };
     }
@@ -371,7 +371,7 @@ export function scanJsonDataObject(
       return {
         ok: false,
         reason: 'invalid_payload',
-        detail: `${label}: field ${field} là getter/setter — object JSON chỉ có data property.`,
+        detail: `${label}: field ${field} is a getter/setter — a JSON object has data properties only.`,
         field,
       };
     }
@@ -380,7 +380,7 @@ export function scanJsonDataObject(
       return {
         ok: false,
         reason: 'invalid_payload',
-        detail: `${label}: field ${field} là non-enumerable — JSON.stringify sẽ bỏ nó âm thầm.`,
+        detail: `${label}: field ${field} is non-enumerable — JSON.stringify would drop it silently.`,
         field,
       };
     }
@@ -452,7 +452,7 @@ export type JsonCompatibleCopy =
   | { readonly ok: false; readonly kind: string };
 
 /** `kind` khi engine hết stack giữa lúc copy — cùng giới hạn mà `JSON.stringify` cũng có. */
-const TOO_DEEP_KIND = 'vượt độ sâu JSON mà engine serialize được';
+const TOO_DEEP_KIND = 'exceeds the JSON depth the engine can serialize';
 
 /**
  * Kiểm tính tương thích JSON **và** tạo bản sao độc lập trong **một** lần duyệt (A2 + A4).
@@ -518,7 +518,7 @@ function copyJsonCompatibleValue(value: unknown, seen: Set<object>): JsonCompati
   if (typeof value === 'number') {
     return Number.isFinite(value)
       ? { ok: true, value }
-      : { ok: false, kind: 'số không hữu hạn (NaN/Infinity)' };
+      : { ok: false, kind: 'non-finite number (NaN/Infinity)' };
   }
   if (typeof value === 'undefined') {
     return { ok: false, kind: 'undefined' };
@@ -536,7 +536,7 @@ function copyJsonCompatibleValue(value: unknown, seen: Set<object>): JsonCompati
   // Object: đã qua mọi nhánh primitive nên đây là object thật.
   const object: object = value;
   if (seen.has(object)) {
-    return { ok: false, kind: 'vòng tham chiếu (circular reference)' };
+    return { ok: false, kind: 'circular reference' };
   }
 
   const isArray = reflectIsArray(object);
@@ -559,7 +559,7 @@ function copyJsonCompatibleValue(value: unknown, seen: Set<object>): JsonCompati
     }
     const lengthValue: unknown = reflectedLength.value.value;
     if (typeof lengthValue !== 'number') {
-      return { ok: false, kind: 'mảng không có length số' };
+      return { ok: false, kind: 'array without a numeric length' };
     }
     const arrayLength = lengthValue;
     for (const key of reflectedArrayKeys.value) {
@@ -567,11 +567,11 @@ function copyJsonCompatibleValue(value: unknown, seen: Set<object>): JsonCompati
         continue;
       }
       if (typeof key !== 'string') {
-        return { ok: false, kind: 'symbol key trong mảng' };
+        return { ok: false, kind: 'symbol key in array' };
       }
       const index = Number(key);
       if (!Number.isInteger(index) || index < 0 || String(index) !== key || index >= arrayLength) {
-        return { ok: false, kind: 'field ngoài chỉ số trong mảng' };
+        return { ok: false, kind: 'out-of-index field in array' };
       }
       const reflectedElement = reflectDescriptor(object, key);
       if (!reflectedElement.ok) {
@@ -585,7 +585,7 @@ function copyJsonCompatibleValue(value: unknown, seen: Set<object>): JsonCompati
         return { ok: false, kind: 'getter/setter' };
       }
       if (!descriptor.enumerable) {
-        return { ok: false, kind: 'field non-enumerable trong mảng' };
+        return { ok: false, kind: 'non-enumerable field in array' };
       }
       const copied = copyJsonCompatibleValue(descriptor.value, seen);
       if (!copied.ok) {
@@ -595,7 +595,7 @@ function copyJsonCompatibleValue(value: unknown, seen: Set<object>): JsonCompati
       indexCount += 1;
     }
     if (indexCount !== arrayLength) {
-      return { ok: false, kind: 'mảng sparse (chỗ trống thành null lặng lẽ)' };
+      return { ok: false, kind: 'sparse array (holes silently become null)' };
     }
     seen.delete(object);
     return { ok: true, value: clone };
@@ -610,7 +610,7 @@ function copyJsonCompatibleValue(value: unknown, seen: Set<object>): JsonCompati
     }
     return {
       ok: false,
-      kind: 'object có prototype không phải JSON (Date/Map/Set/class instance)',
+      kind: 'object with a non-JSON prototype (Date/Map/Set/class instance)',
     };
   }
 

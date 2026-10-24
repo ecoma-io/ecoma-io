@@ -125,7 +125,7 @@ function isAcrUrn(value: unknown): value is AcrUrn {
  */
 export function validateSessionVerifiedRequest(payload: unknown): SessionVerifiedValidation {
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
-    return { ok: false, reason: 'invalid_payload', detail: 'Payload phải là object.' };
+    return { ok: false, reason: 'invalid_payload', detail: 'Payload must be an object.' };
   }
   const record = payload as Record<string, unknown>;
 
@@ -134,14 +134,14 @@ export function validateSessionVerifiedRequest(payload: unknown): SessionVerifie
       return {
         ok: false,
         reason: 'forbidden_field',
-        detail: `Payload chứa trường bị cấm: ${field}.`,
+        detail: `Payload contains a forbidden field: ${field}.`,
       };
     }
   }
 
   for (const field of REQUIRED_SESSION_VERIFIED_FIELDS) {
     if (!(field in record)) {
-      return { ok: false, reason: 'missing_field', detail: `Payload thiếu trường: ${field}.` };
+      return { ok: false, reason: 'missing_field', detail: `Payload is missing field: ${field}.` };
     }
   }
 
@@ -149,27 +149,31 @@ export function validateSessionVerifiedRequest(payload: unknown): SessionVerifie
     return {
       ok: false,
       reason: 'invalid_payload',
-      detail: 'acr không phải ACR URN đã khai báo.',
+      detail: 'acr is not a declared ACR URN.',
     };
   }
   if (typeof record.handle !== 'string' || record.handle.length === 0) {
-    return { ok: false, reason: 'invalid_payload', detail: 'handle phải là chuỗi không rỗng.' };
+    return { ok: false, reason: 'invalid_payload', detail: 'handle must be a non-empty string.' };
   }
   if (typeof record.sub !== 'string' || record.sub.length === 0) {
-    return { ok: false, reason: 'invalid_payload', detail: 'sub phải là chuỗi không rỗng.' };
+    return { ok: false, reason: 'invalid_payload', detail: 'sub must be a non-empty string.' };
   }
   if (typeof record.account_session_ref !== 'string' || record.account_session_ref.length === 0) {
     return {
       ok: false,
       reason: 'invalid_payload',
-      detail: 'account_session_ref phải là chuỗi không rỗng.',
+      detail: 'account_session_ref must be a non-empty string.',
     };
   }
   if (typeof record.event_id !== 'string' || record.event_id.length === 0) {
-    return { ok: false, reason: 'invalid_payload', detail: 'event_id phải là chuỗi không rỗng.' };
+    return { ok: false, reason: 'invalid_payload', detail: 'event_id must be a non-empty string.' };
   }
   if (typeof record.authn_at !== 'number' || !Number.isSafeInteger(record.authn_at)) {
-    return { ok: false, reason: 'invalid_payload', detail: 'authn_at phải là epoch ms nguyên.' };
+    return {
+      ok: false,
+      reason: 'invalid_payload',
+      detail: 'authn_at must be an integer epoch ms.',
+    };
   }
 
   return {

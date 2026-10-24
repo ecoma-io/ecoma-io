@@ -203,7 +203,7 @@ describe('consumeQueueBatch mixed batch', () => {
       ...claimWon(),
       claim: async (deliveryId: string) => {
         if (deliveryId === DELIVERY_B) {
-          throw new RuntimeContractError('peer lệch vocabulary', 'unexpected_status');
+          throw new RuntimeContractError('peer vocabulary mismatch', 'unexpected_status');
         }
         return {
           kind: 'won',

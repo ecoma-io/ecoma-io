@@ -181,7 +181,7 @@ describe('PostgresAdapter', () => {
         const gate = stubGate();
         const adapter = new PostgresAdapter('AuthorizationCode', asClient(runtime), gate);
         await expect(adapter.upsert(trackId('adp-ac-noid'), payload, 600)).rejects.toThrow(
-          'thieu accountId/clientId',
+          'is missing accountId/clientId',
         );
         expect(gate.calls).toHaveLength(0);
         const rows = await runtime<{ id: string }[]>`
@@ -221,7 +221,7 @@ describe('PostgresAdapter', () => {
 
     it('consume() on a non-consumable kind throws without writing', async () => {
       const adapter = new PostgresAdapter('Session', asClient(runtime));
-      await expect(adapter.consume('adp-session-x')).rejects.toThrow('khong ap dung');
+      await expect(adapter.consume('adp-session-x')).rejects.toThrow('does not apply');
       const rows = await runtime<{ id: string }[]>`
         SELECT id FROM auth.oidc_state WHERE id = ${'adp-session-x'}
       `;

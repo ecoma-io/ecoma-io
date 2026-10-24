@@ -488,7 +488,7 @@ function requireCurrentKey(keyring: CreateMailMessageConfig['fingerprintKeyring'
   const keyHex = keyring.keysByProfileHex.get(keyring.currentProfile);
   if (keyHex === undefined) {
     throw new Error(
-      `fingerprint keyring thieu khoa cua current profile "${keyring.currentProfile}"`,
+      `fingerprint keyring is missing the key of current profile "${keyring.currentProfile}"`,
     );
   }
 
@@ -497,7 +497,9 @@ function requireCurrentKey(keyring: CreateMailMessageConfig['fingerprintKeyring'
   // `p1.k1`/`p1.k2`…), nên tách đầu và tách cuối cho cùng kết quả; chọn đầu vì rẻ hơn.
   const separator = keyring.currentProfile.indexOf('.');
   if (separator <= 0 || separator === keyring.currentProfile.length - 1) {
-    throw new Error(`fingerprint keyring current profile sai dang "${keyring.currentProfile}"`);
+    throw new Error(
+      `fingerprint keyring current profile has the wrong shape "${keyring.currentProfile}"`,
+    );
   }
 
   return { keyHex, keyTag: keyring.currentProfile.slice(separator + 1) };

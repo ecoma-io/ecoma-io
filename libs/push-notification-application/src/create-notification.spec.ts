@@ -49,7 +49,7 @@ const REQUEST_HASH = 'stable-request-hash';
  * endpoint) và đi vào log của Worker. Thông điệp ở đây chỉ chứa **tên port**.
  */
 function unused(name: string): never {
-  throw new Error(`port không mong đợi đã được gọi: ${name}`);
+  throw new Error(`unexpected port was called: ${name}`);
 }
 
 /** Config hợp lệ cho test — sáu SLA là hằng của test, không phải lựa chọn của service. */
@@ -304,7 +304,7 @@ describe('createNotification — persist race with a concurrent winner (FR-008)'
     const result = await createNotification(fixture.deps, command);
     expect(result.ok).toBe(false);
     if (result.ok) {
-      throw new Error('mong đợi một rejection');
+      throw new Error('expected a rejection');
     }
     // ⚠️ Cùng key + hash khác ⇒ `409` (FR-008) — và **không** trả `notification_id` của
     // request khác: caller không được học id của một request không phải của nó.
@@ -316,7 +316,7 @@ describe('createNotification — persist race with a concurrent winner (FR-008)'
     const result = await createNotification(fixture.deps, command);
     expect(result.ok).toBe(false);
     if (result.ok) {
-      throw new Error('mong đợi một rejection');
+      throw new Error('expected a rejection');
     }
     // ⚠️ Không có record ⇒ đây là storage thật sự, **không** phải race — và `detail` không
     // chứa thông điệp lỗi của D1 (nó có thể mang bind values).
@@ -330,7 +330,7 @@ describe('createNotification — persist race with a concurrent winner (FR-008)'
     const result = await createNotification(fixture.deps, command);
     expect(result.ok).toBe(true);
     if (!result.ok) {
-      throw new Error('mong đợi kết quả thành công');
+      throw new Error('expected a successful result');
     }
     expect(result.replayed).toBe(false);
     expect(result.notificationId).toBe('id-1');

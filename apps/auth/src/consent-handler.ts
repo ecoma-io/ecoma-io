@@ -300,7 +300,7 @@ export async function runConsentDecide(params: {
         now,
       });
       if (consumed === undefined) {
-        throw new ConsentRaceError('handle_y da duoc tieu thu');
+        throw new ConsentRaceError('handle_y has already been consumed');
       }
       // (3) Audit + grant — cùng tx, cùng sự kiện. Khác các audit "fire-and-forget"
       // ở session-verified-handler: quyết định consent là MỘT sự kiện state machine
@@ -380,7 +380,7 @@ async function replayOrReject(
   if (committedDecision === undefined) {
     return {
       status: 422,
-      body: { error: 'invalid_grant', error_description: 'handle da duoc tieu thu' },
+      body: { error: 'invalid_grant', error_description: 'handle has already been consumed' },
     };
   }
   if (committedDecision !== decision) {
@@ -390,7 +390,7 @@ async function replayOrReject(
       status: 422,
       body: {
         error: 'invalid_request',
-        error_description: 'quyet dinh khac da duoc ghi cho handle nay',
+        error_description: 'a different decision has already been recorded for this handle',
       },
     };
   }
@@ -437,13 +437,13 @@ async function decidedResponse(
       handleX: applied.handleX,
       result: {
         error: 'access_denied',
-        error_description: 'user tu choi consent',
+        error_description: 'user denied consent',
       },
     });
     if (attached === undefined) {
       return {
         status: 422,
-        body: { error: 'server_error', error_description: 'interaction khong tim thay' },
+        body: { error: 'server_error', error_description: 'interaction not found' },
       };
     }
     const body: ConsentDecideResponse = {
@@ -496,7 +496,7 @@ async function decidedResponse(
   if (attached === undefined) {
     return {
       status: 422,
-      body: { error: 'server_error', error_description: 'interaction khong tim thay' },
+      body: { error: 'server_error', error_description: 'interaction not found' },
     };
   }
   const body: ConsentDecideResponse = {

@@ -331,8 +331,8 @@ describe('validateLeaseFencedRejection — closed 409 body', () => {
   });
 
   it('rejects leaseFencedRejection built with mismatched state', () => {
-    expect(() => leaseFencedRejection('terminal')).toThrow(/bắt buộc có state/u);
-    expect(() => leaseFencedRejection('stale_write', 'failed')).toThrow(/không được kèm state/u);
+    expect(() => leaseFencedRejection('terminal')).toThrow(/requires state/u);
+    expect(() => leaseFencedRejection('stale_write', 'failed')).toThrow(/must not include state/u);
   });
 
   // Regress F4 (cùng lý do với `claimRejection`): nhánh `state !== undefined` nối `reason`
@@ -347,7 +347,7 @@ describe('validateLeaseFencedRejection — closed 409 body', () => {
 
     expect(thrown).toBeDefined();
     expect(thrown).not.toContain('FAKE LOG LINE');
-    expect(thrown).toContain('tập đóng');
+    expect(thrown).toContain('closed lease-fenced rejection set');
   });
 
   it('classifies a missing reason as missing, not as an unknown reason', () => {
@@ -474,7 +474,7 @@ describe('write-plane object shape policy (A1)', () => {
   ] as const)('rejects a release request that is %s', (_label, value) => {
     const checked = validateReleaseRequest(value);
     expect(checked.ok).toBe(false);
-    expectRequestRejectedBy(checked, 'invalid_payload', 'object JSON');
+    expectRequestRejectedBy(checked, 'invalid_payload', 'JSON object');
   });
 
   it('rejects a getter on an allowed 409 field without invoking it', () => {

@@ -98,7 +98,11 @@ export function isLeaseFencedRejectionReason(value: unknown): value is LeaseFenc
  */
 export function validateLeaseFencedRejection(payload: unknown): LeaseFencedRejectionValidation {
   if (!isPlainObject(payload)) {
-    return { ok: false, reason: 'invalid_payload', detail: 'Response 409 phải là object JSON.' };
+    return {
+      ok: false,
+      reason: 'invalid_payload',
+      detail: 'The 409 response must be a JSON object.',
+    };
   }
   const record = payload;
 
@@ -116,7 +120,7 @@ export function validateLeaseFencedRejection(payload: unknown): LeaseFencedRejec
       return {
         ok: false,
         reason: 'runtime_material_leak',
-        detail: `Response 409 chứa runtime material bị cấm: ${field}.`,
+        detail: `The 409 response contains forbidden runtime material: ${field}.`,
       };
     }
   }
@@ -131,16 +135,20 @@ export function validateLeaseFencedRejection(payload: unknown): LeaseFencedRejec
   // `reason` của claim và của write **không** bị ép chung (`terminal`/`lease_held`/… so với
   // `stale_write`/`terminal`); chỉ lớp *parse* dùng chung cách phân loại.
   if (!Object.hasOwn(record, 'reason')) {
-    return { ok: false, reason: 'missing_field', detail: 'Response 409 thiếu field: reason.' };
+    return {
+      ok: false,
+      reason: 'missing_field',
+      detail: 'The 409 response is missing field: reason.',
+    };
   }
   if (typeof record.reason !== 'string') {
-    return { ok: false, reason: 'invalid_field_type', detail: 'reason phải là chuỗi.' };
+    return { ok: false, reason: 'invalid_field_type', detail: 'reason must be a string.' };
   }
   if (!isLeaseFencedRejectionReason(record.reason)) {
     return {
       ok: false,
       reason: 'unknown_reason',
-      detail: 'reason không thuộc tập đóng (closed reason set).',
+      detail: 'reason is not in the closed reason set.',
     };
   }
 
@@ -149,14 +157,14 @@ export function validateLeaseFencedRejection(payload: unknown): LeaseFencedRejec
       return {
         ok: false,
         reason: 'state_required',
-        detail: 'Response 409 với reason "terminal" phải kèm state.',
+        detail: 'A 409 response with reason "terminal" must include state.',
       };
     }
     if (!isTerminalDeliveryStatus(record.state)) {
       return {
         ok: false,
         reason: 'invalid_field_type',
-        detail: 'state của reason "terminal" phải là terminal delivery state.',
+        detail: 'The state of reason "terminal" must be a terminal delivery state.',
       };
     }
     return { ok: true, rejection: { reason: 'terminal', state: record.state } };
@@ -166,7 +174,7 @@ export function validateLeaseFencedRejection(payload: unknown): LeaseFencedRejec
     return {
       ok: false,
       reason: 'state_not_allowed',
-      detail: 'Response 409 chỉ được kèm state khi reason là "terminal".',
+      detail: 'A 409 response may include state only when reason is "terminal".',
     };
   }
 
@@ -186,20 +194,22 @@ export function leaseFencedRejection(
   // Cùng lý do với `claimRejection`: kiểm tập ĐÓNG trước khi nối `reason` vào thông điệp
   // lỗi, nên chuỗi do caller kiểm soát (kể cả có xuống dòng) không bao giờ vào log.
   if (!isLeaseFencedRejectionReason(reason)) {
-    throw new Error('leaseFencedRejection: reason phải thuộc tập đóng lease-fenced rejection.');
+    throw new Error(
+      'leaseFencedRejection: reason is not in the closed lease-fenced rejection set.',
+    );
   }
   if (reason === LEASE_FENCED_REASON_WITH_STATE) {
     if (state === undefined) {
-      throw new Error('leaseFencedRejection: reason "terminal" bắt buộc có state.');
+      throw new Error('leaseFencedRejection: reason "terminal" requires state.');
     }
   } else if (state !== undefined) {
-    throw new Error(`leaseFencedRejection: reason "${reason}" không được kèm state.`);
+    throw new Error(`leaseFencedRejection: reason "${reason}" must not include state.`);
   }
   const candidate = reason === LEASE_FENCED_REASON_WITH_STATE ? { reason, state } : { reason };
   const checked = validateLeaseFencedRejection(candidate);
   if (!checked.ok) {
     throw new Error(
-      `leaseFencedRejection: body không qua validator (${checked.reason}): ${checked.detail}`,
+      `leaseFencedRejection: the body failed the validator (${checked.reason}): ${checked.detail}`,
     );
   }
   return checked.rejection;
@@ -246,7 +256,7 @@ export function validateReleaseAck(payload: unknown): ReleaseValidation {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'release 200: status phải là "queued".',
+      detail: 'release 200: status must be "queued".',
     };
   }
   return {
@@ -271,7 +281,9 @@ export function releaseAck(input: {
   } as const satisfies ReleaseAck;
   const checked = validateReleaseAck(candidate);
   if (!checked.ok) {
-    throw new Error(`releaseAck: body không qua validator (${checked.reason}): ${checked.detail}`);
+    throw new Error(
+      `releaseAck: the body failed the validator (${checked.reason}): ${checked.detail}`,
+    );
   }
   return checked.ack;
 }
@@ -323,7 +335,7 @@ export function validateReleaseRequest(payload: unknown): ReleaseRequestValidati
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'release request: dispatch_generation phải là số nguyên dương.',
+      detail: 'release request: dispatch_generation must be a positive integer.',
     };
   }
   return { ok: true, request: { dispatch_generation: shape.record.dispatch_generation } };
@@ -345,14 +357,14 @@ export function validateOutcomeRequest(payload: unknown): OutcomeRequestValidati
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'outcome request: dispatch_generation phải là số nguyên dương.',
+      detail: 'outcome request: dispatch_generation must be a positive integer.',
     };
   }
   if (!isDeliveryOutcomeValue(shape.record.outcome)) {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'outcome request: outcome phải là "delivered" hoặc "failed".',
+      detail: 'outcome request: outcome must be "delivered" or "failed".',
     };
   }
   return {
@@ -381,7 +393,7 @@ function validateWriteRequestShape(
     return {
       ok: false,
       reason: 'invalid_payload',
-      detail: `${label} request phải là object JSON.`,
+      detail: `the ${label} request must be a JSON object.`,
     };
   }
   const record = payload;
@@ -399,7 +411,7 @@ function validateWriteRequestShape(
       return {
         ok: false,
         reason: 'missing_field',
-        detail: `${label} request thiếu field: ${field}.`,
+        detail: `the ${label} request is missing field: ${field}.`,
       };
     }
   }
@@ -462,7 +474,7 @@ export function validateOutcomeAck(payload: unknown): OutcomeValidation {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'outcome 200: status phải là "delivered" hoặc "failed".',
+      detail: 'outcome 200: status must be "delivered" or "failed".',
     };
   }
   return {
@@ -488,7 +500,9 @@ export function outcomeAck(input: {
   } as const satisfies OutcomeAck;
   const checked = validateOutcomeAck(candidate);
   if (!checked.ok) {
-    throw new Error(`outcomeAck: body không qua validator (${checked.reason}): ${checked.detail}`);
+    throw new Error(
+      `outcomeAck: the body failed the validator (${checked.reason}): ${checked.detail}`,
+    );
   }
   return checked.ack;
 }
@@ -529,7 +543,11 @@ function validateWriteAck(
   | WriteAckShape
   | { readonly ok: false; readonly reason: WriteAckRejectionReason; readonly detail: string } {
   if (!isPlainObject(payload)) {
-    return { ok: false, reason: 'invalid_payload', detail: `${label} 200 phải là object JSON.` };
+    return {
+      ok: false,
+      reason: 'invalid_payload',
+      detail: `the ${label} 200 must be a JSON object.`,
+    };
   }
   const record = payload;
 
@@ -544,7 +562,11 @@ function validateWriteAck(
 
   for (const field of allowed) {
     if (!Object.hasOwn(record, field)) {
-      return { ok: false, reason: 'missing_field', detail: `${label} 200 thiếu field: ${field}.` };
+      return {
+        ok: false,
+        reason: 'missing_field',
+        detail: `the ${label} 200 is missing field: ${field}.`,
+      };
     }
   }
 
@@ -552,21 +574,21 @@ function validateWriteAck(
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: `${label} 200: delivery_id phải là chuỗi không rỗng.`,
+      detail: `${label} 200: delivery_id must be a non-empty string.`,
     };
   }
   if (typeof record.status !== 'string') {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: `${label} 200: status phải là string.`,
+      detail: `${label} 200: status must be a string.`,
     };
   }
   if (!isPositiveInteger(record.dispatch_generation)) {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: `${label} 200: dispatch_generation phải là số nguyên dương.`,
+      detail: `${label} 200: dispatch_generation must be a positive integer.`,
     };
   }
 

@@ -335,7 +335,7 @@ function toJobRecord(
   const terminalOutcome = row.terminal_outcome;
   if (processed && terminalOutcome === null) {
     throw new MalformedJobStateError(
-      `push_jobs ${row.delivery_id}: processed marker khong co terminal_outcome.`,
+      `push_jobs ${row.delivery_id}: processed marker has no terminal_outcome.`,
     );
   }
   return {
@@ -389,7 +389,7 @@ function serializePayload(envelope: StoredDeliveryEnvelope): string {
     return JSON.stringify(envelope.payload);
   } catch {
     throw new MalformedJobStateError(
-      `Envelope ${envelope.delivery_id}: payload khong serialize duoc thanh JSON.`,
+      `Envelope ${envelope.delivery_id}: payload does not serialize to JSON.`,
     );
   }
 }
@@ -400,10 +400,10 @@ function parsePayload(json: string, deliveryId: string): Readonly<Record<string,
   try {
     parsed = JSON.parse(json);
   } catch {
-    throw new MalformedJobStateError(`push_jobs ${deliveryId}: payload_json khong parse duoc.`);
+    throw new MalformedJobStateError(`push_jobs ${deliveryId}: payload_json does not parse.`);
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new MalformedJobStateError(`push_jobs ${deliveryId}: payload_json khong phai object.`);
+    throw new MalformedJobStateError(`push_jobs ${deliveryId}: payload_json is not an object.`);
   }
   return parsed as Readonly<Record<string, unknown>>;
 }

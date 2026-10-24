@@ -290,7 +290,7 @@ export async function beginAuthorization(params: {
 
   const client = await store.findClient(request.clientId);
   if (client === undefined) {
-    throw OAuthProtocolError.invalidClient('client khong ton tai');
+    throw OAuthProtocolError.invalidClient('client does not exist');
   }
   assertUsableClient({ isActive: client.isActive });
 
@@ -369,7 +369,7 @@ export async function confirmBrowser(params: {
   if (!timingSafeEqual(presentedHash, transaction.browser_binding_hash)) {
     // ⚠️ `directInvalidRequest`: một browser KHÁC đang cố xác nhận giao dịch
     // này. Không được redirect lỗi kèm handle — đó là đường rò handle.
-    throw OAuthProtocolError.directInvalidRequest('browser binding khong khop');
+    throw OAuthProtocolError.directInvalidRequest('browser binding does not match');
   }
 
   const moved = await store.transition({
@@ -379,7 +379,9 @@ export async function confirmBrowser(params: {
     at: now,
   });
   if (!moved) {
-    throw OAuthProtocolError.directInvalidRequest('transaction da duoc xac nhan boi request khac');
+    throw OAuthProtocolError.directInvalidRequest(
+      'transaction has already been confirmed by another request',
+    );
   }
 }
 
@@ -440,7 +442,7 @@ export async function completeAuthorization(params: {
       to: 'denied',
       at: now,
     });
-    throw OAuthProtocolError.accessDenied('nguoi dung tu choi');
+    throw OAuthProtocolError.accessDenied('user denied the request');
   }
 
   // Chuyển trạng thái có điều kiện. `false` nghĩa là một request khác đã thắng
@@ -534,7 +536,7 @@ export async function exchangeAuthorizationCode(params: {
     expectedChallenge: consumedCode.code_challenge,
   });
   if (!pkceOk) {
-    throw OAuthProtocolError.directInvalidGrant('PKCE khong khop');
+    throw OAuthProtocolError.directInvalidGrant('PKCE verification failed');
   }
 
   // Account phải còn khoẻ ở ĐÂY nữa: giữa lúc cấp code và lúc đổi code, account

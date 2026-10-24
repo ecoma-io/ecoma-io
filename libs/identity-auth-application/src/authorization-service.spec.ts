@@ -71,7 +71,7 @@ function makeAccount(fail = false, status: 'active' | 'suspended' = 'active'): A
     },
     async checkStatus() {
       if (fail) {
-        throw new Error('account khong goi duoc');
+        throw new Error('account is unreachable');
       }
       return status;
     },
@@ -408,7 +408,7 @@ describe('completeAuthorization — fail-closed', () => {
         accountId: 'account-1',
         now: new Date(),
       }),
-    ).rejects.toThrow('account khong goi duoc');
+    ).rejects.toThrow('account is unreachable');
 
     expect(store.calls).not.toContain('insertAuthorizationCode');
   });
@@ -598,7 +598,7 @@ describe('exchangeAuthorizationCode — PKCE', () => {
           code_challenge: CHALLENGE,
         },
         // 37 ky tu — duoi nguong 43 ky tu cua RFC 7636.
-        codeVerifier: 'sai-hoan-toan-verifier-nay-khong-dung',
+        codeVerifier: 'completely-wrong-verifier',
         issuer: 'https://auth.ecoma.io',
         audience: 'https://api.ecoma.io',
         accountId: 'account-1',

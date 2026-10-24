@@ -69,8 +69,8 @@ export function validateAccountConfig(config: AccountRuntimeConfig): void {
 
   if (typeof secret !== 'string' || secret.length === 0) {
     throw new Error(
-      'Thiếu NUXT_INTERNAL_HMAC_SECRET. Worker internal contract không chạy được ' +
-        'không có secret: envelope HMAC phải fail closed, không có fallback rỗng.',
+      'Missing NUXT_INTERNAL_HMAC_SECRET. The worker internal contract cannot run ' +
+        'without a secret: HMAC envelope must fail closed, there is no empty fallback.',
     );
   }
 
@@ -78,7 +78,7 @@ export function validateAccountConfig(config: AccountRuntimeConfig): void {
     // Chỉ nêu **ngưỡng**, không nêu độ dài thật của secret: message này đọc được
     // trong log của platform, và độ dài secret là thông tin hữu ích cho attacker.
     throw new Error(
-      `NUXT_INTERNAL_HMAC_SECRET phải dài ít nhất ${MIN_INTERNAL_HMAC_SECRET_LENGTH} ký tự.`,
+      `NUXT_INTERNAL_HMAC_SECRET must be at least ${MIN_INTERNAL_HMAC_SECRET_LENGTH} characters.`,
     );
   }
 
@@ -90,14 +90,16 @@ export function validateAccountConfig(config: AccountRuntimeConfig): void {
       skew !== '' &&
       (typeof skew !== 'number' || !Number.isInteger(skew) || skew < MIN_SKEW_SECONDS)
     ) {
-      throw new Error(`NUXT_INTERNAL_AUTH_SKEW_SECONDS phải là số nguyên >= ${MIN_SKEW_SECONDS}.`);
+      throw new Error(`NUXT_INTERNAL_AUTH_SKEW_SECONDS must be an integer >= ${MIN_SKEW_SECONDS}.`);
     }
     // Trần là **hằng giao thức** của lib (`MAX_SKEW_SECONDS`), không phải ngưỡng cục bộ:
     // nếu `account` nhận một skew mà `auth` từ chối, hai service chạy hai cửa sổ khác nhau
     // và bên rộng hơn quyết định thời gian sống thật của cửa sổ replay. Kiểm ở đây để lỗi
     // hiện ra lúc validate chứ không âm thầm nới cửa sổ.
     if (typeof skew === 'number' && Number.isInteger(skew) && skew > MAX_SKEW_SECONDS) {
-      throw new Error(`NUXT_INTERNAL_AUTH_SKEW_SECONDS vượt trần ${MAX_SKEW_SECONDS} giây.`);
+      throw new Error(
+        `NUXT_INTERNAL_AUTH_SKEW_SECONDS exceeds the ${MAX_SKEW_SECONDS} second cap.`,
+      );
     }
   }
 
@@ -108,13 +110,15 @@ export function validateAccountConfig(config: AccountRuntimeConfig): void {
   const otpSecret = config.otpHmacSecret;
   if (typeof otpSecret !== 'string' || otpSecret.length === 0) {
     throw new Error(
-      'Thiếu NUXT_OTP_HMAC_SECRET. Luồng đăng nhập email-OTP không chạy được không có secret: ' +
-        'digest mã OTP phải fail closed, không có fallback rỗng.',
+      'Missing NUXT_OTP_HMAC_SECRET. The email-OTP login flow cannot run without a secret: ' +
+        'OTP code digest must fail closed, there is no empty fallback.',
     );
   }
   if (otpSecret.length < MIN_OTP_HMAC_SECRET_LENGTH) {
     // Chỉ nêu **ngưỡng**, không nêu độ dài thật — message đọc được trong log platform.
-    throw new Error(`NUXT_OTP_HMAC_SECRET phải dài ít nhất ${MIN_OTP_HMAC_SECRET_LENGTH} ký tự.`);
+    throw new Error(
+      `NUXT_OTP_HMAC_SECRET must be at least ${MIN_OTP_HMAC_SECRET_LENGTH} characters.`,
+    );
   }
 
   // `kid` của internal HMAC — bộ luật hình dạng **cùng hằng** của lib (`assertKid`):
@@ -136,8 +140,8 @@ export function validateAccountConfig(config: AccountRuntimeConfig): void {
   if (hasPrevSecret !== hasPrevKid) {
     throw new Error(
       hasPrevSecret
-        ? 'NUXT_INTERNAL_HMAC_PREVIOUS_SECRET được đặt nhưng thiếu NUXT_INTERNAL_HMAC_PREVIOUS_KID.'
-        : 'NUXT_INTERNAL_HMAC_PREVIOUS_KID được đặt nhưng thiếu NUXT_INTERNAL_HMAC_PREVIOUS_SECRET.',
+        ? 'NUXT_INTERNAL_HMAC_PREVIOUS_SECRET is set but NUXT_INTERNAL_HMAC_PREVIOUS_KID is missing.'
+        : 'NUXT_INTERNAL_HMAC_PREVIOUS_KID is set but NUXT_INTERNAL_HMAC_PREVIOUS_SECRET is missing.',
     );
   }
   if (
@@ -147,13 +151,13 @@ export function validateAccountConfig(config: AccountRuntimeConfig): void {
   ) {
     if (config.internalHmacKid === prevKid) {
       throw new Error(
-        'NUXT_INTERNAL_HMAC_KID trùng NUXT_INTERNAL_HMAC_PREVIOUS_KID — hai khoá không thể chia một `kid`.',
+        'NUXT_INTERNAL_HMAC_KID duplicates NUXT_INTERNAL_HMAC_PREVIOUS_KID — two keys cannot share one `kid`.',
       );
     }
   }
   if (hasPrevSecret && typeof secret === 'string' && secret === prevSecret) {
     throw new Error(
-      'NUXT_INTERNAL_HMAC_SECRET trùng NUXT_INTERNAL_HMAC_PREVIOUS_SECRET — hai `kid` không thể chia một secret.',
+      'NUXT_INTERNAL_HMAC_SECRET duplicates NUXT_INTERNAL_HMAC_PREVIOUS_SECRET — two `kid`s cannot share one secret.',
     );
   }
 
@@ -164,7 +168,7 @@ export function validateAccountConfig(config: AccountRuntimeConfig): void {
   const mailUrl = config.mailServiceUrl;
   if (mailUrl !== undefined && mailUrl !== '') {
     if (typeof mailUrl !== 'string' || !/^https?:\/\//u.test(mailUrl)) {
-      throw new Error('NUXT_MAIL_SERVICE_URL phải là origin http(s) của transactional-mail.');
+      throw new Error('NUXT_MAIL_SERVICE_URL must be an http(s) origin of transactional-mail.');
     }
 
     // ⚠️ **Credential ký của path Account↔Mail là bắt buộc khi path đó bật.**
@@ -182,15 +186,15 @@ export function validateAccountConfig(config: AccountRuntimeConfig): void {
     const mailSecret = config.mailInternalAuthSecret;
     if (typeof mailSecret !== 'string' || mailSecret.length === 0) {
       throw new Error(
-        'Thiếu NUXT_MAIL_INTERNAL_AUTH_SECRET. Path account → transactional-mail ký envelope ' +
-          'ecoma-internal-v1 và receiver xác thực nó trước mọi logic nghiệp vụ: thiếu secret ' +
-          'thì mọi request mail bị từ chối, không có fallback rỗng.',
+        'Missing NUXT_MAIL_INTERNAL_AUTH_SECRET. The account → transactional-mail path signs the ' +
+          'ecoma-internal-v1 envelope and the receiver verifies it before any business logic: ' +
+          'without the secret every mail request is rejected, there is no empty fallback.',
       );
     }
     if (mailSecret.length < MIN_INTERNAL_HMAC_SECRET_LENGTH) {
       // Chỉ nêu **ngưỡng** — độ dài secret là thông tin hữu ích cho attacker.
       throw new Error(
-        `NUXT_MAIL_INTERNAL_AUTH_SECRET phải dài ít nhất ${MIN_INTERNAL_HMAC_SECRET_LENGTH} ký tự.`,
+        `NUXT_MAIL_INTERNAL_AUTH_SECRET must be at least ${MIN_INTERNAL_HMAC_SECRET_LENGTH} characters.`,
       );
     }
     // ⚠️ **Không được trùng secret của path Account↔Auth.** Envelope internal **không
@@ -202,8 +206,8 @@ export function validateAccountConfig(config: AccountRuntimeConfig): void {
     // production.
     if (typeof secret === 'string' && mailSecret === secret) {
       throw new Error(
-        'NUXT_MAIL_INTERNAL_AUTH_SECRET trùng NUXT_INTERNAL_HMAC_SECRET — mỗi path cần một ' +
-          'credential riêng: receiver suy ra principal từ secret đã khớp.',
+        'NUXT_MAIL_INTERNAL_AUTH_SECRET duplicates NUXT_INTERNAL_HMAC_SECRET — each path needs ' +
+          'its own credential: the receiver infers the principal from the matched secret.',
       );
     }
   }
@@ -220,14 +224,14 @@ function validateOptionalKid(value: unknown, name: string): void {
     return;
   }
   if (typeof value !== 'string') {
-    throw new Error(`${name} phải là chuỗi.`);
+    throw new Error(`${name} must be a string.`);
   }
   try {
     assertKid(value);
   } catch {
     // ⚠️ Không nêu giá trị — `kid` sai có thể là nhầm dán secret, và message này đọc
     // được trong log của platform.
-    throw new Error(`${name} phải là 8-16 ký tự hex chữ thường.`);
+    throw new Error(`${name} must be 8-16 lowercase hex characters.`);
   }
 }
 
@@ -243,10 +247,10 @@ function validateSecretValue(value: unknown, name: string): void {
     return;
   }
   if (typeof value !== 'string') {
-    throw new Error(`${name} phải là chuỗi.`);
+    throw new Error(`${name} must be a string.`);
   }
   if (value !== value.trim()) {
-    throw new Error(`${name} không được có khoảng trắng đầu hoặc cuối.`);
+    throw new Error(`${name} must not have leading or trailing whitespace.`);
   }
 }
 

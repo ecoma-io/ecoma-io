@@ -95,9 +95,9 @@ export class PushConfigError extends Error {
 
   constructor(problems: readonly string[]) {
     super(
-      `Thiếu hoặc sai cấu hình bắt buộc của push-notification: ${problems.join('; ')}. ` +
-        'Giá trị của tham số SLA là quyết định của service owner (launch gate — ' +
-        'docs/overview/03-operations.md §10), nên service fail closed thay vì tự chọn default.',
+      `Missing or invalid required configuration of push-notification: ${problems.join('; ')}. ` +
+        'The SLA parameter values are the service owner decision (launch gate — ' +
+        'docs/overview/03-operations.md §10), so the service fails closed instead of picking defaults.',
     );
     this.name = 'PushConfigError';
     this.problems = problems;
@@ -396,12 +396,12 @@ export function assertConfigCoherence(config: PushNotificationConfig): void {
   const problems: string[] = [];
   if (sla.idempotencyRetentionMs < sla.callerRetryWindowMs) {
     problems.push(
-      `${CONFIG_VARIABLE.IdempotencyRetention} phải ≥ ${CONFIG_VARIABLE.CallerRetryWindow} (FR-008)`,
+      `${CONFIG_VARIABLE.IdempotencyRetention} must be >= ${CONFIG_VARIABLE.CallerRetryWindow} (FR-008)`,
     );
   }
   if (sla.callerRetryWindowMs > sla.maxNotificationTtlMs) {
     problems.push(
-      `${CONFIG_VARIABLE.CallerRetryWindow} phải ≤ ${CONFIG_VARIABLE.MaxNotificationTtl} (FR-008)`,
+      `${CONFIG_VARIABLE.CallerRetryWindow} must be <= ${CONFIG_VARIABLE.MaxNotificationTtl} (FR-008)`,
     );
   }
   if (problems.length > 0) {

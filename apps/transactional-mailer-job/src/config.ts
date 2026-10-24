@@ -142,7 +142,7 @@ export function loadMailerJobConfig(env: MailerJobEnv): LoadedMailerJobConfig {
   const providerCallSafeWindowMsRaw = requirePositiveInteger(env, PROVIDER_CALL_SAFE_WINDOW_ENV);
   if (providerCallSafeWindowMsRaw > PROVIDER_CALL_SAFE_WINDOW_CEILING_MS) {
     throw new MailerJobConfigError(
-      `${PROVIDER_CALL_SAFE_WINDOW_ENV} phai <= ${PROVIDER_CALL_SAFE_WINDOW_CEILING_MS} (24h - mốc giữ Idempotency-Key mà provider tài liệu hóa)`,
+      `${PROVIDER_CALL_SAFE_WINDOW_ENV} must be <= ${PROVIDER_CALL_SAFE_WINDOW_CEILING_MS} (24h — the documented provider Idempotency-Key retention window)`,
     );
   }
   const quarantineHmacKeyHex = requireHexKey(env, 'MAIL_QUARANTINE_HMAC_KEY');
@@ -158,7 +158,7 @@ export function loadMailerJobConfig(env: MailerJobEnv): LoadedMailerJobConfig {
   // không để operator tự phát hiện qua alert blocked backlog.
   if (providerCallSafeWindowMsRaw <= providerTimeoutMs) {
     throw new MailerJobConfigError(
-      `${PROVIDER_CALL_SAFE_WINDOW_ENV} phai > ${PROVIDER_TIMEOUT_ENV}: window nho hon mot provider request thi moi mo ho deu ngoai window`,
+      `${PROVIDER_CALL_SAFE_WINDOW_ENV} must be > ${PROVIDER_TIMEOUT_ENV}: a window smaller than one provider request puts every ambiguity outside the window`,
     );
   }
 
@@ -174,7 +174,7 @@ export function loadMailerJobConfig(env: MailerJobEnv): LoadedMailerJobConfig {
   // không để operator tự phát hiện qua alert blocked backlog.
   if (executionLeaseMs <= providerTimeoutMs) {
     throw new MailerJobConfigError(
-      `${EXECUTION_LEASE_ENV} phai > ${PROVIDER_TIMEOUT_ENV} (mot request provider tron ven phai vua trong lease - bat dang thuc gia han §9.2.1)`,
+      `${EXECUTION_LEASE_ENV} must be > ${PROVIDER_TIMEOUT_ENV} (a full provider request must fit inside the lease — the §9.2.1 renewal inequality)`,
     );
   }
 
@@ -189,7 +189,7 @@ export function loadMailerJobConfig(env: MailerJobEnv): LoadedMailerJobConfig {
       maxExecutionAttempts >= 4
         ? maxExecutionAttempts
         : raiseConfig(
-            'MAIL_JOB_MAX_EXECUTION_ATTEMPTS phai >= 4 (max_retries + 1 cua Queue consumer)',
+            'MAIL_JOB_MAX_EXECUTION_ATTEMPTS must be >= 4 (max_retries + 1 of the Queue consumer)',
           ),
     executionLeaseMs,
     reportLeaseMs,
@@ -209,7 +209,7 @@ function loadProvider(
   const kind = env[PROVIDER_KIND_ENV];
   if (typeof kind !== 'string' || !(PROVIDER_KIND_VALUES as readonly string[]).includes(kind)) {
     throw new MailerJobConfigError(
-      `${PROVIDER_KIND_ENV} phai la mot trong: ${PROVIDER_KIND_VALUES.join(', ')}`,
+      `${PROVIDER_KIND_ENV} must be one of: ${PROVIDER_KIND_VALUES.join(', ')}`,
     );
   }
   if (kind === 'cloudflare') {
@@ -219,7 +219,7 @@ function loadProvider(
     const sender = requireNonEmptyString(env, CLOUDFLARE_SENDER_ENV);
     if (sender !== CLOUDFLARE_SENDER_ADDRESS) {
       throw new MailerJobConfigError(
-        `${CLOUDFLARE_SENDER_ENV} phai bang "${CLOUDFLARE_SENDER_ADDRESS}" (khop allowed_sender_addresses cua binding SEND_EMAIL)`,
+        `${CLOUDFLARE_SENDER_ENV} must equal "${CLOUDFLARE_SENDER_ADDRESS}" (matches allowed_sender_addresses of the SEND_EMAIL binding)`,
       );
     }
     // Binding thiếu ở env là fail-closed ở loader — KHÔNG fallback sang provider khác
@@ -231,7 +231,7 @@ function loadProvider(
       typeof (binding as { send?: unknown }).send !== 'function'
     ) {
       throw new MailerJobConfigError(
-        `${SEND_EMAIL_BINDING_NAME} binding khong ton tai hoac khong co send(); provider cloudflare khong fallback`,
+        `${SEND_EMAIL_BINDING_NAME} binding does not exist or has no send(); the cloudflare provider does not fall back`,
       );
     }
     // Credential Resend tồn tại cạnh provider cloudflare là dấu hiệu môi trường nhầm
@@ -242,7 +242,7 @@ function loadProvider(
     ]) {
       if (typeof value === 'string' && value.length > 0) {
         throw new MailerJobConfigError(
-          `${variableName} phai KHONG dat khi ${PROVIDER_KIND_ENV}=cloudflare`,
+          `${variableName} must NOT be set when ${PROVIDER_KIND_ENV}=cloudflare`,
         );
       }
     }
@@ -261,7 +261,7 @@ function loadProvider(
     ]) {
       if (typeof value === 'string' && value.length > 0) {
         throw new MailerJobConfigError(
-          `${variableName} phai KHONG dat khi ${PROVIDER_KIND_ENV}=fake; credential ton tai o moi truong khong dung no la leak`,
+          `${variableName} must NOT be set when ${PROVIDER_KIND_ENV}=fake; a credential existing in an environment that never uses it is a leak`,
         );
       }
     }
@@ -281,11 +281,11 @@ function requireNonEmptyString(env: MailerJobEnv, variableName: string): string 
   const raw = env[variableName];
   if (typeof raw !== 'string' || raw.length === 0) {
     throw new MailerJobConfigError(
-      `${variableName} chua duoc dat; worker khong chay khong co gia tri nay`,
+      `${variableName} is not set; the worker cannot run without this value`,
     );
   }
   if (raw.trim() === '') {
-    throw new MailerJobConfigError(`${variableName} chi chua khoang trang`);
+    throw new MailerJobConfigError(`${variableName} contains only whitespace`);
   }
   return raw;
 }
@@ -295,15 +295,15 @@ function requirePositiveInteger(env: MailerJobEnv, variableName: string): number
   const raw = env[variableName];
   if (typeof raw !== 'string' || raw.length === 0) {
     throw new MailerJobConfigError(
-      `${variableName} chua duoc dat; operational value khong co gia tri mac dinh`,
+      `${variableName} is not set; operational values have no default`,
     );
   }
   if (!/^\d+$/u.test(raw)) {
-    throw new MailerJobConfigError(`${variableName} phai la chuoi chu so thap phan`);
+    throw new MailerJobConfigError(`${variableName} must be a decimal-digit string`);
   }
   const parsed = Number(raw);
   if (!Number.isSafeInteger(parsed) || parsed < 1) {
-    throw new MailerJobConfigError(`${variableName} phai la so nguyen duong (>= 1)`);
+    throw new MailerJobConfigError(`${variableName} must be a positive integer (>= 1)`);
   }
   return parsed;
 }
@@ -313,7 +313,7 @@ function requireHexKey(env: MailerJobEnv, variableName: string): string {
   const raw = requireNonEmptyString(env, variableName);
   if (!HEX_KEY_64.test(raw)) {
     throw new MailerJobConfigError(
-      `${variableName} phai la 64 hex chu thuong (khoa HMAC-SHA-256 32 byte)`,
+      `${variableName} must be 64 lowercase hex characters (a 32-byte HMAC-SHA-256 key)`,
     );
   }
   return raw;

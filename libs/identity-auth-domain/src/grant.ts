@@ -20,7 +20,7 @@ export function isActiveClient(client: { isActive: boolean }): boolean {
  */
 export function assertUsableClient(client: { isActive: boolean }): void {
   if (!client.isActive) {
-    throw OAuthProtocolError.directInvalidRequest('client khong hoat dong');
+    throw OAuthProtocolError.directInvalidRequest('client is not active');
   }
 }
 
@@ -63,12 +63,12 @@ export function assertGrantCoversScope(
   requestedScope: readonly string[],
 ): void {
   if (!grant || !grant.isActive) {
-    throw OAuthProtocolError.accessDenied('grant khong con hieu luc');
+    throw OAuthProtocolError.accessDenied('grant is no longer valid');
   }
   const granted = new Set(grant.scopes);
   const missing = requestedScope.filter((scope) => !granted.has(scope));
   if (missing.length > 0) {
-    throw OAuthProtocolError.accessDenied('grant khong du scope');
+    throw OAuthProtocolError.accessDenied('grant has insufficient scope');
   }
 }
 

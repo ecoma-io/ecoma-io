@@ -30,25 +30,25 @@ describe('parseCodeChallenge', () => {
     // Mac dinh ngam la duong downgrade: client cu khong gui method, server cho qua.
     expect(() =>
       parseCodeChallenge({ codeChallenge: VERIFIER, codeChallengeMethod: undefined }),
-    ).toThrow(/thieu code_challenge_method/u);
+    ).toThrow(/missing code_challenge_method/u);
   });
 
   it('rejects a missing code_challenge', () => {
     expect(() =>
       parseCodeChallenge({ codeChallenge: undefined, codeChallengeMethod: 'S256' }),
-    ).toThrow(/thieu code_challenge/u);
+    ).toThrow(/missing code_challenge/u);
   });
 
   it('rejects a challenge of the wrong length (not 43 characters)', () => {
     expect(() => parseCodeChallenge({ codeChallenge: 'abc', codeChallengeMethod: 'S256' })).toThrow(
-      /khong dung dinh dang S256/u,
+      /does not match the S256 format/u,
     );
   });
 
   it('rejects a challenge with base64 padding', () => {
     expect(() =>
       parseCodeChallenge({ codeChallenge: `${'a'.repeat(42)}=`, codeChallengeMethod: 'S256' }),
-    ).toThrow(/khong dung dinh dang S256/u);
+    ).toThrow(/does not match the S256 format/u);
   });
 });
 

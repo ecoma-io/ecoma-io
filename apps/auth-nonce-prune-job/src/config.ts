@@ -127,7 +127,7 @@ export function retryBackoffSeconds(attempt: number): number {
 /** Chung một số trần cấu hình ở dạng số nguyên, kiểm ở load: giá trị phải dương. */
 function assertPositive(configured: number, name: string): void {
   if (!Number.isSafeInteger(configured) || configured < 1) {
-    throw new PruneJobConfigError(`${name} phai la so nguyen duong (>= 1)`);
+    throw new PruneJobConfigError(`${name} must be a positive integer (>= 1)`);
   }
 }
 
@@ -175,12 +175,14 @@ function requireHyperdriveBinding(env: PruneJobEnv, name: string): HyperdriveBin
   const bindingValue = env[name];
   if (typeof bindingValue !== 'object' || bindingValue === null) {
     throw new PruneJobConfigError(
-      `${name} chua dc gan: Hyperdrive binding thieu trong env cua Worker`,
+      `${name} is not bound: the Hyperdrive binding is missing from the Worker env`,
     );
   }
   const connectionString = (bindingValue as { connectionString?: unknown }).connectionString;
   if (typeof connectionString !== 'string' || connectionString.length === 0) {
-    throw new PruneJobConfigError(`${name} khong the doc connectionString (binding sai hinh)`);
+    throw new PruneJobConfigError(
+      `${name} cannot read connectionString (binding has the wrong shape)`,
+    );
   }
   return bindingValue as HyperdriveBindingLike;
 }

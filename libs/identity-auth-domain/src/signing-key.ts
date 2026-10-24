@@ -129,11 +129,11 @@ export class SigningKeyProvider {
     if (pem === undefined || pem.trim() === '') {
       // KHÔNG sinh khoá thay thế. Xem luật 2 ở đầu file.
       throw new AuthConfigurationError(
-        'Worker Secret chua khoa ky ES256; auth KHONG sinh khoa tam, nen token se khong duoc cap',
+        'Worker Secret is missing the ES256 signing key; auth mints no temporary key, so no token will be issued',
       );
     }
     if (!isPkcs8Pem(pem)) {
-      throw new AuthConfigurationError('khoa ky phai la PKCS#8 PEM (BEGIN PRIVATE KEY)');
+      throw new AuthConfigurationError('the signing key must be PKCS#8 PEM (BEGIN PRIVATE KEY)');
     }
 
     const { importPKCS8 } = await import('jose');
@@ -218,7 +218,7 @@ async function extractPublicMaterial(pem: string, kid: string): Promise<Extracte
   const x = exported['x'];
   const y = exported['y'];
   if (typeof x !== 'string' || x === '' || typeof y !== 'string' || y === '') {
-    throw new AuthConfigurationError('JWK xuat ra thieu x/y');
+    throw new AuthConfigurationError('exported JWK is missing x/y');
   }
 
   const jwk: PublicJwk = {
@@ -236,7 +236,9 @@ async function extractPublicMaterial(pem: string, kid: string): Promise<Extracte
   // không phải `in`, để nó bắt được một trường LẠ thay vì chỉ bắt thiếu trường.
   const leaked = Object.keys(jwk).filter((key) => !ALLOWED_JWK_FIELDS.has(key));
   if (leaked.length > 0) {
-    throw new AuthConfigurationError(`JWK chua truong ngoai danh sach: ${leaked.join(',')}`);
+    throw new AuthConfigurationError(
+      `JWK carries a field outside the allowlist: ${leaked.join(',')}`,
+    );
   }
 
   return { jwk };

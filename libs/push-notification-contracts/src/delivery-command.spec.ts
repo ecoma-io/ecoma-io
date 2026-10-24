@@ -458,7 +458,7 @@ describe('envelope object shape policy (A1)', () => {
   ] as const)('rejects an envelope that is %s', (_label, value) => {
     const checked = validateDeliveryCommand(value);
     expect(checked.ok).toBe(false);
-    expectRejectedBy(checked, 'invalid_payload', 'object JSON');
+    expectRejectedBy(checked, 'invalid_payload', 'JSON object');
   });
 
   it('rejects a class instance envelope', () => {
@@ -467,13 +467,13 @@ describe('envelope object shape policy (A1)', () => {
     }
     const checked = validateDeliveryCommand(new FakeEnvelope());
     expect(checked.ok).toBe(false);
-    expectRejectedBy(checked, 'invalid_payload', 'object JSON');
+    expectRejectedBy(checked, 'invalid_payload', 'JSON object');
   });
 
   it('rejects an envelope created over a custom prototype — inherited keys are not JSON own keys', () => {
     const checked = validateDeliveryCommand(Object.create(VALID));
     expect(checked.ok).toBe(false);
-    expectRejectedBy(checked, 'invalid_payload', 'object JSON');
+    expectRejectedBy(checked, 'invalid_payload', 'JSON object');
   });
 
   it('rejects a getter on an allowed envelope key without invoking it', () => {

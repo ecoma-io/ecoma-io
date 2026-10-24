@@ -115,12 +115,12 @@ export function isBackofficeAccountId(value: unknown): value is BackofficeAccoun
  */
 export function createBackofficeAccountId(entropy: string): BackofficeAccountId {
   if (typeof entropy !== 'string') {
-    throw new TypeError('BackofficeAccountId entropy phải là chuỗi');
+    throw new TypeError('BackofficeAccountId entropy must be a string');
   }
   const full = `${ACCOUNT_ID_PREFIX}${entropy}`;
   if (!ACCOUNT_ID_PATTERN.test(full)) {
     throw new TypeError(
-      `BackofficeAccountId entropy phải là ${BACKOFFICE_ACCOUNT_ID_ENTROPY_CHARS} ký tự base32 viết thường (${BASE32_ALPHABET})`,
+      `BackofficeAccountId entropy must be ${BACKOFFICE_ACCOUNT_ID_ENTROPY_CHARS} lowercase base32 characters (${BASE32_ALPHABET})`,
     );
   }
   return full as BackofficeAccountId;

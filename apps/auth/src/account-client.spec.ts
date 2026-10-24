@@ -108,11 +108,11 @@ function statusResponse(status: string): Response {
 /** Lần gọi duy nhất đã xảy ra — ném khi số lần gọi không phải một. */
 function onlyCall(calls: readonly CapturedCall[]): CapturedCall {
   if (calls.length !== 1) {
-    throw new Error(`mong đợi đúng một lần gọi Account, đo được ${calls.length}`);
+    throw new Error(`expected exactly one Account call, got ${calls.length}`);
   }
   const [call] = calls;
   if (call === undefined) {
-    throw new Error('không có lần gọi nào');
+    throw new Error('no call recorded');
   }
   return call;
 }
@@ -263,7 +263,7 @@ describe('AccountClient.checkStatus — the query parameter on the wire', () => 
 
     await expect(
       client.checkStatus({ accountId: CALLER_ACCOUNT_ID, nowMs: Date.now() }),
-    ).rejects.toThrow(/khong phai JSON/u);
+    ).rejects.toThrow(/non-JSON body/u);
   });
 
   it.each([

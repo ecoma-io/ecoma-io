@@ -102,11 +102,11 @@ function readD1BindingName(): string {
   };
   const first = config.d1_databases?.[0];
   if (first === undefined) {
-    throw new Error('wrangler.jsonc của control plane không khai `d1_databases`.');
+    throw new Error('the control plane wrangler.jsonc does not declare `d1_databases`.');
   }
   if ((config.d1_databases?.length ?? 0) > 1) {
     throw new Error(
-      `wrangler.jsonc khai ${config.d1_databases?.length} D1; harness chỉ hỗ trợ đúng một.`,
+      `wrangler.jsonc declares ${config.d1_databases?.length} D1 databases; the harness supports exactly one.`,
     );
   }
   return first.binding;
@@ -158,7 +158,7 @@ export async function createCpTestDatabase(): Promise<CpTestDatabase> {
   if (db === undefined) {
     await proxy.dispose();
     throw new Error(
-      `wrangler.jsonc của control plane khai binding \`${binding}\` nhưng proxy không cấp.`,
+      `the control plane wrangler.jsonc declares binding \`${binding}\` but the proxy does not provide it.`,
     );
   }
 

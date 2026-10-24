@@ -147,14 +147,14 @@ export function checkPayloadPlaintextBudget(payload: NotificationPayload): Paylo
     return {
       ok: false,
       reason: 'not_serializable',
-      detail: 'Payload không serialize được thành JSON hợp lệ để đo ngân sách.',
+      detail: 'The payload cannot be serialized to valid JSON for budget measurement.',
     };
   }
   if (plaintextBytes > MAX_PAYLOAD_PLAINTEXT_BYTES) {
     return {
       ok: false,
       reason: 'payload_over_budget',
-      detail: `Serialized plaintext vượt ngân sách ${MAX_PAYLOAD_PLAINTEXT_BYTES} octets.`,
+      detail: `Serialized plaintext exceeds the ${MAX_PAYLOAD_PLAINTEXT_BYTES} octet budget.`,
     };
   }
   return { ok: true, plaintextBytes };

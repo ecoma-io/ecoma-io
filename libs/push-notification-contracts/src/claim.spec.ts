@@ -249,7 +249,7 @@ describe('validateDeliveryClaim — field types', () => {
     Reflect.deleteProperty(sub, field);
     const result = validateDeliveryClaim({ ...VALID, subscription: sub });
     expect(result.ok).toBe(false);
-    expectRejectedBy(result, 'missing_field', `subscription thiếu field: ${field}`);
+    expectRejectedBy(result, 'missing_field', `subscription is missing field: ${field}.`);
   });
 
   it.each(REQUIRED_PROVIDER_FIELDS)('rejects a provider missing %s', (field) => {
@@ -257,7 +257,7 @@ describe('validateDeliveryClaim — field types', () => {
     Reflect.deleteProperty(provider, field);
     const checked5 = validateDeliveryClaim({ ...VALID, provider });
     expect(checked5.ok).toBe(false);
-    expectRejectedBy(checked5, 'missing_field', `provider thiếu field: ${field}`);
+    expectRejectedBy(checked5, 'missing_field', `provider is missing field: ${field}.`);
   });
 
   it.each([...PROVIDER_TYPE_VALUES])(
@@ -541,11 +541,11 @@ describe('claim success and claim rejection are not confusable', () => {
   });
 
   it('rejects a claimRejection built with a state on a non-terminal reason', () => {
-    expect(() => claimRejection('lease_held', 'failed')).toThrow(/không được kèm state/u);
+    expect(() => claimRejection('lease_held', 'failed')).toThrow(/must not include state/u);
   });
 
   it('rejects a claimRejection built without state on terminal', () => {
-    expect(() => claimRejection('terminal')).toThrow(/bắt buộc có state/u);
+    expect(() => claimRejection('terminal')).toThrow(/requires state/u);
   });
 
   // Regress F4: nhánh `state !== undefined` nối `reason` vào message. Trước khi kiểm tập
@@ -560,7 +560,7 @@ describe('claim success and claim rejection are not confusable', () => {
 
     expect(thrown).toBeDefined();
     expect(thrown).not.toContain('FAKE LOG LINE');
-    expect(thrown).toContain('tập đóng');
+    expect(thrown).toContain('closed claim rejection set');
   });
 });
 
@@ -606,7 +606,7 @@ describe('claim response object shape policy (A1)', () => {
   ] as const)('rejects a 200 body that is %s', (_label, value) => {
     const checked = validateDeliveryClaim(value);
     expect(checked.ok).toBe(false);
-    expectRejectedBy(checked, 'invalid_payload', 'object JSON');
+    expectRejectedBy(checked, 'invalid_payload', 'JSON object');
   });
 
   it('rejects a class instance 200 body', () => {
@@ -615,7 +615,7 @@ describe('claim response object shape policy (A1)', () => {
     }
     const checked = validateDeliveryClaim(new FakeClaim());
     expect(checked.ok).toBe(false);
-    expectRejectedBy(checked, 'invalid_payload', 'object JSON');
+    expectRejectedBy(checked, 'invalid_payload', 'JSON object');
   });
 
   it('rejects a getter on an allowed 200 field without invoking it', () => {

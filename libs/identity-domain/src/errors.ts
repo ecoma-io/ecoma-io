@@ -2,7 +2,7 @@
  * Taxonomy lỗi của tầng domain `identity`.
  *
  * ⚠️ **Quy tắc bất di bất dịch: một domain error chỉ được mang `code` ổn định + `message`
- * tiếng Việt ngắn gọn.** Không field nào cho cookie, token, session identifier, handle,
+ * tiếng Anh ngắn gọn.** Không field nào cho cookie, token, session identifier, handle,
  * `code_verifier`, secret hay bất kỳ giá trị nào đọc lại được từ nó.
  *
  * Lý do — invariant 9 (`01-architecture.md` §9): không log password, session cookie,
@@ -27,7 +27,7 @@ export type DomainErrorCode =
   | 'account_suspended'
   | 'invalid_transition';
 
-/** Error domain: `code` ổn định + `message` tiếng Việt ngắn gọn. */
+/** Error domain: `code` ổn định + `message` tiếng Anh ngắn gọn. */
 export interface DomainError {
   readonly code: DomainErrorCode;
   readonly message: string;
@@ -35,14 +35,14 @@ export interface DomainError {
 
 /** Những lỗi không nhạy cảm theo nghĩa đen — không chứa dữ liệu định danh hay bí mật. */
 export const DOMAIN_ERROR_MESSAGES: Record<DomainErrorCode, string> = {
-  invalid_subject: 'Subject không hợp lệ.',
-  session_expired: 'Phiên đã hết hạn.',
-  session_revoked: 'Phiên đã bị thu hồi.',
-  reauthentication_required: 'Cần xác thực lại trước khi tiếp tục.',
-  acr_insufficient: 'Mức assurance (ACR) chưa đủ cho thao tác này.',
-  account_deleted: 'Tài khoản đã bị xoá.',
-  account_suspended: 'Tài khoản đang bị tạm khoá.',
-  invalid_transition: 'Chuyển trạng thái không hợp lệ.',
+  invalid_subject: 'Invalid subject.',
+  session_expired: 'Session has expired.',
+  session_revoked: 'Session has been revoked.',
+  reauthentication_required: 'Reauthentication is required before continuing.',
+  acr_insufficient: 'Assurance level (ACR) is insufficient for this operation.',
+  account_deleted: 'The account has been deleted.',
+  account_suspended: 'The account is temporarily suspended.',
+  invalid_transition: 'Invalid state transition.',
 };
 
 /**
@@ -57,7 +57,7 @@ export const DOMAIN_ERROR_MESSAGES: Record<DomainErrorCode, string> = {
 export function domainError(code: DomainErrorCode): DomainError {
   const message = DOMAIN_ERROR_MESSAGES[code];
   if (message === undefined) {
-    throw new TypeError(`Domain error code không hợp lệ: ${String(code)}`);
+    throw new TypeError(`Invalid domain error code: ${String(code)}`);
   }
   return { code, message };
 }

@@ -81,7 +81,7 @@ export function applicationSubscriptionRoutes(app: Hono, requireAuth: RequireApp
       return problem(
         400,
         'invalid_payload',
-        'Cần `device_id` · `user_id` · `endpoint` · `p256dh` · `auth` · `vapid_key_id`.',
+        'Provide `device_id` · `user_id` · `endpoint` · `p256dh` · `auth` · `vapid_key_id`.',
       );
     }
 
@@ -131,7 +131,7 @@ export function applicationSubscriptionRoutes(app: Hono, requireAuth: RequireApp
 
     const subscriptionId = readNonEmptyString(context.req.param('subscriptionId'));
     if (subscriptionId === null) {
-      return problem(400, 'invalid_payload', 'Thiếu path param `subscriptionId`.');
+      return problem(400, 'invalid_payload', 'Missing `subscriptionId` path parameter.');
     }
     const body = await readJsonObject(context.req.raw);
     if (!body.ok) {
@@ -144,7 +144,7 @@ export function applicationSubscriptionRoutes(app: Hono, requireAuth: RequireApp
       return problem(
         400,
         'invalid_payload',
-        'Chỉ nhận `status: "disabled"` — §5.2 không có transition nào khác do client yêu cầu.',
+        'Only `status: "disabled"` is accepted — §5.2 has no other client-requested transition.',
       );
     }
 
@@ -178,7 +178,7 @@ export function applicationSubscriptionRoutes(app: Hono, requireAuth: RequireApp
 
     const subscriptionId = readNonEmptyString(context.req.param('subscriptionId'));
     if (subscriptionId === null) {
-      return problem(400, 'invalid_payload', 'Thiếu path param `subscriptionId`.');
+      return problem(400, 'invalid_payload', 'Missing `subscriptionId` path parameter.');
     }
 
     const result = await unregisterSubscription(authenticated.deps, {

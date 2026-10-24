@@ -135,12 +135,12 @@ export function resolveRuntimeSharedSecret(env: Readonly<Record<string, unknown>
   const value = env[RUNTIME_API_SHARED_SECRET_ENV];
   if (value === undefined) {
     throw new RuntimeAuthResolutionError(
-      `Thieu Worker Secret ${RUNTIME_API_SHARED_SECRET_ENV}. Khong goi private delivery runtime API.`,
+      `Worker Secret ${RUNTIME_API_SHARED_SECRET_ENV} is missing. The private delivery runtime API cannot be called.`,
     );
   }
   if (typeof value !== 'string') {
     throw new RuntimeAuthResolutionError(
-      `${RUNTIME_API_SHARED_SECRET_ENV} phai la chuoi, nhan duoc ${typeof value}.`,
+      `${RUNTIME_API_SHARED_SECRET_ENV} must be a string, got ${typeof value}.`,
     );
   }
   assertUsableSecret(value);
@@ -153,7 +153,7 @@ function assertUsableSecret(secret: string): void {
   }
   if (secret.trim().length === 0) {
     throw new RuntimeAuthResolutionError(
-      `Worker Secret ${RUNTIME_API_SHARED_SECRET_ENV} chi chua khoang trang.`,
+      `Worker Secret ${RUNTIME_API_SHARED_SECRET_ENV} is whitespace only.`,
     );
   }
 }
@@ -161,7 +161,7 @@ function assertUsableSecret(secret: string): void {
 /** Dựng một phân đoạn path an toàn từ một định danh của control plane. */
 function idSegment(value: string, label: string): string {
   if (typeof value !== 'string' || value.length === 0) {
-    throw new RuntimeContractError(`${label} rong hoac khong phai chuoi.`, 'invalid_identifier');
+    throw new RuntimeContractError(`${label} is empty or not a string.`, 'invalid_identifier');
   }
   let encoded: string;
   try {
@@ -169,7 +169,7 @@ function idSegment(value: string, label: string): string {
   } catch {
     // `encodeURIComponent` ném `URIError` với surrogate lẻ — input hỏng, không phải lỗi hệ thống.
     throw new RuntimeContractError(
-      `${label} khong ma hoa duoc thanh mot phan doan path.`,
+      `${label} cannot be encoded as a path segment.`,
       'invalid_identifier',
     );
   }
@@ -218,7 +218,7 @@ export class RuntimeControlPlaneClient implements DeliveryRuntimePort {
       const validated = validateDeliveryClaim(body);
       if (!validated.ok) {
         throw new RuntimeContractError(
-          `Claim 200 khong qua validator (${validated.reason}): ${validated.detail}`,
+          `Claim 200 failed validation (${validated.reason}): ${validated.detail}`,
           validated.reason,
         );
       }
@@ -241,7 +241,7 @@ export class RuntimeControlPlaneClient implements DeliveryRuntimePort {
         // `unknown_reason` ở đây **không** phải một no-op: đó là peer lệch vocabulary, và
         // nhánh cần hành động là bounded retry → DLQ chứ không phải ACK mù.
         throw new RuntimeContractError(
-          `Claim 409 khong qua validator (${validated.reason}): ${validated.detail}`,
+          `Claim 409 failed validation (${validated.reason}): ${validated.detail}`,
           validated.reason,
         );
       }
@@ -262,7 +262,7 @@ export class RuntimeControlPlaneClient implements DeliveryRuntimePort {
       const validated = validateReleaseAck(payload);
       if (!validated.ok) {
         throw new RuntimeContractError(
-          `Release 200 khong qua validator (${validated.reason}): ${validated.detail}`,
+          `Release 200 failed validation (${validated.reason}): ${validated.detail}`,
           validated.reason,
         );
       }
@@ -291,7 +291,7 @@ export class RuntimeControlPlaneClient implements DeliveryRuntimePort {
       const validated = validateOutcomeAck(payload);
       if (!validated.ok) {
         throw new RuntimeContractError(
-          `Outcome 200 khong qua validator (${validated.reason}): ${validated.detail}`,
+          `Outcome 200 failed validation (${validated.reason}): ${validated.detail}`,
           validated.reason,
         );
       }
@@ -333,7 +333,7 @@ export class RuntimeControlPlaneClient implements DeliveryRuntimePort {
       const validated = validateInvalidateAck(payload);
       if (!validated.ok) {
         throw new RuntimeContractError(
-          `Invalidate 200 khong qua validator (${validated.reason}): ${validated.detail}`,
+          `Invalidate 200 failed validation (${validated.reason}): ${validated.detail}`,
           validated.reason,
         );
       }
@@ -406,7 +406,7 @@ export class RuntimeControlPlaneClient implements DeliveryRuntimePort {
       // validate, và retry là hành vi đúng (FR-017).
       const detail = error instanceof Error ? error.name : typeof error;
       throw new RuntimeTransportError(
-        `Khong goi duoc private delivery runtime API qua Service Binding (${detail}).`,
+        `The private delivery runtime API is unreachable through the Service Binding (${detail}).`,
       );
     }
   }
@@ -427,15 +427,15 @@ async function readJson(response: Response, label: string): Promise<unknown> {
   try {
     text = await response.text();
   } catch {
-    throw new RuntimeTransportError(`Khong doc duoc body cua ${label}.`);
+    throw new RuntimeTransportError(`The body of ${label} could not be read.`);
   }
   if (text.length === 0) {
-    throw new RuntimeContractError(`${label} co body rong.`, 'invalid_payload');
+    throw new RuntimeContractError(`${label} has an empty body.`, 'invalid_payload');
   }
   try {
     return JSON.parse(text) as unknown;
   } catch {
-    throw new RuntimeContractError(`${label} co body khong phai JSON.`, 'invalid_payload');
+    throw new RuntimeContractError(`${label} has a non-JSON body.`, 'invalid_payload');
   }
 }
 
@@ -453,7 +453,7 @@ function toFencedWrite(body: unknown): FencedWritePortResult {
   const validated = validateLeaseFencedRejection(body);
   if (!validated.ok) {
     throw new RuntimeContractError(
-      `Write 409 khong qua validator (${validated.reason}): ${validated.detail}`,
+      `Write 409 failed validation (${validated.reason}): ${validated.detail}`,
       validated.reason,
     );
   }
@@ -484,7 +484,7 @@ function toClaimRejectionPort(rejection: ClaimRejection): ClaimRejectionPort {
 function statusToError(status: number, operation: string): Error {
   if (status === 401 || status === 403) {
     return new RuntimeAuthResolutionError(
-      `Private delivery runtime API tu choi credential cua worker (${operation} → ${status}).`,
+      `The private delivery runtime API refused the worker credential (${operation} → ${status}).`,
     );
   }
   if (status >= 500) {

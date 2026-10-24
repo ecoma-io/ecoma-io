@@ -58,7 +58,7 @@ export function applicationDeviceRoutes(app: Hono, requireAuth: RequireApplicati
     const deviceId = readRequiredString(body.value, 'device_id');
     const userId = readRequiredString(body.value, 'user_id');
     if (deviceId === null || userId === null) {
-      return problem(400, 'invalid_payload', 'Cần `device_id` và `user_id` không rỗng.');
+      return problem(400, 'invalid_payload', 'Non-empty `device_id` and `user_id` are required.');
     }
     // ⚠️ `display_name` là **tuỳ chọn**: nó không có requirement nào bắt buộc, và một
     // `display_name: ""` không phải là một cái tên — nó chỉ là một chuỗi rỗng mà browser không
@@ -99,7 +99,7 @@ export function applicationDeviceRoutes(app: Hono, requireAuth: RequireApplicati
 
     const deviceId = readNonEmptyString(context.req.param('deviceId'));
     if (deviceId === null) {
-      return problem(400, 'invalid_payload', 'Thiếu path param `deviceId`.');
+      return problem(400, 'invalid_payload', 'Missing `deviceId` path parameter.');
     }
 
     const result = await getDevice(authenticated.deps, {
@@ -126,7 +126,7 @@ export function applicationDeviceRoutes(app: Hono, requireAuth: RequireApplicati
 
     const deviceId = readNonEmptyString(context.req.param('deviceId'));
     if (deviceId === null) {
-      return problem(400, 'invalid_payload', 'Thiếu path param `deviceId`.');
+      return problem(400, 'invalid_payload', 'Missing `deviceId` path parameter.');
     }
 
     const result = await unregisterDevice(authenticated.deps, {

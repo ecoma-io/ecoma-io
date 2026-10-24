@@ -41,7 +41,7 @@ export function useAppShell(): AppShellContext {
 
   if (!context) {
     throw new Error(
-      'useAppShell() chỉ dùng được bên trong <AppShell>. Component con của shell phải được render từ AppShell, không đứng riêng.',
+      'useAppShell() can only be used inside <AppShell>. Shell child components must be rendered from AppShell, not standalone.',
     );
   }
 

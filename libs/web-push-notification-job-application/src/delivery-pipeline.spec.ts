@@ -338,7 +338,7 @@ describe('processDeliveryMessage second-layer guard on claimed material', () => 
         }
         return {
           kind: 'won',
-          claim: { ...result.claim, [field]: `${field}_của_delivery_khác` },
+          claim: { ...result.claim, [field]: `${field}_of_another_delivery` },
         };
       };
       const s = scenario({ runtime });
@@ -361,7 +361,7 @@ describe('processDeliveryMessage second-layer guard on claimed material', () => 
       if (result.kind !== 'won') {
         return result;
       }
-      return { kind: 'won', claim: { ...result.claim, expires_at: 'không-phải-ngày' } };
+      return { kind: 'won', claim: { ...result.claim, expires_at: 'not-a-date' } };
     };
     const s = scenario({ runtime });
 
@@ -553,7 +553,7 @@ describe('processDeliveryMessage error matrix', () => {
   // Invalidate là **fire**, không chặn: một lỗi mạng khi gọi invalidate không được làm mất cả
   // bằng chứng endpoint chết lẫn kết cục terminal.
   it.each([
-    ['a transport failure', () => Promise.reject(new RuntimeTransportError('không gọi được'))],
+    ['a transport failure', () => Promise.reject(new RuntimeTransportError('unreachable'))],
     ['an auth rejection', async () => 'auth_rejected' as const],
     ['a missing subscription', async () => 'no_op' as const],
   ])('still records the terminal outcome when invalidate hits %s', async (_name, invalidate) => {
@@ -724,7 +724,7 @@ describe('processDeliveryMessage error matrix', () => {
   it.each([
     ['undefined', undefined],
     ['null', null],
-    ['an unknown outcome', { outcome: 'quyết định chưa rõ' }],
+    ['an unknown outcome', { outcome: 'undecided' }],
     ['a failed result without a failure class', { outcome: 'failed', httpStatus: 404 }],
   ])('treats a sender result of %s as transient, never terminal', async (_name, result) => {
     const sender = new FakeSender({ offUnionResult: result });
@@ -745,9 +745,12 @@ describe('processDeliveryMessage error matrix', () => {
 
 describe('processDeliveryMessage control-plane failures', () => {
   it.each([
-    ['a contract violation', new RuntimeContractError('peer lệch vocabulary', 'unknown_reason')],
-    ['a missing secret', new RuntimeAuthResolutionError('thieu RUNTIME_API_SHARED_SECRET')],
-    ['an unexpected error', new Error('điều không lường trước')],
+    [
+      'a contract violation',
+      new RuntimeContractError('peer vocabulary mismatch', 'unknown_reason'),
+    ],
+    ['a missing secret', new RuntimeAuthResolutionError('missing RUNTIME_API_SHARED_SECRET')],
+    ['an unexpected error', new Error('something unexpected')],
   ])('retries without provider call on %s, and never acks blindly', async (_name, error) => {
     const runtime = new FakeRuntime({ plan: { kind: 'throw', error } });
     const s = scenario({ runtime });

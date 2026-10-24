@@ -123,11 +123,11 @@ export interface AuthConfig {
  */
 function requireSecret(value: string | undefined, name: string): string {
   if (value === undefined || value.trim() === '') {
-    throw new AuthConfigurationError(`Worker Secret ${name} chua duoc dat; auth KHONG cap token`);
+    throw new AuthConfigurationError(`Worker Secret ${name} is not set; auth issues no token`);
   }
   if (value !== value.trim()) {
     throw new AuthConfigurationError(
-      `Worker Secret ${name} co khoang trang dau/cuoi; auth tu choi thay vi trim am tham`,
+      `Worker Secret ${name} has leading/trailing whitespace; auth refuses it instead of trimming silently`,
     );
   }
   return value;
@@ -160,18 +160,18 @@ export async function loadAuthConfig(env: AuthEnv): Promise<AuthConfig> {
       internalPreviousSecret !== internalPreviousSecret.trim()
     ) {
       throw new AuthConfigurationError(
-        'Worker Secret AUTH_INTERNAL_PREVIOUS_SECRET rong hoac co khoang trang dau/cuoi; auth tu choi thay vi trim am tham',
+        'Worker Secret AUTH_INTERNAL_PREVIOUS_SECRET is empty or has leading/trailing whitespace; auth refuses it instead of trimming silently',
       );
     }
     if (internalPreviousKid === undefined) {
       throw new AuthConfigurationError(
-        'AUTH_INTERNAL_PREVIOUS_SECRET duoc dat nhung thieu AUTH_INTERNAL_PREVIOUS_KID; ' +
-          'envelope co kid khong the duoc li khong co anh xa kid -> secret',
+        'AUTH_INTERNAL_PREVIOUS_SECRET is set but AUTH_INTERNAL_PREVIOUS_KID is missing; ' +
+          'an envelope carrying that kid cannot be processed without a kid -> secret mapping',
       );
     }
   } else if (internalPreviousKid !== undefined) {
     throw new AuthConfigurationError(
-      'AUTH_INTERNAL_PREVIOUS_KID duoc dat nhung thieu AUTH_INTERNAL_PREVIOUS_SECRET',
+      'AUTH_INTERNAL_PREVIOUS_KID is set but AUTH_INTERNAL_PREVIOUS_SECRET is missing',
     );
   }
   if (
@@ -180,7 +180,7 @@ export async function loadAuthConfig(env: AuthEnv): Promise<AuthConfig> {
     internalKid === internalPreviousKid
   ) {
     throw new AuthConfigurationError(
-      'AUTH_INTERNAL_KID trung AUTH_INTERNAL_PREVIOUS_KID; hai khoa khong the chia mot kid',
+      'AUTH_INTERNAL_KID duplicates AUTH_INTERNAL_PREVIOUS_KID; two keys cannot share one kid',
     );
   }
 
@@ -190,7 +190,7 @@ export async function loadAuthConfig(env: AuthEnv): Promise<AuthConfig> {
   const hyperdrive = env.HYPERDRIVE;
   if (hyperdrive === undefined || typeof hyperdrive.connectionString !== 'string') {
     throw new AuthConfigurationError(
-      'Hyperdrive binding tới db-auth chua duoc gan; auth fail-closed',
+      'Hyperdrive binding to db-auth is not bound; auth fails closed',
     );
   }
 
@@ -199,7 +199,7 @@ export async function loadAuthConfig(env: AuthEnv): Promise<AuthConfig> {
   // được cũng coi như khoẻ" chính là lỗi mà thiết kế cấm.
   if (env.ACCOUNT_SERVICE === undefined) {
     throw new AuthConfigurationError(
-      'Service binding ACCOUNT_SERVICE chua duoc gan; auth khong the fail-closed khi Account khong goi duoc',
+      'Service binding ACCOUNT_SERVICE is not bound; auth cannot fail closed when Account is unreachable',
     );
   }
 
@@ -245,14 +245,14 @@ export async function loadAuthConfig(env: AuthEnv): Promise<AuthConfig> {
 function parseCookieKeys(value: string | undefined): readonly string[] {
   if (value === undefined || value.trim() === '') {
     throw new AuthConfigurationError(
-      'Worker Secret AUTH_COOKIE_KEYS chua duoc dat; cookie phien oidc-provider khong the duoc ky',
+      'Worker Secret AUTH_COOKIE_KEYS is not set; oidc-provider session cookies cannot be signed',
     );
   }
   const keys = value.split(',');
   for (const key of keys) {
     if (key !== key.trim() || key === '') {
       throw new AuthConfigurationError(
-        'Worker Secret AUTH_COOKIE_KEYS co phan tu rong hoac khoang trang dau/cuoi',
+        'Worker Secret AUTH_COOKIE_KEYS has an empty element or leading/trailing whitespace',
       );
     }
   }
@@ -273,18 +273,18 @@ function parseCookieKeys(value: string | undefined): readonly string[] {
 function parseHandleKeyVersion(value: string | undefined): number {
   if (value === undefined || value === '') {
     throw new AuthConfigurationError(
-      'Worker Secret AUTH_HANDLE_KEY_VERSION chua duoc dat; khong the ghi key_version khi mint handle',
+      'Worker Secret AUTH_HANDLE_KEY_VERSION is not set; key_version cannot be recorded when minting a handle',
     );
   }
   if (!/^\d+$/u.test(value)) {
     throw new AuthConfigurationError(
-      'Worker Secret AUTH_HANDLE_KEY_VERSION khong phai chuoi chu so thap phan',
+      'Worker Secret AUTH_HANDLE_KEY_VERSION is not a decimal-digit string',
     );
   }
   const parsed = Number(value);
   if (parsed < 1) {
     throw new AuthConfigurationError(
-      'Worker Secret AUTH_HANDLE_KEY_VERSION phai la so nguyen duong (>= 1)',
+      'Worker Secret AUTH_HANDLE_KEY_VERSION must be a positive integer (>= 1)',
     );
   }
   return parsed;
@@ -333,18 +333,18 @@ function parseInternalAuthSkewSeconds(value: string | undefined): number {
   }
   if (!/^\d+$/u.test(value)) {
     throw new AuthConfigurationError(
-      'Worker Secret AUTH_INTERNAL_SKEW_SECONDS khong phai chuoi chu so thap phan',
+      'Worker Secret AUTH_INTERNAL_SKEW_SECONDS is not a decimal-digit string',
     );
   }
   const parsed = Number(value);
   if (parsed < 1) {
     throw new AuthConfigurationError(
-      'Worker Secret AUTH_INTERNAL_SKEW_SECONDS phai la so nguyen duong (>= 1) giay',
+      'Worker Secret AUTH_INTERNAL_SKEW_SECONDS must be a positive integer (>= 1) in seconds',
     );
   }
   if (parsed > MAX_INTERNAL_SKEW_SECONDS) {
     throw new AuthConfigurationError(
-      `Worker Secret AUTH_INTERNAL_SKEW_SECONDS vuot tran ${MAX_INTERNAL_SKEW_SECONDS} giay`,
+      `Worker Secret AUTH_INTERNAL_SKEW_SECONDS exceeds the ${MAX_INTERNAL_SKEW_SECONDS}-second ceiling`,
     );
   }
   return parsed;
@@ -365,7 +365,7 @@ export function resolveInternalSecret(config: AuthConfig): (kid: string) => Prom
   return async (kid: string): Promise<string> => {
     const secret = config.internalSecretsByKid.get(kid);
     if (secret === undefined) {
-      throw new Error(`kid '${kid}' khong co trong registry secret internal cua auth`);
+      throw new Error(`kid '${kid}' is not in the internal secret registry of auth`);
     }
     return secret;
   };
@@ -383,14 +383,14 @@ function parseOptionalKid(value: string | undefined, name: string): string | und
   }
   if (value !== value.trim()) {
     throw new AuthConfigurationError(
-      `Worker Secret ${name} co khoang trang dau/cuoi; auth tu choi thay vi trim am tham`,
+      `Worker Secret ${name} has leading/trailing whitespace; auth refuses it instead of trimming silently`,
     );
   }
   try {
     assertKid(value);
   } catch {
     throw new AuthConfigurationError(
-      `Worker Secret ${name} khong dung dinh dang 8-16 hex chu thuong cung kid envelope`,
+      `Worker Secret ${name} does not match the 8-16 lowercase-hex + envelope kid format`,
     );
   }
   return value;
@@ -425,7 +425,7 @@ function buildInternalSecretsByKid(entries: {
     const owner = secretsByValue.get(secret);
     if (owner !== undefined) {
       throw new AuthConfigurationError(
-        `AUTH_INTERNAL_SECRET va AUTH_INTERNAL_PREVIOUS_SECRET trung gia tri; hai kid ${owner} va ${kid} khong the chia mot secret`,
+        `AUTH_INTERNAL_SECRET and AUTH_INTERNAL_PREVIOUS_SECRET share the same value; kids ${owner} and ${kid} cannot share one secret`,
       );
     }
     secretsByValue.set(secret, kid);

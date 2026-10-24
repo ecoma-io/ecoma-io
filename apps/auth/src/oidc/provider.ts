@@ -296,10 +296,10 @@ export async function createProvider(deps: ProviderDeps): Promise<Provider> {
   // ném sớm, tại factory, thay vì để keystore nén lỗi về sau.
   const { x, y, d, crv } = privateJwk;
   if (typeof x !== 'string' || typeof y !== 'string' || typeof d !== 'string') {
-    throw new Error('signing key khong export duoc JWK EC day du (x/y/d)');
+    throw new Error('signing key cannot export a complete EC JWK (x/y/d)');
   }
   if (crv !== 'P-256') {
-    throw new Error(`signing key phai la P-256, nhan duoc: ${String(crv)}`);
+    throw new Error(`signing key must be P-256, got: ${String(crv)}`);
   }
   // Khoá tạm extractable chỉ sống trong block này — hết factory, không còn
   // tham chiếu nào (javadoc của `extractPublicMaterial` ghi cùng đánh đổi).
@@ -323,7 +323,7 @@ export async function createProvider(deps: ProviderDeps): Promise<Provider> {
     // Rỗng gần như chắc chắn là lỗi seed/migration: một deployment auth không
     // có client nào là deployment không thể authorize. Ném sớm thay vì provider
     // chạy rồi mọi /auth đều invalid_client.
-    throw new Error('khong co client public nao trong auth.oauth_clients');
+    throw new Error('no public client found in auth.oauth_clients');
   }
 
   const provider = new Provider(config.issuer, {
@@ -417,7 +417,7 @@ export async function createProvider(deps: ProviderDeps): Promise<Provider> {
           // `resource` lạ sẽ nhận InvalidTarget thay vì một token audience-sai.
           if (resourceIndicator !== config.audience) {
             throw new Error(
-              `resource indicator khong duoc ho tro (ctx issuer: ${ctx.oidc.issuer})`,
+              `resource indicators are not supported (ctx issuer: ${ctx.oidc.issuer})`,
             );
           }
           return {
@@ -516,7 +516,7 @@ export async function createProvider(deps: ProviderDeps): Promise<Provider> {
         // resume đi qua, respond() cấp code.
         const login = policy.get('login');
         if (login === undefined) {
-          throw new Error('interaction policy thieu prompt login');
+          throw new Error('interaction policy is missing the login prompt');
         }
         // ⚠️ PHAI la instance cua `Check`, khong phai plain object: `interactions.js`
         // goi `await details(ctx)` tren TUNG check — plain object thieu `details`
@@ -539,7 +539,7 @@ export async function createProvider(deps: ProviderDeps): Promise<Provider> {
         // grant của provider; prompt tắt đúng khi result đã mang `consent`.
         const consent = policy.get('consent');
         if (consent === undefined) {
-          throw new Error('interaction policy thieu prompt consent');
+          throw new Error('interaction policy is missing the consent prompt');
         }
         // Cung ly do instance `Check` voi prompt login o tren.
         consent.checks.splice(
@@ -560,7 +560,7 @@ export async function createProvider(deps: ProviderDeps): Promise<Provider> {
         if (typeof handleX !== 'string' || handleX === '') {
           // Không handle ⇒ không có đường về account; fail-closed thay vì trang login
           // không mang handle (account sẽ không biết continuation nào).
-          throw new Error('interaction khong mang handle X (ecoma_x)');
+          throw new Error('interaction carries no X handle (ecoma_x)');
         }
         return `${config.accountBaseUrl}/login?handle=${encodeURIComponent(handleX)}`;
       },

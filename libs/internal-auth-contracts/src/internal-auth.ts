@@ -1069,7 +1069,7 @@ export function assertNonceExpirySeconds(
 ): asserts value is number {
   if (!isValidNonceExpirySeconds(value)) {
     throw createError(
-      'nonce expiry phai la epoch giay, so nguyen trong [1, MAX_NONCE_EXPIRY_EPOCH_SECONDS]',
+      'nonce expiry must be an epoch in seconds, an integer within [1, MAX_NONCE_EXPIRY_EPOCH_SECONDS]',
     );
   }
 }

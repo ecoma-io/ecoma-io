@@ -118,14 +118,16 @@ describe('assertWellFormedRedirectUri', () => {
   it('REJECTS a non-http(s) scheme — javascript:, data: are XSS/open redirect', () => {
     // Hai chuoi nay VAN parse duoc thanh URL hop le (protocol `javascript:` /
     // `data:`), nen bo qua kiem tra protocol se cho chung qua.
-    expect(() => assertWellFormedRedirectUri('javascript:alert(1)')).toThrow(/http hoac https/u);
+    expect(() => assertWellFormedRedirectUri('javascript:alert(1)')).toThrow(
+      /must use http or https/u,
+    );
     expect(() => assertWellFormedRedirectUri('data:text/html,<script>alert(1)</script>')).toThrow(
-      /http hoac https/u,
+      /must use http or https/u,
     );
   });
 
   it('REJECTS a string that is not a URL', () => {
-    expect(() => assertWellFormedRedirectUri('khong-phai-url')).toThrow(/URL hop le/u);
+    expect(() => assertWellFormedRedirectUri('not-a-url')).toThrow(/valid URL/u);
   });
 });
 

@@ -57,7 +57,7 @@ describe('validateAccountConfig', () => {
 
   it('rejects a secret shorter than the minimum length', () => {
     expect(() => validateAccountConfig({ internalHmacSecret: 'k'.repeat(31) })).toThrow(
-      /ít nhất 32 ký tự/u,
+      /at least 32 characters/u,
     );
   });
 
@@ -238,7 +238,7 @@ describe('validateAccountConfig — mail service URL', () => {
           mailInternalAuthSecret: 'm'.repeat(31),
         }),
       ),
-    ).toThrow(/ít nhất 32 ký tự/u);
+    ).toThrow(/at least 32 characters/u);
   });
 
   it('never reveals the configured mail credential in the error message', () => {

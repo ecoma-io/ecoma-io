@@ -137,28 +137,29 @@ export function decideOutboxClaim(state: OutboxRecordState, now: number): Outbox
     return {
       ok: false,
       reason: 'malformed_outbox',
-      detail: 'Outbox record không đúng shape tối thiểu của domain.',
+      detail: 'The outbox record does not match the minimum domain shape.',
     };
   }
   if (!isEpochMillis(now)) {
     return {
       ok: false,
       reason: 'malformed_outbox',
-      detail: 'Tham số now không hợp lệ.',
+      detail: 'The now parameter is invalid.',
     };
   }
   if (state.status === OUTBOX_STATUS.Published) {
     return {
       ok: false,
       reason: 'already_published',
-      detail: 'Record đã published — terminal, không được publish lại.',
+      detail: 'The record is already published — terminal, cannot publish again.',
     };
   }
   if (state.status === OUTBOX_STATUS.Failed) {
     return {
       ok: false,
       reason: 'failed_not_claimable',
-      detail: 'Record failed không claimable — chỉ operator mới đưa về đường publish.',
+      detail:
+        'The record is failed and not claimable — only an operator can return it to the publish path.',
     };
   }
   if (state.status === OUTBOX_STATUS.Pending) {
@@ -166,7 +167,7 @@ export function decideOutboxClaim(state: OutboxRecordState, now: number): Outbox
       return {
         ok: false,
         reason: 'backoff_not_due',
-        detail: 'Record đang trong backoff — available_at chưa tới.',
+        detail: 'The record is in backoff — available_at has not been reached.',
       };
     }
     return { ok: true, status: OUTBOX_STATUS.Publishing };
@@ -179,14 +180,14 @@ export function decideOutboxClaim(state: OutboxRecordState, now: number): Outbox
     return {
       ok: false,
       reason: 'malformed_outbox',
-      detail: 'Record publishing nhưng không mang lease — trạng thái không tồn tại.',
+      detail: 'The record is publishing without a lease — a state that does not exist.',
     };
   }
   if (state.leaseExpiresAt > now) {
     return {
       ok: false,
       reason: 'lease_held',
-      detail: 'Record đang giữ lease còn hiệu lực — không claim được.',
+      detail: 'The record holds a still-valid lease — cannot claim.',
     };
   }
   return { ok: true, status: OUTBOX_STATUS.Publishing };
@@ -237,7 +238,7 @@ export function applyPublisherSuccess(deliveryStatus: DeliveryStatus): ApplyPubl
     return {
       ok: false,
       reason: 'malformed_delivery',
-      detail: 'Delivery status nằm ngoài vocabulary của domain.',
+      detail: 'Delivery status is outside the domain vocabulary.',
     };
   }
   if (deliveryStatus === DELIVERY_STATUS.Pending) {
@@ -277,14 +278,15 @@ export function canCreateOutboxIntent(
     return {
       ok: false,
       reason: 'open_outbox_intent',
-      detail: 'Số record open intent không hợp lệ — fail-safe, không tạo intent.',
+      detail: 'The open-intent record count is invalid — fail-safe, no intent is created.',
     };
   }
   if (openIntentCount > 0) {
     return {
       ok: false,
       reason: 'open_outbox_intent',
-      detail: 'Đã có record pending/publishing cho delivery này — tối đa một open intent (§6.1).',
+      detail:
+        'A pending/publishing record already exists for this delivery — at most one open intent (§6.1).',
     };
   }
   return { ok: true, allowed: true };

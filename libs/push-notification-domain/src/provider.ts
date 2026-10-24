@@ -155,7 +155,7 @@ export function evaluateProviderRoutingEligibility(
     return {
       ok: false,
       reason: 'malformed_provider',
-      detail: 'Không có provider để đánh giá eligibility.',
+      detail: 'No provider is available to evaluate eligibility.',
     };
   }
   if (
@@ -169,35 +169,35 @@ export function evaluateProviderRoutingEligibility(
     return {
       ok: false,
       reason: 'malformed_provider',
-      detail: 'Provider fact không đúng shape tối thiểu của domain.',
+      detail: 'The provider fact does not match the minimum domain shape.',
     };
   }
   if (provider.app !== app) {
     return {
       ok: false,
       reason: 'app_mismatch',
-      detail: 'Provider thuộc app khác — FR-007 cấm dùng chéo app.',
+      detail: 'The provider belongs to another app — FR-007 forbids cross-app use.',
     };
   }
   if (provider.transport !== transport) {
     return {
       ok: false,
       reason: 'transport_mismatch',
-      detail: 'Provider phục vụ transport khác với transport đang route.',
+      detail: 'The provider serves a transport different from the routed transport.',
     };
   }
   if (provider.emergencyHold) {
     return {
       ok: false,
       reason: 'provider_hold',
-      detail: 'Provider đang emergency hold — delivery không eligible để claim.',
+      detail: 'Provider is under emergency hold — the delivery is not eligible to claim.',
     };
   }
   if (provider.status === PROVIDER_STATUS.Disabled) {
     return {
       ok: false,
       reason: 'provider_disabled',
-      detail: 'Provider disabled — không nhận routing delivery mới.',
+      detail: 'Provider is disabled — no new routed deliveries are accepted.',
     };
   }
   return { ok: true, providerId: provider.providerId };
@@ -241,7 +241,7 @@ export function selectPrimaryProvider(
     return {
       ok: false,
       reason: 'malformed_selector',
-      detail: 'Tham số chọn provider không hợp lệ — không quyết định được primary.',
+      detail: 'The provider selection parameters are invalid — the primary cannot be decided.',
     };
   }
   // Collection hỏng là dữ liệu lỗi hình dạng của provider source — cùng reason với
@@ -250,7 +250,7 @@ export function selectPrimaryProvider(
     return {
       ok: false,
       reason: 'malformed_provider',
-      detail: 'Danh sách provider không hợp lệ — không chọn được primary.',
+      detail: 'The provider list is invalid — the primary cannot be selected.',
     };
   }
   const eligible = providers.filter(
@@ -260,7 +260,7 @@ export function selectPrimaryProvider(
     return {
       ok: false,
       reason: 'no_provider',
-      detail: 'Không có provider eligible cho app và transport này.',
+      detail: 'No provider is eligible for this app and transport.',
     };
   }
   if (eligible.length > 1) {
@@ -268,7 +268,7 @@ export function selectPrimaryProvider(
       ok: false,
       reason: 'ambiguous',
       detail:
-        'Nhiều provider eligible cho cùng app và transport — fail safe, không chọn theo thứ tự.',
+        'Multiple providers are eligible for the same app and transport — fail safe, no ordering-based selection.',
     };
   }
   return { ok: true, provider: eligible[0] as ProviderRoutingFact };

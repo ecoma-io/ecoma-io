@@ -74,7 +74,7 @@ describe('a Proxy trap that throws never escapes a validator (F1)', () => {
     const hostile = withThrowingTrap('descriptor', VALID_ENVELOPE, 'auth');
     const outcome = expectRejected(
       rejectionOrEscape(() => validateDeliveryCommand(hostile)),
-      'descriptor trên khoá bị cấm',
+      'descriptor on a forbidden key',
     );
     expect(outcome).toMatchObject({ ok: false, reason: 'invalid_payload' });
   });
@@ -85,7 +85,7 @@ describe('a Proxy trap that throws never escapes a validator (F1)', () => {
     const hostile = withThrowingTrap('get', VALID_ENVELOPE, 'delivery_id');
     const outcome = expectRejected(
       rejectionOrEscape(() => validateDeliveryCommand(hostile)),
-      'get trên khoá được phép',
+      'get on an allowed key',
     );
     expect(outcome).toMatchObject({ ok: false, reason: 'invalid_payload' });
   });
@@ -95,7 +95,7 @@ describe('a Proxy trap that throws never escapes a validator (F1)', () => {
     const hostile = { ...VALID_ENVELOPE, payload: hostilePayload } as unknown as DeliveryCommandV1;
     const outcome = expectRejected(
       rejectionOrEscape(() => validateDeliveryCommand(hostile)),
-      'get trên khoá payload lồng',
+      'get on a nested payload key',
     );
     // Lỗi payload được trả nguyên từ schema payload (bước 7), `invalid_payload` được map thành
     // `invalid_field_type` của envelope — điểm cần assert là **không throw**, không phải lý do.
@@ -124,7 +124,7 @@ describe('a Proxy trap that throws never escapes a validator (F1)', () => {
       rejectionOrEscape(() =>
         validateNotificationPayload({ title: 'Tiêu đề', body: 'Nội dung', data: hostileData }),
       ),
-      'getPrototypeOf trên data',
+      'getPrototypeOf on data',
     );
     expect(outcome).toMatchObject({ ok: false, reason: 'invalid_field_type' });
   });
@@ -157,7 +157,7 @@ describe('a Proxy trap that throws never escapes a validator (F1)', () => {
           data: { items: hostileArray },
         }),
       ),
-      'descriptor trên phần tử mảng lồng',
+      'descriptor on a nested array element',
     );
     expect(outcome).toMatchObject({ ok: false, reason: 'invalid_field_type' });
   });
@@ -176,13 +176,13 @@ describe('a Proxy trap that throws never escapes a validator (F1)', () => {
           data: { nested: hostileNested },
         }),
       ),
-      'getPrototypeOf trên object lồng',
+      'getPrototypeOf on a nested object',
     );
     expect(outcome).toMatchObject({ ok: false, reason: 'invalid_field_type' });
     if (outcome.ok || outcome.reason !== 'invalid_field_type') {
       throw new Error('Expected an invalid_field_type rejection.');
     }
-    expect(outcome.detail).toContain('phản chiếu');
+    expect(outcome.detail).toContain('reflection');
     expect(outcome.detail).not.toContain('Date/Map/Set');
   });
 

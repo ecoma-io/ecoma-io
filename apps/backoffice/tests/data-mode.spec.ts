@@ -25,29 +25,29 @@ describe('resolveBackofficeDataMode', () => {
   });
 
   it.each([
-    ['chuỗi rỗng', ''],
-    ['giá trị disabled tường minh', 'disabled'],
-    ['sai hoa/thường', 'PROTOTYPE'],
-    ['viết hoa chữ đầu', 'Prototype'],
-    ['thừa khoảng trắng', 'prototype '],
-    ['từ đồng nghĩa không được hỗ trợ', 'preview'],
-    ['từ đồng nghĩa không được hỗ trợ', 'mock'],
-    ['từ đồng nghĩa không được hỗ trợ', 'realtime'],
-    ['chuỗi boolean', 'true'],
-    ['giá trị không liên quan', 'yes'],
-    ['giá trị của app khác', 'staging'],
-  ])('chuỗi %s → unavailable', (_label, raw) => {
+    ['empty string', ''],
+    ['explicit disabled value', 'disabled'],
+    ['wrong case', 'PROTOTYPE'],
+    ['leading capital', 'Prototype'],
+    ['trailing whitespace', 'prototype '],
+    ['unsupported synonym', 'preview'],
+    ['unsupported synonym', 'mock'],
+    ['unsupported synonym', 'realtime'],
+    ['boolean-like string', 'true'],
+    ['unrelated value', 'yes'],
+    ['another app value', 'staging'],
+  ])('string %s -> unavailable', (_label, raw) => {
     expect(resolveBackofficeDataMode(raw)).toBe('unavailable');
   });
 
   it.each([
     ['boolean true', true],
     ['boolean false', false],
-    ['số 1', 1],
-    ['số 0', 0],
+    ['number 1', 1],
+    ['number 0', 0],
     ['object', { mode: 'prototype' }],
     ['array', ['prototype']],
-  ])('giá trị không phải chuỗi (%s) → unavailable', (_label, raw) => {
+  ])('non-string value (%s) -> unavailable', (_label, raw) => {
     expect(resolveBackofficeDataMode(raw)).toBe('unavailable');
   });
 

@@ -88,7 +88,11 @@ export type InvalidateValidation =
  */
 export function validateInvalidateAck(payload: unknown): InvalidateValidation {
   if (!isPlainObject(payload)) {
-    return { ok: false, reason: 'invalid_payload', detail: 'Invalidate 200 phải là object JSON.' };
+    return {
+      ok: false,
+      reason: 'invalid_payload',
+      detail: 'The invalidate 200 must be a JSON object.',
+    };
   }
   const record = payload;
 
@@ -106,7 +110,7 @@ export function validateInvalidateAck(payload: unknown): InvalidateValidation {
       return {
         ok: false,
         reason: 'runtime_material_leak',
-        detail: `Invalidate 200 chứa field bị cấm: ${field}.`,
+        detail: `The invalidate 200 contains a forbidden field: ${field}.`,
       };
     }
   }
@@ -122,24 +126,28 @@ export function validateInvalidateAck(payload: unknown): InvalidateValidation {
     return {
       ok: false,
       reason: 'missing_field',
-      detail: 'Invalidate 200 thiếu field: subscription_id.',
+      detail: 'The invalidate 200 is missing field: subscription_id.',
     };
   }
   if (!isNonEmptyString(record.subscription_id)) {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'Invalidate 200: subscription_id phải là chuỗi không rỗng.',
+      detail: 'invalidate 200: subscription_id must be a non-empty string.',
     };
   }
   if (!Object.hasOwn(record, 'status')) {
-    return { ok: false, reason: 'missing_field', detail: 'Invalidate 200 thiếu field: status.' };
+    return {
+      ok: false,
+      reason: 'missing_field',
+      detail: 'The invalidate 200 is missing field: status.',
+    };
   }
   if (record.status !== INVALIDATE_RESULT_SUBSCRIPTION_STATUS) {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: `Invalidate 200: status phải là "${INVALIDATE_RESULT_SUBSCRIPTION_STATUS}" (subscription state theo FR-004; "invalidated" không phải một state).`,
+      detail: `invalidate 200: status must be "${INVALIDATE_RESULT_SUBSCRIPTION_STATUS}" (the subscription state per FR-004; "invalidated" is not a state).`,
     };
   }
 
@@ -157,9 +165,7 @@ export function invalidateAck(subscriptionId: string): InvalidateAck {
   } as const satisfies InvalidateAck;
   const checked = validateInvalidateAck(candidate);
   if (!checked.ok) {
-    throw new Error(
-      `invalidateAck: body không qua validator (${checked.reason}): ${checked.detail}`,
-    );
+    throw new Error(`invalidateAck: body failed validation (${checked.reason}): ${checked.detail}`);
   }
   return checked.ack;
 }
@@ -186,7 +192,7 @@ export function validateInvalidateRequest(payload: unknown): InvalidateRequestVa
     return {
       ok: false,
       reason: 'invalid_payload',
-      detail: 'Invalidate request phải là object JSON.',
+      detail: 'The invalidate request must be a JSON object.',
     };
   }
   const scan = scanJsonDataObject(payload, 'Invalidate request', []);
@@ -196,7 +202,7 @@ export function validateInvalidateRequest(payload: unknown): InvalidateRequestVa
       reason: scan.reason,
       detail:
         scan.reason === 'unexpected_field'
-          ? `Invalidate request MUST rỗng; nhận field ngoài contract: ${scan.field}.`
+          ? `The invalidate request MUST be empty; received a field outside the contract: ${scan.field}.`
           : scan.detail,
     };
   }

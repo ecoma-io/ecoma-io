@@ -226,7 +226,7 @@ BEGIN
      OR NEW.valid_until IS DISTINCT FROM OLD.valid_until
   ) THEN
     RAISE EXCEPTION
-      'role_assignments: runtime role khong duoc thay doi revoked_at/valid_until (un-revoke hoac keo dai han) — thao tac nay la governance action'
+      'role_assignments: runtime roles must not change revoked_at/valid_until (un-revoke or extend) — this is a governance action'
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
 
@@ -251,7 +251,7 @@ BEGIN
        AND r.is_system
   ) THEN
     RAISE EXCEPTION
-      'role_assignments: runtime role khong duoc gan system-defined role (is_system) — noi dung va viec gan role system la governance action (ADR-0004)'
+      'role_assignments: runtime roles must not grant a system-defined role (is_system) — role content and system grants are governance actions (ADR-0004)'
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
 
@@ -266,14 +266,14 @@ BEGIN
   -- được ai đã cấp quyền.
   IF NEW.created_by_sub IS NULL THEN
     RAISE EXCEPTION
-      'role_assignments: runtime role phai khai bao actor (created_by_sub) de gan role duoc truy vet (SR-013)'
+      'role_assignments: runtime roles must declare an actor (created_by_sub) so the grant is traceable (SR-013)'
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
 
   -- (3) Actor phải là Account ID đúng định dạng.
   IF NEW.created_by_sub !~ '^sub_[a-z2-7]{32}$' THEN
     RAISE EXCEPTION
-      'role_assignments: created_by_sub phai la Account ID dung dinh dang (sub_ + 32 ky tu base32 viet thuong)'
+      'role_assignments: created_by_sub must be a well-formed Account ID (sub_ + 32 lowercase base32 characters)'
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
 
@@ -286,7 +286,7 @@ BEGIN
   -- lớp chặn cuối.
   IF NEW.staff_sub = NEW.created_by_sub THEN
     RAISE EXCEPTION
-      'role_assignments: runtime role khong duoc tu gan role cho chinh minh (SR-005, T-01)'
+      'role_assignments: runtime roles must not grant a role to themselves (SR-005, T-01)'
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
 
@@ -401,7 +401,7 @@ BEGIN
        AND r.is_system
   ) THEN
     RAISE EXCEPTION
-      'role_permissions: runtime role khong duoc gan permission vao system-defined role — doi noi dung role la governance action (ADR-0004)'
+      'role_permissions: runtime roles must not add permissions to a system-defined role — changing role content is a governance action (ADR-0004)'
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
 
@@ -419,22 +419,22 @@ BEGIN
   -- lỗi của FK).
   IF permission_status IS DISTINCT FROM 'active' THEN
     RAISE EXCEPTION
-      'role_permissions: runtime role chi duoc gan permission dang active trong catalog; permission % khong active (status=%)',
+      'role_permissions: runtime roles may only grant permissions that are active in the catalog; permission % is not active (status=%)',
       NEW.permission_id,
-      coalesce(permission_status, 'khong ton tai')
+      coalesce(permission_status, 'not found')
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
 
   -- (c) Actor phải được khai báo và đúng định dạng (SR-013).
   IF NEW.created_by_sub IS NULL THEN
     RAISE EXCEPTION
-      'role_permissions: runtime role phai khai bao actor (created_by_sub) de gan permission duoc truy vet (SR-013)'
+      'role_permissions: runtime roles must declare an actor (created_by_sub) so the grant is traceable (SR-013)'
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
 
   IF NEW.created_by_sub !~ '^sub_[a-z2-7]{32}$' THEN
     RAISE EXCEPTION
-      'role_permissions: created_by_sub phai la Account ID dung dinh dang (sub_ + 32 ky tu base32 viet thuong)'
+      'role_permissions: created_by_sub must be a well-formed Account ID (sub_ + 32 lowercase base32 characters)'
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
 
@@ -489,14 +489,14 @@ BEGIN
        AND r.is_system
   ) THEN
     RAISE EXCEPTION
-      'role_permissions: runtime role khong duoc xoa permission khoi system-defined role — doi noi dung role la governance action (ADR-0004)'
+      'role_permissions: runtime roles must not remove permissions from a system-defined role — changing role content is a governance action (ADR-0004)'
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
 
   -- Block toàn phần cho runtime trên mọi role (custom lẫn system): nội dung role
   -- là governance action, runtime không compose role.
   RAISE EXCEPTION
-    'role_permissions: runtime role khong duoc xoa permission khoi role — doi noi dung role la governance action (ADR-0004)'
+    'role_permissions: runtime roles must not remove permissions from a role — changing role content is a governance action (ADR-0004)'
     USING ERRCODE = 'integrity_constraint_violation';
 END;
 $$;

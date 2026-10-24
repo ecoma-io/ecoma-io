@@ -140,7 +140,7 @@ class AtomTitleParsingTests(unittest.TestCase):
         # ton tai" se khien nguoi review xoa mot reference nghieng.
         status, _title, detail = parse_atom_title("")
         self.assertIs(Status.PARSE_FAILURE, status)
-        self.assertIn("rong", detail)
+        self.assertIn("empty", detail)
 
     def test_html_body_is_parse_failure(self) -> None:
         status, _title, _detail = parse_atom_title("<html><body>Rate limited</body></html>")
@@ -257,7 +257,7 @@ class ClientOutcomeTests(unittest.TestCase):
         result = make_client(fetch).fetch_title("2404.022")
         self.assertIs(Status.MALFORMED_IDENTIFIER, result.status)
         self.assertEqual(0, result.attempts)
-        self.assertEqual([], fetch.calls, "id khong hop le thi khong ton request")
+        self.assertEqual([], fetch.calls, "a malformed id makes no request")
 
     def test_unparseable_response_fails(self) -> None:
         fetch = RecordingFetch(HttpResponse(200, "not xml at all"))
@@ -311,7 +311,7 @@ class RetryPolicyTests(unittest.TestCase):
         client = make_client(fetch, max_attempts=4, sleep=sleeps.append)
         result = client.fetch_title("1706.03762")
         self.assertIs(Status.NETWORK_FAILURE, result.status)
-        self.assertEqual(4, result.attempts, "phai thu dung so lan trong max_attempts")
+        self.assertEqual(4, result.attempts, "must retry exactly max_attempts times")
         self.assertEqual(4, len(fetch.calls))
         self.assertEqual([2.0, 4.0, 8.0], sleeps, "backoff luoi, dung so lan thu")
 
@@ -384,7 +384,7 @@ class ArticleCheckTests(unittest.TestCase):
         findings = self.check(body, {}, fetch)
         self.assertEqual(1, len(findings))
         self.assertIs(Status.MISSING_FROM_MANIFEST, findings[0].status)
-        self.assertEqual([], fetch.calls, "id chua khai bao thi khong ton request")
+        self.assertEqual([], fetch.calls, "an undeclared id makes no request")
         self.assertIn("2210.17323", findings[0].as_line())
 
     def test_wrong_paper_is_reported_with_expected_and_actual(self) -> None:
@@ -457,7 +457,7 @@ class ManifestTests(unittest.TestCase):
             ]
         }
         _table, problems = parse_manifest(raw)
-        self.assertTrue(any("sap xep" in problem for problem in problems))
+        self.assertTrue(any("must be sorted" in problem for problem in problems))
 
     def test_manifest_rejects_duplicate_keys(self) -> None:
         raw = {
@@ -467,12 +467,12 @@ class ManifestTests(unittest.TestCase):
             ]
         }
         _table, problems = parse_manifest(raw)
-        self.assertTrue(any("trung khoa" in problem for problem in problems))
+        self.assertTrue(any("duplicate key" in problem for problem in problems))
 
     def test_manifest_rejects_malformed_identifier(self) -> None:
         raw = {"citations": [{"article": "a", "arxivId": "12.34", "expectedTitle": "t"}]}
         _table, problems = parse_manifest(raw)
-        self.assertTrue(any("khong hop le" in problem for problem in problems))
+        self.assertTrue(any("not well-formed" in problem for problem in problems))
 
     def test_manifest_rejects_blank_title(self) -> None:
         raw = {"citations": [{"article": "a", "arxivId": "1706.03762", "expectedTitle": "  "}]}

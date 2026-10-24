@@ -203,7 +203,7 @@ describe('useBackofficeAdapter — client input cannot change the mode', () => {
       'useState',
     ]) {
       const spy = vi.fn<() => void>(() => {
-        throw new Error(`composable không được gọi ${name}`);
+        throw new Error(`composable must not be called: ${name}`);
       });
       spies.set(name, spy);
       container[name] = spy;

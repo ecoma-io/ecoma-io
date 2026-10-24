@@ -127,7 +127,7 @@ export class PostgresAdapter {
       if (accountId === '' || clientId === '') {
         // Không thể kiểm mà vẫn cấp là mở cửa im lặng — ném fail-closed thay vì
         // cấp một artifact không biết chủ.
-        throw new Error(`issuance gate thieu accountId/clientId cho kind ${this.kind}`);
+        throw new Error(`issuance gate is missing accountId/clientId for kind ${this.kind}`);
       }
       await this.issuanceGate.assertIssuable({ accountId, clientId, grantId });
     }
@@ -232,7 +232,7 @@ export class PostgresAdapter {
     if (!CONSUMABLE_KINDS.has(this.kind)) {
       // Provider chỉ gọi consume trên AuthorizationCode/RefreshToken/DeviceCode; một
       // lời gọi ngoài tập là bug điều phối — ném thay vì ghi cột lên kind sai kind.
-      throw new Error(`consume() khong ap dung cho kind ${this.kind}`);
+      throw new Error(`consume() does not apply to kind ${this.kind}`);
     }
     const nowEpoch = Math.floor(Date.now() / 1000);
     await this.client.unsafe(
@@ -272,7 +272,7 @@ export class PostgresAdapter {
    */
   async revokeByGrantId(grantId: string): Promise<void> {
     if (!GRANTABLE_KINDS.has(this.kind)) {
-      throw new Error(`revokeByGrantId() khong ap dung cho kind ${this.kind}`);
+      throw new Error(`revokeByGrantId() does not apply to kind ${this.kind}`);
     }
     await this.client.unsafe('DELETE FROM auth.oidc_state WHERE kind = $1 AND grant_id = $2', [
       this.kind,
@@ -291,14 +291,14 @@ export class PostgresAdapter {
  */
 function rowToPayload(rows: OidcStateRow[]): Record<string, unknown> | undefined {
   if (!Array.isArray(rows)) {
-    throw new Error('oidc adapter: Queryable phai tra ve mang hang (postgres.js)');
+    throw new Error('oidc adapter: Queryable must return a frozen array (postgres.js)');
   }
   if (rows.length === 0) {
     return undefined;
   }
   const row = rows[0];
   if (typeof row?.payload !== 'object' || row.payload === null) {
-    throw new Error('oidc adapter: payload cua oidc_state phai la jsonb object');
+    throw new Error('oidc adapter: the payload of oidc_state must be a jsonb object');
   }
   return row.payload as Record<string, unknown>;
 }

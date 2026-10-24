@@ -195,15 +195,20 @@ worker.onError((error) => {
     });
   }
   if (isRetryableStorageError(error)) {
-    return problem(503, 'storage_unavailable', 'Storage tạm thời không khả dụng — thử lại sau.', {
-      'retry-after': STORAGE_RETRY_AFTER_SECONDS,
-    });
+    return problem(
+      503,
+      'storage_unavailable',
+      'Storage is temporarily unavailable — retry later.',
+      {
+        'retry-after': STORAGE_RETRY_AFTER_SECONDS,
+      },
+    );
   }
-  return problem(500, 'internal_error', 'Lỗi nội bộ.');
+  return problem(500, 'internal_error', 'Internal error.');
 });
 
 /** `notFound` — không phân biệt "route không có" với "route bị giấu", và không lộ danh sách route. */
-worker.notFound(() => problem(404, 'not_found', 'Không có route này.'));
+worker.notFound(() => problem(404, 'not_found', 'No such route.'));
 
 /* -------------------------------------------------------------------------------------- */
 /* Composition: env → adapter → port                                                           */
@@ -241,8 +246,8 @@ function readRootKey(env: Record<string, unknown>, version: string): Uint8Array 
   // sớm ở đây chỉ để thông điệp nói đúng **tên secret** thay vì nói về version trừu tượng.
   if (decoded.byteLength !== AES_256_KEY_BYTES) {
     throw new Error(
-      `Worker Secret ${secretName} phải là ${AES_256_KEY_BYTES} byte (base64 của AES-256 key), ` +
-        `nhận ${decoded.byteLength}.`,
+      `Worker Secret ${secretName} must be ${AES_256_KEY_BYTES} bytes (base64 of the AES-256 key), ` +
+        `got ${decoded.byteLength}.`,
     );
   }
   return decoded;
@@ -279,7 +284,7 @@ function buildCipher(
     const key = readRootKey(env as unknown as Record<string, unknown>, version);
     if (key === null) {
       throw new Error(
-        `Thiếu Worker Secret ${ROOT_KEY_SECRET_PREFIX}${version} cho credential version đang phục vụ.`,
+        `Worker Secret ${ROOT_KEY_SECRET_PREFIX}${version} is missing for a credential version being served.`,
       );
     }
     keysByVersion[version] = key;
@@ -543,7 +548,7 @@ const RUNTIME_PRINCIPAL_HEADER = 'x-ecoma-principal';
  * tại phải là thông tin mà một caller không hợp lệ dò được từ thông điệp lỗi.
  */
 function unauthorized(): Response {
-  return problem(401, 'unauthorized', 'Thiếu hoặc sai thông tin xác thực.');
+  return problem(401, 'unauthorized', 'Missing or invalid credentials.');
 }
 
 /** Kết quả auth của một route: đã xác thực thì có context, không thì có `Response` luôn trả về. */
@@ -625,7 +630,7 @@ function adminResultResponse<T>(result: AdminResult<T>, status = 200): Response 
 function readPathParam(context: Context, name: string): string | Response {
   const value = context.req.param(name);
   return value === undefined || value.length === 0
-    ? problem(400, 'invalid_payload', `Thiếu path param \`${name}\`.`)
+    ? problem(400, 'invalid_payload', `Missing \`${name}\` path parameter.`)
     : value;
 }
 
@@ -736,13 +741,13 @@ worker.post('/v1/notifications', async (context) => {
   const recipients = readRecipients(body.value);
   const payload = validateNotificationPayload(body.value.notification);
   if (requestedApp === null) {
-    return problem(400, 'invalid_payload', 'Thiếu `app` trong body.');
+    return problem(400, 'invalid_payload', 'Missing `app` in body.');
   }
   if (recipients === null) {
     return problem(
       400,
       'invalid_payload',
-      'Cần `recipient` (một user_id) hoặc `recipients` (tập user_id) không rỗng.',
+      'Provide `recipient` (a user_id) or `recipients` (a non-empty set of user_ids).',
     );
   }
   if (!payload.ok) {
@@ -868,7 +873,7 @@ worker.post('/internal/deliveries/:deliveryId/release', async (context) => {
   }
   const generation = readDispatchGeneration(body.value);
   if (generation === null) {
-    return problem(400, 'invalid_payload', 'Cần `dispatch_generation` là số nguyên dương.');
+    return problem(400, 'invalid_payload', '`dispatch_generation` must be a positive integer.');
   }
   const deliveryId = readPathParam(context, 'deliveryId');
   if (deliveryId instanceof Response) {
@@ -925,7 +930,7 @@ worker.post('/internal/deliveries/:deliveryId/outcome', async (context) => {
     return problem(
       400,
       'invalid_payload',
-      'Cần `dispatch_generation` là số nguyên dương và `outcome` là "delivered" hoặc "failed".',
+      'Provide `dispatch_generation` as a positive integer and `outcome` as "delivered" or "failed".',
     );
   }
   const deliveryId = readPathParam(context, 'deliveryId');
@@ -970,7 +975,7 @@ worker.post('/internal/subscriptions/:subscriptionId/invalidate', async (context
   // `404` chỉ trả cho caller **đã xác thực** — `401` xảy ra trước lookup ở `guard` ở trên.
   return outcome.kind === 'ok'
     ? json(outcome.body, 200)
-    : problem(404, 'not_found', 'Subscription không tồn tại.');
+    : problem(404, 'not_found', 'Subscription does not exist.');
 });
 
 /* -------------------------------------------------------------------------------------- */
@@ -1107,7 +1112,7 @@ worker.post('/internal/revalidate-endpoints', async (context) => {
   const url = new URL(context.req.url);
   const app = readQueryApp(url);
   if (app === null) {
-    return problem(400, 'invalid_payload', 'Thiếu query `app`.');
+    return problem(400, 'invalid_payload', 'Missing `app` query parameter.');
   }
   const result = await revalidateSubscriptionEndpoints(reconciliationDeps(authorizedCall.context), {
     app,
@@ -1160,7 +1165,7 @@ worker.post('/admin/v1/providers', async (context) => {
     return problem(
       400,
       'invalid_payload',
-      'Cần `app`, `name`, `configuration` (object), `transport` và `type` hợp lệ.',
+      'Provide a valid `app`, `name`, `configuration` (object), `transport` and `type`.',
     );
   }
   // ⚠️ WB-5: `make_primary` **không** được chấp nhận ở create. Bản đầu forward nó xuống
@@ -1173,7 +1178,7 @@ worker.post('/admin/v1/providers', async (context) => {
     return problem(
       400,
       'invalid_payload',
-      '`make_primary` không được dùng khi tạo provider — tạo provider trước, rồi tuyên bố primary bằng `POST /admin/v1/providers/:id/primary`.',
+      '`make_primary` must not be used when creating a provider — create the provider first, then claim primary via `POST /admin/v1/providers/:id/primary`.',
     );
   }
   const result = await createProvider(adminDeps(deps), {
@@ -1207,7 +1212,7 @@ worker.get('/admin/v1/providers', async (context) => {
   const url = new URL(context.req.url);
   const app = readQueryApp(url);
   if (app === null) {
-    return problem(400, 'invalid_payload', 'Thiếu query `app`.');
+    return problem(400, 'invalid_payload', 'Missing `app` query parameter.');
   }
   const limit = readLimit(url);
   return json({
@@ -1231,7 +1236,7 @@ worker.get('/admin/v1/providers/:providerId', async (context) => {
   const url = new URL(context.req.url);
   const app = readQueryApp(url);
   if (app === null) {
-    return problem(400, 'invalid_payload', 'Thiếu query `app`.');
+    return problem(400, 'invalid_payload', 'Missing `app` query parameter.');
   }
   const providerId = readPathParam(context, 'providerId');
   if (providerId instanceof Response) {
@@ -1260,7 +1265,7 @@ worker.get('/admin/v1/providers/:providerId/credentials', async (context) => {
   const url = new URL(context.req.url);
   const app = readQueryApp(url);
   if (app === null) {
-    return problem(400, 'invalid_payload', 'Thiếu query `app`.');
+    return problem(400, 'invalid_payload', 'Missing `app` query parameter.');
   }
   const providerId = readPathParam(context, 'providerId');
   if (providerId instanceof Response) {
@@ -1296,7 +1301,7 @@ worker.patch('/admin/v1/providers/:providerId', async (context) => {
   const url = new URL(context.req.url);
   const app = readQueryApp(url);
   if (app === null) {
-    return problem(400, 'invalid_payload', 'Thiếu query `app`.');
+    return problem(400, 'invalid_payload', 'Missing `app` query parameter.');
   }
   const body = await readJsonObject(context.req.raw);
   if (!body.ok) {
@@ -1313,7 +1318,11 @@ worker.patch('/admin/v1/providers/:providerId', async (context) => {
   const configuration = body.value.configuration;
   if (name !== undefined || configuration !== undefined) {
     if (typeof name !== 'string' || name.length === 0 || !isPlainRecord(configuration)) {
-      return problem(400, 'invalid_payload', 'PATCH provider: cần cả `name` và `configuration`.');
+      return problem(
+        400,
+        'invalid_payload',
+        'PATCH provider: both `name` and `configuration` are required.',
+      );
     }
     return adminResultResponse(
       await updateProvider(routeDeps, { app, providerId, name, configuration, actor }),
@@ -1327,7 +1336,7 @@ worker.patch('/admin/v1/providers/:providerId', async (context) => {
       return problem(
         400,
         'invalid_payload',
-        'PATCH provider: `status` và `expected` phải cùng có mặt và là trạng thái hợp lệ ' +
+        'PATCH provider: `status` and `expected` must be present together and be a valid state ' +
           '(`disabled` | `enabled`).',
       );
     }
@@ -1341,7 +1350,7 @@ worker.patch('/admin/v1/providers/:providerId', async (context) => {
   return problem(
     400,
     'invalid_payload',
-    'PATCH provider: cần `name`+`configuration`, hoặc `status`+`expected`.',
+    'PATCH provider: provide `name`+`configuration`, or `status`+`expected`.',
   );
 });
 
@@ -1362,7 +1371,7 @@ worker.post('/admin/v1/providers/:providerId/primary', async (context) => {
   const url = new URL(context.req.url);
   const app = readQueryApp(url);
   if (app === null) {
-    return problem(400, 'invalid_payload', 'Thiếu query `app`.');
+    return problem(400, 'invalid_payload', 'Missing `app` query parameter.');
   }
   const providerId = readPathParam(context, 'providerId');
   if (providerId instanceof Response) {
@@ -1395,7 +1404,11 @@ worker.delete('/admin/v1/providers/:providerId', async (context) => {
   const app = readQueryApp(url);
   const reason = readQueryReason(url);
   if (app === null || reason === null) {
-    return problem(400, 'invalid_payload', 'DELETE provider: cần query `app` và `reason`.');
+    return problem(
+      400,
+      'invalid_payload',
+      'DELETE provider: `app` and `reason` query parameters are required.',
+    );
   }
   const providerId = readPathParam(context, 'providerId');
   if (providerId instanceof Response) {
@@ -1438,7 +1451,7 @@ async function runProviderHold(context: Context, hold: boolean): Promise<Respons
   const { context: deps } = authorizedCall;
   const app = readQueryApp(new URL(context.req.url));
   if (app === null) {
-    return problem(400, 'invalid_payload', 'Thiếu query `app`.');
+    return problem(400, 'invalid_payload', 'Missing `app` query parameter.');
   }
   const providerId = readPathParam(context, 'providerId');
   if (providerId instanceof Response) {
@@ -1488,7 +1501,7 @@ worker.post('/admin/v1/providers/:providerId/test', async (context) => {
     return problem(
       400,
       'invalid_payload',
-      'Cần `app` và `subscription_id` (target của test delivery — FR-018 đòi một delivery thật).',
+      'Provide `app` and `subscription_id` (the test delivery target — FR-018 requires a real delivery).',
     );
   }
   const payloadJson = body.value.payload;
@@ -1552,7 +1565,7 @@ worker.post('/admin/v1/providers/:providerId/rotate-credential', async (context)
     return problem(
       400,
       'invalid_payload',
-      'Cần `app`, `vapid_key_id`, `public_key` và `private_key`.',
+      'Provide `app`, `vapid_key_id`, `public_key` and `private_key`.',
     );
   }
   if (
@@ -1560,7 +1573,7 @@ worker.post('/admin/v1/providers/:providerId/rotate-credential', async (context)
     retireVapidKeyId !== null &&
     typeof retireVapidKeyId !== 'string'
   ) {
-    return problem(400, 'invalid_payload', '`retire_vapid_key_id` phải là string hoặc null.');
+    return problem(400, 'invalid_payload', '`retire_vapid_key_id` must be a string or null.');
   }
   const providerId = readPathParam(context, 'providerId');
   if (providerId instanceof Response) {
@@ -1600,7 +1613,7 @@ worker.get('/admin/v1/subscriptions', async (context) => {
   const url = new URL(context.req.url);
   const app = readQueryApp(url);
   if (app === null) {
-    return problem(400, 'invalid_payload', 'Thiếu query `app`.');
+    return problem(400, 'invalid_payload', 'Missing `app` query parameter.');
   }
   const userId = url.searchParams.get('user_id');
   const deviceId = url.searchParams.get('device_id');
@@ -1642,7 +1655,7 @@ worker.patch('/admin/v1/subscriptions/:subscriptionId', async (context) => {
     return problem(
       400,
       'invalid_payload',
-      'Cần `app` và `reason` (audit bắt buộc có lý do — FR-020).',
+      '`app` and `reason` are required (audit requires a reason — FR-020).',
     );
   }
   return adminResultResponse(
@@ -1675,7 +1688,11 @@ worker.delete('/admin/v1/subscriptions/:subscriptionId', async (context) => {
     return subscriptionId;
   }
   if (app === null || reason === null) {
-    return problem(400, 'invalid_payload', 'DELETE subscription: cần query `app` và `reason`.');
+    return problem(
+      400,
+      'invalid_payload',
+      'DELETE subscription: `app` and `reason` query parameters are required.',
+    );
   }
   return adminResultResponse(
     await removeSubscriptionByAdmin(adminDeps(deps), {
@@ -1703,7 +1720,7 @@ worker.get('/admin/v1/devices', async (context) => {
   const app = readQueryApp(url);
   const userId = url.searchParams.get('user_id');
   if (app === null || userId === null || userId.length === 0) {
-    return problem(400, 'invalid_payload', 'Cần query `app` và `user_id`.');
+    return problem(400, 'invalid_payload', '`app` and `user_id` query parameters are required.');
   }
   return json({ devices: await listDevices(adminDeps(deps), app, userId) });
 });
@@ -1725,7 +1742,7 @@ worker.get('/admin/v1/notifications', async (context) => {
   const url = new URL(context.req.url);
   const app = readQueryApp(url);
   if (app === null) {
-    return problem(400, 'invalid_payload', 'Thiếu query `app`.');
+    return problem(400, 'invalid_payload', 'Missing `app` query parameter.');
   }
   return json({ notifications: await listNotifications(adminDeps(deps), app, readLimit(url)) });
 });
@@ -1740,7 +1757,7 @@ worker.get('/admin/v1/deliveries', async (context) => {
   const url = new URL(context.req.url);
   const app = readQueryApp(url);
   if (app === null) {
-    return problem(400, 'invalid_payload', 'Thiếu query `app`.');
+    return problem(400, 'invalid_payload', 'Missing `app` query parameter.');
   }
   const notificationId = url.searchParams.get('notification_id');
   const userId = url.searchParams.get('user_id');
@@ -1788,7 +1805,7 @@ async function runRecovery(context: Context, kind: 'retry' | 'republish'): Promi
     return problem(
       400,
       'invalid_payload',
-      'Cần `app` và `reason` (bắt buộc cho recovery — FR-020).',
+      '`app` and `reason` are required (mandatory for recovery — FR-020).',
     );
   }
   const deliveryId = readPathParam(context, 'deliveryId');

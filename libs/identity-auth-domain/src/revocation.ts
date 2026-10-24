@@ -54,7 +54,7 @@ export function assertRevocationCacheTtl(
 ): void {
   if (cacheTtlSeconds > accessTokenTtlSeconds) {
     throw new Error(
-      `TTL cache thu hoi (${cacheTtlSeconds}s) khong duoc dai hon TTL access token (${accessTokenTtlSeconds}s)`,
+      `the revocation cache TTL (${cacheTtlSeconds}s) must not exceed the access token TTL (${accessTokenTtlSeconds}s)`,
     );
   }
 }

@@ -177,9 +177,9 @@ describe.skipIf(!dockerAvailable)('roles and grants on db-backoffice', () => {
         VALUES ('staff.view', 'success')`);
       await expect(
         migrator.query(`UPDATE backoffice.authorization_audit SET outcome = 'failure'`),
-      ).rejects.toThrow(/la bang audit append-only/u);
+      ).rejects.toThrow(/is an append-only audit table/u);
       await expect(migrator.query('DELETE FROM backoffice.authorization_audit')).rejects.toThrow(
-        /la bang audit append-only/u,
+        /is an append-only audit table/u,
       );
     } finally {
       await migrator.end();
@@ -198,9 +198,9 @@ describe.skipIf(!dockerAvailable)('roles and grants on db-backoffice', () => {
       // `permission denied` — message là thứ cần khớp.
       await expect(
         client.query(`UPDATE backoffice.authorization_audit SET outcome = 'failure'`),
-      ).rejects.toThrow(/la bang audit append-only/u);
+      ).rejects.toThrow(/is an append-only audit table/u);
       await expect(client.query('DELETE FROM backoffice.authorization_audit')).rejects.toThrow(
-        /la bang audit append-only/u,
+        /is an append-only audit table/u,
       );
     } finally {
       await client.end();
@@ -351,7 +351,7 @@ describe.skipIf(!dockerAvailable)('roles and grants on db-backoffice', () => {
         runtime.query(`UPDATE backoffice.staff SET status = 'active' WHERE sub = $1`, [
           TERMINAL_SUB,
         ]),
-      ).rejects.toThrow(/terminated la trang thai terminal/u);
+      ).rejects.toThrow(/terminated is a terminal state/u);
     } finally {
       await runtime.end();
     }
@@ -370,7 +370,7 @@ describe.skipIf(!dockerAvailable)('roles and grants on db-backoffice', () => {
           accountId('h'),
           RENAME_SUB,
         ]),
-      ).rejects.toThrow(/khong duoc doi tren hang da ton tai/u);
+      ).rejects.toThrow(/must not change on an existing row/u);
     } finally {
       await runtime.end();
     }

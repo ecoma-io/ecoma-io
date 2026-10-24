@@ -77,7 +77,7 @@ describe('i18n acceptance', () => {
     expect(wrapper.text()).toContain('Ecoma is passwordless.');
   });
 
-  it('the language selector offers exactly English, Tiếng Việt and 简体中文', async () => {
+  it('the language selector offers exactly the three registry locales', async () => {
     const { wrapper } = await mountAccount(AccountLanguageSelect, {
       props: { authenticated: false },
     });

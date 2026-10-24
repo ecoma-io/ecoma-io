@@ -193,20 +193,20 @@ export async function handleAuthorizeConfirm(params: {
 
   const handleX = query['handle'];
   if (handleX === undefined || handleX === '') {
-    return jsonOAuthError('invalid_request', 'thieu handle', 400);
+    return jsonOAuthError('invalid_request', 'missing handle', 400);
   }
   const presented = readBrowserCookie(cookieHeader);
   if (presented === undefined || presented === '') {
     // Không cookie ⇒ không thể chứng minh browser này đã mở transaction —
     // không redirect (rò handle), trả JSON trực tiếp.
-    return jsonOAuthError('invalid_request', 'thieu cookie browser binding', 400);
+    return jsonOAuthError('invalid_request', 'missing browser-binding cookie', 400);
   }
 
   try {
     const handleXHash = await hashHandle(handleX);
     const transaction = await store.findTransactionByHandleX({ handleXHash });
     if (transaction === undefined) {
-      return jsonOAuthError('invalid_request', 'transaction khong ton tai', 400);
+      return jsonOAuthError('invalid_request', 'transaction does not exist', 400);
     }
     await confirmBrowser({ store, transaction, presentedBinding: presented, now });
   } catch (error) {

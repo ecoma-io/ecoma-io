@@ -319,7 +319,7 @@ async function lifecycleQueueBatch(
 function quarantineKeyHex(env: MailerJobEnv): string {
   const value = env['MAIL_QUARANTINE_HMAC_KEY'];
   if (typeof value !== 'string' || value.length === 0) {
-    throw new Error('MAIL_QUARANTINE_HMAC_KEY chua duoc dat');
+    throw new Error('MAIL_QUARANTINE_HMAC_KEY is not set');
   }
   return value;
 }

@@ -98,10 +98,10 @@ describe('useAsyncState — data loading states', () => {
     const wrapper = mountHost(() => fake.adapter.listStaff());
     await flushPromises(wrapper);
 
-    at(fake.staffCalls).reject(new Error('adapter hỏng'));
+    at(fake.staffCalls).reject(new Error('adapter broken'));
     await flushPromises(wrapper);
 
-    expect(wrapper.vm.state).toEqual({ kind: 'error', message: 'adapter hỏng' });
+    expect(wrapper.vm.state).toEqual({ kind: 'error', message: 'adapter broken' });
   });
 
   it('rejects with a non-Error value → message is String(error), possibly "[object Object]"', async () => {
@@ -177,7 +177,7 @@ describe('useAsyncState — data loading states', () => {
     const wrapper = mountHost(() => fake.adapter.listStaff());
     await flushPromises(wrapper);
 
-    at(fake.staffCalls).reject(new Error('lần đầu hỏng'));
+    at(fake.staffCalls).reject(new Error('first call failed'));
     await flushPromises(wrapper);
     expect(wrapper.vm.state.kind).toBe('error');
 
@@ -231,7 +231,7 @@ describe('useAsyncState — data loading states', () => {
     await flushPromises(wrapper);
     expect(wrapper.vm.state).toEqual({ kind: 'ready', value: NEWER });
 
-    first.reject(new Error('lần gọi cũ đã hỏng'));
+    first.reject(new Error('old call failed'));
     await flushPromises(wrapper);
 
     expect(wrapper.vm.state).toEqual({ kind: 'ready', value: NEWER });

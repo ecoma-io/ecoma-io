@@ -73,7 +73,7 @@ async function readShimSource(): Promise<string> {
     }
     const parent = dirname(dir);
     if (parent === dir) {
-      throw new Error('khong tim thay goc workspace (pnpm-workspace.yaml)');
+      throw new Error('workspace root not found (pnpm-workspace.yaml)');
     }
     dir = parent;
   }

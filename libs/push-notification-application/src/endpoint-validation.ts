@@ -160,17 +160,17 @@ export function validatePushEndpoint(
     return {
       ok: false,
       reason: 'endpoint_type',
-      detail: 'Endpoint phải là chuỗi.',
+      detail: 'The endpoint must be a string.',
     };
   }
   if (endpoint.length === 0) {
-    return { ok: false, reason: 'endpoint_empty', detail: 'Endpoint rỗng.' };
+    return { ok: false, reason: 'endpoint_empty', detail: 'The endpoint is empty.' };
   }
   if (endpoint.length > MAX_PUSH_ENDPOINT_LENGTH) {
     return {
       ok: false,
       reason: 'endpoint_too_long',
-      detail: `Endpoint vượt trần ${MAX_PUSH_ENDPOINT_LENGTH} ký tự.`,
+      detail: `The endpoint exceeds the ${MAX_PUSH_ENDPOINT_LENGTH} character cap.`,
     };
   }
 
@@ -181,7 +181,7 @@ export function validatePushEndpoint(
     return {
       ok: false,
       reason: 'endpoint_malformed',
-      detail: 'Endpoint không parse được thành URL.',
+      detail: 'The endpoint cannot be parsed as a URL.',
     };
   }
 
@@ -189,55 +189,55 @@ export function validatePushEndpoint(
     return {
       ok: false,
       reason: 'endpoint_not_https',
-      detail: 'Endpoint phải dùng scheme https.',
+      detail: 'The endpoint must use the https scheme.',
     };
   }
   if (parsed.username.length > 0 || parsed.password.length > 0) {
     return {
       ok: false,
       reason: 'endpoint_userinfo',
-      detail: 'Endpoint chứa userinfo — không được phép.',
+      detail: 'The endpoint contains userinfo — not allowed.',
     };
   }
   // Host rỗng: `https://` không có host parse được thành URL với hostname `''` ở một số
   // runtime, và một endpoint không có host không thể là endpoint của push service.
   const host = parsed.hostname.toLowerCase();
   if (host.length === 0) {
-    return { ok: false, reason: 'endpoint_no_host', detail: 'Endpoint không có host.' };
+    return { ok: false, reason: 'endpoint_no_host', detail: 'The endpoint has no host.' };
   }
   if (looksLikeIpLiteral(host)) {
     return {
       ok: false,
       reason: 'endpoint_ip_literal',
-      detail: 'Endpoint không được là IP literal.',
+      detail: 'The endpoint must not be an IP literal.',
     };
   }
   if (isForbiddenIpv4(host)) {
     return {
       ok: false,
       reason: 'endpoint_private_address',
-      detail: 'Endpoint thuộc dải private/reserved/loopback.',
+      detail: 'The endpoint is in a private/reserved/loopback range.',
     };
   }
   if (!isDnsHostname(host)) {
     return {
       ok: false,
       reason: 'endpoint_malformed_host',
-      detail: 'Host không phải hostname DNS hợp lệ.',
+      detail: 'The host is not a valid DNS hostname.',
     };
   }
   if (allowlist.length === 0) {
     return {
       ok: false,
       reason: 'endpoint_allowlist_empty',
-      detail: 'Chưa cấu hình allowlist host — fail closed, không đăng ký endpoint nào.',
+      detail: 'No host allowlist is configured — fail closed, no endpoint can register.',
     };
   }
   if (!hostMatchesAllowlist(host, allowlist)) {
     return {
       ok: false,
       reason: 'endpoint_host_not_allowlisted',
-      detail: 'Host không khớp allowlist của Browser Push Service (theo ranh giới nhãn).',
+      detail: 'The host does not match the Browser Push Service allowlist (label-boundary match).',
     };
   }
 
@@ -265,12 +265,12 @@ export function revalidateStoredEndpoint(
     return {
       ok: false,
       reason: REQUEST_REJECTION.NotFound,
-      detail: 'Endpoint đã lưu không đọc được — coi như row hỏng, không tự disable.',
+      detail: 'The stored endpoint is unreadable — treat as a broken row, do not disable.',
     };
   }
   return {
     ok: false,
     reason: REQUEST_REJECTION.EndpointRejected,
-    detail: `Endpoint đã lưu không còn hợp lệ (${validation.reason}).`,
+    detail: `The stored endpoint is no longer valid (${validation.reason}).`,
   };
 }

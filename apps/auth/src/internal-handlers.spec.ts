@@ -39,7 +39,7 @@ import { consumeHandleY } from '@ecoma-io/identity-auth-infrastructure';
  * Provider là STUB HÌNH DẠNG: các handler chỉ dùng `provider.Interaction` qua
  * `attachInteractionResult`, mà hàm đó trả `undefined` khi correlator không tra
  * được — với stub, `decidedResponse` đi đúng nhánh fail-closed
- * (`interaction khong tim thay`). Đường Interaction thật (payload correlate qua
+ * ('interaction not found'). Đường Interaction thật (payload correlate qua
  * `ecoma_x`) cần một provider thật — được ghi rõ trong report là chưa verify
  * end-to-end trong môi trường Node.
  */
@@ -122,7 +122,7 @@ async function seedGrant(
   `;
   const grantId = rows[0]?.id;
   if (grantId === undefined) {
-    throw new Error('seedGrant khong tra ve id');
+    throw new Error('seedGrant returned no id');
   }
   await migrator`
     INSERT INTO auth.client_grant_scopes (grant_id, scope)

@@ -61,11 +61,11 @@ export function isSubject(value: unknown): value is Subject {
  */
 export function createSubject(entropy: string): Subject {
   if (typeof entropy !== 'string') {
-    throw new TypeError('Subject entropy phải là chuỗi.');
+    throw new TypeError('Subject entropy must be a string.');
   }
   if (!SUBJECT_PATTERN.test(`${SUBJECT_PREFIX}${entropy}`)) {
     throw new TypeError(
-      `Subject entropy phải là ${SUBJECT_ENTROPY_LENGTH} ký tự base32 viết thường (${BASE32_ALPHABET}).`,
+      `Subject entropy must be ${SUBJECT_ENTROPY_LENGTH} lowercase base32 characters (${BASE32_ALPHABET}).`,
     );
   }
   return `${SUBJECT_PREFIX}${entropy}` as Subject;

@@ -111,9 +111,9 @@ describe('loadPruneJobConfig', () => {
       expect(message).not.toContain('wrong-type');
     }
     // Nguyên nhân khác nhau theo đúng shape: missing / not-object / invalid-string.
-    expect(messages[0]).toMatch(/DB_AUTH chua dc gan/u);
-    expect(messages[1]).toMatch(/DB_AUTH chua dc gan/u);
-    expect(messages[2]).toMatch(/DB_AUTH khong the doc connectionString/u);
+    expect(messages[0]).toMatch(/DB_AUTH is not bound/u);
+    expect(messages[1]).toMatch(/DB_AUTH is not bound/u);
+    expect(messages[2]).toMatch(/DB_AUTH cannot read connectionString/u);
   });
 
   it('does not inspect the credential value of a well-shaped binding', () => {

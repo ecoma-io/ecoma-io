@@ -36,7 +36,7 @@ const encoder = new TextEncoder();
 
 function requireBase64Url(value: string, field: string): void {
   if (!BASE64URL_RE.test(value)) {
-    throw new AuthConfigurationError(`${field} khong phai base64url hop le`);
+    throw new AuthConfigurationError(`${field} is not valid base64url`);
   }
 }
 
@@ -64,7 +64,7 @@ export function lengthPrefixed(parts: readonly Uint8Array[]): Uint8Array {
     // Độ dài tối đa 255 byte mỗi trường: transaction id ngắn, domain là hằng
     // số cố định, nên một byte là đủ và tránh phải xử lý prefix nhiều byte.
     if (part.length > 255) {
-      throw new AuthConfigurationError('truong dai qua gioi han 255 byte');
+      throw new AuthConfigurationError('field is longer than the 255-byte limit');
     }
     out[offset] = part.length;
     offset += 1;
@@ -104,12 +104,12 @@ async function importKey(rawSecret: string): Promise<Uint8Array> {
     keyBytes = base64UrlToBytes(rawSecret);
   } catch (cause) {
     throw new AuthConfigurationError(
-      'K_auth khong giai ma duoc tu base64url; Worker Secret phai la 32 byte base64url',
+      'K_auth does not decode from base64url; the Worker Secret must be 32 base64url bytes',
       { cause },
     );
   }
   if (keyBytes.length !== 32) {
-    throw new AuthConfigurationError(`K_auth phai dai 32 byte, thuc te la ${keyBytes.length} byte`);
+    throw new AuthConfigurationError(`K_auth must be 32 bytes long, got ${keyBytes.length} bytes`);
   }
   return keyBytes;
 }
@@ -162,7 +162,7 @@ export async function deriveHandle(params: {
   const { key, transactionId, domain } = params;
 
   if (!VALID_DOMAINS.has(domain)) {
-    throw new AuthConfigurationError(`handle domain khong hop le: ${domain}`);
+    throw new AuthConfigurationError(`handle domain is not valid: ${domain}`);
   }
   requireBase64Url(transactionId, 'transaction_id');
   if (transactionId.length < MIN_TRANSACTION_ID_LENGTH) {
@@ -222,7 +222,7 @@ export async function assertHandleBelongsToTransaction(params: {
   if (!timingSafeEqual(a, b)) {
     throw new OAuthProtocolError('invalid_grant', 400, {
       redirectable: false,
-      detail: 'handle khong thuoc transaction nay',
+      detail: 'handle does not belong to this transaction',
     });
   }
 }

@@ -86,10 +86,10 @@ export async function readJsonObject(request: Request): Promise<JsonObjectResult
   try {
     parsed = JSON.parse(text);
   } catch {
-    return { ok: false, detail: 'Body không parse được thành JSON.' };
+    return { ok: false, detail: 'Body is not parseable as JSON.' };
   }
   if (!isPlainRecord(parsed)) {
-    return { ok: false, detail: 'Body phải là object JSON.' };
+    return { ok: false, detail: 'Body must be a JSON object.' };
   }
   return { ok: true, value: parsed };
 }
@@ -117,13 +117,13 @@ export async function readEmptyRequestBody(request: Request): Promise<EmptyReque
   try {
     parsed = JSON.parse(text);
   } catch {
-    return { ok: false, detail: 'Body phải là object JSON rỗng.' };
+    return { ok: false, detail: 'Body must be an empty JSON object.' };
   }
   if (!isPlainRecord(parsed)) {
-    return { ok: false, detail: 'Body phải là object JSON rỗng.' };
+    return { ok: false, detail: 'Body must be an empty JSON object.' };
   }
   if (Object.keys(parsed).length > 0) {
-    return { ok: false, detail: 'Body phải rỗng.' };
+    return { ok: false, detail: 'Body must be empty.' };
   }
   return { ok: true };
 }
@@ -166,7 +166,7 @@ export function notificationRejectionStatus(reason: CreateNotificationRejection)
       // assertion đó chỉ "đúng" ở target `typecheck` (chạy trên source). Một guard thật thì
       // đúng ở **cả** hai, và nó mạnh hơn: typecheck bắt được `reason` thiếu ở *source*,
       // guard bắt được cả một `reason` lọt vào từ JS hoặc từ một tài liệu cũ.
-      throw new Error(`notificationRejectionStatus: reason chưa khai báo status: ${reason}`);
+      throw new Error(`notificationRejectionStatus: reason has no declared status: ${reason}`);
     }
   }
 }

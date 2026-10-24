@@ -66,7 +66,7 @@ async function assertRoutesRespond(baseURL: string): Promise<void> {
 
       if (response.status() !== 200) {
         throw new Error(
-          `Route ${route.path} trả HTTP ${response.status()} khi khởi động server test (mong đợi 200).`,
+          `Route ${route.path} returned HTTP ${response.status()} during test server startup (expected 200).`,
         );
       }
     }
@@ -98,7 +98,7 @@ async function warmUpBrowserClient(baseURL: string): Promise<void> {
         // và lỗi gốc (`waiting for getByTestId('backoffice-sample-notice')`) không
         // nói lý do — đọc như một flake của `nuxt dev` thay vì một gate bị tắt.
         throw new Error(
-          `${route.path} không sẵn sàng sau khi warm-up. Bộ test này chỉ kiểm bề mặt prototype, còn dev server phải chạy với NITRO_PUBLIC_BACKOFFICE_DATA_MODE=prototype (đặt trong playwright.config.ts). Nếu chế độ đó tắt, app render trạng thái unavailable: không fixture và không banner backoffice-sample-notice — đây là cấu hình, không phải app.`,
+          `${route.path} not ready after warm-up. This suite only checks the prototype surface, and the dev server must run with NITRO_PUBLIC_BACKOFFICE_DATA_MODE=prototype (set in playwright.config.ts). If that mode is off, the app renders the unavailable state: no fixtures and no backoffice-sample-notice banner — this is configuration, not the app.`,
           { cause },
         );
       }
@@ -139,7 +139,7 @@ async function waitForDevServerToSettle(page: Page): Promise<void> {
   }
 
   throw new Error(
-    `Dev server vẫn thay trang sau ${String(WARM_UP_CAP_MS)} ms warm-up — dừng suite thay vì chạy test trên server không ổn định.`,
+    `Dev server kept replacing the page after ${String(WARM_UP_CAP_MS)} ms of warm-up — stopping the suite instead of running tests on an unstable server.`,
   );
 }
 
@@ -147,9 +147,7 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   const baseURL = config.projects[0]?.use?.baseURL;
 
   if (baseURL === undefined) {
-    throw new Error(
-      'Không tìm thấy baseURL trên project Playwright đầu tiên — webServer chưa khởi động được.',
-    );
+    throw new Error('baseURL not found on the first Playwright project — webServer did not start.');
   }
 
   await assertRoutesRespond(baseURL);

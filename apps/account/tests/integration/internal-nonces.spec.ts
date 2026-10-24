@@ -182,7 +182,7 @@ describe('internal_nonces', () => {
 
       const stored = rows[0];
       if (stored === undefined) {
-        throw new Error('vua insert nonce-ttl nhung SELECT khong tra ve dong nao');
+        throw new Error('just inserted nonce-ttl but the SELECT returned no row');
       }
 
       const ttlSeconds = (stored.expires_at.getTime() - stored.observed_at.getTime()) / 1000;
@@ -224,7 +224,7 @@ describe('internal_nonces', () => {
       );
       const column = rows[0];
       if (column === undefined) {
-        throw new Error('khong tim thay cot account.internal_nonces.expires_at');
+        throw new Error('column account.internal_nonces.expires_at not found');
       }
       expect(column.has_default).toBe(false);
       expect(column.not_null).toBe(true);

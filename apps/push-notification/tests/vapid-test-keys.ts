@@ -147,7 +147,7 @@ async function deriveScalar(label: string): Promise<Uint8Array> {
       return scalar;
     }
   }
-  throw new Error('vapid-test-keys: không derive được scalar P-256 hợp lệ.');
+  throw new Error('vapid-test-keys: cannot derive a valid P-256 scalar.');
 }
 
 /** `0 < d < n` — byte-wise, big-endian. */
@@ -169,12 +169,12 @@ function isValidScalar(scalar: Uint8Array): boolean {
 /** Public point uncompressed `0x04 ‖ X ‖ Y` từ hai thành phần base64url của JWK. */
 function uncompressedPoint(x: string | undefined, y: string | undefined): Uint8Array {
   if (x === undefined || y === undefined) {
-    throw new Error('vapid-test-keys: JWK thiếu toạ độ public key.');
+    throw new Error('vapid-test-keys: JWK is missing public key coordinates.');
   }
   const xBytes = fromBase64Url(x);
   const yBytes = fromBase64Url(y);
   if (xBytes === null || yBytes === null) {
-    throw new Error('vapid-test-keys: JWK có toạ độ public key không giải mã được.');
+    throw new Error('vapid-test-keys: JWK public key coordinates are not decodable.');
   }
   const point = new Uint8Array(UNCOMPRESSED_POINT_OCTETS);
   point[0] = 0x04;

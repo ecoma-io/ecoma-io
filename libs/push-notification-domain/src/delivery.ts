@@ -209,14 +209,14 @@ export function validateDeliveryTransition(
     return {
       ok: false,
       reason: 'unknown_status',
-      detail: 'Delivery status nằm ngoài vocabulary của domain.',
+      detail: 'Delivery status is outside the domain vocabulary.',
     };
   }
   if (!isDeliveryTransitionActor(actor)) {
     return {
       ok: false,
       reason: 'unknown_actor',
-      detail: 'Actor nằm ngoài vocabulary transition của domain.',
+      detail: 'Actor is outside the domain transition vocabulary.',
     };
   }
   const allowed = DELIVERY_TRANSITIONS.some(
@@ -226,7 +226,7 @@ export function validateDeliveryTransition(
     return {
       ok: false,
       reason: 'transition_not_allowed',
-      detail: 'Cặp transition và actor không nằm trong transition table.',
+      detail: 'The transition and actor pair is not in the transition table.',
     };
   }
   return { ok: true, to };
@@ -375,14 +375,14 @@ export function decideDeliveryClaim(
     return {
       ok: false,
       reason: 'malformed_delivery',
-      detail: 'Delivery state không đúng shape tối thiểu của domain.',
+      detail: 'Delivery state does not match the minimum domain shape.',
     };
   }
   if (!isEpochMillis(context.now) || !isPositiveInteger(context.leaseDuration)) {
     return {
       ok: false,
       reason: 'malformed_delivery',
-      detail: 'Tham số claim (now, leaseDuration) không hợp lệ.',
+      detail: 'Claim parameters (now, leaseDuration) are invalid.',
     };
   }
   // Thứ tự chẩn đoán canonical (§8.1): terminal → expired → ineligible_subscription
@@ -391,14 +391,14 @@ export function decideDeliveryClaim(
     return {
       ok: false,
       reason: 'terminal',
-      detail: 'Delivery đã ở terminal state.',
+      detail: 'Delivery is already in a terminal state.',
     };
   }
   if (state.expiresAt <= context.now) {
     return {
       ok: false,
       reason: 'expired',
-      detail: 'Delivery đã vượt expires_at — không claimable; reconciliation set expired.',
+      detail: 'Delivery is past expires_at — not claimable; reconciliation sets expired.',
     };
   }
 
@@ -406,14 +406,14 @@ export function decideDeliveryClaim(
     return {
       ok: false,
       reason: 'malformed_delivery',
-      detail: 'Subscription status nằm ngoài vocabulary của domain.',
+      detail: 'Subscription status is outside the domain vocabulary.',
     };
   }
   if (isClosedSubscriptionStatus(context.subscriptionStatus)) {
     return {
       ok: false,
       reason: 'ineligible_subscription',
-      detail: 'Subscription không active — delivery không eligible để claim.',
+      detail: 'Subscription is not active — the delivery is not eligible to claim.',
     };
   }
   if (
@@ -423,14 +423,14 @@ export function decideDeliveryClaim(
     return {
       ok: false,
       reason: 'malformed_delivery',
-      detail: 'Provider fact nằm ngoài vocabulary của domain.',
+      detail: 'Provider fact is outside the domain vocabulary.',
     };
   }
   if (context.providerEmergencyHold) {
     return {
       ok: false,
       reason: 'ineligible_provider_hold',
-      detail: 'Provider đang emergency hold — delivery không eligible để claim.',
+      detail: 'Provider is under emergency hold — the delivery is not eligible to claim.',
     };
   }
 
@@ -442,7 +442,7 @@ export function decideDeliveryClaim(
       return {
         ok: false,
         reason: 'lease_held',
-        detail: 'Delivery đang được execution khác giữ lease còn hiệu lực.',
+        detail: 'The delivery lease is currently held by another execution.',
       };
     }
   }
@@ -450,7 +450,7 @@ export function decideDeliveryClaim(
     return {
       ok: false,
       reason: 'pending',
-      detail: 'Delivery chưa queued — chưa có lần publish nào thành công.',
+      detail: 'Delivery is not queued — no publish has succeeded yet.',
     };
   }
 
@@ -466,7 +466,7 @@ export function decideDeliveryClaim(
     return {
       ok: false,
       reason: 'malformed_delivery',
-      detail: 'Delivery processing nhưng không mang lease — trạng thái không tồn tại.',
+      detail: 'Delivery is processing without a lease — a state that does not exist.',
     };
   }
 
@@ -480,7 +480,7 @@ export function decideDeliveryClaim(
     return {
       ok: false,
       reason: 'malformed_delivery',
-      detail: 'dispatch_generation không còn tăng an toàn — tránh tràn số nguyên.',
+      detail: 'dispatch_generation can no longer increment safely — avoiding integer overflow.',
     };
   }
   // `now + leaseDuration` phải là epoch millis hợp lệ: cả hai vế đều là safe integer
@@ -491,7 +491,7 @@ export function decideDeliveryClaim(
     return {
       ok: false,
       reason: 'malformed_delivery',
-      detail: 'now + leaseDuration không phải epoch millis an toàn.',
+      detail: 'now + leaseDuration is not a safe epoch millis.',
     };
   }
 
@@ -576,14 +576,14 @@ export function decideFencedWrite(
     return {
       ok: false,
       reason: 'malformed_delivery',
-      detail: 'Delivery state không đúng shape tối thiểu của domain.',
+      detail: 'Delivery state does not match the minimum domain shape.',
     };
   }
   if (!isNonNegativeInteger(heldGeneration)) {
     return {
       ok: false,
       reason: 'malformed_delivery',
-      detail: 'dispatch_generation do execution gửi không phải số nguyên không âm.',
+      detail: 'The dispatch_generation sent by the execution is not a non-negative integer.',
     };
   }
   // Operation ngoài vocabulary là **lỗi chương trình** ở tầng gọi, không phải dữ liệu hỏng:
@@ -593,21 +593,21 @@ export function decideFencedWrite(
     return {
       ok: false,
       reason: 'malformed_delivery',
-      detail: 'Operation ghi kèm fencing nằm ngoài vocabulary của domain.',
+      detail: 'The fenced write operation is outside the domain vocabulary.',
     };
   }
   if (heldGeneration !== state.dispatchGeneration) {
     return {
       ok: false,
       reason: 'stale_write',
-      detail: 'Generation không khớp generation hiện hành — write bị từ chối.',
+      detail: 'Generation does not match the current generation — write rejected.',
     };
   }
   if (isTerminalDeliveryStatus(state.status)) {
     return {
       ok: false,
       reason: 'terminal',
-      detail: 'Delivery đã terminal — write theo đường thường không được áp dụng.',
+      detail: 'Delivery is terminal — a regular write cannot be applied.',
     };
   }
   // §8.1: `outcome` chỉ ghi được khi delivery **đang** `processing`; `release` ngoài ra còn
@@ -617,7 +617,7 @@ export function decideFencedWrite(
     return {
       ok: false,
       reason: 'stale_write',
-      detail: 'Delivery không ở trạng thái cho phép ghi với operation này.',
+      detail: 'Delivery is not in a state that allows writing with this operation.',
     };
   }
   return { ok: true, generation: state.dispatchGeneration };
@@ -692,7 +692,7 @@ export function planAdministrativeRetry(
     return {
       ok: false,
       reason: 'malformed_delivery',
-      detail: 'Delivery state không đúng shape tối thiểu của domain.',
+      detail: 'Delivery state does not match the minimum domain shape.',
     };
   }
   // `now` là cổng chặn `expires_at`; thiếu guard thì `expires_at <= NaN` luôn `false`
@@ -702,21 +702,21 @@ export function planAdministrativeRetry(
     return {
       ok: false,
       reason: 'malformed_delivery',
-      detail: 'Tham số precondition (now) không hợp lệ.',
+      detail: 'The precondition parameter (now) is invalid.',
     };
   }
   if (state.status !== DELIVERY_STATUS.Failed) {
     return {
       ok: false,
       reason: 'not_failed',
-      detail: 'Chỉ delivery failed mới đi qua administrative retry.',
+      detail: 'Only a failed delivery goes through administrative retry.',
     };
   }
   if (state.expiresAt <= precondition.now) {
     return {
       ok: false,
       reason: 'notification_expired',
-      detail: 'Notification đã quá expires_at — không còn đường requeue.',
+      detail: 'Notification is past expires_at — requeue is no longer possible.',
     };
   }
   if (
@@ -726,7 +726,7 @@ export function planAdministrativeRetry(
     return {
       ok: false,
       reason: 'ineligible_subscription',
-      detail: 'Subscription không active — không đủ tiền điều kiện retry.',
+      detail: 'Subscription is not active — retry preconditions are not met.',
     };
   }
   if (
@@ -736,14 +736,14 @@ export function planAdministrativeRetry(
     return {
       ok: false,
       reason: 'malformed_delivery',
-      detail: 'Provider fact nằm ngoài vocabulary của domain.',
+      detail: 'Provider fact is outside the domain vocabulary.',
     };
   }
   if (precondition.providerEmergencyHold) {
     return {
       ok: false,
       reason: 'provider_hold',
-      detail: 'Provider đang emergency hold — không đủ tiền điều kiện retry.',
+      detail: 'Provider is under emergency hold — retry preconditions are not met.',
     };
   }
   // §5.6.1: khi requeue thì `dispatch_generation` **tăng** — không tái dùng generation cũ.
@@ -755,7 +755,7 @@ export function planAdministrativeRetry(
     return {
       ok: false,
       reason: 'malformed_delivery',
-      detail: 'dispatch_generation không còn tăng an toàn — tránh tràn số nguyên.',
+      detail: 'dispatch_generation can no longer increment safely — avoiding integer overflow.',
     };
   }
   return {
@@ -793,7 +793,7 @@ export function planDeliveryRepublish(
     return {
       ok: false,
       reason: 'malformed_delivery',
-      detail: 'Delivery state không đúng shape tối thiểu của domain.',
+      detail: 'Delivery state does not match the minimum domain shape.',
     };
   }
   // Cùng lý do như `planAdministrativeRetry`: `now` không hợp lệ làm cổng chặn
@@ -802,21 +802,21 @@ export function planDeliveryRepublish(
     return {
       ok: false,
       reason: 'malformed_delivery',
-      detail: 'Tham số precondition (now) không hợp lệ.',
+      detail: 'The precondition parameter (now) is invalid.',
     };
   }
   if (isTerminalDeliveryStatus(state.status)) {
     return {
       ok: false,
       reason: 'not_non_terminal',
-      detail: 'Re-publish chỉ dành cho delivery non-terminal.',
+      detail: 'Re-publish only applies to a non-terminal delivery.',
     };
   }
   if (state.expiresAt <= precondition.now) {
     return {
       ok: false,
       reason: 'notification_expired',
-      detail: 'Notification đã quá expires_at — không còn đường republish.',
+      detail: 'Notification is past expires_at — republish is no longer possible.',
     };
   }
   if (
@@ -826,7 +826,7 @@ export function planDeliveryRepublish(
     return {
       ok: false,
       reason: 'ineligible_subscription',
-      detail: 'Subscription không active — không đủ tiền điều kiện republish.',
+      detail: 'Subscription is not active — republish preconditions are not met.',
     };
   }
   if (
@@ -836,21 +836,22 @@ export function planDeliveryRepublish(
     return {
       ok: false,
       reason: 'malformed_delivery',
-      detail: 'Provider fact nằm ngoài vocabulary của domain.',
+      detail: 'Provider fact is outside the domain vocabulary.',
     };
   }
   if (precondition.providerEmergencyHold) {
     return {
       ok: false,
       reason: 'provider_hold',
-      detail: 'Provider đang emergency hold — không đủ tiền điều kiện republish.',
+      detail: 'Provider is under emergency hold — republish preconditions are not met.',
     };
   }
   if (precondition.hasOpenOutboxIntent) {
     return {
       ok: false,
       reason: 'open_outbox_intent',
-      detail: 'Đã có outbox intent đang chờ publish cho delivery này — chống dồn intent.',
+      detail:
+        'An outbox intent is already pending publish for this delivery — intent pile-up guard.',
     };
   }
   return { ok: true, status: state.status, retainsGeneration: true };

@@ -116,7 +116,7 @@ export async function administrativeRetry(
     return {
       ok: false,
       reason: ADMIN_REJECTION.StateMismatch,
-      detail: 'Trạng thái delivery đã đổi sau khi đọc — thao tác không được áp dụng.',
+      detail: 'The delivery state changed after it was read — the operation is not applied.',
     };
   }
 
@@ -146,7 +146,7 @@ export async function administrativeRetry(
         ok: false,
         reason: ADMIN_REJECTION.StorageFailure,
         detail:
-          'Delivery đã requeue nhưng không tạo được outbox intent — không có gì để publish; reconciliation sẽ thử lại.',
+          'The delivery was requeued but no outbox intent could be created — nothing to publish; reconciliation will retry.',
       };
     }
   }
@@ -210,7 +210,7 @@ export async function republishDelivery(
     return {
       ok: false,
       reason: ADMIN_REJECTION.OpenOutboxIntent,
-      detail: 'Đã có intent open cho delivery này — index chặn intent thứ hai.',
+      detail: 'An open intent already exists for this delivery — the index blocks a second intent.',
     };
   }
 
@@ -422,14 +422,14 @@ function checkDeliveryScope(
     return {
       ok: false,
       reason: ADMIN_REJECTION.DeliveryNotFound,
-      detail: 'Delivery không tồn tại.',
+      detail: 'The delivery does not exist.',
     };
   }
   if (delivery.app !== app) {
     return {
       ok: false,
       reason: ADMIN_REJECTION.AppMismatch,
-      detail: 'Delivery thuộc app khác — FR-007 cấm dùng chéo app.',
+      detail: 'The delivery belongs to another app — FR-007 forbids cross-app use.',
     };
   }
   return null;

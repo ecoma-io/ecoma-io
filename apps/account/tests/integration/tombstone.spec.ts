@@ -130,13 +130,13 @@ describe('users and the tombstone', () => {
         runtime.query(
           `UPDATE account.users SET status = 'active', deleted_at = NULL WHERE sub = 'sub-resurrect'`,
         ),
-      ).rejects.toThrow(/khong duoc UPDATE/iu);
+      ).rejects.toThrow(/must not be updated/iu);
 
       // Mọi UPDATE khác trên row tombstone cũng bị chặn, kể cả cột không phải
       // status: tombstone là dấu vết cuối cùng, không cột nào được sửa.
       await expect(
         runtime.query(`UPDATE account.users SET updated_at = now() WHERE sub = 'sub-resurrect'`),
-      ).rejects.toThrow(/khong duoc UPDATE/iu);
+      ).rejects.toThrow(/must not be updated/iu);
     } finally {
       await runtime.end();
     }

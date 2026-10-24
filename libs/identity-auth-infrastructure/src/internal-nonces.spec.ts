@@ -193,7 +193,7 @@ function skewAndBuffer(): { skew: number; buffer: number } {
   const skew = /DEFAULT_SKEW_SECONDS = (\d+)/u.exec(source);
   const buffer = /NONCE_TTL_BUFFER_SECONDS = (\d+)/u.exec(source);
   if (skew === null || buffer === null) {
-    throw new Error('khong doc duoc DEFAULT_SKEW_SECONDS / NONCE_TTL_BUFFER_SECONDS');
+    throw new Error('could not read DEFAULT_SKEW_SECONDS / NONCE_TTL_BUFFER_SECONDS');
   }
   return { skew: Number(skew[1]), buffer: Number(buffer[1]) };
 }
@@ -337,7 +337,7 @@ describe('recordNonce — auth.internal_nonces on real PostgreSQL', () => {
         );
         const observed = rows[0];
         if (observed === undefined) {
-          throw new Error('khong tim thay cot auth.internal_nonces.expires_at');
+          throw new Error('column auth.internal_nonces.expires_at not found');
         }
         expect(observed.has_default).toBe(false);
         expect(observed.not_null).toBe(true);
@@ -896,7 +896,7 @@ describe('recordNonce — the return-shape guard, no PostgreSQL needed', () => {
     // mọi request đã dùng đi qua: replay guard tắt hẳn, im lặng. Assert này đỏ đúng ở
     // mutation đó (`promise resolved "false" instead of rejecting`).
     await expect(recordNonce(queryableReturning({ rows: [] }), 'nonce-shape', 1)).rejects.toThrow(
-      /mang hang/u,
+      /frozen array/u,
     );
   });
 

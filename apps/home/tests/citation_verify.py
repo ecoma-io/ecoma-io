@@ -201,30 +201,30 @@ def parse_manifest(raw: Mapping[str, object]) -> tuple[dict[tuple[str, str], str
     problems: list[str] = []
     citations = raw.get("citations")
     if not isinstance(citations, list):
-        return {}, ["manifest: `citations` phai la mot JSON array"]
+        return {}, ["manifest: `citations` must be a JSON array"]
 
     table: dict[tuple[str, str], str] = {}
     for index, row in enumerate(citations):
         if not isinstance(row, dict):
-            problems.append(f"manifest row {index}: khong phai object")
+            problems.append(f"manifest row {index}: not an object")
             continue
         article = row.get("article")
         arxiv_id = row.get("arxivId")
         title = row.get("expectedTitle")
         for key, value in (("article", article), ("arxivId", arxiv_id), ("expectedTitle", title)):
             if not isinstance(value, str) or not value.strip():
-                problems.append(f"manifest row {index}: `{key}` phai la chuoi khong rong")
+                problems.append(f"manifest row {index}: `{key}` must be a non-empty string")
         if problems and not isinstance(article, str):
             continue
         if not (isinstance(article, str) and isinstance(arxiv_id, str) and isinstance(title, str)):
             continue
         clean_id = normalize_arxiv_id(arxiv_id)
         if not is_well_formed(clean_id):
-            problems.append(f"manifest row {index}: arXiv id khong hop le `{arxiv_id}`")
+            problems.append(f"manifest row {index}: arXiv id not well-formed `{arxiv_id}`")
             continue
         key = (article, clean_id)
         if key in table:
-            problems.append(f"manifest row {index}: trung khoa `{article}` + `{clean_id}`")
+            problems.append(f"manifest row {index}: duplicate key `{article}` + `{clean_id}`")
             continue
         table[key] = title
 
@@ -233,16 +233,16 @@ def parse_manifest(raw: Mapping[str, object]) -> tuple[dict[tuple[str, str], str
     # lung tung — reviewer phai thay duoc moi muc trong mot dong.
     input_order = list(table)
     if input_order != sorted(input_order):
-        problems.append("manifest: `citations` phai sap xep theo (article, arxivId) de diff doc duoc")
+        problems.append("manifest: `citations` must be sorted by (article, arxivId) for readable diffs")
     return table, problems
 
 
 def load_manifest(path: Path = MANIFEST_PATH) -> dict[tuple[str, str], str]:
     if not path.is_file():
-        raise FileNotFoundError(f"khong tim thay manifest: {path}")
+        raise FileNotFoundError(f"manifest not found: {path}")
     table, problems = parse_manifest(json.loads(path.read_text(encoding="utf-8")))
     if problems:
-        raise ValueError("manifest khong hop le:\n  - " + "\n  - ".join(problems))
+        raise ValueError("manifest is not valid:\n  - " + "\n  - ".join(problems))
     return table
 
 
@@ -366,7 +366,7 @@ def _atom_error(body: str) -> str | None:
         identifier = entry.findtext("atom:id", default="", namespaces=ATOM_NS)
         if "/api/errors" in identifier:
             summary = " ".join((entry.findtext("atom:summary", default="", namespaces=ATOM_NS)).split())
-            return summary or "arXiv bao loi dinh dang id khong hop le"
+            return summary or "arXiv reports an invalid id format"
     return None
 
 
@@ -380,13 +380,13 @@ def parse_atom_title(body: str) -> tuple[Status, str | None, str]:
     nghieng.
     """
     if not body.strip():
-        return Status.PARSE_FAILURE, None, "response rong"
+        return Status.PARSE_FAILURE, None, "empty response"
     try:
         root = ET.fromstring(body)
     except ET.ParseError as exc:
-        return Status.PARSE_FAILURE, None, f"XML khong parse duoc: {exc}"
+        return Status.PARSE_FAILURE, None, f"XML could not be parsed: {exc}"
     if root.tag != f"{{{ATOM_NS['atom']}}}feed":
-        return Status.PARSE_FAILURE, None, f"phai la Atom feed, nhan `{root.tag}`"
+        return Status.PARSE_FAILURE, None, f"expected an Atom feed, got `{root.tag}`"
 
     error = _atom_error(body)
     if error:
@@ -394,17 +394,17 @@ def parse_atom_title(body: str) -> tuple[Status, str | None, str]:
 
     total = root.findtext("opensearch:totalResults", default=None, namespaces=ATOM_NS)
     if total is None:
-        return Status.PARSE_FAILURE, None, "feed khong co `opensearch:totalResults`"
+        return Status.PARSE_FAILURE, None, "the feed has no `opensearch:totalResults`"
 
     entries = root.findall("atom:entry", ATOM_NS)
     if not entries:
         if total.strip() == "0":
-            return Status.UNKNOWN_IDENTIFIER, None, "arXiv tra feed rong voi totalResults=0"
-        return Status.PARSE_FAILURE, None, f"feed noi totalResults={total} nhung khong co entry nao"
+            return Status.UNKNOWN_IDENTIFIER, None, "arXiv returns an empty feed for totalResults=0"
+        return Status.PARSE_FAILURE, None, f"the feed declares totalResults={total} but has no entries"
 
     title = entries[0].findtext("atom:title", default=None, namespaces=ATOM_NS)
     if title is None or not title.strip():
-        return Status.PARSE_FAILURE, None, "entry khong co `atom:title` hoac title rong"
+        return Status.PARSE_FAILURE, None, "the entry has no `atom:title` or the title is empty"
     return Status.MATCH, " ".join(title.split()), ""
 
 
@@ -457,7 +457,7 @@ class ArxivClient:
                 # thi `parse_atom_title` bao parse-failure, nhung thu hien
                 # dang rat la `rate limit` thi phai retry chu khong phai
                 # doi toi ket luan.
-                return Status.NETWORK_FAILURE, None, "arXiv throttle (HTTP 200, body khong phai Atom)", True
+                return Status.NETWORK_FAILURE, None, "arXiv throttle (HTTP 200, body is not Atom)", True
             status, title, detail = parse_atom_title(response.body)
             return status, title, detail, False
         if response.status == 400:
@@ -465,14 +465,14 @@ class ArxivClient:
             if error:
                 return Status.UNKNOWN_IDENTIFIER, None, f"HTTP 400: {error}", False
         if response.status in (403, 429) or 500 <= response.status < 600:
-            return Status.HTTP_FAILURE, None, f"HTTP {response.status} (arXiv throttle hoac loi server)", True
+            return Status.HTTP_FAILURE, None, f"HTTP {response.status} (arXiv throttle or server error)", True
         return Status.HTTP_FAILURE, None, f"HTTP {response.status}", False
 
     def fetch_title(self, arxiv_id: str, *, min_interval: float = 0.0) -> TitleResult:
         if not is_well_formed(arxiv_id):
-            return TitleResult(arxiv_id, Status.MALFORMED_IDENTIFIER, detail="id khong dung dang arXiv", attempts=0)
+            return TitleResult(arxiv_id, Status.MALFORMED_IDENTIFIER, detail="id does not match the arXiv form", attempts=0)
         url = self._url_template.format(arxiv_id=arxiv_id)
-        last: tuple[Status, str] = (Status.NETWORK_FAILURE, "khong fetch duoc")
+        last: tuple[Status, str] = (Status.NETWORK_FAILURE, "could not fetch")
         for attempt in range(1, self.max_attempts + 1):
             self._wait_turn(min_interval)
             try:
@@ -534,7 +534,7 @@ def check_article(
 
     for token in malformed:
         findings.append(
-            Finding(article_dir.name, token, Status.MALFORMED_IDENTIFIER, detail="token khong dung dang arXiv id")
+            Finding(article_dir.name, token, Status.MALFORMED_IDENTIFIER, detail="token is not a well-formed arXiv id")
         )
 
     for arxiv_id in ids:
@@ -547,7 +547,7 @@ def check_article(
                     article_dir.name,
                     arxiv_id,
                     Status.MISSING_FROM_MANIFEST,
-                    detail="bai hoc trich id nay nhung citation-manifest.json chua khai bao tieu de mong doi",
+                    detail="the lesson cites this id but citation-manifest.json does not declare the expected title",
                 )
             )
             continue
@@ -565,7 +565,7 @@ def check_article(
                     Status.TITLE_MISMATCH,
                     expected,
                     result.actual_title,
-                    detail="arXiv tra ve bai khac",
+                    detail="arXiv returned a different paper",
                     attempts=result.attempts,
                 )
             )
@@ -614,13 +614,13 @@ def check_all(
 
 
 def _print_report(report: Report, label: str) -> None:
-    print(f"\n{label}: kiem tra {report.checked} cap (bai, arXiv id)")
+    print(f"\n{label}: checked {report.checked} (article, arXiv id) pairs")
     for finding in report.findings:
         print(finding.as_line())
     if report.unreferenced:
         # Khong phai loi: manifest duoc phep giu san id dung o bai khac. Chi
         # bao de nguoi review khong nen chay lai.
-        print(f"\n{len(report.unreferenced)} muc manifest hien khong duoc bai nao trich:")
+        print(f"\n{len(report.unreferenced)} manifest entries are currently cited by no article:")
         for article, arxiv_id in report.unreferenced[:10]:
             print(f"  - {article}  arXiv:{arxiv_id}")
     if report.findings:
@@ -631,23 +631,23 @@ def _print_report(report: Report, label: str) -> None:
         for status, count in sorted(counts.items(), key=lambda item: item[0].value):
             print(f"  {status.value}: {count}")
         return
-    print("\nkhong co van de: moi trich dan arXiv tro dung bai da khai bao")
+    print("\nno problems: every arXiv citation points at the declared paper")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Kiem chung danh tinh trich dan arXiv cua curriculum.",
-        epilog="Khong co --live thi khong cham network.",
+        description="Verify the arXiv citation integrity of the curriculum.",
+        epilog="Without --live the network is never touched.",
     )
-    parser.add_argument("--live", action="store_true", help="goi arXiv that (chay review, khong dung cho CI)")
+    parser.add_argument("--live", action="store_true", help="call the real arXiv (review tool, not for CI)")
     parser.add_argument("--manifest", type=Path, default=MANIFEST_PATH)
     parser.add_argument("--blog-dir", type=Path, default=BLOG_DIR)
-    parser.add_argument("--article", default=None, help="chi kiem tra bai co chu nay trong ten thu muc")
+    parser.add_argument("--article", default=None, help="only check articles whose directory name contains this string")
     parser.add_argument(
         "--delay",
         type=float,
         default=DEFAULT_MIN_INTERVAL_SECONDS,
-        help=f"giay cho giua hai request arXiv (mac dinh {DEFAULT_MIN_INTERVAL_SECONDS})",
+        help=f"seconds to wait between arXiv requests (default {DEFAULT_MIN_INTERVAL_SECONDS})",
     )
     parser.add_argument("--attempts", type=int, default=DEFAULT_MAX_ATTEMPTS)
     args = parser.parse_args(argv)
@@ -655,7 +655,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         manifest = load_manifest(args.manifest)
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
-        print(f"manifest khong dung: {exc}", file=sys.stderr)
+        print(f"invalid manifest: {exc}", file=sys.stderr)
         return 2
 
     if not args.live:

@@ -157,7 +157,7 @@ export { backofficeStores, i18n };
 export function at<T>(items: readonly T[], index = 0): T {
   const item = items[index];
   if (item === undefined) {
-    throw new Error(`không có phần tử thứ ${index + 1} (mảng có ${items.length} phần tử)`);
+    throw new Error(`no element at index ${index + 1} (array has ${items.length} elements)`);
   }
   return item;
 }

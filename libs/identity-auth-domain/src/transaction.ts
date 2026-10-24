@@ -34,7 +34,9 @@ export const COMPLETABLE_STATES: ReadonlySet<AuthorizationTransactionState> = ne
  */
 export function assertBrowserConfirmed(state: AuthorizationTransactionState): void {
   if (state === 'pending_browser') {
-    throw OAuthProtocolError.directInvalidRequest('transaction chua duoc browser xac nhan');
+    throw OAuthProtocolError.directInvalidRequest(
+      'transaction has not been confirmed by the browser',
+    );
   }
 }
 
@@ -71,8 +73,6 @@ export function assertTransition(
   to: AuthorizationTransactionState,
 ): void {
   if (!canTransition(from, to)) {
-    throw OAuthProtocolError.directInvalidRequest(
-      `khong chuyen trang thai hop le: ${from} -> ${to}`,
-    );
+    throw OAuthProtocolError.directInvalidRequest(`not a valid state transition: ${from} -> ${to}`);
   }
 }

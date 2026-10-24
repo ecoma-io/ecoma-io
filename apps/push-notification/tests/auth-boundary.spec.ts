@@ -120,7 +120,7 @@ describe('401 before the lookup — private delivery runtime API', () => {
     expect(bodies[0]).not.toContain('runtime');
     expect(JSON.parse(bodies[0])).toEqual({
       error: 'unauthorized',
-      detail: 'Thiếu hoặc sai thông tin xác thực.',
+      detail: 'Missing or invalid credentials.',
     });
   });
 

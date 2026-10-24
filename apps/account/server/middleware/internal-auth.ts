@@ -422,7 +422,7 @@ function buildInternalSecretResolver(
   return async (kid: string): Promise<string> => {
     const secret = registry.get(kid);
     if (secret === undefined) {
-      throw new Error(`kid '${kid}' khong co trong registry secret internal cua account`);
+      throw new Error(`kid '${kid}' is not in the internal secret registry of account`);
     }
     return secret;
   };

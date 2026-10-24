@@ -203,7 +203,11 @@ export type EmptyRequestValidation =
  */
 export function validateClaimRequest(payload: unknown): EmptyRequestValidation {
   if (!isPlainObject(payload)) {
-    return { ok: false, reason: 'invalid_payload', detail: 'Claim request phải là object JSON.' };
+    return {
+      ok: false,
+      reason: 'invalid_payload',
+      detail: 'The claim request must be a JSON object.',
+    };
   }
   const scan = scanJsonDataObject(payload, 'Claim request', []);
   if (!scan.ok) {
@@ -212,7 +216,7 @@ export function validateClaimRequest(payload: unknown): EmptyRequestValidation {
       reason: scan.reason,
       detail:
         scan.reason === 'unexpected_field'
-          ? `Claim request MUST rỗng; nhận field ngoài contract: ${scan.field}.`
+          ? `The claim request MUST be empty; received a field outside the contract: ${scan.field}.`
           : scan.detail,
     };
   }
@@ -261,7 +265,11 @@ const REQUIRED_PROVIDER_FIELDS = ['type', 'configuration', 'credential'] as cons
  */
 export function validateDeliveryClaim(payload: unknown): ClaimValidation {
   if (!isPlainObject(payload)) {
-    return { ok: false, reason: 'invalid_payload', detail: 'Claim response phải là object JSON.' };
+    return {
+      ok: false,
+      reason: 'invalid_payload',
+      detail: 'The claim response must be a JSON object.',
+    };
   }
   const record = payload;
 
@@ -273,7 +281,7 @@ export function validateDeliveryClaim(payload: unknown): ClaimValidation {
     return {
       ok: false,
       reason: 'runtime_material_leak',
-      detail: 'Claim response chứa payload; payload chỉ đến từ envelope Queue.',
+      detail: 'The claim response contains payload; payload only comes from the Queue envelope.',
     };
   }
 
@@ -287,7 +295,7 @@ export function validateDeliveryClaim(payload: unknown): ClaimValidation {
       return {
         ok: false,
         reason: 'missing_field',
-        detail: `Claim response thiếu field: ${field}.`,
+        detail: `The claim response is missing field: ${field}.`,
       };
     }
   }
@@ -296,7 +304,7 @@ export function validateDeliveryClaim(payload: unknown): ClaimValidation {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'status của claim thắng phải là "processing".',
+      detail: 'the status of a winning claim must be "processing".',
     };
   }
   // Kiểm từng field bằng truy cập khoá tường minh (không qua vòng lặp): TypeScript chỉ thu
@@ -306,64 +314,64 @@ export function validateDeliveryClaim(payload: unknown): ClaimValidation {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'delivery_id phải là chuỗi không rỗng.',
+      detail: 'delivery_id must be a non-empty string.',
     };
   }
   if (!isNonEmptyString(record.notification_id)) {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'notification_id phải là chuỗi không rỗng.',
+      detail: 'notification_id must be a non-empty string.',
     };
   }
   if (!isNonEmptyString(record.app)) {
-    return { ok: false, reason: 'invalid_field_type', detail: 'app phải là chuỗi không rỗng.' };
+    return { ok: false, reason: 'invalid_field_type', detail: 'app must be a non-empty string.' };
   }
   if (!isNonEmptyString(record.provider_id)) {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'provider_id phải là chuỗi không rỗng.',
+      detail: 'provider_id must be a non-empty string.',
     };
   }
   if (!isNonEmptyString(record.subscription_id)) {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'subscription_id phải là chuỗi không rỗng.',
+      detail: 'subscription_id must be a non-empty string.',
     };
   }
   if (!isRfc3339Timestamp(record.expires_at)) {
-    return { ok: false, reason: 'invalid_field_type', detail: 'expires_at phải là RFC3339.' };
+    return { ok: false, reason: 'invalid_field_type', detail: 'expires_at must be RFC3339.' };
   }
   if (!isRfc3339Timestamp(record.lease_expires_at)) {
-    return { ok: false, reason: 'invalid_field_type', detail: 'lease_expires_at phải là RFC3339.' };
+    return { ok: false, reason: 'invalid_field_type', detail: 'lease_expires_at must be RFC3339.' };
   }
   if (!isPositiveInteger(record.dispatch_generation)) {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'dispatch_generation phải là số nguyên dương.',
+      detail: 'dispatch_generation must be a positive integer.',
     };
   }
   if (Object.hasOwn(record, 'payload_digest') && !isNonEmptyString(record.payload_digest)) {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'payload_digest phải là chuỗi không rỗng khi có mặt.',
+      detail: 'payload_digest must be a non-empty string when present.',
     };
   }
   if (!isTransport(record.transport)) {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'transport phải là giá trị Transport (web|app), không phải provider type.',
+      detail: 'transport must be a Transport value (web|app), not a provider type.',
     };
   }
 
   const subscription = record.subscription;
   if (!isPlainObject(subscription)) {
-    return { ok: false, reason: 'invalid_field_type', detail: 'subscription phải là object.' };
+    return { ok: false, reason: 'invalid_field_type', detail: 'subscription must be an object.' };
   }
   // `subscription` là tập ĐÓNG đúng bốn field (bảng §8.1): khoá thứ năm là field ngoài
   // contract, không phải field mở rộng — cùng policy unknown-field "reject" của envelope.
@@ -381,7 +389,7 @@ export function validateDeliveryClaim(payload: unknown): ClaimValidation {
       return {
         ok: false,
         reason: 'missing_field',
-        detail: `subscription thiếu field: ${field}.`,
+        detail: `subscription is missing field: ${field}.`,
       };
     }
   }
@@ -390,14 +398,14 @@ export function validateDeliveryClaim(payload: unknown): ClaimValidation {
       return {
         ok: false,
         reason: 'invalid_field_type',
-        detail: `subscription.${field} phải là chuỗi không rỗng.`,
+        detail: `subscription.${field} must be a non-empty string.`,
       };
     }
   }
 
   const provider = record.provider;
   if (!isPlainObject(provider)) {
-    return { ok: false, reason: 'invalid_field_type', detail: 'provider phải là object.' };
+    return { ok: false, reason: 'invalid_field_type', detail: 'provider must be an object.' };
   }
   // `provider` cũng là tập ĐÓNG đúng ba field; `configuration`/`credential` bên trong mới là
   // opaque (không kiểm khoá), nhưng bản thân `provider` không nhận field thứ tư.
@@ -408,28 +416,28 @@ export function validateDeliveryClaim(payload: unknown): ClaimValidation {
   }
   for (const field of REQUIRED_PROVIDER_FIELDS) {
     if (!Object.hasOwn(provider, field)) {
-      return { ok: false, reason: 'missing_field', detail: `provider thiếu field: ${field}.` };
+      return { ok: false, reason: 'missing_field', detail: `provider is missing field: ${field}.` };
     }
   }
   if (!isProviderType(provider.type)) {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'provider.type phải là provider type (web-push|fcm|apns), không phải Transport.',
+      detail: 'provider.type must be a provider type (web-push|fcm|apns), not a Transport.',
     };
   }
   if (!isPlainObject(provider.configuration)) {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'provider.configuration phải là object.',
+      detail: 'provider.configuration must be an object.',
     };
   }
   if (!isPlainObject(provider.credential)) {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'provider.credential phải là object.',
+      detail: 'provider.credential must be an object.',
     };
   }
 
@@ -444,7 +452,7 @@ export function validateDeliveryClaim(payload: unknown): ClaimValidation {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: `provider.configuration chứa giá trị không tương thích JSON: ${configurationCopy.kind}.`,
+      detail: `provider.configuration contains a JSON-incompatible value: ${configurationCopy.kind}.`,
     };
   }
   const credentialCopy = copyJsonCompatible(provider.credential, new Set<object>([record]));
@@ -452,7 +460,7 @@ export function validateDeliveryClaim(payload: unknown): ClaimValidation {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: `provider.credential chứa giá trị không tương thích JSON: ${credentialCopy.kind}.`,
+      detail: `provider.credential contains a JSON-incompatible value: ${credentialCopy.kind}.`,
     };
   }
 
@@ -502,7 +510,7 @@ export function validateDeliveryClaim(payload: unknown): ClaimValidation {
  */
 export function validateClaimRejection(payload: unknown): ClaimRejectionValidation {
   if (!isPlainObject(payload)) {
-    return { ok: false, reason: 'invalid_payload', detail: 'Claim 409 phải là object JSON.' };
+    return { ok: false, reason: 'invalid_payload', detail: 'The claim 409 must be a JSON object.' };
   }
   const record = payload;
 
@@ -520,7 +528,7 @@ export function validateClaimRejection(payload: unknown): ClaimRejectionValidati
       return {
         ok: false,
         reason: 'runtime_material_leak',
-        detail: `Claim 409 chứa runtime material bị cấm: ${field}.`,
+        detail: `The claim 409 contains forbidden runtime material: ${field}.`,
       };
     }
   }
@@ -535,16 +543,20 @@ export function validateClaimRejection(payload: unknown): ClaimRejectionValidati
   // ngoài tập đóng (`unknown_reason`). Gộp cả ba vào `unknown_reason` làm metric/alert không
   // phân biệt được "peer gửi body thiếu field" với "peer lệch version vocabulary".
   if (!Object.hasOwn(record, 'reason')) {
-    return { ok: false, reason: 'missing_field', detail: 'Claim 409 thiếu field: reason.' };
+    return {
+      ok: false,
+      reason: 'missing_field',
+      detail: 'The claim 409 is missing field: reason.',
+    };
   }
   if (typeof record.reason !== 'string') {
-    return { ok: false, reason: 'invalid_field_type', detail: 'reason phải là chuỗi.' };
+    return { ok: false, reason: 'invalid_field_type', detail: 'reason must be a string.' };
   }
   if (!isClaimRejectionReason(record.reason)) {
     return {
       ok: false,
       reason: 'unknown_reason',
-      detail: 'reason không thuộc tập đóng (closed reason set).',
+      detail: 'reason is not in the closed reason set.',
     };
   }
 
@@ -553,14 +565,14 @@ export function validateClaimRejection(payload: unknown): ClaimRejectionValidati
       return {
         ok: false,
         reason: 'state_required',
-        detail: 'Claim 409 với reason "terminal" phải kèm state.',
+        detail: 'A claim 409 with reason "terminal" must include state.',
       };
     }
     if (!isTerminalDeliveryStatus(record.state)) {
       return {
         ok: false,
         reason: 'invalid_field_type',
-        detail: 'state của reason "terminal" phải là terminal delivery state.',
+        detail: 'The state of reason "terminal" must be a terminal delivery state.',
       };
     }
     return { ok: true, rejection: { reason: 'terminal', state: record.state } };
@@ -570,7 +582,7 @@ export function validateClaimRejection(payload: unknown): ClaimRejectionValidati
     return {
       ok: false,
       reason: 'state_not_allowed',
-      detail: 'Claim 409 chỉ được kèm state khi reason là "terminal".',
+      detail: 'A claim 409 may include state only when reason is "terminal".',
     };
   }
 
@@ -606,9 +618,7 @@ export function deliveryClaim(input: DeliveryClaim): DeliveryClaim {
   };
   const checked = validateDeliveryClaim(candidate);
   if (!checked.ok) {
-    throw new Error(
-      `deliveryClaim: body không qua validator (${checked.reason}): ${checked.detail}`,
-    );
+    throw new Error(`deliveryClaim: body failed validation (${checked.reason}): ${checked.detail}`);
   }
   return checked.claim;
 }
@@ -631,20 +641,20 @@ export function claimRejection(
   // soát nghĩa là log injection: caller truyền `reason` chứa xuống dòng sẽ chèn dòng giả
   // vào log. Sau kiểm này `reason` là một hằng ASCII trong tập đóng nên nối an toàn.
   if (!isClaimRejectionReason(reason)) {
-    throw new Error('claimRejection: reason phải thuộc tập đóng claim rejection.');
+    throw new Error('claimRejection: reason is not in the closed claim rejection set.');
   }
   if (reason === CLAIM_REJECTION_REASON_WITH_STATE) {
     if (state === undefined) {
-      throw new Error('claimRejection: reason "terminal" bắt buộc có state.');
+      throw new Error('claimRejection: reason "terminal" requires state.');
     }
   } else if (state !== undefined) {
-    throw new Error(`claimRejection: reason "${reason}" không được kèm state.`);
+    throw new Error(`claimRejection: reason "${reason}" must not include state.`);
   }
   const candidate = reason === CLAIM_REJECTION_REASON_WITH_STATE ? { reason, state } : { reason };
   const checked = validateClaimRejection(candidate);
   if (!checked.ok) {
     throw new Error(
-      `claimRejection: body không qua validator (${checked.reason}): ${checked.detail}`,
+      `claimRejection: body failed validation (${checked.reason}): ${checked.detail}`,
     );
   }
   return checked.rejection;

@@ -125,7 +125,7 @@ AS $$
 BEGIN
   IF OLD.deleted_at IS NOT NULL THEN
     RAISE EXCEPTION
-      'users: hang tombstone (deleted_at khong NULL) khong duoc UPDATE; sub khong tai su dung (FR-001, FR-012d)'
+      'users: tombstoned rows (deleted_at not NULL) must not be updated; the sub is never reused (FR-001, FR-012d)'
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
 
@@ -274,13 +274,13 @@ AS $$
 BEGIN
   IF NEW.handle_hash IS DISTINCT FROM OLD.handle_hash THEN
     RAISE EXCEPTION
-      'login_handoffs: handle_hash la PRIMARY KEY va co che first-binding-wins (FR-006c2), khong duoc doi; doi no la giai phong PK de bind lai'
+      'login_handoffs: handle_hash is the PRIMARY KEY and first-binding-wins mechanism (FR-006c2); it must not change — changing it frees the PK for re-binding'
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
 
   IF OLD.state IN ('consumed', 'expired') THEN
     RAISE EXCEPTION
-      'login_handoffs: hang da % la trang thai ket thuc, khong duoc UPDATE nua (FR-006d2, FR-006g)',
+      'login_handoffs: a row whose % has ended state must not be updated again (FR-006d2, FR-006g)',
       OLD.state
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
@@ -288,14 +288,14 @@ BEGIN
   IF OLD.state = 'session_rotated'
      AND NEW.state NOT IN ('session_rotated', 'consumed', 'expired') THEN
     RAISE EXCEPTION
-      'login_handoffs: tu session_rotated chi duoc chuyen sang consumed hoac expired (FR-006d2, FR-006g)'
+      'login_handoffs: from session_rotated only consumed or expired may follow (FR-006d2, FR-006g)'
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
 
   IF NEW.session_ref IS DISTINCT FROM OLD.session_ref THEN
     IF NOT (OLD.state = 'bound' AND NEW.state = 'session_rotated') THEN
       RAISE EXCEPTION
-        'login_handoffs: session_ref chi doi duoc khi chuyen binding luc rotate session, tu bound sang session_rotated (FR-006c3, FR-006c4)'
+        'login_handoffs: session_ref is only exchangeable when the binding moves with the session rotation, from bound to session_rotated (FR-006c3, FR-006c4)'
         USING ERRCODE = 'integrity_constraint_violation';
     END IF;
   END IF;
@@ -410,7 +410,7 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  RAISE EXCEPTION 'security_events la bang audit append-only: UPDATE bi tu choi (SR-002)'
+  RAISE EXCEPTION 'security_events is an append-only audit table: UPDATE is refused (SR-002)'
     USING ERRCODE = 'integrity_constraint_violation';
 END;
 $$;

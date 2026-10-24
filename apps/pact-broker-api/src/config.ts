@@ -52,13 +52,13 @@ export class PactBrokerConfigurationError extends Error {
 function requireHyperdrive(value: unknown): { connectionString: string } {
   if (value === undefined || value === null || typeof value !== 'object') {
     throw new PactBrokerConfigurationError(
-      'Hyperdrive binding toi db-pact-broker chua duoc gan; pact-broker-api fail-closed',
+      'Hyperdrive binding to db-pact-broker is not bound; pact-broker-api fails closed',
     );
   }
   const cs = (value as { connectionString?: unknown }).connectionString;
   if (typeof cs !== 'string' || cs === '') {
     throw new PactBrokerConfigurationError(
-      'Hyperdrive binding khong co connectionString; pact-broker-api fail-closed',
+      'the Hyperdrive binding has no connectionString; pact-broker-api fails closed',
     );
   }
   return { connectionString: cs };
@@ -75,7 +75,7 @@ function parseWebhooksEnabled(value: string | undefined): boolean {
   if (value === 'true') return true;
   if (value === 'false') return false;
   throw new PactBrokerConfigurationError(
-    'PACT_BROKER_WEBHOOKS_ENABLED chi nhan "true" hoac "false"',
+    'PACT_BROKER_WEBHOOKS_ENABLED accepts only "true" or "false"',
   );
 }
 
@@ -90,7 +90,7 @@ export function loadPactBrokerConfig(envInput: PactBrokerEnv | undefined | null)
     // bề mặt SSRF; không có guard thì không bật — kể cả khi secret nói true.
     // Đây là khoá cứng trong code, không phải cấu hình.
     throw new PactBrokerConfigurationError(
-      'PACT_BROKER_WEBHOOKS_ENABLED=true bi tu choi: chua co SSRF guard cho outbound webhook (SR-006)',
+      'PACT_BROKER_WEBHOOKS_ENABLED=true is refused: no SSRF guard exists yet for outbound webhooks (SR-006)',
     );
   }
 
@@ -102,13 +102,11 @@ export function loadPactBrokerConfig(envInput: PactBrokerEnv | undefined | null)
     try {
       const parsed = new URL(rawOrigin);
       if (parsed.pathname !== '/' || parsed.search !== '' || parsed.hash !== '') {
-        throw new Error('origin khong duoc co path/query/hash');
+        throw new Error('the origin must not carry a path/query/hash');
       }
       dashboardOrigin = parsed.origin;
     } catch {
-      throw new PactBrokerConfigurationError(
-        'PACT_BROKER_DASHBOARD_ORIGIN khong phai mot origin hop le',
-      );
+      throw new PactBrokerConfigurationError('PACT_BROKER_DASHBOARD_ORIGIN is not a valid origin');
     }
   }
 

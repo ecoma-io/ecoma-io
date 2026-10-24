@@ -29,13 +29,13 @@ describe('assertAccessTokenTtl — the TTL bounds are the revocation delay', () 
   it('REJECTS a TTL past the bounds — because those bounds are the revocation delay', () => {
     // Access token verify offline nen khong the thu hoi som. Mot TTL 24h
     // nghia la grant bi thu hoi van dung duoc 24h nua.
-    expect(() => assertAccessTokenTtl(86400)).toThrow(/vuot tran|do tre thu hoi/u);
+    expect(() => assertAccessTokenTtl(86400)).toThrow(/exceeds the|revocation skew/u);
   });
 
   it('REJECTS a TTL that is negative or non-integer', () => {
-    expect(() => assertAccessTokenTtl(0)).toThrow(/nguyen duong/u);
-    expect(() => assertAccessTokenTtl(-1)).toThrow(/nguyen duong/u);
-    expect(() => assertAccessTokenTtl(1.5)).toThrow(/nguyen duong/u);
+    expect(() => assertAccessTokenTtl(0)).toThrow(/positive integer/u);
+    expect(() => assertAccessTokenTtl(-1)).toThrow(/positive integer/u);
+    expect(() => assertAccessTokenTtl(1.5)).toThrow(/positive integer/u);
   });
 });
 
@@ -167,6 +167,6 @@ describe('issueAccessToken — signs with ES256, full claim set', () => {
           transaction_id: 'tx-1',
         },
       }),
-    ).rejects.toThrow(/vuot tran|do tre thu hoi/u);
+    ).rejects.toThrow(/exceeds the|revocation skew/u);
   });
 });

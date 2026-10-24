@@ -49,7 +49,7 @@ export function createIssuanceGateFromDeps(deps: IssuanceGateDeps): IssuanceGate
           grantId ?? undefined,
           'account_status',
         );
-        throw new Error(`issuance gate: account status "${status}" khong cho phep cap token`);
+        throw new Error(`issuance gate: account status "${status}" does not allow token issuance`);
       }
       // Điều kiện 4a — revocation ba mức (subject / client / token-by-grant).
       const revocation = await checkRevocationAtIssuance(postgresClient, {

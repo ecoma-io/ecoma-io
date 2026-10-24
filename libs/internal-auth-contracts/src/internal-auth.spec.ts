@@ -100,7 +100,7 @@ function catchError(fn: () => unknown): unknown {
   } catch (error) {
     return error;
   }
-  throw new Error('mong doi ham nem loi, nhung no khong nem');
+  throw new Error('expected the function to throw, but it did not');
 }
 
 /** Verify với default hợp lệ; override để test từng nhánh lỗi. */
@@ -931,7 +931,7 @@ describe('NONCE_TTL_BUFFER_SECONDS — protocol constant, not a knob', () => {
         }
         const parent = dirname(dir);
         if (parent === dir) {
-          throw new Error('khong tim thay goc workspace (pnpm-workspace.yaml)');
+          throw new Error('workspace root not found (pnpm-workspace.yaml)');
         }
         dir = parent;
       }
@@ -966,7 +966,7 @@ describe('INTERNAL_BODY_LIMIT_BYTES — one shared bound for both sides', () => 
         }
         const parent = dirname(dir);
         if (parent === dir) {
-          throw new Error('khong tim thay goc workspace (pnpm-workspace.yaml)');
+          throw new Error('workspace root not found (pnpm-workspace.yaml)');
         }
         dir = parent;
       }
@@ -1455,7 +1455,7 @@ describe('body semantics — the signature covers bytes, not JSON meaning', () =
     // Contract ký byte, nên một body không phải JSON vẫn verify được: parse JSON là
     // việc của route, không phải của envelope. Nếu lib này từ chối body không parse
     // được thì nó đã tự ý thêm một ràng buộc không có trong giao thức.
-    const notJson = bytes('day khong phai JSON {{{');
+    const notJson = bytes('this is not JSON {{{');
     const headers = await signRequest({
       method: 'POST',
       path: PATH,

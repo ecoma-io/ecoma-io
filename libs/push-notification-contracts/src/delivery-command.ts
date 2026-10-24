@@ -168,7 +168,7 @@ export function isSupportedDeliveryCommandVersion(value: unknown): boolean {
  */
 export function validateDeliveryCommand(payload: unknown): DeliveryCommandValidation {
   if (!isPlainObject(payload)) {
-    return { ok: false, reason: 'invalid_payload', detail: 'Envelope phải là object JSON.' };
+    return { ok: false, reason: 'invalid_payload', detail: 'The envelope must be a JSON object.' };
   }
   const record = payload;
 
@@ -184,7 +184,7 @@ export function validateDeliveryCommand(payload: unknown): DeliveryCommandValida
     return {
       ok: false,
       reason: 'unsupported_version',
-      detail: `version không được hỗ trợ: ${typeof versionValue === 'number' ? String(versionValue) : typeof versionValue}. Chỉ hỗ trợ ${DELIVERY_COMMAND_VERSION}.`,
+      detail: `unsupported version: ${typeof versionValue === 'number' ? String(versionValue) : typeof versionValue}. Only ${DELIVERY_COMMAND_VERSION} is supported.`,
     };
   }
 
@@ -202,7 +202,7 @@ export function validateDeliveryCommand(payload: unknown): DeliveryCommandValida
       return {
         ok: false,
         reason: 'forbidden_field',
-        detail: `Envelope chứa field bị cấm (secret/runtime material): ${field}.`,
+        detail: `The envelope contains a forbidden field (secret/runtime material): ${field}.`,
       };
     }
   }
@@ -229,7 +229,7 @@ export function validateDeliveryCommand(payload: unknown): DeliveryCommandValida
         return {
           ok: false,
           reason: 'forbidden_field',
-          detail: `payload chứa field bị cấm (secret/runtime material): ${field}.`,
+          detail: `The payload contains a forbidden field (secret/runtime material): ${field}.`,
         };
       }
     }
@@ -242,7 +242,11 @@ export function validateDeliveryCommand(payload: unknown): DeliveryCommandValida
 
   for (const field of DELIVERY_COMMAND_FIELDS) {
     if (!Object.hasOwn(record, field)) {
-      return { ok: false, reason: 'missing_field', detail: `Envelope thiếu field: ${field}.` };
+      return {
+        ok: false,
+        reason: 'missing_field',
+        detail: `The envelope is missing field: ${field}.`,
+      };
     }
   }
 
@@ -253,28 +257,28 @@ export function validateDeliveryCommand(payload: unknown): DeliveryCommandValida
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'delivery_id phải là chuỗi không rỗng.',
+      detail: 'delivery_id must be a non-empty string.',
     };
   }
   if (!isNonEmptyString(record.notification_id)) {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'notification_id phải là chuỗi không rỗng.',
+      detail: 'notification_id must be a non-empty string.',
     };
   }
   if (!isNonEmptyString(record.subscription_id)) {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'subscription_id phải là chuỗi không rỗng.',
+      detail: 'subscription_id must be a non-empty string.',
     };
   }
   if (!isNonEmptyString(record.provider_id)) {
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'provider_id phải là chuỗi không rỗng.',
+      detail: 'provider_id must be a non-empty string.',
     };
   }
 
@@ -282,7 +286,7 @@ export function validateDeliveryCommand(payload: unknown): DeliveryCommandValida
     return {
       ok: false,
       reason: 'invalid_field_type',
-      detail: 'transport phải là giá trị Transport (web|app), không phải provider type.',
+      detail: 'transport must be a Transport value (web|app), not a provider type.',
     };
   }
 
@@ -291,7 +295,11 @@ export function validateDeliveryCommand(payload: unknown): DeliveryCommandValida
   // là **giá trị** caller đặt — có thể là revoked proxy dù `record` đã qua `isPlainObject`.
   // Phân loại không đổi: `Date`/`Map`/`Set`/class instance/mảng đều rơi vào cùng detail.
   if (!isPlainObject(record.payload)) {
-    return { ok: false, reason: 'invalid_field_type', detail: 'payload phải là object JSON.' };
+    return {
+      ok: false,
+      reason: 'invalid_field_type',
+      detail: 'The payload must be a JSON object.',
+    };
   }
 
   // `payload` là **closed schema** ở FR-013 (đúng bốn khoá `title`/`body`/`url`/`data`,
@@ -303,7 +311,7 @@ export function validateDeliveryCommand(payload: unknown): DeliveryCommandValida
       ok: false,
       reason:
         checkedPayload.reason === 'invalid_payload' ? 'invalid_field_type' : checkedPayload.reason,
-      detail: `payload không hợp lệ (${checkedPayload.reason}): ${checkedPayload.detail}`,
+      detail: `invalid payload (${checkedPayload.reason}): ${checkedPayload.detail}`,
     };
   }
 
@@ -352,7 +360,7 @@ export function deliveryCommandV1(input: {
   const checked = validateDeliveryCommand(candidate);
   if (!checked.ok) {
     throw new Error(
-      `deliveryCommandV1: envelope không qua validator (${checked.reason}): ${checked.detail}`,
+      `deliveryCommandV1: the envelope failed the validator (${checked.reason}): ${checked.detail}`,
     );
   }
   return checked.command;

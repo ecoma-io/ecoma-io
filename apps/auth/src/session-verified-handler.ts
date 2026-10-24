@@ -221,7 +221,7 @@ export async function runSessionVerified(
       status: 422,
       body: {
         error: 'access_denied',
-        error_description: 'account status khong cho phep phat hanh',
+        error_description: 'account status does not allow issuance',
       },
     };
   }
@@ -287,7 +287,7 @@ async function replayOutcome(
     // Handle không tồn tại / đã prune: §5.1.6 hàng "Transaction / handle hết TTL".
     return {
       status: 404,
-      body: { error: 'invalid_grant', error_description: 'handle khong ton tai' },
+      body: { error: 'invalid_grant', error_description: 'handle does not exist' },
     };
   }
 
@@ -298,7 +298,7 @@ async function replayOutcome(
       status: 422,
       body: {
         error: 'invalid_request',
-        error_description: 'event_id da duoc dung voi payload khac',
+        error_description: 'event_id has been used with a different payload',
       },
     };
   }
@@ -329,7 +329,7 @@ async function replayOutcome(
       status: 422,
       body: {
         error: 'invalid_grant',
-        error_description: 'handle da duoc tieu thu boi event khac',
+        error_description: 'handle has already been consumed by another event',
       },
     };
   }
@@ -339,7 +339,7 @@ async function replayOutcome(
     status: 422,
     body: {
       error: 'invalid_request',
-      error_description: 'transaction chua duoc browser xac nhan',
+      error_description: 'transaction has not been confirmed by the browser',
     },
   };
 }
@@ -390,7 +390,7 @@ async function replayedOutcome(
       status: 422,
       body: {
         error: 'invalid_request',
-        error_description: 'event da xu ly ma khong co continuation',
+        error_description: 'event already processed without a continuation',
       },
     };
   }
@@ -602,7 +602,7 @@ async function grantedPath(
       status: 422,
       body: {
         error: 'server_error',
-        error_description: 'interaction tuong ung khong tim thay',
+        error_description: 'matching interaction not found',
       },
     };
   }

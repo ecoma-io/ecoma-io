@@ -207,12 +207,12 @@ describe('data must be JSON-compatible (FR-013 canonical serialization)', () => 
     ['undefined', undefined, 'undefined'],
     ['BigInt', 1n, 'BigInt'],
     ['a function', () => undefined, 'function'],
-    ['NaN', Number.NaN, 'số không hữu hạn'],
-    ['positive Infinity', Number.POSITIVE_INFINITY, 'số không hữu hạn'],
-    ['negative Infinity', Number.NEGATIVE_INFINITY, 'số không hữu hạn'],
-    ['a Date', new Date(0), 'object có prototype không phải JSON'],
-    ['a Map', new Map<string, string>(), 'object có prototype không phải JSON'],
-    ['a Set', new Set<string>(), 'object có prototype không phải JSON'],
+    ['NaN', Number.NaN, 'non-finite number'],
+    ['positive Infinity', Number.POSITIVE_INFINITY, 'non-finite number'],
+    ['negative Infinity', Number.NEGATIVE_INFINITY, 'non-finite number'],
+    ['a Date', new Date(0), 'object with a non-JSON prototype'],
+    ['a Map', new Map<string, string>(), 'object with a non-JSON prototype'],
+    ['a Set', new Set<string>(), 'object with a non-JSON prototype'],
     ['a symbol', Symbol('x'), 'symbol'],
   ] as const)('rejects data containing %s', (_label, value, needle) => {
     const checked = checkDataValue(value);
@@ -226,7 +226,7 @@ describe('data must be JSON-compatible (FR-013 canonical serialization)', () => 
     }
     const checked = checkDataValue({ nested: new Payload() });
     expect(checked.ok).toBe(false);
-    expectRejectedBy(checked, 'invalid_field_type', 'object có prototype không phải JSON');
+    expectRejectedBy(checked, 'invalid_field_type', 'object with a non-JSON prototype');
   });
 
   it('rejects a self-referencing object as a circular reference', () => {
@@ -289,7 +289,7 @@ describe('data must be JSON-compatible (FR-013 canonical serialization)', () => 
     sparse.length = 3;
     const checked = checkDataValue(sparse);
     expect(checked.ok).toBe(false);
-    expectRejectedBy(checked, 'invalid_field_type', 'mảng sparse');
+    expectRejectedBy(checked, 'invalid_field_type', 'sparse array');
   });
 
   it('rejects a non-index own key on an array inside data — JSON.stringify drops it silently', () => {
@@ -297,7 +297,7 @@ describe('data must be JSON-compatible (FR-013 canonical serialization)', () => 
     withExtra.extra = 3;
     const checked = checkDataValue(withExtra);
     expect(checked.ok).toBe(false);
-    expectRejectedBy(checked, 'invalid_field_type', 'field ngoài chỉ số trong mảng');
+    expectRejectedBy(checked, 'invalid_field_type', 'out-of-index field in array');
   });
 
   it('rejects a getter element inside an array in data without invoking it', () => {
@@ -321,7 +321,7 @@ describe('data must be JSON-compatible (FR-013 canonical serialization)', () => 
   it('rejects an explicit data: undefined — presence without a value is still a violation', () => {
     const checked = validateNotificationPayload({ ...VALID, data: undefined });
     expect(checked.ok).toBe(false);
-    expectRejectedBy(checked, 'invalid_field_type', 'data phải');
+    expectRejectedBy(checked, 'invalid_field_type', 'data must');
   });
 
   it('rejects a non-enumerable array element — JSON.stringify would drop it silently', () => {
@@ -335,13 +335,13 @@ describe('data must be JSON-compatible (FR-013 canonical serialization)', () => 
     });
     const checked = checkDataValue({ list: withHidden });
     expect(checked.ok).toBe(false);
-    expectRejectedBy(checked, 'invalid_field_type', 'field non-enumerable trong mảng');
+    expectRejectedBy(checked, 'invalid_field_type', 'non-enumerable field in array');
   });
 
   it('rejects data: null — presence must still be an object', () => {
     const checked = validateNotificationPayload({ ...VALID, data: null });
     expect(checked.ok).toBe(false);
-    expectRejectedBy(checked, 'invalid_field_type', 'data phải');
+    expectRejectedBy(checked, 'invalid_field_type', 'data must');
   });
 });
 
@@ -353,7 +353,7 @@ describe('object shape policy — plain JSON objects only (A1)', () => {
   ] as const)('rejects a payload that is %s', (_label, value) => {
     const checked = validateNotificationPayload(value);
     expect(checked.ok).toBe(false);
-    expectRejectedBy(checked, 'invalid_payload', 'object JSON');
+    expectRejectedBy(checked, 'invalid_payload', 'JSON object');
   });
 
   it('rejects a class instance payload', () => {
@@ -363,14 +363,14 @@ describe('object shape policy — plain JSON objects only (A1)', () => {
     }
     const checked = validateNotificationPayload(new FakePayload());
     expect(checked.ok).toBe(false);
-    expectRejectedBy(checked, 'invalid_payload', 'object JSON');
+    expectRejectedBy(checked, 'invalid_payload', 'JSON object');
   });
 
   it('rejects an object with a custom prototype chain — inherited keys are not JSON own keys', () => {
     const withPrototype = Object.create({ title: 'T', body: 'B' });
     const checked = validateNotificationPayload(withPrototype);
     expect(checked.ok).toBe(false);
-    expectRejectedBy(checked, 'invalid_payload', 'object JSON');
+    expectRejectedBy(checked, 'invalid_payload', 'JSON object');
   });
 
   it('treats keys on Object.prototype as not present (own keys only)', () => {

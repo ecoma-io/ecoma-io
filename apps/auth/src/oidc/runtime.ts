@@ -136,7 +136,7 @@ async function buildRuntime(env: AuthEnv): Promise<AuthRuntime> {
   if (typeof port !== 'number' || !Number.isInteger(port) || port <= 0) {
     // Không có port thì không có đường cầu nào — ném để cache giữ nguyên `undefined`
     // và request sau dựng lại, thay vì giữ một runtime không dùng được.
-    throw new Error('node server khong cap duoc port ephemeral');
+    throw new Error('node server cannot provide an ephemeral port');
   }
 
   return { config, postgresClient, provider, nodeServer, nodePort: port };

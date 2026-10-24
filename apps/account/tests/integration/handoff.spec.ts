@@ -73,7 +73,7 @@ describe('login_handoffs', () => {
       if (inserted.rowCount === 1) {
         const row = inserted.rows[0];
         if (row === undefined) {
-          throw new Error('rowCount = 1 nhung RETURNING khong tra ve dong nao');
+          throw new Error('rowCount = 1 but RETURNING returned no row');
         }
         return { won: true, sessionRef: row.session_ref, state: row.state };
       }
@@ -87,7 +87,7 @@ describe('login_handoffs', () => {
       const row = existing.rows[0];
       if (row === undefined) {
         throw new Error(
-          'ON CONFLICT bat tranh nhung SELECT khong tim thay binding: handle_hash ton tai o dau?',
+          'ON CONFLICT lost the race but the SELECT found no binding: where does handle_hash exist?',
         );
       }
       return { won: false, sessionRef: row.session_ref, state: row.state };
@@ -194,7 +194,7 @@ describe('login_handoffs', () => {
           `UPDATE account.login_handoffs SET session_ref = 'asr-intruder' WHERE handle_hash = $1`,
           [handleHash],
         ),
-      ).rejects.toThrow(/chi doi duoc khi chuyen binding luc rotate session/iu);
+      ).rejects.toThrow(/only exchangeable when the binding moves with the session rotation/iu);
     } finally {
       await client.end();
     }
@@ -218,7 +218,7 @@ describe('login_handoffs', () => {
           rivalHash,
           handleHash,
         ]),
-      ).rejects.toThrow(/handle_hash la PRIMARY KEY va co che first-binding-wins/iu);
+      ).rejects.toThrow(/handle_hash is the PRIMARY KEY and first-binding-wins mechanism/iu);
     } finally {
       await runtime.end();
     }
@@ -422,7 +422,7 @@ describe('login_handoffs', () => {
       );
       const row = rows[0];
       if (row === undefined) {
-        throw new Error('khong tim thay handoff sau khi seed');
+        throw new Error('handoff not found after seeding');
       }
       return row;
     } finally {
@@ -530,21 +530,21 @@ describe('login_handoffs', () => {
               WHERE handle_hash = $1`,
             [handleHash],
           ),
-        ).rejects.toThrow(/la trang thai ket thuc/iu);
+        ).rejects.toThrow(/has ended state must not be updated again/iu);
 
         await expect(
           runtime.query(
             `UPDATE account.login_handoffs SET state = 'expired' WHERE handle_hash = $1`,
             [handleHash],
           ),
-        ).rejects.toThrow(/la trang thai ket thuc/iu);
+        ).rejects.toThrow(/has ended state must not be updated again/iu);
 
         await expect(
           runtime.query(
             `UPDATE account.login_handoffs SET state = 'bound' WHERE handle_hash = $1`,
             [handleHash],
           ),
-        ).rejects.toThrow(/la trang thai ket thuc/iu);
+        ).rejects.toThrow(/has ended state must not be updated again/iu);
 
         // Đúng kịch bản tái bind: hồi sinh sang session_rotated và trỏ sang
         // session của kẻ tấn công.
@@ -555,7 +555,7 @@ describe('login_handoffs', () => {
               WHERE handle_hash = $1`,
             [handleHash],
           ),
-        ).rejects.toThrow(/la trang thai ket thuc/iu);
+        ).rejects.toThrow(/has ended state must not be updated again/iu);
       } finally {
         await runtime.end();
       }
@@ -579,14 +579,14 @@ describe('login_handoffs', () => {
               WHERE handle_hash = $1`,
             [handleHash],
           ),
-        ).rejects.toThrow(/la trang thai ket thuc/iu);
+        ).rejects.toThrow(/has ended state must not be updated again/iu);
 
         await expect(
           client.query(
             `UPDATE account.login_handoffs SET state = 'consumed' WHERE handle_hash = $1`,
             [handleHash],
           ),
-        ).rejects.toThrow(/la trang thai ket thuc/iu);
+        ).rejects.toThrow(/has ended state must not be updated again/iu);
 
         await expect(
           client.query(
@@ -595,7 +595,7 @@ describe('login_handoffs', () => {
               WHERE handle_hash = $1`,
             [handleHash],
           ),
-        ).rejects.toThrow(/la trang thai ket thuc/iu);
+        ).rejects.toThrow(/has ended state must not be updated again/iu);
       } finally {
         await client.end();
       }
@@ -618,7 +618,7 @@ describe('login_handoffs', () => {
           client.query(`UPDATE account.login_handoffs SET state = 'bound' WHERE handle_hash = $1`, [
             handleHash,
           ]),
-        ).rejects.toThrow(/chi duoc chuyen sang consumed hoac expired/iu);
+        ).rejects.toThrow(/only consumed or expired may follow/iu);
       } finally {
         await client.end();
       }
@@ -646,7 +646,7 @@ describe('login_handoffs', () => {
               WHERE handle_hash = $1`,
             [boundHash],
           ),
-        ).rejects.toThrow(/chi doi duoc khi chuyen binding luc rotate session/iu);
+        ).rejects.toThrow(/only exchangeable when the binding moves with the session rotation/iu);
 
         // bound → consumed kèm ref mới: đường "consume" không được đổi binding.
         await expect(
@@ -656,7 +656,7 @@ describe('login_handoffs', () => {
               WHERE handle_hash = $1`,
             [boundHash],
           ),
-        ).rejects.toThrow(/chi doi duoc khi chuyen binding luc rotate session/iu);
+        ).rejects.toThrow(/only exchangeable when the binding moves with the session rotation/iu);
 
         // session_rotated đổi ref lần thứ hai: FR-006c4 là "một thao tác atomic
         // duy nhất", không có đường session thứ ba thừa kế X.
@@ -667,7 +667,7 @@ describe('login_handoffs', () => {
               WHERE handle_hash = $1`,
             [rotatedHash],
           ),
-        ).rejects.toThrow(/chi doi duoc khi chuyen binding luc rotate session/iu);
+        ).rejects.toThrow(/only exchangeable when the binding moves with the session rotation/iu);
       } finally {
         await client.end();
       }

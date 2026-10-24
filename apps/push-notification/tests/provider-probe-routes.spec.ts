@@ -67,7 +67,7 @@ async function readAuditTestResults(db: TestDatabase, providerId: string): Promi
   });
 }
 
-describe('POST /admin/v1/providers/:id/test — probe thật (WB-4, FR-018)', () => {
+describe('POST /admin/v1/providers/:id/test — real probe (WB-4, FR-018)', () => {
   let db: TestDatabase;
   let scoped: SeededScope;
   let fetchMock: ReturnType<typeof vi.fn>;
@@ -97,7 +97,7 @@ describe('POST /admin/v1/providers/:id/test — probe thật (WB-4, FR-018)', ()
     );
   }
 
-  it('2xx → delivery_accepted và gọi provider thật', async () => {
+  it('2xx -> delivery_accepted and calls the real provider', async () => {
     await setupValidMaterial();
     fetchMock.mockResolvedValue(new Response(null, { status: 201 }));
 
@@ -215,7 +215,7 @@ describe('POST /admin/v1/providers/:id/test — probe thật (WB-4, FR-018)', ()
     expect(body.result).toBe('configuration_invalid');
   });
 
-  it('3xx redirect → provider_rejected_request (không đi theo redirect)', async () => {
+  it('3xx redirect -> provider_rejected_request (does not follow the redirect)', async () => {
     await setupValidMaterial();
     fetchMock.mockResolvedValue(new Response(null, { status: 301 }));
 
@@ -291,7 +291,7 @@ describe('POST /admin/v1/providers/:id/test — probe thật (WB-4, FR-018)', ()
     expect(body.result).toBe('provider_rejected_request');
   });
 
-  it('thiếu credential active → configuration_invalid, không gọi provider', async () => {
+  it('missing active credential -> configuration_invalid, provider not called', async () => {
     await db.run(
       "UPDATE push_provider_credentials SET status = 'retired' WHERE provider_id = ?",
       scoped.providerId,
@@ -315,7 +315,7 @@ describe('POST /admin/v1/providers/:id/test — probe thật (WB-4, FR-018)', ()
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('endpoint không parse được → configuration_invalid, không gọi provider', async () => {
+  it('unparseable endpoint -> configuration_invalid, provider not called', async () => {
     await setupValidMaterial();
     await db.run(
       "UPDATE push_subscriptions SET endpoint = 'http://not-https.example.com/push' WHERE subscription_id = ?",
@@ -340,7 +340,7 @@ describe('POST /admin/v1/providers/:id/test — probe thật (WB-4, FR-018)', ()
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('credential public key hỏng → configuration_invalid (vapid_key_missing), không gọi provider', async () => {
+  it('broken credential public key -> configuration_invalid (vapid_key_missing), provider not called', async () => {
     await setupValidMaterial();
     await db.run(
       "UPDATE push_provider_credentials SET public_key = 'not-a-valid-key' WHERE provider_id = ? AND status = 'active'",
@@ -371,7 +371,7 @@ describe('POST /admin/v1/providers/:id/test — probe thật (WB-4, FR-018)', ()
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('target subscription thuộc app khác → không gọi provider', async () => {
+  it('target subscription belongs to another app -> provider not called', async () => {
     const other = await seedScope(db, { app: OTHER_APP });
     await setupValidMaterial();
 
@@ -391,7 +391,7 @@ describe('POST /admin/v1/providers/:id/test — probe thật (WB-4, FR-018)', ()
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('target subscription khác transport → subscription_invalid, không gọi provider', async () => {
+  it('target subscription has a different transport -> subscription_invalid, provider not called', async () => {
     await setupValidMaterial();
     await db.run(
       "UPDATE push_subscriptions SET transport = 'app' WHERE subscription_id = ?",
@@ -416,7 +416,7 @@ describe('POST /admin/v1/providers/:id/test — probe thật (WB-4, FR-018)', ()
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('audit được ghi với provider_updated + test_result, không rò secret', async () => {
+  it('audit is written with provider_updated + test_result, no secret leak', async () => {
     await setupValidMaterial();
     fetchMock.mockResolvedValue(new Response('SECRET-RESPONSE-BODY-XYZ', { status: 201 }));
 
@@ -458,7 +458,7 @@ describe('POST /admin/v1/providers/:id/test — probe thật (WB-4, FR-018)', ()
     expect(allowed.has(parsed.test_result)).toBe(true);
   });
 
-  it('decrypt lỗi → configuration_invalid', async () => {
+  it('decrypt failure -> configuration_invalid', async () => {
     await setupValidMaterial();
     await db.run(
       "UPDATE push_provider_credentials SET credential_encryption_version = 'K9' WHERE provider_id = ? AND status = 'active'",

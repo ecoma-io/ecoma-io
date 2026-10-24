@@ -138,14 +138,14 @@ export function selectSubscriptionsForDevice(
     return {
       ok: false,
       reason: 'malformed_selector',
-      detail: 'app rỗng — không xác định được namespace của App.',
+      detail: 'app is empty — the app namespace cannot be determined.',
     };
   }
   if (!isNonEmptyString(deviceId)) {
     return {
       ok: false,
       reason: 'malformed_selector',
-      detail: 'deviceId rỗng — không xác định được device.',
+      detail: 'deviceId is empty — the device cannot be determined.',
     };
   }
   // Collection hỏng là dữ liệu đầu vào (DB rows), không phải lỗi selector — nằm trong
@@ -154,7 +154,7 @@ export function selectSubscriptionsForDevice(
     return {
       ok: false,
       reason: 'malformed_subscription',
-      detail: 'Danh sách subscription không hợp lệ — không chọn được device subscriptions.',
+      detail: 'The subscription list is invalid — device subscriptions cannot be selected.',
     };
   }
   // Một pass cho cả hai quyết định: shape và scope. Không thể tách thành
@@ -178,7 +178,7 @@ export function selectSubscriptionsForDevice(
       return {
         ok: false,
         reason: 'malformed_subscription',
-        detail: 'Danh sách subscription chứa phần tử không phải record — không chọn được.',
+        detail: 'The subscription list contains a non-record element — cannot select.',
       };
     }
     // Device identity vẫn CHỈ theo `deviceId` — không tín hiệu nào khác tham gia.
@@ -195,7 +195,8 @@ export function selectSubscriptionsForDevice(
       return {
         ok: false,
         reason: 'malformed_subscription',
-        detail: 'Subscription thuộc app và device đang chọn nhưng record sai shape.',
+        detail:
+          'The subscription belongs to the selected app and device but the record has the wrong shape.',
       };
     }
     forDeviceAndApp.push(subscription);
@@ -208,7 +209,7 @@ export function selectSubscriptionsForDevice(
     return {
       ok: false,
       reason: 'no_eligible_subscription',
-      detail: 'Device không có subscription active nào.',
+      detail: 'The device has no active subscription.',
     };
   }
 
@@ -225,6 +226,6 @@ export function selectSubscriptionsForDevice(
   return {
     ok: false,
     reason: 'no_eligible_subscription',
-    detail: 'Không có transport nào trong thứ tự ưu tiên khớp subscription eligible.',
+    detail: 'No transport in the priority order matches an eligible subscription.',
   };
 }

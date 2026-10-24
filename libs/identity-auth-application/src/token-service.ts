@@ -78,12 +78,12 @@ export interface TokenIssuanceConfig {
  */
 export function assertAccessTokenTtl(ttlSeconds: number): void {
   if (!Number.isInteger(ttlSeconds) || ttlSeconds <= 0) {
-    throw new Error(`access token TTL phai la so nguyen duong, nhan duoc: ${ttlSeconds}`);
+    throw new Error(`access token TTL must be a positive integer, got: ${ttlSeconds}`);
   }
   if (ttlSeconds > MAX_ACCESS_TOKEN_TTL_SECONDS) {
     throw new Error(
-      `access token TTL ${ttlSeconds}s vuot tran ${MAX_ACCESS_TOKEN_TTL_SECONDS}s; ` +
-        'tran bang do tre thu hoi, vi access token verify offline nen khong the thu hoi som',
+      `access token TTL ${ttlSeconds}s exceeds the ${MAX_ACCESS_TOKEN_TTL_SECONDS}s ceiling; ` +
+        'ceiling with revocation skew, because access tokens verify offline and cannot be revoked early',
     );
   }
 }

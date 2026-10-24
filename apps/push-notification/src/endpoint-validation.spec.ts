@@ -67,7 +67,7 @@ function acceptedHost(validation: EndpointValidation): string | null {
 function acceptedValue(validation: EndpointValidation): EndpointValidationSuccess {
   if (!validation.ok) {
     throw new Error(
-      `endpoint bị từ chối với lý do ${validation.reason} trong khi test cần hợp lệ.`,
+      `endpoint was rejected with reason ${validation.reason} while the test needs it valid.`,
     );
   }
   return validation.value;
@@ -76,7 +76,7 @@ function acceptedValue(validation: EndpointValidation): EndpointValidationSucces
 /** `detail` của một kết quả bị từ chối — ném nếu hợp lệ. */
 function rejectionDetail(result: UseCaseResult<{ readonly valid: true }>): string {
   if (result.ok) {
-    throw new Error('kết quả hợp lệ trong khi test cần một kết quả bị từ chối.');
+    throw new Error('result is valid while the test needs a rejection.');
   }
   return result.detail;
 }

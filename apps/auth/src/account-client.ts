@@ -359,7 +359,7 @@ export class AccountClient {
     );
 
     if (!isAccountStatusResponseValue(body.status)) {
-      throw new Error('Account tra ve status khong thuoc allowlist cua contract');
+      throw new Error('Account returned a status outside the contract allowlist');
     }
     return body.status;
   }
@@ -425,14 +425,14 @@ export class AccountClient {
       // Binding chết / timeout / mạng — fail-closed, nhưng là hạ tầng, không phải bug.
       const cause = error instanceof Error ? error : undefined;
       throw new AccountDependencyError(
-        `Account khong goi duoc cho ${path}: ${cause?.message ?? String(error)}`,
+        `Account is unreachable for ${path}: ${cause?.message ?? String(error)}`,
         cause !== undefined ? { cause } : undefined,
       );
     }
 
     if (!response.ok) {
       throw new AccountDependencyError(
-        `Account tra ve ${response.status} cho ${path}; auth fail-closed khong phat hanh token`,
+        `Account returned ${response.status} for ${path}; auth fails closed and issues no token`,
       );
     }
 
@@ -441,7 +441,7 @@ export class AccountClient {
     } catch (error) {
       const cause = error instanceof Error ? error : undefined;
       throw new AccountDependencyError(
-        `Account tra ve body khong phai JSON cho ${path}; auth fail-closed`,
+        `Account returned a non-JSON body for ${path}; auth fails closed`,
         cause !== undefined ? { cause } : undefined,
       );
     }

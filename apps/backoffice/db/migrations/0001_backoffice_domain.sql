@@ -140,7 +140,7 @@ BEGIN
   -- "tái dùng ngầm" cho người khác bằng một UPDATE (01 §4.1).
   IF NEW.sub IS DISTINCT FROM OLD.sub THEN
     RAISE EXCEPTION
-      'staff: sub la tham chieu 1:1 sang account, khong duoc doi tren hang da ton tai (01 4.1)'
+      'staff: sub is a 1:1 reference into account and must not change on an existing row (01 4.1)'
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
 
@@ -151,7 +151,7 @@ BEGIN
   IF OLD.status = 'terminated'
      AND NEW.status <> OLD.status THEN
     RAISE EXCEPTION
-      'staff: terminated la trang thai terminal; phuc hoi membership la thao tac moi co audit, khong phai UPDATE im lang (01 4.2, T-05)'
+      'staff: terminated is a terminal state; restoring membership is a new audited operation, not a silent UPDATE (01 4.2, T-05)'
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
 
@@ -426,7 +426,7 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
   RAISE EXCEPTION
-    'authorization_audit la bang audit append-only: % bi tu choi (SR-015, AC-015)',
+    'authorization_audit is an append-only audit table: % is refused (SR-015, AC-015)',
     TG_OP
     USING ERRCODE = 'integrity_constraint_violation';
 END;
