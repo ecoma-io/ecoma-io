@@ -24,6 +24,17 @@
           "cwd": "deploys/pact-broker-app-deploy",
           "command": "npx tsx ../../tools/dx provision-gate"
         }
+      },
+      "local-up": {
+        "//": "Local lane — duy nhất một lane (`-c local`). CHƯA có `dependsOn` nào: unit này chưa thuộc `LOCAL_LANE_PROJECTS` (membership + thứ tự trong chuỗi local là PR wiring riêng — cùng PR nối giá trị thật cho `NITRO_PACT_BROKER_API_BASE_URL`/port và `namespace:apiToken`). Chạy tay: `nx run pact-broker-app-deploy:local-up`.",
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "deploys/pact-broker-app-deploy",
+          "command": "npx tsx ../../tools/dx local-stack-step --stack pact-broker-app-deploy --step up"
+        },
+        "configurations": {
+          "local": {}
+        }
       }
     }
   }
