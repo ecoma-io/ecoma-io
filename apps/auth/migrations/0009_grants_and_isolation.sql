@@ -130,8 +130,15 @@ BEGIN
     --    tạo các schema `_timescaledb_*` chứa FK chéo giữa chúng (`bgw_job_hypertable_id_fkey`
     --    -> `_timescaledb_catalog.bgw_job`, ...). Đây là state nội bộ của platform, không phải
     --    FK mà migration nào của auth viết ra, nên không thuộc phạm vi assertion này.
-    --    `_` là wildcard trong LIKE nên phải escape (`\_`) — nếu không, pattern sẽ nuốt cả
-    --    schema người dùng bắt đầu bằng `timescaledb_`.
+    --
+    --    Giả định của lớp loại trừ này: **mọi** schema khớp tiền tố `_timescaledb_` là state
+    --    của extension, kể cả khi một migration sau tự tạo schema trùng tiền tố (hành vi đó
+    --    tự mâu thuẫn với NFR-002b và phải bị chặn ở review, không phải ở assertion này).
+    --
+    --    Dùng regex neo đầu chuỗi thay cho `LIKE '\_timescaledb\_%'`: `_` là ký tự thường
+    --    trong regex nên không phụ thuộc escape của LIKE (và `standard_conforming_strings`),
+    --    trong khi `_` là wildcard trong LIKE — quên escape là pattern nuốt cả schema người
+    --    dùng bắt đầu bằng `timescaledb_`.
     SELECT string_agg(DISTINCT con.conname || ' -> ' || cl.oid::regclass::text, ', ')
       INTO offending
       FROM pg_constraint con
@@ -139,7 +146,7 @@ BEGIN
       JOIN pg_namespace n ON n.oid = cl.relnamespace
      WHERE con.contype = 'f'
        AND n.nspname <> 'auth'
-       AND n.nspname NOT LIKE '\_timescaledb\_%';
+       AND n.nspname !~ '^_timescaledb_';
 
     IF offending IS NOT NULL THEN
         RAISE EXCEPTION
@@ -179,8 +186,12 @@ $assert_no_cross_database_reference$;
 --
 -- (3) AC-026 — không FK chéo database, không `postgres_fdw`, không `dblink`.
 --     SELECT extname FROM pg_extension WHERE extname IN ('postgres_fdw', 'dblink');  -- phải = 0 dòng
---     SELECT count(*) FROM pg_constraint WHERE contype = 'f'
---      AND connamespace <> 'auth'::regnamespace;  -- phải = 0
+--     SELECT count(*) FROM pg_constraint con
+--      JOIN pg_class c ON c.oid = con.conrelid
+--      JOIN pg_namespace n ON n.oid = c.relnamespace
+--     WHERE con.contype = 'f'
+--       AND n.nspname <> 'auth'
+--       AND n.nspname !~ '^_timescaledb_';  -- phải = 0
 --
 -- (4) AC-028 — `signing_keys` không có private key material.
 --     SELECT count(*) FROM information_schema.columns
