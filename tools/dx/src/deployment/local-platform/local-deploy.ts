@@ -24,6 +24,7 @@
  * `04-platform-facts.md` §2.16 PU12–PU13).
  */
 
+import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -50,6 +51,11 @@ import {
   type ExecResult,
   type LocalDeployContext,
 } from './pulumi-context.js';
+import {
+  localDeployTaskSequence,
+  localDestroyStackOrder,
+  LOCAL_LANE_TARGETS,
+} from './local-deploy-graph.js';
 import { ROOT_DIR } from '../../utils.js';
 
 /**
@@ -142,9 +148,18 @@ export function lookupPostgresPassword(result: ExecResult): PostgresPasswordLook
     return { state: 'found', password };
   }
   if (isConfigKeyMissing(result)) return { state: 'missing' };
+  // KHÔNG nhúng raw stderr/stdout vào detail: stdout của `pulumi config get
+  // postgres:password` khi lệnh exit 0 CHÍNH LÀ mật khẩu — nếu CLI đổi hành vi
+  // exit-code, nhét raw output vào error string là đường leak thật (detail đi
+  // vào console.error). Thay bằng thông điệp cố định + hướng dẫn người dùng tự
+  // chạy lệnh để xem stderr gốc.
   return {
     state: 'error',
-    detail: `${result.stderr.trim() || result.stdout.trim() || 'lỗi Pulumi không xác định'}`,
+    detail:
+      `pulumi config get thất bại (exit ${String(result.status)}). Chạy tay ` +
+      `'pulumi config get ${POSTGRES_PASSWORD_CONFIG_KEY} --stack <stack-ref>' trong ` +
+      'deploys/platform-deploy để xem stderr gốc — output của lệnh này không được log ' +
+      'vì có thể chứa mật khẩu.',
   };
 }
 
@@ -315,6 +330,184 @@ export const DEPLOY_STEPS = [
 ] as const;
 export type DeployStep = (typeof DEPLOY_STEPS)[number];
 
+/**
+ * Ánh xạ step hard-coded ↔ task Nx của lane local — dữ liệu dẫn xuất cho
+ * `runNxOrchestratedDeploy` và cho spec đối chiếu hai hình thái thứ tự.
+ *
+ * `DEPLOY_STEPS` không còn là nguồn thứ tự của đường chạy mới: nguồn thứ tự là
+ * khai báo Nx (`dependsOn` trong package.json của từng deploy project), và bảng này chỉ
+ * ánh xạ từng step cũ sang task tương đương để `pnpm dx local-deploy` qua Nx
+ * giữ đúng hành vi 8 bước.
+ */
+export const STEP_TO_TASK: Readonly<Record<DeployStep, string>> = {
+  'platform-up': 'platform-deploy:local-up',
+  'read-outputs': 'platform-deploy:local-env',
+  'update-env': 'platform-deploy:local-env',
+  'home-up': 'home-deploy:local-up',
+  'backoffice-up': 'backoffice-deploy:local-up',
+  'account-up': 'account-deploy:local-up',
+  'auth-up': 'auth-deploy:local-up',
+  'smoke-https': 'platform-deploy:local-smoke',
+};
+
+/**
+ * Kết quả tính lệnh orchestration Nx — hàm thuần, unit test được không cần Nx.
+ */
+export interface NxOrchestrationPlan {
+  /** Lệnh chính (spawnSync sẽ chạy). */
+  command: string;
+  args: string[];
+  cwd: string;
+  /** Task theo topo thứ tự mà graph khai báo — bằng chứng đối chiếu với DEPLOY_STEPS. */
+  taskSequence: string[];
+}
+
+/**
+ * Dựng lệnh orchestration Nx cho lane local — HÀM THUẬN.
+ *
+ * `nx run-many` nhận `-p` (project) + `-t` (target) + `-c local`; thứ tự THỰC
+ * THI do Nx suy từ `dependsOn` đã khai trong package.json của từng deploy project — lệnh
+ * không liệt kê thứ tự, nó chỉ khoá tập task. `taskSequence` trong kết quả là
+ * hình chiếu topology mà graph module suy lại từ chính khai báo đó, để:
+ * (a) spec so khớp với `DEPLOY_STEPS` (bằng chứng hai hình thái tương đương),
+ * (b) `--dry-run` in ra cho người đọc thấy chuỗi trước khi chạy thật.
+ */
+export function buildNxOrchestrationPlan(
+  options: { skipSmoke?: boolean } = {},
+  resolver: {
+    taskSequence: () => ReturnType<typeof localDeployTaskSequence>;
+    rootDir: string;
+  } = { taskSequence: localDeployTaskSequence, rootDir: ROOT_DIR },
+): NxOrchestrationPlan {
+  const tasks = resolver.taskSequence();
+  const filtered = options.skipSmoke ? tasks.filter((t) => t.target !== 'local-smoke') : tasks;
+  const projects = [...new Set(filtered.map((t) => t.project))];
+  const targets = [...new Set(filtered.map((t) => t.target))];
+  return {
+    command: process.execPath,
+    args: [
+      join(resolver.rootDir, 'node_modules/nx/dist/bin/nx.js'),
+      'run-many',
+      '-p',
+      projects.join(','),
+      '-t',
+      targets.join(','),
+      '-c',
+      'local',
+      // Nx tự thoát khi phát hiện vòng `nx` lồng nhau trong run-commands —
+      // nhưng executor `nx:run-commands` chạy shell con, không phải `nx`, nên
+      // cờ này chỉ là phòng thủ cho môi trường lạ.
+      '--nx-bail',
+    ],
+    cwd: resolver.rootDir,
+    taskSequence: filtered.map((t) => `${t.project}:${t.target}`),
+  };
+}
+
+/**
+ * Kiểm tra dữ liệu khai báo lane local TRƯỚC khi chạy — fail-closed không cần
+ * Pulumi/Docker. Kẹt khai báo (`LocalLaneGraphError`) nổi ở đây với thông điệp
+ * rõ thay vì giữa chừng một task Nx nào đó đỏ không rõ nguyên nhân.
+ */
+export function validateNxLaneDeclarations(): string[] {
+  return localDeployTaskSequence().map((t) => `${t.project}:${t.target}`);
+}
+
+/**
+ * Đường orchestration MỚI: chạy chuỗi task local qua Nx Task Graph.
+ *
+ * Thân `local-deploy` gọi hàm này thay vì `runApply` — logic từng bước sống
+ * trong target Nx (`local-stack-step`), thứ tự sống trong khai báo `dependsOn`
+ * của package.json của từng deploy project. `runApply` vẫn giữ nguyên như bản dự phòng có
+ * kiểm (xem JSDoc của `localDeploy`) — không delete-before-replacement.
+ *
+ * Passphrase và lock vẫn do hàm này quản lý TRƯỚC khi bấm Nx: mỗi task con là
+ * một process `local-stack-step` tự vào lại cùng lock (re-entrant theo nghĩa
+ * các task chạy tuần tự nhờ dependsOn, không đụng nhau), nên không deadlock —
+ * process cha giữ lock, process con phải chờ... KHÔNG: `local-lock` là lock
+ * file đối chiếu PID, process con PID khác sẽ bị chặn vĩnh viễn. Vì vậy cha
+ * KHÔNG giữ lock khi bấm Nx — từng step `up` tự lock/unlock trong process con
+ * của nó (xem `runLocalStackStep`); khoảng giữa hai task không có mutation
+ * nào của luồng này đang chạy. Trade-off đã biết: lock granularity của đường Nx
+ * là TỪNG STEP `up`, yếu hơn legacy (giữ lock suốt apply) — hai luồng local-deploy
+ * xen kẽ nhau ở mức task vẫn được tránh nhờ tuần tự hóa theo dependsOn trong
+ * cùng một lần chạy, nhưng hai lần chạy Nx khác process có thể xen task giữa
+ * chừng; chấp nhận được cho máy local một developer.
+ */
+/** Hình dạng tối thiểu của spawnSync mà orchestration cần — injectable cho test. */
+export type NxSpawn = typeof spawnSync;
+
+export function runNxOrchestratedDeploy(
+  ctx: LocalDeployContext,
+  options: { skipSmoke?: boolean } = {},
+  spawn: NxSpawn = spawnSync,
+): number {
+  // Kẹt khai báo phải nổi TRƯỚC khi bấm Nx — fail-closed với nguyên nhân rõ.
+  const sequence = validateNxLaneDeclarations();
+  console.log('[local-deploy] lane local (Nx Task Graph):');
+  for (const task of sequence) console.log(`  - ${task}`);
+
+  const plan = buildNxOrchestrationPlan(options);
+  console.log(`[local-deploy] ${plan.command} ${plan.args.join(' ')}`);
+
+  // Passphrase: đảm bảo tồn tại TRƯỚC khi bấm Nx để các process con không cùng
+  // đua tạo file (writeWorktreePassphrase đã nguyên tử, nhưng fail-early của
+  // cha cho thông điệp tốt hơn lỗi giữa chừng task). resolveLocalPassphrase
+  // throw trên worktree đã có state mà thiếu passphrase — bắt thành exit 1 với
+  // nguyên nhân gốc in rõ, không để exception bắn qua tầng orchestration.
+  let passphrase: ReturnType<typeof resolveLocalPassphrase>;
+  try {
+    passphrase = resolveLocalPassphrase(ctx.worktreeRoot, { create: true });
+  } catch (error) {
+    console.error(`[local-deploy] ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  }
+  if (passphrase.kind === 'none') {
+    console.error(
+      '[local-deploy] không resolve được passphrase cho worktree đã có state — cung cấp ' +
+        'PULUMI_CONFIG_PASSPHRASE rồi chạy lại.',
+    );
+    return 1;
+  }
+
+  // `spawn` là biên INJECTABLE (cùng pattern với `exec` của pulumi-context):
+  // mặc định là `spawnSync` thật; unit test cắm spy để chứng minh "không bấm nx"
+  // mà không bao giờ chạy nx thật — một test mà spawn được Docker/Pulumi thật
+  // là một test nguy hiểm, không phải bằng chứng.
+  const run = spawn(plan.command, plan.args, {
+    cwd: plan.cwd,
+    encoding: 'utf8',
+    env: { ...process.env },
+    stdio: 'inherit',
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (run.status !== 0) {
+    if (run.status === null) {
+      console.error(
+        `[local-deploy] nx run-many không chạy được: ${describeSpawnFailure({
+          status: run.status,
+          stdout: run.stdout ?? '',
+          stderr: run.stderr ?? '',
+          error: run.error,
+          signal: run.signal,
+        })}`,
+      );
+    } else {
+      console.error(
+        `[local-deploy] Nx Task Graph thất bại (exit ${run.status}) — task lỗi và stderr của nó in phía trên.`,
+      );
+    }
+    return 1;
+  }
+  console.log('[local-deploy] Nx Task Graph hoàn tất — toàn bộ bước local đã xanh.');
+  return 0;
+}
+
+/** Export cho spec + destroy: thứ tự destroy suy từ graph (nghịch của dependsOn). */
+export const LOCAL_DESTROY_STACK_ORDER = localDestroyStackOrder;
+/** Export cho spec + orchestration: tập target của lane local. */
+export const LOCAL_LANE_TARGET_SET = LOCAL_LANE_TARGETS;
+
 /** Hình dạng tùy chọn của luồng deploy local. */
 export interface LocalDeployOptions {
   worktreeRoot?: string;
@@ -327,6 +520,14 @@ export interface LocalDeployOptions {
   previewOnly?: boolean;
   /** Bỏ qua smoke HTTPS ở cuối (dùng khi caller tự kiểm). */
   skipSmoke?: boolean;
+  /**
+   * Chạy đường orchestration hard-coded (`runApply`) thay vì Nx Task Graph.
+   * Đường Nx là mặc định từ khi orchestration chuyển sang Task Graph; đường cũ
+   * giữ lại làm escape hatch có chủ đích khi môi trường không chạy được Nx
+   * (không xoá để không delete-before-replacement) — hai đường cùng một chuỗi
+   * contract, spec khoá tính tương đương.
+   */
+  legacyApply?: boolean;
 }
 
 /** Chạy pulumi cho MỘT project trong luồng local; lỗi → in stderr rồi return 1. */
@@ -517,6 +718,17 @@ export async function localDeploy(options: LocalDeployOptions = {}): Promise<num
   // người dùng chỉ muốn preview, và ngược lại.
   if (options.previewOnly === true) {
     return runPreview(ctx, env);
+  }
+
+  // Đường apply: Nx Task Graph là mặc định — thứ tự sống trong khai báo
+  // `dependsOn` của package.json của từng deploy project, từng bước chạy qua target
+  // `local-stack-step`. Đường `runApply` (hard-coded) giữ lại làm escape hatch
+  // tường minh (`legacyApply: true`) — cùng chuỗi contract, không xoá behavior
+  // cũ cho tới khi đường mới thay thế đầy đủ trong cùng PR này.
+  if (options.legacyApply !== true) {
+    // Passphrase đã resolve (tạo nếu cần) trước khi bấm Nx; lock do từng task
+    // con tự quản (xem JSDoc của `runNxOrchestratedDeploy`).
+    return runNxOrchestratedDeploy(ctx, { skipSmoke: options.skipSmoke });
   }
 
   // Lock phối hợp host-wide với `local-cleanup`: deploy đang apply (Docker thay
@@ -1072,36 +1284,37 @@ function runDestroySteps(
   env: NodeJS.ProcessEnv,
   options: { worktreeRoot?: string; removeData?: boolean },
 ): number {
-  console.log('[local-deploy] backoffice destroy…');
-  const backofficeOk = runProjectStep(
-    'backoffice destroy',
-    BACKOFFICE_PROJECT,
-    ['destroy', '--yes', '--config', `namespace:worktreeRoot=${ctx.worktreeRoot}`],
-    ctx,
-    env,
-    { prepareStack: false },
-  );
+  // Thứ tự destroy = NGHỊCH của đồ thị `dependsOn` local-up (dependents trước,
+  // platform CUỐI) — suy từ chính khai báo Nx thay vì liệt kê tay: thêm/bớt unit
+  // hay đổi thứ tự up là thứ tự destroy đổi theo, không có hai nguồn thứ tự lệch
+  // nhau. Kẹt khai báo (chu trình, thiếu target) fail-closed ở đây với thông điệp
+  // rõ. Kết quả là 5 stack theo đúng dependency nghịch:
+  // auth → account → backoffice → home → platform.
+  const destroyOrder = localDestroyStackOrder();
+  console.log(`[local-deploy] thứ tự destroy (nghịch của dependsOn): ${destroyOrder.join(' → ')}`);
 
-  console.log('[local-deploy] home destroy…');
-  const homeOk = runProjectStep(
-    'home destroy',
-    HOME_PROJECT,
-    ['destroy', '--yes', '--config', `namespace:worktreeRoot=${ctx.worktreeRoot}`],
-    ctx,
-    env,
-    { prepareStack: false },
-  );
+  let allOk = true;
+  for (const project of destroyOrder) {
+    console.log(`[local-deploy] ${project} destroy…`);
+    const ok = runProjectStep(
+      `${project} destroy`,
+      project,
+      ['destroy', '--yes', '--config', `namespace:worktreeRoot=${ctx.worktreeRoot}`],
+      ctx,
+      env,
+      { prepareStack: false },
+    );
+    if (!ok) allOk = false;
+  }
 
-  console.log('[local-deploy] platform destroy…');
-  const platformOk = runProjectStep(
-    'platform destroy',
-    PLATFORM_PROJECT,
-    ['destroy', '--yes', '--config', `namespace:worktreeRoot=${ctx.worktreeRoot}`],
-    ctx,
-    env,
-    { prepareStack: false },
-  );
-
+  // Destroy KHÔNG dùng `--remove`: xoá stack sẽ xoá cả CONFIG — trong đó có
+  // `postgres:password` — trong khi volume (với superuser được khởi tạo bằng mật
+  // khẩu CŨ) vẫn được giữ lại. Deploy kế tiếp trên stack mới sẽ không có mật
+  // khẩu để sinh (volume còn, config mất) và phải fail với lỗi có hướng dẫn,
+  // thay vì sinh mật khẩu mới không bao giờ khớp volume cũ. Giữ stack (chỉ rỗng
+  // resource) là cách hai nửa — mật khẩu trong config, dữ liệu trong volume —
+  // luôn cùng tuổi.
+  //
   // Destroy của stack KHÔNG chặn bước xoá volume khi người dùng yêu cầu
   // `--remove-data`: lời hứa của lệnh là XOÁ dữ liệu — nếu stack Pulumi đã
   // biến mất (`pulumi stack rm` ngoài luồng, state hỏng, "no stack named"…)
@@ -1109,7 +1322,7 @@ function runDestroySteps(
   // Với lỗi Pulumi khác (daemon down, sai passphrase…), cũng tiếp tục tới volume
   // theo yêu cầu `--remove-data` nhưng báo rõ để người dùng biết destroy stack
   // chưa trọn. Không `--remove-data`: lỗi thật → exit 1, không đụng volume.
-  const destroyFailed = !(backofficeOk && homeOk && platformOk);
+  const destroyFailed = !allOk;
   if (destroyFailed && options.removeData !== true) {
     return 1;
   }

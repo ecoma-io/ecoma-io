@@ -40,7 +40,7 @@ describe('app', () => {
     expect(meta.description).toBe('Devtools for ecoma-io repository');
   });
 
-  it('declares repo-prepare, sync-agent-config, pr-check, arch-check, commit-signing, gitleaks-scope, semgrep-scan, provision-gate, the local deployment commands and the local worker runtime commands', () => {
+  it('declares repo-prepare, sync-agent-config, pr-check, arch-check, commit-signing, gitleaks-scope, semgrep-scan, provision-gate, the local deployment commands (including the local-stack-step executor boundary) and the local worker runtime commands', () => {
     // Set thay cho mảng sort: cùng đẳng thức tập hợp, không mutation và không
     // cần `toSorted` (lib của repository hiện là es2022).
     expect(new Set(Object.keys(app.subCommands ?? {}))).toEqual(
@@ -53,6 +53,7 @@ describe('app', () => {
         'gitleaks-scope',
         'semgrep-scan',
         'provision-gate',
+        'local-stack-step',
         'local-deploy',
         'local-status',
         'local-destroy',

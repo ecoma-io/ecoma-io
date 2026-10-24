@@ -24,6 +24,31 @@
           "cwd": "deploys/home-deploy",
           "command": "npx tsx ../../tools/dx provision-gate"
         }
+      },
+      "local-up": {
+        "//": "Local lane — duy nhất một lane (`-c local`). Home phụ thuộc outputs platform (StackReference + platformStackRef) nên `dependsOn` platform:local-up. Chuỗi tổng thể (CONTRACT, unit test khoá): platform → home → backoffice → account → auth.",
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "deploys/home-deploy",
+          "command": "npx tsx ../../tools/dx local-stack-step --stack home-deploy --step up"
+        },
+        "configurations": {
+          "local": {}
+        },
+        "dependsOn": [
+          {
+            "projects": [
+              "platform-deploy"
+            ],
+            "target": "local-up"
+          },
+          {
+            "projects": [
+              "platform-deploy"
+            ],
+            "target": "local-env"
+          }
+        ]
       }
     }
   }

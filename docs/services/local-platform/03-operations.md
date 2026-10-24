@@ -17,14 +17,20 @@ Mọi lệnh Pulumi của luồng này chạy với `PULUMI_BACKEND_URL=file://<
 ## Luồng deploy
 
 ```bash
-pnpm dx local-deploy            # apply thật: platform up → outputs → .env → home up → smoke
+pnpm dx local-deploy            # apply thật: orchestration qua Nx Task Graph, smoke HTTPS cuối
 pnpm dx local-deploy --preview  # read-only: preview platform + home, không mutate gì
 pnpm dx local-status            # namespace, stack, resource names, trạng thái platform
-pnpm dx local-destroy           # teardown: giữ volume PostgreSQL
+pnpm dx local-destroy           # teardown 5 stack theo thứ tự ngược phụ thuộc, giữ volume PostgreSQL
 pnpm dx local-destroy --remove-data  # teardown + XOÁ volume (in cảnh báo, mất dữ liệu vĩnh viễn)
 ```
 
-Luồng `local-deploy` (không `--preview`) chạy theo đúng thứ tự contract: platform up → đọc outputs → ghi `.env` → home up → smoke HTTPS. Mỗi bước chỉ chạy khi bước trước thành công. Lần chạy đầu trên stack mới, password PostgreSQL được sinh ngẫu nhiên (24 byte `randomBytes`, `base64url`) và lưu ở **Pulumi stack config plaintext** (`postgres:password`) của local stack — đây là nguồn sự thật canonical; cùng giá trị được ghi vào `.env` (`POSTGRES_PASSWORD`) để E2E/dev tools dùng. Passphrase chỉ là encryption material của state Pulumi local, không còn đóng vai trò bảo vệ password. `local-deploy` tái dùng mật khẩu đã có trong config cho mọi lần deploy sau; `.env` bị xoá thì được khôi phục từ config mà không xoay password. Nếu volume PostgreSQL đã tồn tại nhưng config mất password, luồng fail với hướng dẫn thay vì sinh password mới (tránh khoá người dùng ra khỏi dữ liệu cũ).
+Luồng `local-deploy` (không `--preview`) không còn đi qua mảng bước hard-code nữa: `local-deploy` sinh một Nx Task Graph từ khai báo `local-up`/`local-env`/`local-smoke` trong `package.json` của từng deploy project (nguồn sự thật của thứ tự là target `dependsOn` của mỗi project, đọc bởi `local-deploy-graph.ts`), rồi spawn `nx run-many -p <projects> -t <targets> -c local`. Chuỗi tác vụ tương đương 8 bước cũ: `platform-deploy:local-up` (platform up) → `platform-deploy:local-env` (đọc outputs + ghi `.env`) → `home-deploy:local-up` → `backoffice-deploy:local-up` → `account-deploy:local-up` → `auth-deploy:local-up` → `platform-deploy:local-smoke` (smoke HTTPS). Nx bail mặc định: một task thất bại dừng toàn chuỗi. Cả ba target đều không cacheable (`cache: false` trong `nx.json` targetDefaults) vì chúng mutate Docker/state; lane chỉ có configuration `local`. Bất biến account → auth thể hiện trực tiếp trong graph: `auth-deploy:local-up` khai `dependsOn` `account-deploy:local-up`, và account tự sinh internal HMAC secret vào stack config của mình (`namespace:internalHmacSecret`) mà auth đọc lại khi up (`namespace:internalSecret`) — cùng giá trị xuyên suốt các process Nx riêng biệt.
+
+⚠️ **KHÔNG dùng `nx run-many --dry-run` để kiểm tra lane này**: trên Nx 23.3.0 `--dry-run` KHÔNG chạy lệnh executor (`nx:run-commands` vẫn chạy thật — `pulumi up` thật, Docker thật). Xác minh cấu trúc graph dùng duy nhất `--graph=stdout` (chỉ in JSON, không thực thi): `nx run-many -p <projects> -t local-up,local-env,local-smoke -c local --graph=stdout` rồi đọc `graph.dependencies`.
+
+⚠️ **Worktree đã deploy bằng code trước PR này (chỉ 3 stack platform/home/backoffice)**: lần `pnpm dx local-destroy` đầu tiên sẽ **exit 1** — destroy của account/auth báo "no stack named" vì hai stack đó chưa từng tồn tại — nhưng teardown vẫn trọn vẹn (platform/home/backoffice đã sạch). Đây là kỳ vọng, không phải hỏng; chạy lần nữa hoặc dùng `local-cleanup` nếu còn rợ.
+
+Lần chạy đầu trên stack mới, password PostgreSQL được sinh ngẫu nhiên (24 byte `randomBytes`, `base64url`) và lưu ở **Pulumi stack config plaintext** (`postgres:password`) của local stack — đây là nguồn sự thật canonical; cùng giá trị được ghi vào `.env` (`POSTGRES_PASSWORD`) để E2E/dev tools dùng. Passphrase chỉ là encryption material của state Pulumi local, không còn đóng vai trò bảo vệ password. `local-deploy` tái dùng mật khẩu đã có trong config cho mọi lần deploy sau; `.env` bị xoá thì được khôi phục từ config mà không xoay password. Nếu volume PostgreSQL đã tồn tại nhưng config mất password, luồng fail với hướng dẫn thay vì sinh password mới (tránh khoá người dùng ra khỏi dữ liệu cũ).
 
 Hai chi tiết CLI 3.270 đã đo thật, cả hai đều bắt buộc để password được lưu đúng: `pulumi config set` **từ chối** giá trị "trông như secret" (key `postgres:password` + chuỗi ngẫu nhiên) với exit 1 và lời khuyên dùng `--secret`/`--plaintext` — nên luồng luôn truyền `--plaintext`; và giá trị được ghi qua **stdin** (`--raw`, không có argument value) thay vì argv, vì argv của process khác đọc được qua `/proc/<pid>/cmdline` và `ps`.
 
@@ -62,7 +68,7 @@ Smoke xác nhận đúng hành vi ứng dụng qua Traefik, không chỉ "server
 
 ## Vòng đời dữ liệu
 
-- `local-destroy` mặc định **giữ** volume; container/network bị xoá nhưng dữ liệu PostgreSQL còn nguyên, deploy kế tiếp dùng lại.
+- `local-destroy` destroy cả 5 stack local (platform, home, backoffice, account, auth) theo **thứ tự ngược phụ thuộc** của đồ thị up — auth trước, platform sau cùng — và mặc định **giữ** volume; container/network bị xoá nhưng dữ liệu PostgreSQL còn nguyên, deploy kế tiếp dùng lại. Một stack destroy thất bại không dừng các stack còn lại: cả 5 vẫn được destroy, `local-destroy` thoát exit 1.
 - Volume được khai `retainOnDelete` nên kể cả `pulumi destroy` trực tiếp cũng không xoá volume.
 - ⚠️ Đừng chạy `pulumi stack rm` trên stack local: nó xoá stack config (trong đó có `postgres:password`) trong khi volume còn lại — hai nửa lệch tuổi, Postgres kế tiếp không vào được dữ liệu cũ. Đó cũng là lý do `local-destroy` không dùng `destroy --remove`. Khi phát hiện tình huống này, `local-deploy` **fail với hướng dẫn** (không sinh mật khẩu mới): khôi phục mật khẩu cũ vào stack config, hoặc `pnpm dx local-destroy --remove-data` rồi `pnpm dx local-deploy` để bắt đầu lại từ dữ liệu rỗng.
 - ⚠️ Đừng đổi `postgres:password` trong stack config sau khi volume đã init: `POSTGRES_PASSWORD` chỉ có tác dụng lúc `initdb` trên volume rỗng. Pulumi sẽ thay container (envs nằm trong diff) nhưng Postgres không chạy lại initdb — superuser trong volume vẫn giữ mật khẩu cũ, kết nối bằng giá trị mới nhận `password authentication failed` trong khi healthcheck `pg_isready` vẫn xanh (nó không xác thực mật khẩu). Nguyên tắc: mật khẩu và volume phải cùng tuổi.

@@ -24,6 +24,25 @@
           "cwd": "deploys/backoffice-deploy",
           "command": "npx tsx ../../tools/dx provision-gate"
         }
+      },
+      "local-up": {
+        "//": "Local lane — duy nhất một lane (`-c local`). Backoffice đứng sau home trong chuỗi contract (platform → home → backoffice → account → auth): sau home để thứ tự 8 bước cũ được giữ nguyên qua Task Graph.",
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "deploys/backoffice-deploy",
+          "command": "npx tsx ../../tools/dx local-stack-step --stack backoffice-deploy --step up"
+        },
+        "configurations": {
+          "local": {}
+        },
+        "dependsOn": [
+          {
+            "projects": [
+              "home-deploy"
+            ],
+            "target": "local-up"
+          }
+        ]
       }
     }
   }
