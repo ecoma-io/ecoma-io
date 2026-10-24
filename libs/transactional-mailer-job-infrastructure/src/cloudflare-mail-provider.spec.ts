@@ -503,16 +503,17 @@ describe('dependency boundary', () => {
 
 /** Trích tên field của một `type`/`interface` khai trong source — helper của mirror test. */
 function fieldNamesOf(source: string, typeName: string): string[] {
-  const escaped = typeName.replace(/\$/gu, '\\$');
   // Hai hình khai báo: `interface X { ... }` (không `;` cuối) và `type X = { ... };`.
-  const declaration = new RegExp(
-    `(?:export interface\\s+${escaped}\\s*\\{|export type\\s+${escaped}\\s*=\\s*\\{)([\\s\\S]*?)\\n\\}`,
-    'u',
-  ).exec(source);
+  // `typeName` là literal của chính test này (identifier TS, không có ký tự regex đặc biệt)
+  // — không escape, tránh một đường sanitize không đầy đủ mà CodeQL cảnh báo.
+  const declaration =
+    source.match(new RegExp(`export interface ${typeName} \\{([^}]*)\\}`, 'u')) ??
+    source.match(new RegExp(`export type ${typeName} = \\{([^}]*)\\}`, 'u'));
   if (declaration === null) {
     return [];
   }
-  return [...(declaration[1]?.matchAll(/readonly\s+(\w+)\s*[?]?:/gu) ?? [])].map(
+  const body = declaration[1] ?? '';
+  return [...body.matchAll(/readonly\s+([A-Za-z][A-Za-z0-9]*)\s*[?]?:/gu)].map(
     (match) => match[1] ?? '',
   );
 }
