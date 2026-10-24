@@ -101,7 +101,11 @@ export type DeployResourceKind =
   /** Volume state wrangler của WIC (persist D1/KV/queue + dev registry). */
   | 'auth-wic-state'
   /** Container init một-shot chown volume state cho uid node. */
-  | 'auth-wic-state-init';
+  | 'auth-wic-state-init'
+  /** Container image `node-server` của app pact-broker-app (BFF dashboard). */
+  | 'pact-app'
+  /** Image build từ context repo root của deploy unit `pact-broker-app-deploy`. */
+  | 'pact-app-image';
 
 /**
  * Tên Docker resource hợp lệ và nhất quán cho một namespace.

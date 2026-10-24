@@ -19,11 +19,14 @@
 #
 # Input bắt buộc của build — đối chiếu từng dòng COPY trong
 # `deploys/home-deploy/Dockerfile`, `deploys/backoffice-deploy/Dockerfile`,
-# `deploys/account-deploy/Dockerfile`, `deploys/auth-deploy/Dockerfile` và
-# `pnpm install` của workspace: `pnpm-workspace.yaml`, `package.json`,
-# `pnpm-lock.yaml`, `patches/`, `tools/dx/package.json`, `apps/home/**`,
-# `libs/ui-ecoma-logo/**`, `libs/internal-auth-contracts/**`,
-# `tsconfig.base.json`, `deploys/auth-deploy/wic-entrypoint.sh`. Spec
+# `deploys/account-deploy/Dockerfile`, `deploys/auth-deploy/Dockerfile`,
+# `deploys/pact-broker-app-deploy/Dockerfile` và `pnpm install` của workspace:
+# `pnpm-workspace.yaml`, `package.json`, `pnpm-lock.yaml`, `patches/`,
+# `tools/dx/package.json`, `apps/home/**`, `apps/backoffice/**`,
+# `apps/account/**`, `apps/pact-broker-app/**`, `libs/ui-ecoma-logo/**`,
+# `libs/ui-app-shell/**`, `libs/backoffice-domain/**`,
+# `libs/internal-auth-contracts/**`, `tsconfig.base.json`,
+# `deploys/auth-deploy/wic-entrypoint.sh`. Spec
 # `tools/dx/src/docker-context.spec.ts` đọc trực tiếp file này để chốt các path
 # đó; sửa file là spec tự chạy lại.
 #
@@ -45,6 +48,7 @@ apps/*
 !apps/home
 !apps/backoffice
 !apps/account
+!apps/pact-broker-app
 libs/*
 !libs/backoffice-domain
 !libs/ui-app-shell
@@ -118,3 +122,5 @@ apps/account/tests
 apps/account/vitest.config.mts
 apps/account/tsconfig.db.json
 apps/account/tsconfig.spec.json
+apps/pact-broker-app/tests
+apps/pact-broker-app/vitest.config.mts

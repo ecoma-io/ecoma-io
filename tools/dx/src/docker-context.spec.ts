@@ -242,6 +242,29 @@ describe('root .dockerignore: required build inputs are included', () => {
     expect(isExcluded('libs/transactional-mail-contracts/src/index.ts')).toBe(false);
   });
 
+  it('pact-broker-app and its ui closure enter the context', () => {
+    expect(isExcluded('apps/pact-broker-app/package.json')).toBe(false);
+    expect(isExcluded('apps/pact-broker-app/.npmrc')).toBe(false);
+    expect(isExcluded('apps/pact-broker-app/nuxt.config.ts')).toBe(false);
+    expect(isExcluded('apps/pact-broker-app/server/routes/health.get.ts')).toBe(false);
+    // Hai lib trong closure của app — alias tường minh trong `nuxt.config.ts`
+    // trỏ thẳng vào `src/index.ts` của từng lib, nên cả hai phải nằm trong
+    // context (closure dừng ở đây: hai lib là lá, không tham chiếu workspace
+    // package nào khác).
+    expect(isExcluded('libs/ui-app-shell/package.json')).toBe(false);
+    expect(isExcluded('libs/ui-app-shell/src/index.ts')).toBe(false);
+    expect(isExcluded('libs/ui-app-shell/src/styles/app-shell.css')).toBe(false);
+    expect(isExcluded('libs/ui-ecoma-logo/src/index.ts')).toBe(false);
+    // Giữ assertion sibling excluded — lib ngoài closure không có lý do vào
+    // context của image nào.
+    expect(isExcluded('libs/other-lib/src/x.ts')).toBe(true);
+  });
+
+  it('pact-broker-app test sources and test configs never enter the context', () => {
+    expect(isExcluded('apps/pact-broker-app/tests/broker-config.spec.ts')).toBe(true);
+    expect(isExcluded('apps/pact-broker-app/vitest.config.mts')).toBe(true);
+  });
+
   it('account test sources and test configs never enter the context', () => {
     expect(isExcluded('apps/account/tests/unit/bindings.spec.ts')).toBe(true);
     expect(isExcluded('apps/account/vitest.config.mts')).toBe(true);

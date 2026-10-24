@@ -124,6 +124,14 @@ export function localStackSecrets(
       ['namespace:migratorPassword', generatePostgresPassword()],
     ] as const;
   }
+  if (project === 'pact-broker-app-deploy') {
+    // Machine token mà BFF dùng gọi pact-broker-api (`NITRO_PACT_BROKER_API_
+    // TOKEN`). Shape được khai ở đây, GIÁ TRỊ THẬT do stack
+    // `pact-broker-api-deploy` sinh — orchestration sẽ nối nguồn ở wiring PR;
+    // trước wiring, giá trị sinh tạm chỉ để `pulumi config set` có nội dung và
+    // app fail-closed khi API chưa wired.
+    return [['namespace:apiToken', generateInternalHmacSecret()]] as const;
+  }
   return [];
 }
 

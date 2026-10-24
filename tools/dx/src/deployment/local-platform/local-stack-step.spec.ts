@@ -352,10 +352,23 @@ describe('localStackSecrets — per-stack secret contract', () => {
   });
 
   it('every secret key is unique per stack (no accidental overwrite inside one stack)', () => {
-    for (const project of ['account-deploy', 'auth-deploy', 'backoffice-deploy']) {
+    for (const project of [
+      'account-deploy',
+      'auth-deploy',
+      'backoffice-deploy',
+      'pact-broker-app-deploy',
+    ]) {
       const keys = localStackSecretsKeys(project, base);
       expect(new Set(keys).size).toBe(keys.length);
     }
+  });
+
+  it('pact-broker-app-deploy receives exactly the apiToken key (shape only — value wired later)', () => {
+    const keys = localStackSecretsKeys('pact-broker-app-deploy', base);
+    expect(keys).toEqual(['namespace:apiToken']);
+    const value = localStackSecrets('pact-broker-app-deploy', base)[0]?.[1];
+    expect(value).toMatch(/^[A-Za-z0-9_-]+$/u);
+    expect(value?.length).toBeGreaterThanOrEqual(32);
   });
 
   it('platform has NO per-stack secrets (its password lives in the postgres:password path)', () => {
