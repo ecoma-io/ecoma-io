@@ -210,9 +210,11 @@ const pactApp = new docker.Container(dockerResourceName(ns, 'pact-app'), {
       'node',
       '-e',
       // Cổng lấy từ cùng hằng số với `ENV PORT` của image, không hard-code lần
-      // thứ hai trong một string khác.
+      // thứ hai trong một string khác. Chỉ 2xx (`r.ok`) mới healthy — một điều
+      // kiện nới hơn kiểu `status < 500` sẽ coi 404 (route sai, app build sai)
+      // là healthy và phá readiness.
       `fetch('http://127.0.0.1:${PACT_APP_INTERNAL_PORT}/health')` +
-        `.then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))`,
+        `.then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))`,
     ],
     interval: '10s',
     timeout: '5s',
