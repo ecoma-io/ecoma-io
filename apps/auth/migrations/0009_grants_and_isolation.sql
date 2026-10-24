@@ -124,13 +124,22 @@ BEGIN
     -- NFR-002b: không foreign key nào được trỏ tới một bảng nằm ngoài schema của `db-auth`.
     -- Server khác (ví dụ `db-account`) đã bị chặn CONNECT ở phần dưới, nên đây là lớp thứ hai:
     -- nó bắt được lỗi khi người viết migration quên rằng mình đang ở trong `db-auth`.
+    --
+    -- ⚠️ Loại trừ schema nội bộ của TimescaleDB: platform image là `timescale/timescaledb`
+    --    với `shared_preload_libraries=timescaledb`, nên extension tự cài vào `db-auth` và
+    --    tạo các schema `_timescaledb_*` chứa FK chéo giữa chúng (`bgw_job_hypertable_id_fkey`
+    --    -> `_timescaledb_catalog.bgw_job`, ...). Đây là state nội bộ của platform, không phải
+    --    FK mà migration nào của auth viết ra, nên không thuộc phạm vi assertion này.
+    --    `_` là wildcard trong LIKE nên phải escape (`\_`) — nếu không, pattern sẽ nuốt cả
+    --    schema người dùng bắt đầu bằng `timescaledb_`.
     SELECT string_agg(DISTINCT con.conname || ' -> ' || cl.oid::regclass::text, ', ')
       INTO offending
       FROM pg_constraint con
       JOIN pg_class cl ON cl.oid = con.conrelid
       JOIN pg_namespace n ON n.oid = cl.relnamespace
      WHERE con.contype = 'f'
-       AND n.nspname <> 'auth';
+       AND n.nspname <> 'auth'
+       AND n.nspname NOT LIKE '\_timescaledb\_%';
 
     IF offending IS NOT NULL THEN
         RAISE EXCEPTION
