@@ -102,11 +102,11 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
   return pulumi.output(platform.getOutput(key)).apply((raw) => {
     if (raw === undefined || raw === null) {
       throw new Error(
-        `platformStackRef không export "${key}". Nguyên nhân thường gặp nhất: ` +
-          `stack platform chưa từng \`up\` thành công (outputs rỗng) hoặc đã bị ` +
-          `destroy — chạy \`pnpm dx local-deploy\` (apply platform) trước. Chỉ khi ` +
-          `contract PlatformOutputs thật sự đổi tên/gỡ output thì mới sửa cả hai ` +
-          `phía producer/consumer. Không deploy home với cấu hình rỗng.`,
+        `platformStackRef does not export "${key}". Most common cause: ` +
+          `the platform stack has never \`up\`ed successfully (empty outputs) or was ` +
+          `destroyed — run \`pnpm dx local-deploy\` (apply platform) first. Only if ` +
+          `the PlatformOutputs contract actually renamed/removed the output should you ` +
+          `change both producer/consumer sides. Do not deploy home with an empty configuration.`,
       );
     }
     return raw as PlatformOutputs[K];
@@ -147,9 +147,9 @@ const rootHostname = requirePlatformOutput('rootHostname');
 const verifiedNamespace = pulumi.output(platformNamespace).apply((upstreamNs) => {
   if (upstreamNs !== ns) {
     throw new Error(
-      `platformStackRef trỏ sang stack của namespace khác: ` +
-        `platform export "${upstreamNs}" còn worktree này là "${ns}". ` +
-        `Hai stack phải cùng worktree — nếu không, home sẽ join nhầm network.`,
+      `platformStackRef points to a stack of a different namespace: ` +
+        `platform exports "${upstreamNs}" while this worktree is "${ns}". ` +
+        `Both stacks must belong to the same worktree — otherwise home joins the wrong network.`,
     );
   }
   return ns;

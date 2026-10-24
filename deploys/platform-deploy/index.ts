@@ -71,8 +71,8 @@ function repoMountFile(relativePath: string): string {
   const absPath = join(programDir, relativePath);
   if (!existsSync(absPath)) {
     throw new Error(
-      `Thiếu file bind-mount ${absPath} — bind-mount thiếu file sẽ bị Docker tạo ` +
-        'thành THƯ MỤC trong container và container chết với lỗi không chỉ ra nguyên nhân.',
+      `Missing bind-mount file ${absPath} — a bind-mount with a missing file makes Docker ` +
+        'create a DIRECTORY there and the container dies with an error that does not reveal the cause.',
     );
   }
   return absPath;
@@ -102,8 +102,8 @@ function dockerSocketPath(): string {
     // không ngoại lệ "tường minh thì tin tuyệt đối".
     if (!existsSync(explicit)) {
       throw new Error(
-        `DOCKER_SOCKET_PATH=${explicit} không tồn tại trên host — bind-mount thiếu sẽ bị ` +
-          'Docker tạo thành THƯ MỤC trong container và Traefik không kết nối được daemon.',
+        `DOCKER_SOCKET_PATH=${explicit} does not exist on the host — a missing bind-mount makes ` +
+          'Docker create a DIRECTORY in the container and Traefik cannot connect to the daemon.',
       );
     }
     // Đối chiếu DOCKER_HOST khi nó cũng được đặt: `DOCKER_SOCKET_PATH` chỉ nói
@@ -116,9 +116,9 @@ function dockerSocketPath(): string {
     const host = process.env['DOCKER_HOST'] ?? '';
     if (host.length > 0 && host !== `unix://${explicit}` && host !== explicit) {
       throw new Error(
-        `DOCKER_SOCKET_PATH=${explicit} và DOCKER_HOST=${host} trỏ tới hai socket khác ` +
-          'nhau — Traefik sẽ đọc container của daemon thứ hai trong khi provider điều khiển ' +
-          'daemon thứ nhất. Đặt cả hai về cùng một socket, hoặc bỏ DOCKER_HOST.',
+        `DOCKER_SOCKET_PATH=${explicit} and DOCKER_HOST=${host} point to two different ` +
+          'sockets — Traefik will read the containers of the second daemon while the provider ' +
+          'controls the first. Point both at the same socket, or unset DOCKER_HOST.',
       );
     }
     return explicit;
@@ -127,17 +127,17 @@ function dockerSocketPath(): string {
   if (host.length > 0) {
     if (!host.startsWith('unix://')) {
       throw new Error(
-        `DOCKER_HOST=${host} không phải unix:// — chương trình này chỉ bind-mount được unix ` +
-          'socket. Bỏ DOCKER_HOST để dùng đường dẫn chuẩn, hoặc đặt DOCKER_SOCKET_PATH ' +
-          'tường minh.',
+        `DOCKER_HOST=${host} is not unix:// — this program can only bind-mount unix ` +
+          'sockets. Unset DOCKER_HOST to use the standard path, or set DOCKER_SOCKET_PATH ' +
+          'explicitly.',
       );
     }
     const socketPath = host.slice('unix://'.length);
     if (!existsSync(socketPath)) {
       throw new Error(
-        `DOCKER_HOST trỏ tới socket không tồn tại (${socketPath}) — daemon chưa chạy hoặc đã ` +
-          'đổi đường dẫn. KHÔNG fallback sang /var/run/docker.sock: đó là daemon khác, Traefik ' +
-          'sẽ đọc container của daemon đó trong khi provider vẫn nói chuyện daemon này.',
+        `DOCKER_HOST points to a socket that does not exist (${socketPath}) — the daemon is not ` +
+          'running or the path changed. Do NOT fall back to /var/run/docker.sock: that is a different ' +
+          'daemon, and Traefik would read the containers of that daemon while the provider still talks to this one.',
       );
     }
     return socketPath;
@@ -148,10 +148,10 @@ function dockerSocketPath(): string {
   // phía trên đã return hoặc throw) — in "(unset)" là hằng số chết, nói thẳng
   // điều kiện thật để thông báo không gợi có thông tin khi nó không có.
   throw new Error(
-    'Không tìm thấy unix socket Docker để bind-mount vào Traefik ' +
-      '(DOCKER_HOST và DOCKER_SOCKET_PATH đều chưa đặt). ' +
-      'Đặt DOCKER_SOCKET_PATH trỏ tới socket của daemon ' +
-      '(rootless thường là /run/user/<uid>/docker.sock).',
+    'No Docker unix socket found to bind-mount into Traefik ' +
+      '(neither DOCKER_HOST nor DOCKER_SOCKET_PATH is set). ' +
+      'Set DOCKER_SOCKET_PATH to point at the daemon socket ' +
+      '(rootless is usually /run/user/<uid>/docker.sock).',
   );
 }
 
