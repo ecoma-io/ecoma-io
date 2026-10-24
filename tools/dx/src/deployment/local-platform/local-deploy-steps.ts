@@ -24,6 +24,7 @@ import { resolvePostgresPassword } from './local-deploy.js';
 
 export {
   generateEs256SigningKeyPem,
+  generateHexKey64,
   generateInternalHmacSecret,
   generatePostgresPassword,
 } from './local-deploy.js';

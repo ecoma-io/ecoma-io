@@ -65,6 +65,8 @@ export const CLEANUP_KINDS: readonly DeployResourceKind[] = [
   // tồn lại sau lệnh, giống kind `auth` của account-deploy.
   'pact-api-wic',
   'pact-api-wic-state-init',
+  'mail-wic',
+  'mail-wic-state-init',
   'network',
   'home-image',
   'backoffice-image',
@@ -72,9 +74,11 @@ export const CLEANUP_KINDS: readonly DeployResourceKind[] = [
   'auth-wic-image',
   'pact-app-image',
   'pact-api-wic-image',
+  'mail-wic-image',
   'postgres-volume',
   'auth-wic-state',
   'pact-api-wic-state',
+  'mail-wic-state',
 ];
 
 export interface CleanupFilter {
@@ -344,14 +348,16 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
         ? 'network'
         : kind === POSTGRES_VOLUME_KIND ||
             kind === 'auth-wic-state' ||
-            kind === 'pact-api-wic-state'
+            kind === 'pact-api-wic-state' ||
+            kind === 'mail-wic-state'
           ? 'volume'
           : kind === 'home-image' ||
               kind === 'backoffice-image' ||
               kind === 'account-image' ||
               kind === 'pact-app-image' ||
               kind === 'auth-wic-image' ||
-              kind === 'pact-api-wic-image'
+              kind === 'pact-api-wic-image' ||
+              kind === 'mail-wic-image'
             ? 'image'
             : 'container';
 
@@ -377,26 +383,24 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
           //  - app-first: `ecoma-<app>-<ns>:local` (home/backoffice/account/
           //    pact-app) — tag literal hard-code trong index.ts của từng unit.
           //  - namespace-first: `ecoma-<ns>-auth-wic:local`,
-          //    `ecoma-<ns>-pact-api-wic:local` — sinh bởi
-          //    `dockerResourceName(ns, 'auth-wic'/'pact-api-wic')`.
-          // Prefix `ecoma-auth-wic-`/`ecoma-pact-api-wic-` kiểu app-first là dead
-          // filter: namespace là `w` + hex, không image nào bắt đầu bằng đó —
-          // match WIC qua shape đúng của nó (main #253).
+          //    `ecoma-<ns>-pact-api-wic:local`, `ecoma-<ns>-mail-wic:local` —
+          //    sinh bởi `dockerResourceName(ns, <wic-kind>)`.
+          // Prefix app-first (`ecoma-auth-wic-`, `ecoma-pact-api-wic-`,
+          // `ecoma-mail-wic-`) là dead filter: namespace là `w` + hex, không
+          // image nào bắt đầu bằng đó — match WIC qua shape đúng của nó.
           return (
             line.endsWith(':local') &&
             (line.startsWith('ecoma-home-') ||
               line.startsWith('ecoma-backoffice-') ||
               line.startsWith('ecoma-account-') ||
               line.startsWith('ecoma-pact-app-') ||
-              // `ecoma-` + namespace + `-auth-wic:local`, namespace đủ độ dài
+              // `ecoma-` + namespace + `-<wic>:local`, namespace đủ độ dài
               // chuẩn (`w` + 12 hex từ `worktreeNamespace`).
               (line.startsWith('ecoma-') &&
                 line.length > 'ecoma-'.length + NAMESPACE_LENGTH + '-auth-wic:local'.length &&
-                line.endsWith('-auth-wic:local')) ||
-              // Cùng shape cho pact-api-wic (unit này).
-              (line.startsWith('ecoma-') &&
-                line.length > 'ecoma-'.length + NAMESPACE_LENGTH + '-pact-api-wic:local'.length &&
-                line.endsWith('-pact-api-wic:local')))
+                (line.endsWith('-auth-wic:local') ||
+                  line.endsWith('-pact-api-wic:local') ||
+                  line.endsWith('-mail-wic:local'))))
           );
         }
         return line.startsWith('ecoma-') && line.endsWith(`-${kind}`);
