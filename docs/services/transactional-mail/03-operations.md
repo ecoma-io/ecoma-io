@@ -295,7 +295,19 @@ Không dùng raw request rate của application làm sole scaling signal.
 
 ---
 
-## 11. Operational Invariants
+## 11. Local Worker runtime — E2E
+
+Luồng smoke của control plane trên local Worker runtime (`wrangler dev`): `POST /v1/messages` (HMAC `ecoma-internal-v1`, allowlist template) → outbox publish qua cron trigger → Queue `ecoma-mail-delivery` → consumer báo outcome → `mail_messages` `sent`. Script in-repo, lặp lại được, không chạm Cloudflare hay email thật:
+
+```
+node tools/dx/scripts/mail-worker-runtime-e2e.mjs
+```
+
+Quy trình từng bước và giới hạn của wrangler dev → [`local-platform/05-worker-runtime-e2e.md`](../local-platform/05-worker-runtime-e2e.md).
+
+---
+
+## 12. Operational Invariants
 
 1. Rollback/restart an toàn nhờ idempotency — cùng `delivery_id` không tạo logical delivery mới.
 2. Worker version mới phải consume được Queue command version hiện tại (contract `version`).

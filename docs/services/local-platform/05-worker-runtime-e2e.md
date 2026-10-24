@@ -82,7 +82,8 @@ File `.dev.vars` của app (đã `.gitignore` — `.env*`/`.dev.vars*`):
   - `TRANSACTIONAL_MAIL_INTERNAL_AUTH_SECRET` giá trị **phải trùng**
     `MAIL_INTERNAL_AUTH_SECRET_SVC_TRANSACTIONAL_MAILER_JOB` bên control plane.
 - control plane (`apps/transactional-mail`):
-  - `MAIL_FINGERPRINT_KEYRING` (JSON `{"current","keys"}` — mỗi key hex 64)
+  - `MAIL_FINGERPRINT_KEYRING` (JSON `{"current","keys"}` — `current` là
+    `<profileTag>.<keyTag>` ví dụ `p1.k1` và phải tồn tại trong `keys`; mỗi key hex 64)
   - bốn secret `MAIL_INTERNAL_AUTH_SECRET_SVC_ACCOUNT|AUTH|PAYMENT|TRANSACTIONAL_MAILER_JOB`
   - toàn bộ `MAIL_RATE_LIMIT_*`, `MAIL_RENDER_MAX_BYTES`, `MAIL_PUBLISH_*`,
     `MAIL_RECONCILER_*`, `MAIL_RECOVERY_MAX_CYCLES`, `MAIL_NONCE_PRUNE_BATCH_LIMIT`,
@@ -149,7 +150,54 @@ worker runtime down (2 entries)
 - `pgrep -f wrangler` về 0 sau khi exit — hai process Worker thật kết thúc, **không orphan**.
 - Metadata `.worker-local-state/*.json` sạch.
 
+### 10. Lifecycle event ingest (PR3)
+
+PR2 thêm consumer `ecoma-mail-lifecycle-events` với producer là Cloudflare
+Event Subscriptions — cơ chế platform không thể có trong local dev. PR3 kiểm
+đường ingest bằng một fixture producer worker do E2E script sinh tạm trong
+`<stateDir>/e2e-fixture/` (config không vào repo): session `wrangler dev` thứ
+ba này publish message vào queue qua producer binding, và vì nó không có
+consumer nào, miniflare forward message qua dev-registry `ExternalQueueProxy`
+sang session `transactional-mailer-job` đang consume cùng queue — cùng cơ chế
+giao chéo process đã chứng minh ở mục 8 (dev registry là per-worktree vì cả
+orchestration lẫn script cô lập `HOME`/`XDG_CONFIG_HOME` vào cùng
+`<persistTo>/.wrangler-home`).
+
+Ba message kiểm ba hành vi của ingest:
+
+- `delivered` khớp `provider_message_id` của fake provider → 1 row
+  `mail_lifecycle_events`, `delivery_id` correlate về đúng delivery.
+- Cùng event giao hai lần (cùng `event_id`) → vẫn 1 row (dedupe theo PK).
+- Payload JSON cắt cụt → row `quarantine` reason `lifecycle-event-invalid`.
+
+Từ PR3, marker `local-worker.jsonc` của `transactional-mailer-job` khai
+`external_queue_producers: ["ecoma-mail-lifecycle-events"]` — orphan-queue
+guard của discovery miễn queue này (producer ngoài repo là tuyên bố topology,
+không phải thiếu sót cấu hình); guard vẫn fail khi queue vừa khai external
+vừa có producer trong repo.
+
 ## Cách lặp lại E2E này
+
+Từ PR3 (#212), toàn bộ luồng trên là một script trong repo, lặp lại được:
+
+```
+node tools/dx/scripts/mail-worker-runtime-e2e.mjs
+```
+
+Script tự thực hiện: ghi `.dev.vars` hai app (mục 5), `local-worker-up --entry
+transactional-mail,transactional-mailer-job` (Sub Directed Boot — chỉ boot hai
+entry mail; list bắt buộc comma-separated vì citty/`node:util.parseArgs` collapse
+flag lặp lại), kiểm readiness + `/health`, POST `/v1/messages` (403 sai principal,
+201 đúng principal), trigger cron cả hai worker để chạy đủ đường message →
+outbox → Queue → `mail_jobs` → report → `mail_messages` (mục 7–8), kiểm ingest
+lifecycle event (mục 10), rồi teardown (`local-worker-down` + assert không còn
+process orphan của worktree). Exit 0 chỉ khi mọi bước đạt; script tự teardown
+trong mọi nhánh kể cả fail.
+
+Yêu cầu trước khi chạy: hai app mail và `account-bridge` đã build (`dist/main.js`
+tồn tại — generated config trỏ thẳng vào dist).
+
+Thủ tục thủ công bên dưới giữ lại cho việc gỡ lỗi từng bước riêng lẻ:
 
 1. Tạo `.dev.vars` cho hai app (mục 5) — mỗi app có tập key riêng; chỉ các key trùng nhau
    giữa hai app phải có giá trị khớp.
@@ -158,15 +206,9 @@ worker runtime down (2 entries)
    `wrangler d1 execute mail --local --persist-to <stateDir> --config
    <stateDir>/generated/ecoma-transactional-mail.wrangler.jsonc --command "<SQL>"
    --json` (generated config của control plane — binding `mail`; file JSON sinh
-   bởi orchestration, không phải `.toml`). Cột bắt buộc:
-   `id`, `name`, `locale`, `version`, `subject_template`, `body_template`,
-   `variables_schema_json` (subset JSON có version theo
-   `transactional-mail/02-requirements.md` FR-003, **không phải JSON Schema
-   đầy đủ**; bắt buộc `schema_version` ≥ 1 — ví dụ
-   `{"schema_version":1,"variables":{"otp":{"type":"string","required":true,
-   "max_length":8}}}`), `status='active'`. Shape D1 thật kiểm bằng
-   `wrangler d1 execute ... --command "SELECT sql FROM sqlite_master WHERE
-   name='mail_templates'" --json`.
+   bởi orchestration, không phải `.toml`). Từ PR2, template seed
+   `tpl-account-login-otp-en` tự áp qua migrations của control plane — bước này
+   chỉ cần cho template khác.
 4. Đọc `/health`, trigger `/cdn-cgi/local/scheduled`, hoặc script `POST /v1/messages` tuỳ ý.
 5. Sau kịch bản, `pnpm dx local-worker-down` sạch.
 
@@ -180,5 +222,6 @@ worker runtime down (2 entries)
   (ví dụ `TRANSACTIONAL_MAIL_INTERNAL_AUTH_SECRET` bên consumer =
   `MAIL_INTERNAL_AUTH_SECRET_SVC_TRANSACTIONAL_MAILER_JOB` bên control plane). Production dùng
   Worker Secrets đúng cách, không đọc `.dev.vars` (wrangler chỉ đọc nó khi `wrangler dev` local).
-- Script HTTP client của E2E là một lần dùng, không nằm trong repo; thủ tục lặp lại ghi ở
-  mục "Cách lặp lại E2E này" — ai cũng có thể dựng lại bằng những lệnh tương tự.
+- Queue `ecoma-mail-lifecycle-events` có producer ngoài repo (mục 10) — trong local,
+  đường này chỉ kiểm được bằng fixture producer do E2E script sinh tạm (config không vào
+  repo); lifecycle event thật từ Event Subscriptions không thể có local.

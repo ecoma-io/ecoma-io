@@ -112,9 +112,32 @@ describe('local-worker-up command', () => {
     // Cảnh báo chỉ áp cho 0 entry — runtime có entry (dù boot fail sau đó)
     // không được dính cảnh báo rỗng, nếu không stderr của failure path là giả.
     const worktree = worktreeWithOneApp();
-    const result = await dx(['local-worker-up', '--worktree-root', worktree]);
+    const result = await dx([
+      'local-worker-up',
+      '--worktree-root',
+      worktree,
+      '--entry',
+      'boot-fail',
+    ]);
     expect(result.code).toBe(1); // boot fail thật — nhưng lý do không phải rỗng
     expect(result.stderr).not.toContain('no worker apps found');
     expect(result.stderr).toContain('[local-worker-up]');
+  });
+
+  it('splits comma-separated --entry into the directed set and fails closed on unknown name', async () => {
+    // node:util.parseArgs collapse flag lặp lại (`--entry a --entry b` chỉ còn
+    // `'b'`) — list nhiều entry phải viết comma-separated. Fail-closed tên lạ
+    // chứng minh giá trị đã đi qua parser tới entryFilter thay vì bị nuốt.
+    const worktree = worktreeWithOneApp();
+    const result = await dx([
+      'local-worker-up',
+      '--worktree-root',
+      worktree,
+      '--entry',
+      'boot-fail,no-such-app',
+    ]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('no-such-app');
+    expect(result.stderr).toContain('boot-fail'); // discovered list trong message
   });
 });
