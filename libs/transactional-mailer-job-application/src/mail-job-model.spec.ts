@@ -52,6 +52,8 @@ describe('closed value sets', () => {
       'unparseable-body',
       'unsupported-version',
       'forbidden-field',
+      // §11.3: message lifecycle event sai cấu trúc vào quarantine cùng bảng, reason riêng.
+      'lifecycle-event-invalid',
     ]);
     // §9.2.2 hàng 1–4: persist result chỉ được ghi ba trạng thái terminal-theo-execution.
     expect(MAIL_JOB_PERSISTABLE_STATUS_VALUES).toEqual(['sent', 'failed', 'blocked']);

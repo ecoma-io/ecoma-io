@@ -32,10 +32,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 import {
   D1MailJobRepository,
+  FAKE_PROVIDER_MESSAGE_ID,
   type D1DatabaseLike,
 } from '@ecoma-io/transactional-mailer-job-infrastructure';
 
-import workerMj from './main';
+import workerMj, { LIFECYCLE_QUEUE_NAME } from './main';
 import { INTERNAL_AUTH_SECRET_ENV } from './internal-delivery-client';
 
 // Không gửi telemetri khi spawn wrangler trong test.
@@ -226,6 +227,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   await db.prepare('DELETE FROM mail_jobs').run();
   await db.prepare('DELETE FROM quarantine').run();
+  await db.prepare('DELETE FROM mail_lifecycle_events').run();
 });
 
 afterAll(async () => {
@@ -253,7 +255,11 @@ describe('queue handler: command → lookup → provider → persist → report 
         'qm-fake-alert-1',
         JSON.stringify({ version: 1, delivery_id: delivery.deliveryId }),
       );
-      await workerMj.queue({ messages: [message] }, makeMjEnv(db, stub) as never, executionContext);
+      await workerMj.queue(
+        { queue: undefined, messages: [message] },
+        makeMjEnv(db, stub) as never,
+        executionContext,
+      );
 
       const alertLines = logSpy.mock.calls
         .map((call) => String(call[0]))
@@ -279,7 +285,11 @@ describe('queue handler: command → lookup → provider → persist → report 
       'qm-happy-1',
       JSON.stringify({ version: 1, delivery_id: delivery.deliveryId }),
     );
-    await workerMj.queue({ messages: [message] }, makeMjEnv(db, stub) as never, executionContext);
+    await workerMj.queue(
+      { queue: undefined, messages: [message] },
+      makeMjEnv(db, stub) as never,
+      executionContext,
+    );
 
     expect(message.acked()).toBe(true);
     expect(message.retried()).toBe(false);
@@ -310,7 +320,11 @@ describe('queue handler: command → lookup → provider → persist → report 
       'qm-perm-1',
       JSON.stringify({ version: 1, delivery_id: delivery.deliveryId }),
     );
-    await workerMj.queue({ messages: [message] }, makeMjEnv(db, stub) as never, executionContext);
+    await workerMj.queue(
+      { queue: undefined, messages: [message] },
+      makeMjEnv(db, stub) as never,
+      executionContext,
+    );
 
     expect(message.acked()).toBe(true);
     const job = await repo.loadJobByDeliveryId(delivery.deliveryId);
@@ -335,7 +349,11 @@ describe('queue handler: command → lookup → provider → persist → report 
       'qm-cred-1',
       JSON.stringify({ version: 1, delivery_id: delivery.deliveryId }),
     );
-    await workerMj.queue({ messages: [message] }, makeMjEnv(db, stub) as never, executionContext);
+    await workerMj.queue(
+      { queue: undefined, messages: [message] },
+      makeMjEnv(db, stub) as never,
+      executionContext,
+    );
 
     expect(message.acked()).toBe(true);
     const job = await repo.loadJobByDeliveryId(delivery.deliveryId);
@@ -362,7 +380,11 @@ describe('queue handler: command → lookup → provider → persist → report 
       'qm-retry-1',
       JSON.stringify({ version: 1, delivery_id: delivery.deliveryId }),
     );
-    await workerMj.queue({ messages: [message] }, makeMjEnv(db, stub) as never, executionContext);
+    await workerMj.queue(
+      { queue: undefined, messages: [message] },
+      makeMjEnv(db, stub) as never,
+      executionContext,
+    );
 
     expect(message.retried()).toBe(true);
     expect(message.acked()).toBe(false);
@@ -382,7 +404,11 @@ describe('queue handler: command → lookup → provider → persist → report 
       'qm-404-1',
       JSON.stringify({ version: 1, delivery_id: 'dlv-never-existed' }),
     );
-    await workerMj.queue({ messages: [message] }, makeMjEnv(db, stub) as never, executionContext);
+    await workerMj.queue(
+      { queue: undefined, messages: [message] },
+      makeMjEnv(db, stub) as never,
+      executionContext,
+    );
 
     expect(message.acked()).toBe(true);
     const job = await repo.loadJobByDeliveryId('dlv-never-existed');
@@ -405,7 +431,11 @@ describe('queue handler: command → lookup → provider → persist → report 
       'qm-term-1',
       JSON.stringify({ version: 1, delivery_id: delivery.deliveryId }),
     );
-    await workerMj.queue({ messages: [message] }, makeMjEnv(db, stub) as never, executionContext);
+    await workerMj.queue(
+      { queue: undefined, messages: [message] },
+      makeMjEnv(db, stub) as never,
+      executionContext,
+    );
 
     expect(message.acked()).toBe(true);
     expect((await repo.loadJobByDeliveryId(delivery.deliveryId))?.status).toBe('sent');
@@ -415,7 +445,11 @@ describe('queue handler: command → lookup → provider → persist → report 
     const stub = stubBinding(new Map());
 
     const message = fakeMessage('qm-quar-1', 'not-json-at-all');
-    await workerMj.queue({ messages: [message] }, makeMjEnv(db, stub) as never, executionContext);
+    await workerMj.queue(
+      { queue: undefined, messages: [message] },
+      makeMjEnv(db, stub) as never,
+      executionContext,
+    );
 
     expect(message.acked()).toBe(true);
     // Lookup theo queue_message_id qua SQL — không cần digest để đọc bản ghi.
@@ -433,7 +467,11 @@ describe('queue handler: command → lookup → provider → persist → report 
     // Object stringify được nhưng thiếu delivery_id ⇒ command không canonical ⇒ quarantine
     // (khác unparseable — đây là reason `missing-delivery-id`).
     const message = fakeMessage('qm-nonstring-1', { version: 1, note: 'missing id' });
-    await workerMj.queue({ messages: [message] }, makeMjEnv(db, stub) as never, executionContext);
+    await workerMj.queue(
+      { queue: undefined, messages: [message] },
+      makeMjEnv(db, stub) as never,
+      executionContext,
+    );
 
     expect(message.acked()).toBe(true);
     const rows = await db
@@ -467,7 +505,11 @@ describe('queue handler: command → lookup → provider → persist → report 
 
     const ma = fakeMessage('qm-batch-a', JSON.stringify({ version: 1, delivery_id: a.deliveryId }));
     const mb = fakeMessage('qm-batch-b', JSON.stringify({ version: 1, delivery_id: b.deliveryId }));
-    await workerMj.queue({ messages: [ma, mb] }, makeMjEnv(db, stub) as never, executionContext);
+    await workerMj.queue(
+      { queue: undefined, messages: [ma, mb] },
+      makeMjEnv(db, stub) as never,
+      executionContext,
+    );
 
     expect(ma.acked()).toBe(true);
     expect(mb.acked()).toBe(true);
@@ -486,7 +528,7 @@ describe('queue handler: transient control plane', () => {
       JSON.stringify({ version: 1, delivery_id: 'dlv-transient' }),
     );
     await workerMj.queue(
-      { messages: [message] },
+      { queue: undefined, messages: [message] },
       makeMjEnv(db, throwingBinding) as never,
       executionContext,
     );
@@ -503,7 +545,7 @@ describe('queue handler: transient control plane', () => {
     };
     const message = fakeMessage('qm-500-1', JSON.stringify({ version: 1, delivery_id: 'dlv-500' }));
     await workerMj.queue(
-      { messages: [message] },
+      { queue: undefined, messages: [message] },
       makeMjEnv(db, errorBinding) as never,
       executionContext,
     );
@@ -529,7 +571,11 @@ describe('scheduled handler: report sweep closes a pending report', () => {
       'qm-sweep-1',
       JSON.stringify({ version: 1, delivery_id: delivery.deliveryId }),
     );
-    await workerMj.queue({ messages: [message] }, makeMjEnv(db, stub) as never, executionContext);
+    await workerMj.queue(
+      { queue: undefined, messages: [message] },
+      makeMjEnv(db, stub) as never,
+      executionContext,
+    );
     expect((await repo.loadJobByDeliveryId(delivery.deliveryId))?.status).toBe('sent');
 
     await db
@@ -559,6 +605,180 @@ describe('scheduled handler: report sweep closes a pending report', () => {
       executionContext,
     );
     const rows = await db.prepare<{ n: number }>('SELECT COUNT(*) AS n FROM mail_jobs').all();
+    expect(rows.results?.[0]?.n).toBe(0);
+  });
+});
+
+/** Envelope lifecycle trung tính — test bẻ từng field theo kịch bản. */
+function lifecycleBody(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    eventId: `evt-${Math.random().toString(36).slice(2, 10)}`,
+    type: 'delivered',
+    messageId: FAKE_PROVIDER_MESSAGE_ID,
+    occurredAt: Date.now(),
+    terminal: true,
+    ...overrides,
+  });
+}
+
+function lifecycleMessage(body: unknown): QueueMessageFake {
+  return fakeMessage(`lq-${Math.random().toString(36).slice(2, 10)}`, body);
+}
+
+describe('queue handler: lifecycle event routing', () => {
+  it('stores a valid event on the lifecycle queue, acks, and leaves mail jobs untouched', async () => {
+    const message = lifecycleMessage(lifecycleBody());
+    await workerMj.queue(
+      { queue: LIFECYCLE_QUEUE_NAME, messages: [message] },
+      makeMjEnv(db, stubBinding(new Map())) as never,
+      executionContext,
+    );
+
+    expect(message.acked()).toBe(true);
+    expect(message.retried()).toBe(false);
+    const rows = await db
+      .prepare<{ event_id: string; message_id: string; delivery_id: string | null }>(
+        'SELECT event_id, message_id, delivery_id FROM mail_lifecycle_events',
+      )
+      .all();
+    expect(rows.results).toHaveLength(1);
+    // Fake provider dùng messageId cố định, nhưng KHÔNG có job nào trong db (không chạy
+    // Mail Command trước) — event vẫn persist với delivery_id NULL: correlate là best-effort.
+    expect(rows.results?.[0]?.delivery_id).toBeNull();
+    expect(await db.prepare('SELECT COUNT(*) AS n FROM quarantine').first()).toEqual({
+      n: 0,
+    });
+  });
+
+  it('correlates an event to an existing job by provider_message_id', async () => {
+    // Seed MỘT job `sent` thật qua Mail Command path để có `provider_message_id` trong D1.
+    const delivery: StubDelivery = {
+      deliveryId: 'dlv-lc-corr',
+      messageId: 'msg-lc-corr',
+      status: 'queued',
+      dispatchGeneration: 1,
+    };
+    const stub = stubBinding(new Map([[delivery.deliveryId, delivery]]));
+    const command = fakeMessage(
+      'qm-lc-corr',
+      JSON.stringify({ version: 1, delivery_id: delivery.deliveryId }),
+    );
+    await workerMj.queue(
+      { queue: undefined, messages: [command] },
+      makeMjEnv(db, stub) as never,
+      executionContext,
+    );
+    const job = await repo.loadJobByDeliveryId(delivery.deliveryId);
+    expect(job?.status).toBe('sent');
+    expect(job?.providerMessageId).toBe(FAKE_PROVIDER_MESSAGE_ID);
+
+    // Event lifecycle tới SAU với đúng messageId — correlate phải gán delivery_id.
+    const message = lifecycleMessage(lifecycleBody());
+    await workerMj.queue(
+      { queue: LIFECYCLE_QUEUE_NAME, messages: [message] },
+      makeMjEnv(db, stub) as never,
+      executionContext,
+    );
+    expect(message.acked()).toBe(true);
+
+    const event = await db
+      .prepare<{ delivery_id: string | null }>(
+        'SELECT delivery_id FROM mail_lifecycle_events ORDER BY created_at DESC LIMIT 1',
+      )
+      .first();
+    expect(event?.delivery_id).toBe(delivery.deliveryId);
+  });
+
+  it('acks a duplicate eventId as a no-op — dedupe is not an error', async () => {
+    const body = lifecycleBody();
+    const first = lifecycleMessage(body);
+    const second = lifecycleMessage(body);
+    const env = makeMjEnv(db, stubBinding(new Map())) as never;
+    await workerMj.queue({ queue: LIFECYCLE_QUEUE_NAME, messages: [first] }, env, executionContext);
+    await workerMj.queue(
+      { queue: LIFECYCLE_QUEUE_NAME, messages: [second] },
+      makeMjEnv(db, stubBinding(new Map())) as never,
+      executionContext,
+    );
+
+    expect(first.acked()).toBe(true);
+    expect(second.acked()).toBe(true);
+    const rows = await db
+      .prepare<{ n: number }>('SELECT COUNT(*) AS n FROM mail_lifecycle_events')
+      .all();
+    expect(rows.results?.[0]?.n).toBe(1);
+  });
+
+  it('quarantines a malformed payload, acks, and writes the quarantine row with the lifecycle reason', async () => {
+    const message = lifecycleMessage('{not json');
+    await workerMj.queue(
+      { queue: LIFECYCLE_QUEUE_NAME, messages: [message] },
+      makeMjEnv(db, stubBinding(new Map())) as never,
+      executionContext,
+    );
+
+    expect(message.acked()).toBe(true);
+    expect(message.retried()).toBe(false);
+    const row = await db.prepare<{ reason: string }>('SELECT reason FROM quarantine').first();
+    expect(row?.reason).toBe('lifecycle-event-invalid');
+    const events = await db
+      .prepare<{ n: number }>('SELECT COUNT(*) AS n FROM mail_lifecycle_events')
+      .all();
+    expect(events.results?.[0]?.n).toBe(0);
+  });
+
+  it('retries when the ingest reports transient — nothing is acked', async () => {
+    // Env thiếu khoá HMAC quarantine không làm path stored rơi vào đó, nhưng env thiếu
+    // D1 thì lifecycleQueueBatch throw lúc dựng deps — dùng D1 giả ném lỗi ở statement
+    // đầu tiên để mô phỏng D1 chết: outcome transient ⇒ message.retry(), KHÔNG ack.
+    const message = lifecycleMessage(lifecycleBody());
+    const deadD1 = new Proxy(
+      {},
+      {
+        get: (_target, prop) => {
+          if (prop === 'batch' || prop === 'prepare') {
+            return () => {
+              throw new Error('d1 down');
+            };
+          }
+          return undefined;
+        },
+      },
+    ) as unknown as D1DatabaseLike;
+    await workerMj.queue(
+      { queue: LIFECYCLE_QUEUE_NAME, messages: [message] },
+      { ...makeMjEnv(db, stubBinding(new Map())), 'mail-job': deadD1 } as never,
+      executionContext,
+    );
+
+    expect(message.retried()).toBe(true);
+    expect(message.acked()).toBe(false);
+  });
+
+  it('routes the default queue to the Mail Command path, not lifecycle', async () => {
+    // Guard đảo: batch.queue khác tên lifecycle phải đi orchestration Mail Command —
+    // một sụt route là lifecycle event bị nuốt vào state machine hoặc ngược lại.
+    const message = fakeMessage(
+      'qm-route-guard',
+      JSON.stringify({ version: 1, delivery_id: 'dlv-route-guard' }),
+    );
+    const delivery: StubDelivery = {
+      deliveryId: 'dlv-route-guard',
+      messageId: 'msg-route-guard',
+      status: 'queued',
+      dispatchGeneration: 1,
+    };
+    await workerMj.queue(
+      { queue: undefined, messages: [message] },
+      makeMjEnv(db, stubBinding(new Map([[delivery.deliveryId, delivery]]))) as never,
+      executionContext,
+    );
+
+    // Mail Command đã chạy (job `sent`), KHÔNG có lifecycle event nào được ghi từ path này.
+    expect((await repo.loadJobByDeliveryId(delivery.deliveryId))?.status).toBe('sent');
+    const rows = await db
+      .prepare<{ n: number }>('SELECT COUNT(*) AS n FROM mail_lifecycle_events')
+      .all();
     expect(rows.results?.[0]?.n).toBe(0);
   });
 });

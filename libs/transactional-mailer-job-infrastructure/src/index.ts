@@ -26,6 +26,18 @@ export {
 } from './mail-job-row';
 
 /**
+ * Provider adapter Cloudflare Email Sending (binding `send_email`) — cài
+ * `MailProviderPort` của application. Provider thật mặc định: composition root chọn
+ * theo `provider.kind` của config; `cloudflare` → `createCloudflareMailProvider`.
+ */
+export {
+  type CloudflareMailProviderDeps,
+  type CloudflareProviderConfig,
+  type SendEmailBindingLike,
+  createCloudflareMailProvider,
+} from './cloudflare-mail-provider';
+
+/**
  * Provider adapter Resend — cài `MailProviderPort` của application.
  *
  * Composition root (`apps/transactional-mailer-job/src/main.ts`) chọn adapter theo
@@ -42,3 +54,12 @@ export {
   type ResendProviderConfig,
   createResendMailProvider,
 } from './resend-mail-provider';
+
+/**
+ * Store D1 cho lifecycle event (`mail_lifecycle_events`, migration 0004) — cài seam
+ * `store` của `ingestLifecycleEventMessage`; dedupe ở PRIMARY KEY, correlation best-effort.
+ */
+export {
+  D1LifecycleEventStore,
+  type D1LifecycleEventStoreOptions,
+} from './d1-lifecycle-event-store';

@@ -121,11 +121,14 @@ const ALLOWED_SOURCE_SPECIFIERS = new Set([
   '@ecoma-io/transactional-mailer-job-application',
   './fake-mail-provider',
   './d1-database-like',
+  './d1-lifecycle-event-store',
   './d1-mail-job-repository',
   './d1-quarantine-repository',
   './mail-job-row',
   // §10.2 — provider thật (Resend) nằm cạnh fake provider, chung boundary guard.
   './resend-mail-provider',
+  // §11 — provider thật mặc định (Cloudflare send_email binding), chung boundary guard.
+  './cloudflare-mail-provider',
 ]);
 
 describe('deterministic scenarios', () => {
@@ -644,8 +647,8 @@ describe('dependency boundary', () => {
 
     // Chỉ liệt kê **value** export: type export không xuất hiện trong
     // `Object.keys`, nên danh sách này là đúng bề mặt runtime mà consumer thấy.
-    // `createResendMailProvider` là provider thật (§10.2) nằm cạnh fake trong
-    // cùng package root.
+    // `createResendMailProvider` và `createCloudflareMailProvider` là hai provider
+    // thật (§10.2, §11) nằm cạnh fake trong cùng package root.
     expect(new Set(Object.keys(packageRoot))).toEqual(
       new Set([
         'FakeMailProvider',
@@ -654,11 +657,13 @@ describe('dependency boundary', () => {
         'readChanges',
         'D1MailJobRepository',
         'D1QuarantineRepository',
+        'D1LifecycleEventStore',
         'decodeMailJobRow',
         'decodeQuarantineRow',
         'MAIL_JOB_COLUMNS',
         'QUARANTINE_COLUMNS',
         'createResendMailProvider',
+        'createCloudflareMailProvider',
       ]),
     );
   });

@@ -19,17 +19,23 @@ import {
   type OutcomeReportResult,
   type ProcessMailCommandDeps,
   processMailCommand,
+  ingestLifecycleEventMessage,
+  computeQuarantineId,
+  encodeUtf8,
   runBlockedBacklogSweep,
   runReportSweep,
   runStaleLeaseSweep,
   type ReportSweepAlert,
 } from '@ecoma-io/transactional-mailer-job-application';
 import {
+  createCloudflareMailProvider,
   createResendMailProvider,
+  D1LifecycleEventStore,
   D1MailJobRepository,
   D1QuarantineRepository,
   FakeMailProvider,
   type D1DatabaseLike,
+  type SendEmailBindingLike,
 } from '@ecoma-io/transactional-mailer-job-infrastructure';
 import {
   validateGetDeliveryResponse,
@@ -37,7 +43,12 @@ import {
 } from '@ecoma-io/transactional-mail-contracts';
 
 import { InternalDeliveryClient, resolveInternalAuthSecret } from './internal-delivery-client';
-import { loadMailerJobConfig, type LoadedMailerJobConfig, type MailerJobEnv } from './config';
+import {
+  loadMailerJobConfig,
+  type LoadedMailerJobConfig,
+  type MailerJobEnv,
+  SEND_EMAIL_BINDING_NAME,
+} from './config';
 
 /**
  * D1 `mail-job` binding ở đúng subset mà repository nhận — cast tường minh qua `unknown`,
@@ -191,14 +202,22 @@ function queueDeps(env: MailerJobEnv, config: LoadedMailerJobConfig): ProcessMai
     secret,
   });
   const provider =
-    config.provider.kind === 'resend'
-      ? createResendMailProvider({
-          endpoint: config.provider.resend.endpoint,
-          token: config.provider.resend.token,
-          from: config.provider.resend.from,
-          timeoutMs: config.provider.resend.timeoutMs,
+    config.provider.kind === 'cloudflare'
+      ? createCloudflareMailProvider({
+          // Binding đã được loader kiểm tra hình dạng; cast tường minh qua `unknown`
+          // sang subset mà adapter khai — tương thích subset được ghim ở spec adapter.
+          binding: env[SEND_EMAIL_BINDING_NAME] as unknown as SendEmailBindingLike,
+          sender: config.provider.cloudflare.sender,
+          timeoutMs: config.provider.cloudflare.timeoutMs,
         })
-      : new FakeMailProvider();
+      : config.provider.kind === 'resend'
+        ? createResendMailProvider({
+            endpoint: config.provider.resend.endpoint,
+            token: config.provider.resend.token,
+            from: config.provider.resend.from,
+            timeoutMs: config.provider.resend.timeoutMs,
+          })
+        : new FakeMailProvider();
   // B5 — fail-NOISY cho fake provider: không mail thật nào được gửi khi `MAIL_PROVIDER_KIND
   // = fake`, và việc đó phải hiện ra ở log mỗi lần dựng deps (mỗi invocation) thay vì im
   // lặng tới khi một thư "đã gửi" không bao giờ tới nơi. Event là hằng cố định, không mang
@@ -217,6 +236,89 @@ function queueDeps(env: MailerJobEnv, config: LoadedMailerJobConfig): ProcessMai
   };
 }
 
+/* -------------------------------------------------------------------------------------------- */
+/* Lifecycle event ingest — Queue consumer thứ hai (§11.3)                                    */
+/* -------------------------------------------------------------------------------------------- */
+
+/**
+ * Tên Queue lifecycle event mà worker consume (convention-derived từ
+ * `ecoma-mail-delivery` → `ecoma-mail-lifecycle-events`; §9 bảng convention).
+ *
+ * Event Subscriptions của Cloudflare Email Service publish lifecycle event vào Queue;
+ * provision subscription thật KHÔNG nằm trong phạm vi implementation này — queue chưa
+ * có ở môi trường thật thì consumer chỉ không nhận message nào, mọi path khác vô hại.
+ */
+export const LIFECYCLE_QUEUE_NAME = 'ecoma-mail-lifecycle-events' as const;
+
+/**
+ * Xử lý một batch lifecycle event — MỘT message một lần ingest, per-message ack/retry.
+ *
+ * Disposition từ `ingestLifecycleEventMessage`:
+ * - `stored`/`duplicate` → ack: duplicate là dedupe hoạt động đúng, không phải lỗi;
+ * - `quarantined` → ack kèm row quarantine (payload hỏng không bao giờ retry được —
+ *   cùng bảng `quarantine` với Mail Command nhưng reason riêng);
+ * - `transient` → retry: chưa có gì bền vững, Queue redelivery sẽ giao lại.
+ *
+ * Persist TRƯỚC ack nằm trong chính seam `store` — outcome `stored` chỉ trả sau khi
+ * D1 đã xác nhận ghi, nên ack sau `stored` không bao giờ là mất event.
+ */
+async function lifecycleQueueBatch(
+  messages: readonly {
+    id: string;
+    body: unknown;
+    retry(): Promise<void>;
+    ack(): Promise<void>;
+  }[],
+  env: MailerJobEnv,
+): Promise<void> {
+  const store = new D1LifecycleEventStore({ db: jobDb(env) });
+  const quarantine = new D1QuarantineRepository({ db: jobDb(env) });
+
+  for (const message of messages) {
+    // Body phải là string — cùng quy tắc với Mail Command (digest băm đúng byte nhận
+    // được); non-string được serialize MỘT lần đại diện trung thực cho những gì nhận.
+    const rawBody = typeof message.body === 'string' ? message.body : JSON.stringify(message.body);
+
+    const outcome = await ingestLifecycleEventMessage(rawBody, {
+      store: (event) => store.store(event),
+      nowMs: Date.now,
+    });
+
+    switch (outcome.kind) {
+      case 'stored':
+      case 'duplicate':
+        await message.ack();
+        break;
+      case 'quarantined':
+        await quarantine.upsertQuarantineRecord({
+          // `quarantine_id` là HMAC của raw body — cùng `computeQuarantineId` với Mail
+          // Command path, khoá là Worker Secret riêng của quarantine.
+          quarantineId: await computeQuarantineId({
+            keyHex: quarantineKeyHex(env),
+            rawBody: encodeUtf8(rawBody),
+          }),
+          queueMessageId: message.id,
+          reason: 'lifecycle-event-invalid',
+          nowMs: Date.now(),
+        });
+        await message.ack();
+        break;
+      case 'transient':
+        await message.retry();
+        break;
+    }
+  }
+}
+
+/** Khoá HMAC quarantine (64 hex) — cùng biến với Mail Command path. */
+function quarantineKeyHex(env: MailerJobEnv): string {
+  const value = env['MAIL_QUARANTINE_HMAC_KEY'];
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error('MAIL_QUARANTINE_HMAC_KEY chua duoc dat');
+  }
+  return value;
+}
+
 export default {
   /**
    * Queue consumer — MỘT message mỗi lần gọi (không `Promise.all` trên batch): orchestration
@@ -232,6 +334,7 @@ export default {
    */
   async queue(
     batch: {
+      queue: string | undefined;
       messages: readonly {
         id: string;
         body: unknown;
@@ -243,6 +346,18 @@ export default {
     ctx: { waitUntil(promise: Promise<unknown>): void },
   ): Promise<void> {
     const config = loadMailerJobConfig(env);
+
+    // Hai queue cùng handler: consumer config khai hai binding, Cloudflare gán
+    // `batch.queue` theo tên queue của message. Lifecycle lifecycle event ingest là
+    // đường độc lập với Mail Command — nó không claim lease, không gọi provider, không
+    // đè state machine; chỉ persist + correlate rồi ack. Đường nào tự dựng deps riêng,
+    // không dùng chung một object deps để taint-analysis của rule taint-value với
+    // `resend.token` không phải lan qua object dùng chung hai đường.
+    if (batch.queue === LIFECYCLE_QUEUE_NAME) {
+      await lifecycleQueueBatch(batch.messages, env);
+      return;
+    }
+
     const deps = queueDeps(env, config);
 
     for (const message of batch.messages) {

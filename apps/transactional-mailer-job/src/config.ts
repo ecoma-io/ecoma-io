@@ -23,7 +23,7 @@ export class MailerJobConfigError extends Error {
   }
 }
 
-/** Worker Secret chọn provider — `resend` là provider thật v1, `fake` chỉ test/dev. */
+/** Worker Secret chọn provider — `cloudflare` là provider thật mặc định, `resend` adapter phụ, `fake` chỉ test/dev. */
 export const PROVIDER_KIND_ENV = 'MAIL_PROVIDER_KIND';
 
 /** Worker Secret trần chờ của **một** request provider (ms). */
@@ -50,7 +50,16 @@ const PROVIDER_CALL_SAFE_WINDOW_CEILING_MS = 24 * 60 * 60 * 1000;
 const HEX_KEY_64 = /^[0-9a-f]{64}$/u;
 
 /** Giá trị hợp lệ của {@link PROVIDER_KIND_ENV}. */
-const PROVIDER_KIND_VALUES = ['resend', 'fake'] as const;
+const PROVIDER_KIND_VALUES = ['cloudflare', 'resend', 'fake'] as const;
+
+/** Tên binding `send_email` trong wrangler.jsonc — composition root đọc `env` theo tên này. */
+export const SEND_EMAIL_BINDING_NAME = 'SEND_EMAIL';
+
+/** Worker var sender cố định của provider Cloudflare (không phải secret — địa chỉ public). */
+export const CLOUDFLARE_SENDER_ENV = 'MAIL_CF_SENDER';
+
+/** Sender cố định mà adapter Cloudflare được phép dùng — ghim ở wrangler binding lẫn config. */
+export const CLOUDFLARE_SENDER_ADDRESS = 'no-reply@ecoma.io' as const;
 
 /**
  * Cấu hình đã kiểm — mirror `MailerJobConfig` đã chốt shape; loader là nơi sinh nó.
@@ -71,8 +80,31 @@ export type ResendProviderConfig = {
   readonly timeoutMs: number;
 };
 
+/**
+ * Cấu hình provider Cloudflare — mirror **phần cấu hình có thể có** của
+ * `CloudflareProviderConfig` ở adapter (`libs/transactional-mailer-job-infrastructure/
+ * src/cloudflare-mail-provider.ts`); spec `cloudflare-mail-provider.spec.ts` đối chiếu
+ * field của hai phía để lệch tên là đỏ ngay.
+ *
+ * Khác Resend: KHÔNG có endpoint/token (binding `send_email` là kênh in-process của
+ * cùng Cloudflare account) và KHÔNG có field `binding` ở đây — binding không phải giá
+ * trị cấu hình, nó là dependency của composition root; loader chỉ kiểm hình dạng của
+ * nó tồn tại (fail-closed) rồi composition root truyền thẳng vào adapter.
+ *
+ * `sender` bị ghim bằng đúng giá trị {@link CLOUDFLARE_SENDER_ADDRESS} — khác giá trị
+ * là lỗi khởi động, không phải giá trị "tạm được" (fail-closed, §3).
+ */
+export type CloudflareProviderConfig = {
+  readonly sender: string;
+  readonly timeoutMs: number;
+};
+
 export interface LoadedMailerJobConfig {
   readonly provider:
+    | {
+        readonly kind: 'cloudflare';
+        readonly cloudflare: CloudflareProviderConfig;
+      }
     | {
         readonly kind: 'resend';
         readonly resend: ResendProviderConfig;
@@ -179,6 +211,45 @@ function loadProvider(
     throw new MailerJobConfigError(
       `${PROVIDER_KIND_ENV} phai la mot trong: ${PROVIDER_KIND_VALUES.join(', ')}`,
     );
+  }
+  if (kind === 'cloudflare') {
+    // Sender cố định: giá trị bắt buộc khớp đúng hằng — không phải phép "cấu hình linh
+    // hoạt" vì binding wrangler đã khai `allowed_sender_addresses` với đúng địa chỉ này;
+    // hai lớp chặn phải nói cùng một sự thật, lệch nhau là lỗi cấu hình phải đỏ ngay.
+    const sender = requireNonEmptyString(env, CLOUDFLARE_SENDER_ENV);
+    if (sender !== CLOUDFLARE_SENDER_ADDRESS) {
+      throw new MailerJobConfigError(
+        `${CLOUDFLARE_SENDER_ENV} phai bang "${CLOUDFLARE_SENDER_ADDRESS}" (khop allowed_sender_addresses cua binding SEND_EMAIL)`,
+      );
+    }
+    // Binding thiếu ở env là fail-closed ở loader — KHÔNG fallback sang provider khác
+    // (một auto-fallback là đường gửi mail qua kênh không ai review).
+    const binding = env[SEND_EMAIL_BINDING_NAME];
+    if (
+      typeof binding !== 'object' ||
+      binding === null ||
+      typeof (binding as { send?: unknown }).send !== 'function'
+    ) {
+      throw new MailerJobConfigError(
+        `${SEND_EMAIL_BINDING_NAME} binding khong ton tai hoac khong co send(); provider cloudflare khong fallback`,
+      );
+    }
+    // Credential Resend tồn tại cạnh provider cloudflare là dấu hiệu môi trường nhầm
+    // lẫn — cùng quy tắc với nhánh fake (credential production ở nơi không dùng là leak).
+    for (const [variableName, value] of [
+      ['MAIL_PROVIDER_ENDPOINT', env['MAIL_PROVIDER_ENDPOINT']] as const,
+      ['MAIL_PROVIDER_TOKEN', env['MAIL_PROVIDER_TOKEN']] as const,
+    ]) {
+      if (typeof value === 'string' && value.length > 0) {
+        throw new MailerJobConfigError(
+          `${variableName} phai KHONG dat khi ${PROVIDER_KIND_ENV}=cloudflare`,
+        );
+      }
+    }
+    return {
+      kind: 'cloudflare',
+      cloudflare: { sender, timeoutMs: providerTimeoutMs },
+    };
   }
   if (kind === 'fake') {
     // Fake provider KHÔNG cần endpoint/token/from, và KHÔNG được có nó — một env mang

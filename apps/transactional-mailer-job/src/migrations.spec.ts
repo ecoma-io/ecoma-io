@@ -172,6 +172,17 @@ const QUARANTINE_COLUMNS = [
   'created_at',
   'updated_at',
 ];
+/** Cột của `mail_lifecycle_events` (0004) — hợp đồng schema của lớp quan sát lifecycle. */
+const MAIL_LIFECYCLE_EVENTS_COLUMNS = [
+  'event_id',
+  'event_type',
+  'message_id',
+  'delivery_id',
+  'occurred_at',
+  'terminal',
+  'reason_token',
+  'created_at',
+];
 const MAIL_JOBS_COLUMNS = [
   'delivery_id',
   'message_id',
@@ -250,10 +261,30 @@ describe('mail-job D1 migrations', () => {
       );
       expect(quarantineColumns).toEqual(QUARANTINE_COLUMNS);
 
+      const lifecycleColumns = query(
+        `SELECT name FROM pragma_table_info('mail_lifecycle_events');`,
+      ).map((row) => row['name']);
+      expect(lifecycleColumns).toEqual(MAIL_LIFECYCLE_EVENTS_COLUMNS);
+
       const indexes = query(
         `SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name IN ('mail_jobs', 'quarantine') AND name NOT LIKE 'sqlite_%' ORDER BY name;`,
       ).map((row) => row['name']);
-      expect(indexes).toEqual(['mail_jobs_report_sweep_idx', 'mail_jobs_status_lease_idx']);
+      expect(indexes).toEqual([
+        // 0004 — correlation của lifecycle ingest (tra provider_message_id theo từng event)
+        'mail_jobs_provider_message_id_idx',
+        // 0001 — sweeps
+        'mail_jobs_report_sweep_idx',
+        'mail_jobs_status_lease_idx',
+      ]);
+
+      const lifecycleIndexes = query(
+        `SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'mail_lifecycle_events' AND name NOT LIKE 'sqlite_%' ORDER BY name;`,
+      ).map((row) => row['name']);
+      // `mail_lifecycle_events_pkey` là PRIMARY KEY (dedupe key), không phải index rời.
+      expect(lifecycleIndexes).toEqual([
+        'mail_lifecycle_events_delivery_idx',
+        'mail_lifecycle_events_type_idx',
+      ]);
 
       const reportSweep = queryOne<Record<string, string>>(
         `SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'mail_jobs_report_sweep_idx';`,

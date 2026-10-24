@@ -160,3 +160,18 @@ export {
   runReportSweep,
   runStaleLeaseSweep,
 } from './report-sweeps';
+
+/** §11.3 — lifecycle event trung tính của provider: chuẩn hoá, dedupe, correlate. */
+export {
+  ingestLifecycleEventMessage,
+  MAIL_LIFECYCLE_EVENT_TYPE_VALUES,
+  MAIL_LIFECYCLE_REASON_TOKEN_VALUES,
+  normalizeLifecycleEventMessage,
+  type LifecycleEventIngestDeps,
+  type LifecycleEventIngestOutcome,
+  type LifecycleEventNormalization,
+  type LifecycleEventRejectionReason,
+  type MailLifecycleEvent,
+  type MailLifecycleEventType,
+  type MailLifecycleReasonToken,
+} from './lifecycle-events';
