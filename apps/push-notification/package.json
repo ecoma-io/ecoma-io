@@ -17,24 +17,6 @@
       "runtime:edge"
     ],
     "targets": {
-      "deploy": {
-        "executor": "nx:run-commands",
-        "dependsOn": [
-          "build"
-        ],
-        "options": {
-          "forwardAllArgs": false,
-          "command": "npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/push-notification"
-        },
-        "configurations": {
-          "staging": {
-            "command": "npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/push-notification --lane staging"
-          },
-          "production": {
-            "command": "npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/push-notification --lane production"
-          }
-        }
-      },
       "build": {
         "executor": "@nx/esbuild:esbuild",
         "outputs": [

@@ -1,5 +1,6 @@
 {
   "name": "transactional-mail-deploy",
+  "private": true,
   "main": "index.ts",
   "ecoma": {
     "deployment": {

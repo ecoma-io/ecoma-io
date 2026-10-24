@@ -1,5 +1,6 @@
 {
   "name": "push-notification-deploy",
+  "private": true,
   "main": "index.ts",
   "ecoma": {
     "deployment": {

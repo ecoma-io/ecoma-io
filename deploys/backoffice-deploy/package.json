@@ -1,5 +1,6 @@
 {
   "name": "backoffice-deploy",
+  "private": true,
   "main": "index.ts",
   "ecoma": {
     "deployment": {

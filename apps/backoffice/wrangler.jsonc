@@ -46,7 +46,8 @@
   // `docs/overview/02-delivery.md` §7.
   //
   // Mỗi deploy unit có **hai Worker identity riêng**, đặt tên theo
-  // `{target}-{slug}` đúng quy ước của `tools/delivery` (`environmentName`):
+  // `{target}-{slug}` đúng quy ước của tầng delivery (`02-delivery.md` §7.2,
+  // thiết kế chưa hiện thực):
   // staging `stg-ecoma-backoffice`, production `ecoma-backoffice`.
   //
   // Staging chưa có custom domain: theo §5.4 hostname ưu tiên `workers.dev`,
@@ -92,10 +93,10 @@
         },
       ],
       // Origin dùng cho smoke check. KHÔNG phải thuộc tính Wrangler — Wrangler
-      // bo qua nó; nó tồn tại để `tools/delivery` có một origin tất định cho
-      // deploy unit mà không phải suy đoán từ `account_id` (subdomain
-      // `workers.dev` là cấu hình riêng của Cloudflare account, không suy ra
-      // được từ `account_id`).
+      // bo qua nó; nó tồn tại để pipeline delivery tương lai (§7.2) có một
+      // origin tất định cho deploy unit mà không phải suy đoán từ `account_id`
+      // (subdomain `workers.dev` là cấu hình riêng của Cloudflare account,
+      // không suy ra được từ `account_id`).
       //
       // **Phải sửa tay sau khi xác minh subdomain thật của account Cloudflare**
       // (Cloudflare dashboard → Workers & Pages → subdomain, hoặc

@@ -59,7 +59,8 @@
   ],
   //
   // ── env.staging / env.production ─────────────────────────────────────────────
-  // Hai identity Worker theo quy ước `{target}-{slug}` của tools/delivery:
+  // Hai identity Worker theo quy ước `{target}-{slug}` của tầng delivery
+  // (overview `02-delivery.md` §7.2, thiết kế chưa hiện thực):
   // staging `stg-ecoma-auth-nonce-prune-job`, production `ecoma-auth-nonce-prune-job`.
   // Tên Worker là vĩnh viễn, không đổi theo tag.
   //

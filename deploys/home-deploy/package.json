@@ -1,5 +1,6 @@
 {
   "name": "home-deploy",
+  "private": true,
   "main": "index.ts",
   "ecoma": {
     "deployment": {

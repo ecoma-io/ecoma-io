@@ -41,12 +41,12 @@
   // --- Staging / Production — Issue #166 ---
   //
   // Mỗi deploy unit có **hai Worker identity riêng**, đặt tên theo
-  // `{target}-{slug}` đúng quy ước của `tools/delivery` (`environmentName`):
+  // `{target}-{slug}` đúng quy ước của tầng delivery (`02-delivery.md` §7.2,
+  // thiết kế chưa hiện thực):
   // staging `stg-ecoma-pact-broker-app`, production `ecoma-pact-broker-app`.
   //
-  // ⚠️ `tools/delivery` hiện KHÔNG TỒN TẠI trong repo (đã bị xoá ở commit
-  // `f68105b`) — comment giữ quy ước đặt tên để provisioning sau này; không có
-  // target `deploy` nào trong `package.json` trỏ vào nó.
+  // ⚠️ Không có target `deploy` nào trong `package.json`: đường deploy trực
+  // tiếp chưa có trong repo, provisioning là việc tiếp theo ngoài phạm vi.
   //
   // Staging chưa có custom domain: theo §5.4 hostname ưu tiên `workers.dev`.
   "env": {

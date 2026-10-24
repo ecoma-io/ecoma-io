@@ -14,11 +14,11 @@
   // gọi qua Service Binding từ Worker cùng account (overview `01` §5.4).
   //
   // CHƯA khai `env.staging`/`env.production`: chưa có Worker identity cho làn
-  // nào của hai làn deploy, nên app nằm ngoài deploy matrix
-  // (tools/delivery/config/deploy-eligibility.jsonc). Binding khai ở khối top
-  // level dưới đây KHÔNG được Wrangler kế thừa vào named environment — mỗi
-  // `env.<lane>` phải khai lại binding của nó tường minh, và điều kiện readiness
-  // trước khi vào matrix nằm ở overview `02` §4.1/§5.2 + 03-operations.md §2.
+  // nào của hai làn deploy (thiết kế `02-delivery.md` §7.2, chưa hiện thực),
+  // nên app nằm ngoài deploy matrix. Binding khai ở khối top level dưới đây
+  // KHÔNG được Wrangler kế thừa vào named environment — mỗi `env.<lane>` phải
+  // khai lại binding của nó tường minh, và điều kiện readiness trước khi vào
+  // matrix nằm ở overview `02` §4.1/§5.2 + 03-operations.md §2.
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "ecoma-transactional-mail",
   "main": "dist/main.js",

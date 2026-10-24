@@ -24,24 +24,6 @@
       "runtime:edge"
     ],
     "targets": {
-      "deploy": {
-        "executor": "nx:run-commands",
-        "dependsOn": [
-          "build"
-        ],
-        "options": {
-          "forwardAllArgs": false,
-          "command": "npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/backoffice"
-        },
-        "configurations": {
-          "staging": {
-            "command": "npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/backoffice --lane staging"
-          },
-          "production": {
-            "command": "npx tsx tools/delivery/src/deploy-gate.mts --project @ecoma-io/backoffice --lane production"
-          }
-        }
-      },
       "nuxt-prepare": {
         "executor": "nx:run-commands",
         "options": {
