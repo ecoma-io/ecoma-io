@@ -241,7 +241,7 @@ PR source ──build──► Untrusted artifact ──► Trusted deploy workf
     **Hệ quả phải nói thẳng: token này không cung cấp cô lập theo environment.** Nó đủ quyền cho _mọi_ Worker mà pipeline chạm — kể cả Worker production — nên lane staging **không** bị chặn khỏi việc sửa Worker production chỉ bằng lý do credential. Ranh giới staging/production nằm ở chỗ khác, và chỗ khác đó mới là thứ phải giữ:
 
     - **Worker identity tách biệt** (`stg-ecoma-home` vs `ecoma-home`, `apps/*/wrangler.jsonc` khối `env`);
-    - **`--env <target>` tường minh** ở Nx target `deploy` cho từng configuration — hiện thực bằng cách mọi target `deploy` trỏ vào **cổng duy nhất** `tools/delivery/src/deploy-gate.mts` (§7.4.3), nơi lane là tham số bắt buộc và lệnh mặc định _từ chối chạy_ thay vì deploy ngầm;
+    - **`--env <target>` tường minh** ở Nx target `deploy` cho từng configuration — thiết kế hiện thực bằng cách mọi target `deploy` trỏ vào **cổng duy nhất** `tools/delivery/src/deploy-gate.mts` (§7.4.3), nơi lane là tham số bắt buộc và lệnh mặc định _từ chối chạy_ thay vì deploy ngầm (hiện tại repo chưa có target `deploy` nào — target đã bị xóa ở Phase 3 của #216);
     - **GitHub Environment riêng theo deploy unit** (`staging-<slug>` / `production-<slug>`) để approval và audit log không bị trộn.
 
     Quyền thật của token phải được kiểm tra tay trên Cloudflare; từ tên secret suy ra quyền là không đủ. Nếu sau này cần cô lập credential thật sự, đó là một thay đổi kiến trúc riêng (một token mỗi Worker, scope giới hạn theo Worker), không phải một thay đổi cấu hình secret.
@@ -610,7 +610,7 @@ về thứ tự. Ranh giới ở tầng code → `05-code-architecture.md` §2.1
 
 Hai làn workflow ở §7.4 là đường deploy **được duyệt**. Cạnh chúng, mỗi app trước đây còn một đường thứ hai: target `deploy` của Nx tự gọi `npx wrangler deploy`. Đường đó đi vòng qua toàn bộ vòng đời release/promotion — không bằng chứng staging, không kiểm release identity, không cổng Environment — và cổng Environment của `production.yaml` **không** áp cho một process chạy trên máy người dùng, nơi `CLOUDFLARE_API_TOKEN` là token của chính người chạy. §3 xử lý đường đó bằng cách **tập trung** nó vào một cổng duy nhất thay vì để một bản sao yếu hơn tồn tại song song.
 
-**Mọi** app có `wrangler.jsonc` và target `deploy` đều trỏ target đó vào `tools/delivery/src/deploy-gate.mts`; repo **không còn** một lời gọi `wrangler deploy` nào trong `apps/<slug>/package.json` (đúng 8 app có target `deploy`). Cổng:
+**Mọi** app có `wrangler.jsonc` và target `deploy` đều trỏ target đó vào `tools/delivery/src/deploy-gate.mts`; repo **không còn** một lời gọi `wrangler deploy` nào trong `apps/<slug>/package.json` (trước Phase 3 của #216: 7 app có target `deploy`). Cổng:
 
 - **Không tự suy project hay lane.** `--project` và `--lane` là tham số **bắt buộc**; thiếu hoặc sai chính tả là `problem` chặn, không có giá trị mặc định. Lý do: `wrangler deploy` không kèm `--env` deploy **top-level Worker name**, mà top-level name của mọi app trong repo này là Worker production — một mặc định "tiện" ở đây chính là đường ghi đè production.
 - **Từ chối project không `releaseable`**, kể cả khi người gọi truyền đúng tên project đó. Project phải được khai **đồng thời** trong `nx.json release.projects` và `tools/delivery/config/deploy-eligibility.jsonc`; khai một phía là `problem` (`compareReleaseDeclarations`), nên "thêm vào một danh sách rồi quên danh sách kia" không im lặng đi qua.
