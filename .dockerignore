@@ -22,8 +22,8 @@
 # `deploys/account-deploy/Dockerfile`, `deploys/auth-deploy/Dockerfile` và
 # `pnpm install` của workspace: `pnpm-workspace.yaml`, `package.json`,
 # `pnpm-lock.yaml`, `patches/`, `tools/dx/package.json`, `apps/home/**`,
-# `libs/ui-ecoma-logo/**`, `tsconfig.base.json`,
-# `deploys/auth-deploy/wic-entrypoint.sh`. Spec
+# `libs/ui-ecoma-logo/**`, `libs/internal-auth-contracts/**`,
+# `tsconfig.base.json`, `deploys/auth-deploy/wic-entrypoint.sh`. Spec
 # `tools/dx/src/docker-context.spec.ts` đọc trực tiếp file này để chốt các path
 # đó; sửa file là spec tự chạy lại.
 #
@@ -50,6 +50,7 @@ libs/*
 !libs/ui-app-shell
 !libs/ui-ecoma-logo
 !libs/identity-contracts
+!libs/internal-auth-contracts
 !libs/identity-domain
 !libs/identity-auth-contracts
 !libs/transactional-mail-contracts

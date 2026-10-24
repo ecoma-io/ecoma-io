@@ -19,6 +19,7 @@ COPY tools/dx/package.json ./tools/dx/
 COPY apps/account/package.json ./apps/account/
 COPY apps/account/.npmrc ./apps/account/.npmrc
 COPY libs/identity-contracts/package.json ./libs/identity-contracts/
+COPY libs/internal-auth-contracts/package.json ./libs/internal-auth-contracts/
 COPY libs/identity-domain/package.json ./libs/identity-domain/
 COPY libs/identity-auth-contracts/package.json ./libs/identity-auth-contracts/
 COPY libs/transactional-mail-contracts/package.json ./libs/transactional-mail-contracts/
@@ -28,6 +29,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
 
 COPY apps/account/ ./apps/account/
 COPY libs/identity-contracts/ ./libs/identity-contracts/
+COPY libs/internal-auth-contracts/ ./libs/internal-auth-contracts/
 COPY libs/identity-domain/ ./libs/identity-domain/
 COPY libs/identity-auth-contracts/ ./libs/identity-auth-contracts/
 COPY libs/transactional-mail-contracts/ ./libs/transactional-mail-contracts/
