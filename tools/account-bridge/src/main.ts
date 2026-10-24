@@ -73,8 +73,8 @@ const HEALTH_PATH = '/health';
 /** Ghi MỘT dòng log JSON với mã ổn định — không giá trị header, không origin. */
 function logLine(payload: Record<string, unknown>): void {
   try {
-    // Workers không có sink nào khác — `console.*` là đường log duy nhất.
-    // oxlint-disable-next-line no-console
+    // Workers không có sink nào khác — `console.*` là đường log duy nhất
+    // (override `tools/**` của .oxlintrc.json đã tắt rule `no-console`).
     console.log(JSON.stringify(payload));
   } catch {
     // Cố tình im lặng: observability không nằm trên serving path.

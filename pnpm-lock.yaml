@@ -429,8 +429,6 @@ importers:
         specifier: 12.2.1
         version: 12.2.1(supports-color@10.2.2)
 
-  apps/account-bridge: {}
-
   apps/auth:
     dependencies:
       '@ecoma-io/identity-auth-application':
@@ -805,6 +803,8 @@ importers:
       '@ecoma-io/web-push-notification-job-application':
         specifier: workspace:*
         version: link:../web-push-notification-job-application
+
+  tools/account-bridge: {}
 
   tools/dx:
     dependencies:

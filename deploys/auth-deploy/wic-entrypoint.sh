@@ -1,8 +1,8 @@
 #!/bin/sh
 # Entrypoint của WIC container (auth-deploy) — chạy HAI worker `wrangler dev`:
 #
-#   1. ecoma-auth           (apps/auth)           -> HTTP :4203 (dev.port của wrangler.jsonc)
-#   2. ecoma-account-bridge (apps/account-bridge) -> HTTP :4204 (dev.port của wrangler.jsonc)
+#   1. ecoma-auth                (apps/auth)                -> HTTP :4203 (dev.port của wrangler.jsonc)
+#   2. ecoma-account-bridge      (tools/account-bridge)     -> HTTP :4204 (dev.port của wrangler.jsonc)
 #
 # Container chạy trên platform network (02-identity.md §Database access):
 #   - Repo mount READ-ONLY tại /repo: bundle `dist/` (build trên host, mount
@@ -27,11 +27,14 @@ set -u
 
 REPO=/repo
 AUTH_DIR=$REPO/apps/auth
-BRIDGE_DIR=$REPO/apps/account-bridge
+# account-bridge sống ở tools/ (local-only, không có đường deploy production
+# riêng) nhưng vẫn được mirror vào $RUNTIME_TREE/apps/account-bridge — thư mục
+# runtime chỉ cần tự nhất quán, không cần khớp vị trí source trên host.
+BRIDGE_DIR=$REPO/tools/account-bridge
 WRANGLER=$REPO/node_modules/.bin/wrangler
 PERSIST_DIR=${WIC_PERSIST_DIR:-/state}
-# Cây runtime RW mà wrangler chạy trong đó — MIRROR cấu trúc `apps/<name>` của
-# repo (giải thích ở khối chuẩn bị dưới đây).
+# Cây runtime RW mà wrangler chạy trong đó — MIRROR cấu trúc per-app của repo
+# dưới một cây `apps/` duy nhất (giải thích ở khối chuẩn bị dưới đây).
 RUNTIME_TREE=$PERSIST_DIR/runtime
 
 # HOME/XDG cô lập trong volume RW — wrangler đọc/ghi OAuth cache + registry dưới
@@ -67,16 +70,19 @@ fi
 # `apps/auth/node_modules`) RỒI node_modules gốc workspace. Cây mirror tái tạo
 # đúng hai tầng đó bằng symlink vào repo RO (chỉ ĐỌC):
 #
-#   $RUNTIME_TREE/node_modules                -> /repo/node_modules
-#   $RUNTIME_TREE/apps/<app>/node_modules     -> /repo/apps/<app>/node_modules
-#   $RUNTIME_TREE/apps/<app>/wrangler.jsonc   (copy — `main: dist/main.js`
-#                                              tương đối với config path)
-#   $RUNTIME_TREE/apps/<app>/dist/            (copy — wrangler cần GHI metadata
-#                                              cạnh bundle khi dev)
+#   $RUNTIME_TREE/node_modules                  -> /repo/node_modules
+#   $RUNTIME_TREE/apps/<app>/node_modules       -> <app dir>/node_modules
+#   $RUNTIME_TREE/apps/<app>/wrangler.jsonc     (copy — `main: dist/main.js`
+#                                                tương đối với config path)
+#   $RUNTIME_TREE/apps/<app>/dist/              (copy — wrangler cần GHI metadata
+#                                                cạnh bundle khi dev)
 #
-# Copy mỗi lần boot — stateless; source of truth của bundle là target `build`
-# của Nx trên host. Nếu app không có node_modules riêng (bridge: toàn bộ
-# dependency hoist ở root) thì tầng đó bị bỏ qua — đúng như repo.
+# `<app dir>` là vị trí source thật trên repo mount (auth: `apps/auth`, bridge:
+# `tools/account-bridge`) — cây runtime đặt mọi worker dưới `apps/` dù source
+# không cùng một thư mục gốc. Copy mỗi lần boot — stateless; source of truth
+# của bundle là target `build` của Nx trên host. Nếu app không có node_modules
+# riêng (bridge: toàn bộ dependency hoist ở root) thì tầng đó bị bỏ qua — đúng
+# như repo.
 # ---------------------------------------------------------------------------
 rm -rf "$RUNTIME_TREE"
 mkdir -p "$RUNTIME_TREE/apps" || exit 1

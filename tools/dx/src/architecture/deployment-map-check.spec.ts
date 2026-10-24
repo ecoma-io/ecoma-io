@@ -80,24 +80,48 @@ describe('validateDeploymentMap — map coverage', () => {
   });
 });
 
+/**
+ * Vùng ghi tạm trên `DEPLOYMENT_MAP` cho fixture tổng hợp: bản đồ export với
+ * `Readonly` nhưng `Record` bên dưới vẫn mutable — cùng cơ chế mutate-restore
+ * mà các test entry đơn dùng. Trả về hàm dọn để finally gọi.
+ */
+function withSyntheticEntry(key: string, entry: (typeof DEPLOYMENT_MAP)[string]): () => void {
+  const mutable = DEPLOYMENT_MAP as Record<string, (typeof DEPLOYMENT_MAP)[string]>;
+  const had = Object.prototype.hasOwnProperty.call(mutable, key);
+  const original = mutable[key];
+  mutable[key] = entry;
+  return () => {
+    if (had) {
+      mutable[key] = original;
+    } else {
+      Reflect.deleteProperty(mutable, key);
+    }
+  };
+}
+
 describe('validateDeploymentMap — owner-null invariant per status', () => {
   it('reports an absorbed entry that carries a non-null owner without duplicate violations', () => {
     // absorbed/none không có deployment unit riêng — owner khác null là mâu
     // thuẫn trong chính entry. Invariant báo MỘT lỗi rồi dừng với entry đó:
     // không nhân đôi thành invalid-map-owner của lượt owner (owner ảo không
-    // có trong graph) hay của reverse ownership.
-    const entry = DEPLOYMENT_MAP['account-bridge'] as { owner: string | null };
-    const original = entry.owner;
-    entry.owner = 'auth-deploy';
+    // có trong graph) hay của reverse ownership. Map thật hiện không còn entry
+    // `absorbed` (account-bridge đã chuyển tools/), nên fixture tổng hợp tự
+    // thêm một entry absorbed vào map runtime rồi dọn trong finally.
+    const cleanup = withSyntheticEntry('synthetic-absorbed', {
+      kind: 'app',
+      owner: 'auth-deploy',
+      status: 'absorbed',
+      reason: 'test fixture: synthetic absorbed entry standing in for a real one',
+    });
     try {
       const violations = validateDeploymentMap(goodState());
       expect(kinds(violations)).toEqual(['invalid-map-owner']);
       expect(violations).toHaveLength(1);
-      expect(violations[0].project).toBe('account-bridge');
+      expect(violations[0].project).toBe('synthetic-absorbed');
       expect(violations[0].detail).toContain('absorbed');
       expect(violations[0].detail).toContain('null');
     } finally {
-      entry.owner = original;
+      cleanup();
     }
   });
 
@@ -307,15 +331,21 @@ describe('validateDeploymentMap — status markers', () => {
 
 describe('validateDeploymentMap — reasons', () => {
   it('requires a reason for absorbed and none entries', () => {
-    const entry = DEPLOYMENT_MAP['account-bridge'] as { reason?: string };
-    const original = entry.reason;
-    delete entry.reason;
+    // Fixture tổng hợp thay cho entry `absorbed` thật (map thật hiện chỉ còn
+    // entry `none` — auth-nonce-prune-job): thêm entry absorbed thiếu reason
+    // vào map runtime để invariant báo đúng lỗi missing-reason.
+    const cleanup = withSyntheticEntry('synthetic-absorbed', {
+      kind: 'app',
+      owner: null,
+      status: 'absorbed',
+      reason: '',
+    });
     try {
       const violations = validateDeploymentMap(goodState());
       expect(kinds(violations)).toEqual(['missing-reason']);
-      expect(violations[0].project).toBe('account-bridge');
+      expect(violations[0].project).toBe('synthetic-absorbed');
     } finally {
-      entry.reason = original;
+      cleanup();
     }
   });
 
@@ -330,14 +360,14 @@ describe('validateDeploymentMap — reasons', () => {
           entry.kind === 'app' && (entry.status === 'absorbed' || entry.status === 'none'),
       )
       .map(([key, entry]) => ({ key, reason: entry.kind === 'app' ? entry.reason : undefined }));
-    expect(needingReason.length).toBeGreaterThanOrEqual(2); // account-bridge + auth-nonce-prune-job
+    expect(needingReason.length).toBeGreaterThanOrEqual(1); // auth-nonce-prune-job
     for (const { key, reason } of needingReason) {
       expect(reason?.length ?? 0, `${key} needs a reason`).toBeGreaterThan(0);
     }
   });
 
   it('covers exactly the apps on disk plus the platform entry', () => {
-    // Hợp đồng "12 app + 1 platform" ở dạng bất biến: mọi key map ngoài
+    // Hợp đồng "11 app + 1 platform" ở dạng bất biến: mọi key map ngoài
     // platform entry phải là một app thật; mọi app thật phải có key. Số app
     // thay đổi theo repo — assert tính TƯƠNG ỨNG, không assert con số.
     const mapApps = Object.keys(DEPLOYMENT_MAP).filter((k) => DEPLOYMENT_MAP[k].kind === 'app');

@@ -16,6 +16,14 @@
  * Chỉ sửa bản đồ này khi ownership thay đổi thật; arch-check sẽ bắt mọi lệch
  * giữa bản đồ, marker và project graph. Xem `validateDeploymentMap` trong
  * `deployment-map-check.ts` và `docs/overview/05-code-architecture.md` §2.1.
+ *
+ * Quy tắc cấu trúc: `apps/` chỉ chứa project có đường triển khai production —
+ * bây giờ hoặc theo kế hoạch (status `implemented`/`scaffold` ở trên, tức có
+ * entry trong bản đồ này). Project local-only/internal-only (shim, script nội
+ * bộ, worker chỉ chạy trong topology local platform) sống ở `tools/` và KHÔNG
+ * có entry ở đây — thêm một project như vậy vào `apps/` là lỗi cấu trúc, vì
+ * bản đồ buộc mọi thư mục `apps/` phải có owner deployment hoặc `reason`
+ * không-deploy, trong khi project internal-only không thuộc cả hai dạng đó.
  */
 
 /** Status của một app trong bản đồ deployment. */
@@ -54,19 +62,9 @@ export type DeploymentMapEntry = AppDeploymentEntry | PlatformDeploymentEntry;
 /** Khóa bản đồ của entry platform — giữ cùng giá trị với `PLATFORM_DEPLOY_PROJECT`. */
 const PLATFORM_DEPLOY_PROJECT_KEY = 'platform-deploy';
 
-/** Bản đồ canonical: 12 app + 1 entry platform. Không thêm entry nào khác. */
+/** Bản đồ canonical: 11 app + 1 entry platform. Không thêm entry nào khác. */
 export const DEPLOYMENT_MAP: Readonly<Record<string, DeploymentMapEntry>> = {
   account: { kind: 'app', owner: 'account-deploy', status: 'implemented' },
-  // Được provision BÊN TRONG auth-deploy: WIC container của auth-deploy chạy
-  // HAI worker (`ecoma-auth` + shim `ecoma-account-bridge`), nên account-bridge
-  // không có Pulumi project riêng — không owner, không marker.
-  'account-bridge': {
-    kind: 'app',
-    owner: null,
-    status: 'absorbed',
-    reason:
-      'provisioned inside auth-deploy: the WIC container runs both the auth worker and the account-bridge shim',
-  },
   auth: { kind: 'app', owner: 'auth-deploy', status: 'implemented' },
   // Cron Worker chạy hoàn toàn qua wrangler (không có resource Pulumi nào),
   // nên không có deploy project nào provision nó.
