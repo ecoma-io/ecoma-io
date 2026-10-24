@@ -132,6 +132,17 @@ export function localStackSecrets(
     // app fail-closed khi API chưa wired.
     return [['namespace:apiToken', generateInternalHmacSecret()]] as const;
   }
+  if (project === 'pact-broker-api-deploy') {
+    return [
+      ['namespace:runtimePassword', generatePostgresPassword()],
+      ['namespace:migratorPassword', generatePostgresPassword()],
+      // Machine token plaintext của consumer local (`pact-broker-app`): stack
+      // pact-broker-api chỉ seed HASH SHA-256 vào DB; plaintext nằm ở stack
+      // config này để unit pact-app đọc qua cross-stack `pulumi config get`
+      // (cùng hình auth đọc internalHmacSecret từ account stack).
+      ['namespace:machineToken', generatePostgresPassword()],
+    ] as const;
+  }
   return [];
 }
 

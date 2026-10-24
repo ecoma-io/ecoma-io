@@ -285,6 +285,73 @@ describe('runLocalCleanup', () => {
     expect(volumeEntry?.action).toBe('kept');
   });
 
+  it('pact WIC orphan resources (container, image, state volume) are identified and removed', () => {
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const docker: FakeDocker = {
+      names: new Map([
+        ['container', [`ecoma-${ns}-pact-api-wic`, `ecoma-${ns}-pact-api-wic-state-init`]],
+        ['image', [`ecoma-${ns}-pact-api-wic:local`]],
+        ['volume', [`ecoma-${ns}-pact-api-wic-state`]],
+        ['network', []],
+      ]),
+      labels: new Map([
+        [`container/ecoma-${ns}-pact-api-wic`, ownedLabels(wt)],
+        [`container/ecoma-${ns}-pact-api-wic-state-init`, ownedLabels(wt)],
+        [`image/ecoma-${ns}-pact-api-wic:local`, ownedLabels(wt)],
+        [`volume/ecoma-${ns}-pact-api-wic-state`, ownedLabels(wt)],
+      ]),
+      removed: [],
+    };
+    const report = runLocalCleanup({
+      dryRun: false,
+      env: {},
+      execDocker: fakeDockerExec(docker),
+      worktreePresence: () => 'absent',
+    });
+    // Cả 4 resource Docker thật của WIC pact bị xoá khi worktree đã mất; kind
+    // `pact-api` (command.local.Command) chủ ý KHÔNG có trong CLEANUP_KINDS —
+    // nó không tạo Docker resource tồn lại sau lệnh.
+    expect(new Set(docker.removed)).toEqual(
+      new Set([
+        `container/ecoma-${ns}-pact-api-wic`,
+        `container/ecoma-${ns}-pact-api-wic-state-init`,
+        `image/ecoma-${ns}-pact-api-wic:local`,
+        `volume/ecoma-${ns}-pact-api-wic-state`,
+      ]),
+    );
+    expect(report.errors).toEqual([]);
+  });
+
+  it('pact WIC resources of a live worktree are kept', () => {
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const docker: FakeDocker = {
+      names: new Map([
+        ['container', [`ecoma-${ns}-pact-api-wic`]],
+        ['image', []],
+        ['volume', [`ecoma-${ns}-pact-api-wic-state`]],
+        ['network', []],
+      ]),
+      labels: new Map([
+        [`container/ecoma-${ns}-pact-api-wic`, ownedLabels(wt)],
+        [`volume/ecoma-${ns}-pact-api-wic-state`, ownedLabels(wt)],
+      ]),
+      removed: [],
+    };
+    const report = runLocalCleanup({
+      dryRun: false,
+      env: {},
+      execDocker: fakeDockerExec(docker),
+      worktreePresence: (p) => (p === wt ? 'present' : 'absent'),
+    });
+    expect(docker.removed).toHaveLength(0);
+    const actions = report.entries.map((e) => e.action);
+    expect(actions).toContain('kept');
+    expect(actions).not.toContain('removed');
+    expect(actions).not.toContain('would-remove');
+  });
+
   it('same-branch isolation: a resource of another live worktree is untouched even when filter targets a deleted worktree', () => {
     const deadWt = tempWorktree();
     const liveWt = tempWorktree();

@@ -102,6 +102,16 @@ export type DeployResourceKind =
   | 'auth-wic-state'
   /** Container init một-shot chown volume state cho uid node. */
   | 'auth-wic-state-init'
+  /** Provision/migrate/seed của pact-broker-api-deploy (db-pact-broker). */
+  | 'pact-api'
+  /** WIC container của pact-broker-api-deploy (MỘT worker, không shim). */
+  | 'pact-api-wic'
+  /** Image của WIC container. */
+  | 'pact-api-wic-image'
+  /** Volume state wrangler của WIC. */
+  | 'pact-api-wic-state'
+  /** Container init một-shot chown volume state cho uid node. */
+  | 'pact-api-wic-state-init'
   /** Container image `node-server` của app pact-broker-app (BFF dashboard). */
   | 'pact-app'
   /** Image build từ context repo root của deploy unit `pact-broker-app-deploy`. */

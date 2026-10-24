@@ -8,11 +8,25 @@
   // Ranh giới `runtime:edge` giữ nguyên như `auth`: không filesystem, không
   // process, không API ngoài những gì Workers cung cấp.
   //
-  // Hyperdrive binding `DB` chỉ là chỗ dành: database `db-pact-broker` chưa
-  // được provision, nên không có `id` thật nào được ghim. Worker fail-closed
-  // khi thiếu binding (xem src/config.ts). Migration KHÔNG chạy qua binding
-  // này — chúng chạy từ CI runner bằng chuỗi kết nối trực tiếp (docs/services/
+  // Hyperdrive binding `HYPERDRIVE` chỉ là chỗ dành: database `db-pact-broker`
+  // chưa được provision remote, nên không có `id` thật nào được ghim — cùng
+  // pattern "id chuỗi rỗng" của `apps/auth` (local runtime `tools/dx` chặn mọi
+  // `id` non-empty trong `hyperdrive` của app đã opt-in). Connection string
+  // thật của local chạy qua biến
+  // `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE`
+  // (platform facts PF3/PF4), không nằm ở file này; thiếu biến lúc `wrangler
+  // dev` là lỗi boot tường minh, và deploy production thiếu binding thật vẫn
+  // fail-closed ở `src/config.ts`. Tên binding phải khớp đúng những gì
+  // `src/config.ts` đọc (`env.HYPERDRIVE`) — comment trước đây ghi "DB" là
+  // dự định cũ chưa khớp code. Migration KHÔNG chạy qua binding này — chúng
+  // chạy từ CI runner bằng chuỗi kết nối trực tiếp (docs/services/
   // pact-broker/03-operations.md §2), vì Hyperdrive không hỗ trợ advisory lock.
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "",
+    },
+  ],
   //
   // KHÔNG có deploy target/staging/production env ở đây: đường deploy trực
   // tiếp chưa có trong repo, provisioning là việc tiếp theo ngoài phạm vi.
