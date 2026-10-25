@@ -17,14 +17,24 @@ Mọi lệnh Pulumi của luồng này chạy với `PULUMI_BACKEND_URL=file://<
 ## Luồng deploy
 
 ```bash
-pnpm dx local-deploy            # apply thật: orchestration qua Nx Task Graph, smoke HTTPS cuối
+pnpm dx local-deploy            # apply thật: orchestration qua Nx Task Graph, smoke HTTPS + lane health cuối
 pnpm dx local-deploy --preview  # read-only: preview platform + home, không mutate gì
 pnpm dx local-status            # namespace, stack, resource names, trạng thái platform
-pnpm dx local-destroy           # teardown 5 stack theo thứ tự ngược phụ thuộc, giữ volume PostgreSQL
+pnpm dx local-destroy           # teardown 9 stack theo thứ tự ngược phụ thuộc, giữ volume PostgreSQL
 pnpm dx local-destroy --remove-data  # teardown + XOÁ volume (in cảnh báo, mất dữ liệu vĩnh viễn)
 ```
 
-Luồng `local-deploy` (không `--preview`) không còn đi qua mảng bước hard-code nữa: `local-deploy` sinh một Nx Task Graph từ khai báo `local-up`/`local-env`/`local-smoke` trong `package.json` của từng deploy project (nguồn sự thật của thứ tự là target `dependsOn` của mỗi project, đọc bởi `local-deploy-graph.ts`), rồi spawn `nx run-many -p <projects> -t <targets> -c local`. Chuỗi tác vụ tương đương 8 bước cũ: `platform-deploy:local-up` (platform up) → `platform-deploy:local-env` (đọc outputs + ghi `.env`) → `home-deploy:local-up` → `backoffice-deploy:local-up` → `account-deploy:local-up` → `auth-deploy:local-up` → `platform-deploy:local-smoke` (smoke HTTPS). Nx bail mặc định: một task thất bại dừng toàn chuỗi. Cả ba target đều không cacheable (`cache: false` trong `nx.json` targetDefaults) vì chúng mutate Docker/state; lane chỉ có configuration `local`. Bất biến account → auth thể hiện trực tiếp trong graph: `auth-deploy:local-up` khai `dependsOn` `account-deploy:local-up`, và account tự sinh internal HMAC secret vào stack config của mình (`namespace:internalHmacSecret`) mà auth đọc lại khi up (`namespace:internalSecret`) — cùng giá trị xuyên suốt các process Nx riêng biệt.
+Luồng `local-deploy` (không `--preview`) không còn đi qua mảng bước hard-code nữa: `local-deploy` sinh một Nx Task Graph từ khai báo `local-up`/`local-env`/`local-smoke` trong `package.json` của từng deploy project (nguồn sự thật của thứ tự là target `dependsOn` của mỗi project, đọc bởi `local-deploy-graph.ts`), rồi spawn `nx run-many -p <projects> -t <targets> -c local`. Lane gồm **9 project** (`LOCAL_LANE_PROJECTS`): platform, home, backoffice, account, auth (+ wave 2 theo issue #264: pact-broker-api, pact-broker-app, transactional-mail, push-notification). Nx bail mặc định: một task thất bại dừng toàn chuỗi. Các target đều không cacheable (`cache: false` trong `nx.json` targetDefaults) vì chúng mutate Docker/state; lane chỉ có configuration `local`.
+
+Các bất biến cross-stack thể hiện trực tiếp trong graph qua `dependsOn` và cơ chế persist/read-lại stack config (một giá trị chia hai stack, đọc bởi `local-stack-step.ts`):
+
+- account → auth: account tự sinh internal HMAC secret vào stack config của mình (`namespace:internalHmacSecret`) mà auth đọc lại khi up (`namespace:internalSecret`).
+- account → transactional-mail: cùng cơ chế với `namespace:mailInternalAuthSecret` (receiver mail giữ làm credential `MAIL_INTERNAL_AUTH_SECRET_SVC_ACCOUNT`).
+- pact-broker-api → pact-broker-app: machine token plaintext do api persist (`namespace:machineToken`), BFF đọc lại làm `NITRO_PACT_BROKER_API_TOKEN`; api chỉ seed HASH SHA-256 vào DB. pact-broker-app gọi api qua alias nội bộ `ecoma-pact-api:4204` (port contract giữa hai unit).
+- platform → pact-broker-api / push-notification: network + StackReference.
+- `transactional-mailer-job-deploy` CỐ ĐỊNG nằm ngoài lane: cặp worker mail đã chạy trong MỘT WIC container của `transactional-mail-deploy` (issue #241).
+
+Bước hoàn tất lane là `platform-deploy:local-smoke`: smoke HTTPS qua Traefik (home) rồi health gate `verifyLaneHealth` — `docker inspect` bốn container của unit mới (`pact-api-wic`, `pact-app`, `mail-wic`, `push-wic`) phải `running` + `Health.Status=healthy` (probe do từng deploy unit định nghĩa).
 
 ⚠️ **KHÔNG dùng `nx run-many --dry-run` để kiểm tra lane này**: trên Nx 23.3.0 `--dry-run` KHÔNG chạy lệnh executor (`nx:run-commands` vẫn chạy thật — `pulumi up` thật, Docker thật). Xác minh cấu trúc graph dùng duy nhất `--graph=stdout` (chỉ in JSON, không thực thi): `nx run-many -p <projects> -t local-up,local-env,local-smoke -c local --graph=stdout` rồi đọc `graph.dependencies`.
 
@@ -68,7 +78,7 @@ Smoke xác nhận đúng hành vi ứng dụng qua Traefik, không chỉ "server
 
 ## Vòng đời dữ liệu
 
-- `local-destroy` destroy cả 5 stack local (platform, home, backoffice, account, auth) theo **thứ tự ngược phụ thuộc** của đồ thị up — auth trước, platform sau cùng — và mặc định **giữ** volume; container/network bị xoá nhưng dữ liệu PostgreSQL còn nguyên, deploy kế tiếp dùng lại. Một stack destroy thất bại không dừng các stack còn lại: cả 5 vẫn được destroy, `local-destroy` thoát exit 1.
+- `local-destroy` destroy cả 9 stack local theo **thứ tự ngược phụ thuộc** của đồ thị up — các unit lá (mail, auth, pact-app...) trước, platform sau cùng — và mặc định **giữ** volume; container/network bị xoá nhưng dữ liệu PostgreSQL còn nguyên, deploy kế tiếp dùng lại. Một stack destroy thất bại không dừng các stack còn lại: cả 9 vẫn được destroy, `local-destroy` thoát exit 1.
 - Volume được khai `retainOnDelete` nên kể cả `pulumi destroy` trực tiếp cũng không xoá volume.
 - ⚠️ Đừng chạy `pulumi stack rm` trên stack local: nó xoá stack config (trong đó có `postgres:password`) trong khi volume còn lại — hai nửa lệch tuổi, Postgres kế tiếp không vào được dữ liệu cũ. Đó cũng là lý do `local-destroy` không dùng `destroy --remove`. Khi phát hiện tình huống này, `local-deploy` **fail với hướng dẫn** (không sinh mật khẩu mới): khôi phục mật khẩu cũ vào stack config, hoặc `pnpm dx local-destroy --remove-data` rồi `pnpm dx local-deploy` để bắt đầu lại từ dữ liệu rỗng.
 - ⚠️ Đừng đổi `postgres:password` trong stack config sau khi volume đã init: `POSTGRES_PASSWORD` chỉ có tác dụng lúc `initdb` trên volume rỗng. Pulumi sẽ thay container (envs nằm trong diff) nhưng Postgres không chạy lại initdb — superuser trong volume vẫn giữ mật khẩu cũ, kết nối bằng giá trị mới nhận `password authentication failed` trong khi healthcheck `pg_isready` vẫn xanh (nó không xác thực mật khẩu). Nguyên tắc: mật khẩu và volume phải cùng tuổi.
@@ -159,7 +169,7 @@ pnpm dx local-cleanup --dry-run             # chỉ báo cáo, không có lệnh
 pnpm dx local-cleanup --worktree-root <dir> # lọc báo cáo theo worktree (diagnostics, không nới ràng buộc)
 ```
 
-**Cleanup phát hiện và xoá những gì**: resource Docker mà luồng local deployment tạo — network platform, container Traefik, container PostgreSQL, container home, home image (`ecoma-home-<namespace>:local`), volume PostgreSQL (`CLEANUP_KINDS` trong `tools/dx/src/deployment/local-platform/local-cleanup.ts`). Cleanup KHÔNG có teardown theo thứ tự phụ thuộc: worktree biến mất thì không resource nào còn phụ thuộc vòng sống vào nhau; Docker chấp nhận lệnh `rm` trực tiếp từng resource.
+**Cleanup phát hiện và xoá những gì**: resource Docker mà luồng local deployment tạo — network platform, container Traefik, container PostgreSQL, container home/backoffice, WIC containers và images của auth/pact-api/mail/push, image node-server của account/pact-app, volume PostgreSQL và các volume state WIC (`CLEANUP_KINDS` trong `tools/dx/src/deployment/local-platform/local-cleanup.ts`). Cleanup KHÔNG có teardown theo thứ tự phụ thuộc: worktree biến mất thì không resource nào còn phụ thuộc vòng sống vào nhau; Docker chấp nhận lệnh `rm` trực tiếp từng resource.
 
 ### Labels ownership — bằng chứng "của ai"
 

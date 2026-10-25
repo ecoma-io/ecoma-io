@@ -24,6 +24,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { acquireLocalDeployLock } from './../../local-runtime/local-lock.js';
+import { dockerResourceName } from './../../local-runtime/deploy-namespace.js';
 import {
   buildRootHost,
   POSTGRES_PASSWORD_ENV_KEY,
@@ -41,6 +42,7 @@ import {
   type LocalDeployContext,
 } from './pulumi-context.js';
 import {
+  generateBase64Key32,
   generateEs256SigningKeyPem,
   generateHexKey64,
   generateInternalHmacSecret,
@@ -99,6 +101,7 @@ export function localStackSecrets(
     rootHost: string;
     identityInternalSecret: string;
     mailInternalAuthSecret: string;
+    pactApiMachineToken: string;
     signingKeyPem: string;
   },
 ): ReadonlyArray<readonly [string, string]> {
@@ -139,11 +142,12 @@ export function localStackSecrets(
   }
   if (project === 'pact-broker-app-deploy') {
     // Machine token mà BFF dùng gọi pact-broker-api (`NITRO_PACT_BROKER_API_
-    // TOKEN`). Shape được khai ở đây, GIÁ TRỊ THẬT do stack
-    // `pact-broker-api-deploy` sinh — orchestration sẽ nối nguồn ở wiring PR;
-    // trước wiring, giá trị sinh tạm chỉ để `pulumi config set` có nội dung và
-    // app fail-closed khi API chưa wired.
-    return [['namespace:apiToken', generateInternalHmacSecret()]] as const;
+    // TOKEN`). CÙNG GIÁ TRỊ stack `pact-broker-api-deploy` đã persist làm
+    // `namespace:machineToken` (inputs.pactApiMachineToken — resolver đọc lại
+    // từ stack config của api sau khi api up; api seed HASH của token này vào
+    // DB, BFF dùng plaintext gọi API). Một giá trị chia hai stack — cùng cơ chế
+    // `identityInternalSecret`/`mailInternalAuthSecret`.
+    return [['namespace:apiToken', inputs.pactApiMachineToken]] as const;
   }
   if (project === 'pact-broker-api-deploy') {
     return [
@@ -172,6 +176,22 @@ export function localStackSecrets(
       ['namespace:mailQuarantineHmacKey', generateHexKey64()],
     ] as const;
   }
+  if (project === 'push-notification-deploy') {
+    // Cả BỐN secret là CỦA RIÊNG cặp push local (không stack nào khác đọc):
+    // hai process của cặp sống trong MỘT container WIC nên orchestration cấp
+    // ĐỒNG BỘ giá trị mới trong CÙNG một lần up — không cần persistence
+    // cross-stack. `runtimeSharedSecret` đi vào CẢ HAI worker (control plane
+    // `RUNTIME_API_SHARED_SECRET` + consumer cùng biến, hai env NAME một giá
+    // trị); `credentialRootKey` là base64 của 32 byte AES-256 (mà `buildCipher`
+    // kiểm) — xoay mỗi lần up là vô hại vì D1 `push` trên volume state là
+    // ephemeral theo thiết kế (không credential nào sống qua hai lần up).
+    return [
+      ['namespace:runtimeSharedSecret', generateInternalHmacSecret()],
+      ['namespace:adminToken', generateInternalHmacSecret()],
+      ['namespace:applicationToken', generateInternalHmacSecret()],
+      ['namespace:credentialRootKey', generateBase64Key32()],
+    ] as const;
+  }
   return [];
 }
 
@@ -183,6 +203,7 @@ export function localStackSecretsKeys(
     identityInternalSecret: string;
     mailInternalAuthSecret: string;
     signingKeyPem: string;
+    pactApiMachineToken: string;
   },
 ): string[] {
   return localStackSecrets(project, inputs).map(([key]) => key);
@@ -291,7 +312,129 @@ export async function runLocalStackStep(
   }
 
   // step === 'smoke'
-  return runSmokeStep(ctx.worktreeRoot);
+  const smokeExit = runSmokeStep(ctx.worktreeRoot);
+  if (smokeExit !== 0) return smokeExit;
+  return verifyLaneHealth(ctx);
+}
+
+/**
+ * Health gate của lane MỞ RỘNG (#264) — chạy SAU khi smoke HTTPS home xanh.
+ *
+ * Smoke HTTPS chỉ chạm home qua Traefik; bốn unit wave-2/wave-1.5 (pact-api
+ * WIC, pact-app, mail WIC, push WIC) KHÔNG xuất origin công khai nào ngoài
+ * `pact.<rootHost>`, nên bằng chứng "unit sống" ở đây là healthcheck Docker:
+ * container `running` với `Health.Status=healthy` — probe do chính deploy unit
+ * định nghĩa (`/health` của app, hoặc route notFound ổn định của push), đã
+ * chạy độc lập trước khi tới bước này. Inspect qua `docker inspect --format`
+ * với name theo namespace (`ecoma-<ns>-<kind>`) — không đụng namespace worktree
+ * khác; KHÔNG có giá trị env/secret nào đi vào output.
+ *
+ * Retry bounded: container vừa lên có thể còn trong `startPeriod` của
+ * healthcheck (mail/push khai 120s, pact-api 60s) — `unhealthy`/`starting`
+ * được thử lại trong 90s trước khi chốt fail; container KHÔNG TỒN TẠI là fail
+ * ngay (stack up đã báo xanh thì container phải tồn tại — mất là lỗi orchestration).
+ */
+const LANE_HEALTH_CONTAINERS = [
+  { kind: 'pact-api-wic', label: 'pact-broker-api-deploy' },
+  { kind: 'pact-app', label: 'pact-broker-app-deploy' },
+  { kind: 'mail-wic', label: 'transactional-mail-deploy' },
+  { kind: 'push-wic', label: 'push-notification-deploy' },
+] as const;
+
+const LANE_HEALTH_BUDGET_MS = 90_000;
+const LANE_HEALTH_POLL_MS = 3_000;
+
+type ContainerHealth =
+  | { state: 'healthy' }
+  | { state: 'starting'; health: string }
+  | { state: 'unhealthy'; health: string }
+  | { state: 'not-running'; status: string }
+  | { state: 'missing' };
+
+function inspectLaneContainer(containerName: string): ContainerHealth {
+  // `docker inspect` per-container: format in `status|health` — health rỗng
+  // với container không khai healthcheck (không xảy ra với bốn unit này nhưng
+  // parse vẫn đối xử tường minh).
+  const result = exec(
+    'docker',
+    [
+      'inspect',
+      '--format',
+      '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}',
+      containerName,
+    ],
+    ROOT_DIR,
+    process.env,
+  );
+  if (result.status !== 0) return { state: 'missing' };
+  const [status = '', health = ''] = result.stdout.trim().split('|');
+  if (status !== 'running') return { state: 'not-running', status };
+  if (health === 'healthy') return { state: 'healthy' };
+  if (health === 'starting') return { state: 'starting', health };
+  return { state: 'unhealthy', health: health || 'none' };
+}
+
+/** Tuỳ chọn test seam của {@link verifyLaneHealth} — production bỏ qua. */
+export interface LaneHealthOptions {
+  /** Tổng budget retry (ms) — default {@link LANE_HEALTH_BUDGET_MS}. */
+  budgetMs?: number;
+  /** Khoảng nghỉ giữa hai lượt poll (ms) — default {@link LANE_HEALTH_POLL_MS}. */
+  pollMs?: number;
+}
+
+/**
+ * Kiểm health của bốn container unit mới — return 0 chỉ khi TẤT CẢ healthy.
+ * Thân hàm chỉ in tên container + trạng thái, không bao giờ in stderr gốc của
+ * `docker inspect` (không chứa secret nhưng giữ một nguồn lỗi đã chuẩn hoá).
+ */
+export function verifyLaneHealth(ctx: LocalDeployContext, options: LaneHealthOptions = {}): number {
+  const budgetMs = options.budgetMs ?? LANE_HEALTH_BUDGET_MS;
+  const pollMs = options.pollMs ?? LANE_HEALTH_POLL_MS;
+  const startedAt = Date.now();
+  for (;;) {
+    const pending: string[] = [];
+    for (const { kind, label } of LANE_HEALTH_CONTAINERS) {
+      const containerName = dockerResourceName(ctx.namespace, kind);
+      const health = inspectLaneContainer(containerName);
+      if (health.state === 'healthy') continue;
+      if (health.state === 'missing' || health.state === 'not-running') {
+        // Container vắng mặt hoặc chết là TRẠNG THÁI CUỐI: retry không hồi sinh
+        // container không tồn tại — fail ngay với trạng thái đã quan sát.
+        console.error(
+          `[local-stack-step] lane health FAILED: ${containerName} (${label}) ` +
+            (health.state === 'missing'
+              ? 'does not exist — the unit stack reported up but the container is gone'
+              : `is not running (state: ${health.status})`),
+        );
+        return 1;
+      }
+      pending.push(`${containerName}: ${health.health}`);
+    }
+    if (pending.length === 0) {
+      console.log(
+        `[local-stack-step] lane health OK: ${LANE_HEALTH_CONTAINERS.map((c) => dockerResourceName(ctx.namespace, c.kind)).join(', ')} all healthy ` +
+          `after ${Date.now() - startedAt}ms`,
+      );
+      return 0;
+    }
+    const remainingMs = budgetMs - (Date.now() - startedAt);
+    if (remainingMs <= 0) {
+      console.error(
+        `[local-stack-step] lane health FAILED after ${budgetMs}ms budget: ` + pending.join('; '),
+      );
+      return 1;
+    }
+    console.error(
+      `[local-stack-step] lane health waiting: ${pending.join('; ')} — retrying in ` +
+        `${Math.ceil(Math.min(pollMs, remainingMs) / 1000)}s`,
+    );
+    const sleepMs = Math.min(pollMs, remainingMs);
+    const sleep = exec('sleep', [String(Math.ceil(sleepMs / 1000))], ROOT_DIR, process.env);
+    if (sleep.status !== 0) {
+      console.error('[local-stack-step] lane health: sleep between polls failed');
+      return 1;
+    }
+  }
 }
 
 /** Đối số up dùng chung mọi unit — giữ nguyên ngữ nghĩa của bản hard-coded. */
@@ -359,6 +502,8 @@ async function runUpStep(
     if (identityInternalSecret === undefined) return 1;
     const mailInternalAuthSecret = resolveMailInternalAuthSecret(project, ctx, env);
     if (mailInternalAuthSecret === undefined) return 1;
+    const pactApiMachineToken = resolvePactApiMachineToken(project, ctx, env);
+    if (pactApiMachineToken === undefined) return 1;
     const signingKeyPem = project === 'auth-deploy' ? await generateEs256SigningKeyPem() : '';
 
     ensureStack(projectDir, project, ctx, env);
@@ -366,6 +511,7 @@ async function runUpStep(
       rootHost,
       identityInternalSecret,
       mailInternalAuthSecret,
+      pactApiMachineToken,
       signingKeyPem,
     })) {
       setStackSecret(project, configKey, configValue, ctx, env, projectDir);
@@ -487,6 +633,51 @@ export function resolveMailInternalAuthSecret(
       'transactional-mail-deploy (dependsOn). Chạy tay `pulumi config get ' +
       'namespace:mailInternalAuthSecret --stack <account-stack-ref>` trong ' +
       'deploys/account-deploy để xem stderr gốc — output của lệnh này không được log vì có thể chứa secret.',
+  );
+  return undefined;
+}
+
+/**
+ * Machine token plaintext dùng chung pact-broker-api <-> pact-broker-app (BFF).
+ *
+ * Cùng cơ chế persistence với {@link resolveIdentityInternalSecret}: stack
+ * pact-broker-api-deploy (chạy trước theo dependsOn) SINH token mới và persist
+ * vào stack config của chính nó (`namespace:machineToken`); pact-broker-app-deploy
+ * (chạy sau) ĐỌC LẠI từ stack api. BFF giữ plaintext làm `NITRO_PACT_BROKER_API_
+ * TOKEN` để gọi API; api chỉ seed HASH SHA-256 vào DB (`machine_token_hash`) —
+ * plaintext sống duy nhất ở stack config, đúng hình secret cross-stack khác.
+ */
+export function resolvePactApiMachineToken(
+  project: string,
+  ctx: LocalDeployContext,
+  env: NodeJS.ProcessEnv,
+): string | undefined {
+  if (project === 'pact-broker-api-deploy') return generatePostgresPassword();
+  if (project !== 'pact-broker-app-deploy') return '';
+  const read = exec(
+    'pulumi',
+    [
+      'config',
+      'get',
+      'namespace:machineToken',
+      '--stack',
+      fullStackRef('pact-broker-api-deploy', ctx),
+    ],
+    join(ROOT_DIR, 'deploys', 'pact-broker-api-deploy'),
+    env,
+  );
+  if (read.status === 0 && read.stdout.trim().length > 0) {
+    return read.stdout.trim();
+  }
+  // Cùng luật không-leak: raw stdout của `config get` khi exit 0 chính là
+  // machine token — không bao giờ ghép vào error string.
+  console.error(
+    `[local-stack-step] pact-broker-app-deploy up: reading namespace:machineToken ` +
+      `from the pact-broker-api-deploy stack failed (exit ${String(read.status)}) — ` +
+      'pact-broker-api-deploy up must run BEFORE pact-broker-app-deploy (dependsOn). ' +
+      'Run `pulumi config get namespace:machineToken --stack <pact-broker-api-stack-ref>` ' +
+      'in deploys/pact-broker-api-deploy to see the original stderr — the output of that ' +
+      'command is never logged because it may contain the secret.',
   );
   return undefined;
 }

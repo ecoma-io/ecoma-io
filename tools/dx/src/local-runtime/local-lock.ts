@@ -26,8 +26,8 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 export const DEFAULT_LOCK_PATH = join(tmpdir(), 'ecoma-local-deploy.lock');
-const MAX_ATTEMPTS = 5;
-const RETRY_SLEEP_MS = 200;
+const MAX_ATTEMPTS = 600;
+const RETRY_SLEEP_MS = 500;
 
 export interface LockContent {
   pid: number;

@@ -352,6 +352,43 @@ describe('runLocalCleanup', () => {
     expect(actions).not.toContain('would-remove');
   });
 
+  it('push WIC orphan resources (container, image, state volume) are identified and removed', () => {
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const docker: FakeDocker = {
+      names: new Map([
+        ['container', [`ecoma-${ns}-push-wic`, `ecoma-${ns}-push-wic-state-init`]],
+        ['image', [`ecoma-${ns}-push-wic:local`]],
+        ['volume', [`ecoma-${ns}-push-wic-state`]],
+        ['network', []],
+      ]),
+      labels: new Map([
+        [`container/ecoma-${ns}-push-wic`, ownedLabels(wt)],
+        [`container/ecoma-${ns}-push-wic-state-init`, ownedLabels(wt)],
+        [`image/ecoma-${ns}-push-wic:local`, ownedLabels(wt)],
+        [`volume/ecoma-${ns}-push-wic-state`, ownedLabels(wt)],
+      ]),
+      removed: [],
+    };
+    const report = runLocalCleanup({
+      dryRun: false,
+      env: {},
+      execDocker: fakeDockerExec(docker),
+      worktreePresence: () => 'absent',
+    });
+    // Cả 4 resource Docker thật của WIC push bị xoá khi worktree đã mất —
+    // cùng hình với WIC pact/mail/auth (issue #264).
+    expect(new Set(docker.removed)).toEqual(
+      new Set([
+        `container/ecoma-${ns}-push-wic`,
+        `container/ecoma-${ns}-push-wic-state-init`,
+        `image/ecoma-${ns}-push-wic:local`,
+        `volume/ecoma-${ns}-push-wic-state`,
+      ]),
+    );
+    expect(report.errors).toEqual([]);
+  });
+
   it('same-branch isolation: a resource of another live worktree is untouched even when filter targets a deleted worktree', () => {
     const deadWt = tempWorktree();
     const liveWt = tempWorktree();

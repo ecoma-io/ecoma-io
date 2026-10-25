@@ -664,7 +664,7 @@ describe('localDestroy — volume removal coping with lost Pulumi stacks', () =>
   });
 });
 
-describe('localDestroy — full coverage: five stacks in reverse dependency order', () => {
+describe('localDestroy — full coverage: all stacks in reverse dependency order', () => {
   it('destroys ALL FIVE stacks — auth, account, backoffice, home, platform (no orphan identity stacks)', () => {
     const wt = tempWorktree();
     mkdirSync(join(wt, '.pulumi-local-state'), { recursive: true });
@@ -677,9 +677,13 @@ describe('localDestroy — full coverage: five stacks in reverse dependency orde
       .filter(([, , args]) => args[0] === 'destroy')
       .map(([, project]) => project);
     expect(destroyed).toEqual([
+      'transactional-mail-deploy',
       'auth-deploy',
       'account-deploy',
+      'pact-broker-app-deploy',
       'backoffice-deploy',
+      'push-notification-deploy',
+      'pact-broker-api-deploy',
       'home-deploy',
       'platform-deploy',
     ]);
@@ -704,9 +708,13 @@ describe('localDestroy — full coverage: five stacks in reverse dependency orde
     // Vẫn đủ 5 lần gọi, đúng thứ tự nghịch — lỗi ở giữa KHÔNG dừng teardown của
     // các stack sau (mỗi destroy độc lập; exit code là nơi tổng hợp thất bại).
     expect(destroyed).toEqual([
+      'transactional-mail-deploy',
       'auth-deploy',
       'account-deploy',
+      'pact-broker-app-deploy',
       'backoffice-deploy',
+      'push-notification-deploy',
+      'pact-broker-api-deploy',
       'home-deploy',
       'platform-deploy',
     ]);
@@ -723,15 +731,21 @@ describe('runNxOrchestratedDeploy — Nx Task Graph path', () => {
     expect(plan.args[scriptIndex + 1]).toBe('run-many');
     expect(plan.args).toContain('-c');
     expect(plan.args[plan.args.indexOf('-c') + 1]).toBe('local');
-    // Task sequence dẫn xuất từ khai báo Nx — 7 task (8 bước legacy gộp
-    // read-outputs+update-env thành 1 task local-env).
+    // Task sequence dẫn xuất từ khai báo Nx — 11 task sau wave 2 (#264):
+    // 8 bước legacy (gộp read-outputs+update-env thành 1 task local-env) +
+    // 4 unit wave-2, các unit đó được Kahn xen ngay khi dependency của chính
+    // nó xong; smoke vẫn là node lá CUỐI.
     expect(plan.taskSequence).toEqual([
       'platform-deploy:local-up',
       'platform-deploy:local-env',
       'home-deploy:local-up',
+      'pact-broker-api-deploy:local-up',
+      'push-notification-deploy:local-up',
       'backoffice-deploy:local-up',
+      'pact-broker-app-deploy:local-up',
       'account-deploy:local-up',
       'auth-deploy:local-up',
+      'transactional-mail-deploy:local-up',
       'platform-deploy:local-smoke',
     ]);
   });

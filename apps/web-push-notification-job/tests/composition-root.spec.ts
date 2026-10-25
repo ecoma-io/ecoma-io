@@ -15,12 +15,8 @@
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import defaultWorker, {
-  DEFAULT_RECONCILE_PRINCIPAL,
-  handleFetch,
-  handleQueueBatch,
-  queue,
-} from '../src/main';
+import defaultWorker, { handleFetch, handleQueueBatch, queue } from '../src/main';
+import { RUNTIME_CALLER_PRINCIPAL } from '@ecoma-io/web-push-notification-job-infrastructure';
 import { createD1Harness, type D1Harness } from './d1-harness';
 import type { RuntimeServiceBinding } from '@ecoma-io/web-push-notification-job-infrastructure';
 import { outcomeAck, releaseAck } from '@ecoma-io/push-notification-contracts';
@@ -282,7 +278,7 @@ describe('handleFetch route boundary', () => {
 describe('handleReconcileRequest', () => {
   const authorized = (): HeadersInit => ({
     authorization: SECRET,
-    'x-ecoma-principal': DEFAULT_RECONCILE_PRINCIPAL,
+    'x-ecoma-principal': RUNTIME_CALLER_PRINCIPAL,
   });
 
   it('runs a sweep and returns a JSON report for an authorized caller', async () => {
@@ -310,10 +306,7 @@ describe('handleReconcileRequest', () => {
 
   it.each([
     ['no headers', {}],
-    [
-      'a wrong secret',
-      { authorization: 'wrong', 'x-ecoma-principal': DEFAULT_RECONCILE_PRINCIPAL },
-    ],
+    ['a wrong secret', { authorization: 'wrong', 'x-ecoma-principal': RUNTIME_CALLER_PRINCIPAL }],
     ['a wrong principal', { authorization: SECRET, 'x-ecoma-principal': 'svc.khác' }],
     ['only a secret', { authorization: SECRET }],
   ])('answers 401 for %s, with one identical body', async (_name, headers) => {
@@ -328,7 +321,7 @@ describe('handleReconcileRequest', () => {
 
   // Fail-closed: thiếu secret là lỗi cấu hình, không phải "không cần xác thực".
   it.each([
-    ['the shared secret', { 'x-ecoma-principal': DEFAULT_RECONCILE_PRINCIPAL }],
+    ['the shared secret', { 'x-ecoma-principal': RUNTIME_CALLER_PRINCIPAL }],
     ['the expected principal', { authorization: SECRET }],
   ])('fails closed when %s is missing from the environment', async (_name, headers) => {
     const env = baseEnv();
@@ -540,7 +533,7 @@ describe('job reconciliation on real D1', () => {
       env,
       new Request('https://worker.invalid/internal/reconcile/jobs', {
         method: 'POST',
-        headers: { authorization: SECRET, 'x-ecoma-principal': DEFAULT_RECONCILE_PRINCIPAL },
+        headers: { authorization: SECRET, 'x-ecoma-principal': RUNTIME_CALLER_PRINCIPAL },
       }),
     );
 
@@ -567,7 +560,7 @@ describe('job reconciliation on real D1', () => {
       env,
       new Request('https://worker.invalid/internal/reconcile/jobs', {
         method: 'POST',
-        headers: { authorization: SECRET, 'x-ecoma-principal': DEFAULT_RECONCILE_PRINCIPAL },
+        headers: { authorization: SECRET, 'x-ecoma-principal': RUNTIME_CALLER_PRINCIPAL },
       }),
     );
 
@@ -589,7 +582,7 @@ describe('job reconciliation on real D1', () => {
       env,
       new Request('https://worker.invalid/internal/reconcile/jobs', {
         method: 'POST',
-        headers: { authorization: SECRET, 'x-ecoma-principal': DEFAULT_RECONCILE_PRINCIPAL },
+        headers: { authorization: SECRET, 'x-ecoma-principal': RUNTIME_CALLER_PRINCIPAL },
       }),
     );
 
@@ -678,7 +671,7 @@ function baseEnv(): Record<string, unknown> {
     QUEUE: { send: async () => ({ id: 'msg_unused' }) },
     PUSH_NOTIFICATION_SERVICE: controlPlane.binding,
     RUNTIME_API_SHARED_SECRET: SECRET,
-    RUNTIME_API_EXPECTED_PRINCIPAL: DEFAULT_RECONCILE_PRINCIPAL,
+    RUNTIME_API_EXPECTED_PRINCIPAL: RUNTIME_CALLER_PRINCIPAL,
     LOG_LEVEL: 'error',
     ENVIRONMENT: 'test',
   };

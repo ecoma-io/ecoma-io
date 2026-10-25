@@ -48,13 +48,28 @@ export interface LocalLaneTask {
   target: LocalLaneTarget;
 }
 
-/** Project deploy thuộc chuỗi local — thứ tự khai là thứ tự hiển thị mặc định. */
+/**
+ * Project deploy thuộc chuỗi local — thứ tự khai là thứ tự hiển thị mặc định.
+ *
+ * Wave 2 (#264): năm project cũ (spine identity platform → home → backoffice →
+ * account → auth) + bốn unit mới — `pact-broker-api-deploy` và
+ * `push-notification-deploy` phụ thuộc platform (network + StackReference),
+ * `pact-broker-app-deploy` phụ thuộc pact-api (api token + alias DNS),
+ * `transactional-mail-deploy` phụ thuộc account (secret HMAC cross-stack).
+ * `transactional-mailer-job-deploy` và `web-push-notification-job-deploy` KHÔNG
+ * thuộc lane: không có target `local-up` — runtime của chúng là worker thứ hai
+ * bên trong container WIC của unit tương ứng.
+ */
 export const LOCAL_LANE_PROJECTS = [
   'platform-deploy',
   'home-deploy',
   'backoffice-deploy',
   'account-deploy',
   'auth-deploy',
+  'pact-broker-api-deploy',
+  'pact-broker-app-deploy',
+  'transactional-mail-deploy',
+  'push-notification-deploy',
 ] as const;
 export type LocalLaneProject = (typeof LOCAL_LANE_PROJECTS)[number];
 
@@ -85,7 +100,7 @@ interface JsonPackageWithNx {
 function readPackageNx(projectRoot: string): JsonPackageWithNx {
   const path = join(ROOT_DIR, projectRoot, 'package.json');
   if (!existsSync(path)) {
-    throw new LocalLaneGraphError(`đọc graph local lane: không tìm thấy ${path}`);
+    throw new LocalLaneGraphError(`read local lane graph: file not found ${path}`);
   }
   return JSON.parse(readFileSync(path, 'utf8')) as JsonPackageWithNx;
 }
@@ -103,7 +118,7 @@ function normalizeDependsOnEntry(entry: NonNullable<JsonTargetSpec['dependsOn']>
   }
   const target = entry.target ?? '';
   if (target.length === 0) {
-    throw new LocalLaneGraphError(`dependsOn entry thiếu target: ${JSON.stringify(entry)}`);
+    throw new LocalLaneGraphError(`dependsOn entry missing target: ${JSON.stringify(entry)}`);
   }
   return { project: entry.projects?.[0], target, self: false };
 }
@@ -133,8 +148,8 @@ export function classifyLocalUpDependsOnEntry(
   const normalized = normalizeDependsOnEntry(entry);
   if (normalized.project === undefined) {
     throw new LocalLaneGraphError(
-      `${project}:local-up — dependsOn phải chỉ định {"projects": [...]} tường minh ` +
-        `(không dùng '^' hay implicit): ${JSON.stringify(entry)}`,
+      `${project}:local-up — dependsOn must specify {"projects": [...]} explicitly ` +
+        `(no '^' or implicit entries): ${JSON.stringify(entry)}`,
     );
   }
   if (normalized.target === LOCAL_UP_PREREQUISITE_TARGET) {
@@ -142,14 +157,14 @@ export function classifyLocalUpDependsOnEntry(
   }
   if (!(LOCAL_LANE_PROJECTS as readonly string[]).includes(normalized.project)) {
     throw new LocalLaneGraphError(
-      `${project}:local-up phụ thuộc ${normalized.project} ngoài chuỗi local lane`,
+      `${project}:local-up depends on ${normalized.project} which is outside the local lane`,
     );
   }
   if (normalized.target !== 'local-up' && normalized.target !== 'local-env') {
     throw new LocalLaneGraphError(
-      `${project}:local-up phụ thuộc target lạ "${normalized.target}" — ` +
-        'chuỗi spine chỉ gồm target local-up (và local-env của platform cho dữ liệu .env; ' +
-        'target "build" là build prerequisite duy nhất được phép trỏ ngoài lane)',
+      `${project}:local-up depends on unexpected target "${normalized.target}" — ` +
+        'the spine only allows local-up targets (plus platform local-env for .env data; ' +
+        'target "build" is the only build prerequisite allowed to point outside the lane)',
     );
   }
   if (normalized.target === 'local-up') {
@@ -173,7 +188,7 @@ export function readProjectLaneTargets(project: string): Record<LocalLaneTarget,
       // không phải lỗi. Chỉ `local-up` là bắt buộc trên MỌI project của chuỗi.
       if (target !== 'local-up') continue;
       throw new LocalLaneGraphError(
-        `${project} thiếu target ${target} — khai báo Nx là nguồn sự thật thứ tự lane local`,
+        `${project} is missing target ${target} — the Nx declaration is the source of truth for local lane order`,
       );
     }
     result[target] = spec;
@@ -238,7 +253,7 @@ export function localUpProjectSequence(): LocalLaneProject[] {
   }
   if (sequence.length !== LOCAL_LANE_PROJECTS.length) {
     const stuck = LOCAL_LANE_PROJECTS.filter((p) => !sequence.includes(p));
-    throw new LocalLaneGraphError(`chu kỳ trong đồ thị local-up: ${stuck.join(', ')}`);
+    throw new LocalLaneGraphError(`cycle in the local-up graph: ${stuck.join(', ')}`);
   }
   return sequence;
 }

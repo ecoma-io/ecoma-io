@@ -26,7 +26,7 @@
         }
       },
       "local-up": {
-        "//": "Local lane — duy nhất một lane (`-c local`). KHÔNG dependsOn unit nào: unit này CHƯA nằm trong LOCAL_LANE_PROJECTS (graph reader fail-closed với edge trỏ ra ngoài chuỗi — local-deploy-graph.ts), và membership wiring là PR riêng. Stack tự đầy đủ: provision + migrate + seed db-pact-broker rồi WIC container.",
+        "//": "Local lane — duy nhất một lane (`-c local`). Wave 2 (#264): unit nằm trong LOCAL_LANE_PROJECTS. dependsOn platform:local-up — stack đọc network + postgres qua StackReference platform, platform chưa up là StackReference rỗng. Edge `build` là build prerequisite NGOÀI lane (validator chấp nhận target `build`, không tham gia spine topo): WIC container chạy `wrangler dev` từ bundle `dist/` mount lúc container start — bundle chưa build là wrangler fail entry-point và container restart loop (#247).",
         "executor": "nx:run-commands",
         "options": {
           "cwd": "deploys/pact-broker-api-deploy",
@@ -34,7 +34,27 @@
         },
         "configurations": {
           "local": {}
-        }
+        },
+        "dependsOn": [
+          {
+            "projects": [
+              "platform-deploy"
+            ],
+            "target": "local-up"
+          },
+          {
+            "projects": [
+              "@ecoma-io/pact-broker-api"
+            ],
+            "target": "build"
+          },
+          {
+            "projects": [
+              "platform-deploy"
+            ],
+            "target": "local-env"
+          }
+        ]
       }
     }
   }

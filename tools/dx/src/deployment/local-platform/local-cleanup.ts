@@ -67,6 +67,8 @@ export const CLEANUP_KINDS: readonly DeployResourceKind[] = [
   'pact-api-wic-state-init',
   'mail-wic',
   'mail-wic-state-init',
+  'push-wic',
+  'push-wic-state-init',
   'network',
   'home-image',
   'backoffice-image',
@@ -75,10 +77,12 @@ export const CLEANUP_KINDS: readonly DeployResourceKind[] = [
   'pact-app-image',
   'pact-api-wic-image',
   'mail-wic-image',
+  'push-wic-image',
   'postgres-volume',
   'auth-wic-state',
   'pact-api-wic-state',
   'mail-wic-state',
+  'push-wic-state',
 ];
 
 export interface CleanupFilter {
@@ -349,7 +353,8 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
         : kind === POSTGRES_VOLUME_KIND ||
             kind === 'auth-wic-state' ||
             kind === 'pact-api-wic-state' ||
-            kind === 'mail-wic-state'
+            kind === 'mail-wic-state' ||
+            kind === 'push-wic-state'
           ? 'volume'
           : kind === 'home-image' ||
               kind === 'backoffice-image' ||
@@ -357,7 +362,8 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
               kind === 'pact-app-image' ||
               kind === 'auth-wic-image' ||
               kind === 'pact-api-wic-image' ||
-              kind === 'mail-wic-image'
+              kind === 'mail-wic-image' ||
+              kind === 'push-wic-image'
             ? 'image'
             : 'container';
 
@@ -400,7 +406,8 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
                 line.length > 'ecoma-'.length + NAMESPACE_LENGTH + '-auth-wic:local'.length &&
                 (line.endsWith('-auth-wic:local') ||
                   line.endsWith('-pact-api-wic:local') ||
-                  line.endsWith('-mail-wic:local'))))
+                  line.endsWith('-mail-wic:local') ||
+                  line.endsWith('-push-wic:local'))))
           );
         }
         return line.startsWith('ecoma-') && line.endsWith(`-${kind}`);
