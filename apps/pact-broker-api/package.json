@@ -97,7 +97,7 @@
         ],
         "options": {
           "cwd": "apps/pact-broker-api",
-          "command": "npx vitest run tests/integration"
+          "command": "npx vitest run integration-specs"
         }
       }
     }

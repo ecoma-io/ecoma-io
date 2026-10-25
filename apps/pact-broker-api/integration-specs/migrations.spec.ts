@@ -8,7 +8,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { applyAllMigrations } from '../../db/apply.mts';
+import { applyAllMigrations } from '../db/apply.mts';
 import {
   type PactBrokerDatabase,
   PACT_BROKER_DATABASE,
