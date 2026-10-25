@@ -21,7 +21,6 @@
 import {
   RuntimeAuthResolutionError,
   RuntimeContractError,
-  WEB_PUSH_JOB_PRINCIPAL,
   authenticateReconciliationCaller,
   consumeQueueBatch,
   readRequestHeader,
@@ -282,7 +281,6 @@ function resolveExpectedPrincipal(env: Readonly<Record<string, unknown>>): strin
 }
 
 /** Principal mà operator/trigger dùng — chỉ là **giá trị mặc định** khi env không đặt. */
-export const DEFAULT_RECONCILE_PRINCIPAL = WEB_PUSH_JOB_PRINCIPAL;
 
 function resolveEnvironment(env: Readonly<Record<string, unknown>>): string {
   const value = env['ENVIRONMENT'];

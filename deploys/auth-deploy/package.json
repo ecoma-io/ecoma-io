@@ -53,6 +53,12 @@
               "account-bridge"
             ],
             "target": "build"
+          },
+          {
+            "projects": [
+              "platform-deploy"
+            ],
+            "target": "local-env"
           }
         ]
       }

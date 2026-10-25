@@ -118,7 +118,7 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
   return pulumi.output(platform.getOutput(key)).apply((raw) => {
     if (raw === undefined || raw === null) {
       throw new Error(
-        `platformStackRef không export "${key}". Chạy \`pnpm dx local-deploy\` (apply platform) trước.`,
+        `platformStackRef does not export "${key}". Run \`pnpm dx local-deploy\` (apply platform) first.`,
       );
     }
     return raw as PlatformOutputs[K];
@@ -181,7 +181,7 @@ const svcPaymentCredential = derivePlaceholderCredential('svc-payment');
 const verifiedNamespace = pulumi.output(platformNamespace).apply((upstreamNs) => {
   if (upstreamNs !== ns) {
     throw new Error(
-      `platformStackRef trỏ sang stack của namespace khác: platform export "${upstreamNs}" còn worktree này là "${ns}".`,
+      `platformStackRef points to a stack of a different namespace: platform exports "${upstreamNs}" but this worktree is "${ns}".`,
     );
   }
   return ns;
@@ -209,6 +209,7 @@ const wicStateInit = new docker.Container(
     name: dockerResourceName(ns, 'mail-wic-state-init'),
     image: NODE_IMAGE,
     rm: true,
+    mustRun: false,
     mounts: [
       {
         source: wicStateVolume.name,
@@ -250,6 +251,7 @@ docker run --rm \\
   -v ${shellQuote(worktreeRoot)}:/repo:ro \\
   -v ${shellQuote(worktreeRoot)}/node_modules:/repo/node_modules \\
   -v ${wicStateVolume.name}:/state \\
+  -v /etc/ssl/certs:/etc/ssl/certs:ro \\
   --entrypoint sh \\
   ${NODE_IMAGE} \\
   -c ${shellQuote(migrateInnerScript)}

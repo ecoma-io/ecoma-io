@@ -26,7 +26,7 @@
         }
       },
       "local-up": {
-        "//": "Local lane — duy nhất một lane (`-c local`). Node này CHƯA nằm trong `LOCAL_LANE_PROJECTS` (ghim 5 unit, spec test chặn cứng): `nx run transactional-mail-deploy:local-up` chạy được khi gọi tường minh nhưng orchestration `pnpm dx local-deploy` chưa gọi tới nó. KHÔNG dependsOn account:local-up ở tầng Nx — contract thứ tự (account persist secret trước) được orchestration thực thi qua cross-stack read (`pulumi config get` fail-closed), không phải cạnh graph, để project ngoài lane không ép graph của lane đổi.",
+        "//": "Local lane — duy nhất một lane (`-c local`). Wave 2 (#264): unit nằm trong LOCAL_LANE_PROJECTS. dependsOn account:local-up — stack đọc `namespace:mailInternalAuthSecret` từ stack account qua cross-stack read (trên worktree mới, đọc trước khi account up là fail-closed vì stack config account chưa có giá trị; membership vào lane biến contract thứ tự thành cạnh graph thật). Hai edge `build` là build prerequisite NGOÀI lane: WIC container chạy `wrangler dev` từ bundle `dist/` của HAI app (control plane + consumer) mount lúc container start — thiếu edge là restart loop (#247).",
         "executor": "nx:run-commands",
         "options": {
           "cwd": "deploys/transactional-mail-deploy",
@@ -34,7 +34,33 @@
         },
         "configurations": {
           "local": {}
-        }
+        },
+        "dependsOn": [
+          {
+            "projects": [
+              "account-deploy"
+            ],
+            "target": "local-up"
+          },
+          {
+            "projects": [
+              "@ecoma-io/transactional-mail"
+            ],
+            "target": "build"
+          },
+          {
+            "projects": [
+              "@ecoma-io/transactional-mailer-job"
+            ],
+            "target": "build"
+          },
+          {
+            "projects": [
+              "platform-deploy"
+            ],
+            "target": "local-env"
+          }
+        ]
       }
     }
   }

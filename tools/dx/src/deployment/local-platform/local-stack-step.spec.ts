@@ -12,6 +12,8 @@ import {
   LocalStackStepUsageError,
   resolveIdentityInternalSecret,
   resolveMailInternalAuthSecret,
+  resolvePactApiMachineToken,
+  verifyLaneHealth,
   type LocalStackStep,
 } from './local-stack-step.js';
 import { exec, ensureStack, pulumiEnv, pulumiRun, resolveContext } from './pulumi-context.js';
@@ -308,8 +310,9 @@ describe('runLocalStackStep env', () => {
 });
 
 describe('runLocalStackStep smoke', () => {
-  it('runs the smoke script with the ROOT_HOST from .env', async () => {
+  it('runs the smoke script with the ROOT_HOST from .env, then the lane health gate', async () => {
     const nodeCalls: Array<[string, string]> = [];
+    const inspectNames: string[] = [];
     const root = tempWorktree();
     process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
     writeFileSync(join(root, '.env'), 'ROOT_HOST=fbi.com:40030\n', 'utf8');
@@ -320,6 +323,10 @@ describe('runLocalStackStep smoke', () => {
         nodeCalls.push([String(args[0]), String(args[1])]);
         return { status: 0, stdout: 'ok\n', stderr: '' } satisfies ExecResult;
       }
+      if (command === 'docker' && args[0] === 'inspect') {
+        inspectNames.push(String(args[3]));
+        return { status: 0, stdout: 'running|healthy\n', stderr: '' } satisfies ExecResult;
+      }
       return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
     });
 
@@ -328,15 +335,22 @@ describe('runLocalStackStep smoke', () => {
     expect(nodeCalls).toHaveLength(1);
     expect(nodeCalls[0][0]).toMatch(/local-smoke\.mjs$/u);
     expect(nodeCalls[0][1]).toBe('fbi.com:40030');
+    // Health gate chạy SAU smoke xanh, đụng đúng BỐN container lane (#264).
+    expect(inspectNames).toHaveLength(4);
   });
 
-  it('smoke script failure → exit 1 (chain fails loudly at the leaf)', async () => {
+  it('smoke script failure → exit 1 without reaching the health gate (chain fails loudly at the leaf)', async () => {
     const root = tempWorktree();
     process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
     writeFileSync(join(root, '.env'), 'ROOT_HOST=fbi.com:40031\n', 'utf8');
     execMock.mockReturnValue({ status: 1, stdout: '', stderr: 'timeout' } satisfies ExecResult);
     const exit = await runLocalStackStep('platform-deploy', 'smoke', { worktreeRoot: root });
     expect(exit).toBe(1);
+    // Chỉ có lệnh node smoke fail — KHÔNG một docker inspect nào chạy sau đó.
+    const inspectCalls = execMock.mock.calls.filter(
+      ([command, args]) => args[0] === 'inspect' && command === 'docker',
+    );
+    expect(inspectCalls).toHaveLength(0);
   });
 });
 
@@ -345,6 +359,7 @@ describe('localStackSecrets — per-stack secret contract', () => {
     rootHost: 'fbi.com:1',
     identityInternalSecret: 'shared',
     mailInternalAuthSecret: 'shared-mail',
+    pactApiMachineToken: 'shared-pact-token',
     signingKeyPem: 'PEM',
   };
 
@@ -393,6 +408,42 @@ describe('localStackSecrets — per-stack secret contract', () => {
     );
   });
 
+  it('pact-broker-app-deploy receives the SAME machine token value pact-broker-api-deploy persists', () => {
+    // Cùng hình cross-stack với mail secret: inputs.pactApiMachineToken là giá
+    // trị resolver đọc lại từ stack api — một giá trị chia hai stack.
+    const pactApp = localStackSecrets('pact-broker-app-deploy', base);
+    expect(localStackSecretsKeys('pact-broker-app-deploy', base)).toEqual(['namespace:apiToken']);
+    expect(pactApp[0]?.[1]).toBe('shared-pact-token');
+  });
+
+  it('push-notification-deploy receives exactly four pair-local secrets with contract shapes', () => {
+    const push = localStackSecrets('push-notification-deploy', base);
+    expect(push.map(([k]) => k)).toEqual([
+      'namespace:runtimeSharedSecret',
+      'namespace:adminToken',
+      'namespace:applicationToken',
+      'namespace:credentialRootKey',
+    ]);
+    // Ba HMAC/token: hình base64url >= 32 ký tự như mọi secret internal khác.
+    for (const key of [
+      'namespace:runtimeSharedSecret',
+      'namespace:adminToken',
+      'namespace:applicationToken',
+    ]) {
+      const value = push.find(([k]) => k === key)?.[1];
+      expect(value).toMatch(/^[A-Za-z0-9_-]+$/u);
+      expect(value?.length).toBeGreaterThanOrEqual(32);
+    }
+    // Root key: base64 của ĐÚNG 32 byte (AES-256) — contract composition root
+    // (`atob` rồi kiểm độ dài 32 byte trước khi dựng cipher).
+    const rootKey = push.find(([k]) => k === 'namespace:credentialRootKey')?.[1];
+    expect(rootKey).toBeDefined();
+    expect(Buffer.from(rootKey ?? '', 'base64').byteLength).toBe(32);
+    // Bốn giá trị sinh ĐỘC LẬP — trùng nhau là hai ngữ cảnh dùng chung secret.
+    const values = push.map(([, v]) => v);
+    expect(new Set(values).size).toBe(values.length);
+  });
+
   it('every secret key is unique per stack (no accidental overwrite inside one stack)', () => {
     for (const project of [
       'account-deploy',
@@ -401,18 +452,11 @@ describe('localStackSecrets — per-stack secret contract', () => {
       'pact-broker-api-deploy',
       'pact-broker-app-deploy',
       'transactional-mail-deploy',
+      'push-notification-deploy',
     ]) {
       const keys = localStackSecretsKeys(project, base);
       expect(new Set(keys).size).toBe(keys.length);
     }
-  });
-
-  it('pact-broker-app-deploy receives exactly the apiToken key (shape only — value wired later)', () => {
-    const keys = localStackSecretsKeys('pact-broker-app-deploy', base);
-    expect(keys).toEqual(['namespace:apiToken']);
-    const value = localStackSecrets('pact-broker-app-deploy', base)[0]?.[1];
-    expect(value).toMatch(/^[A-Za-z0-9_-]+$/u);
-    expect(value?.length).toBeGreaterThanOrEqual(32);
   });
 
   it('pact-broker-api-deploy receives exactly the two role passwords plus the machine token', () => {
@@ -575,6 +619,220 @@ describe('resolveMailInternalAuthSecret — persistence contract (Account<->Mail
     // Khoá hex persist đúng hình loader đòi (64 hex chữ thường).
     expect(mailSets[2]?.[4]?.input).toMatch(/^[0-9a-f]{64}$/u);
     expect(mailSets[3]?.[4]?.input).toMatch(/^[0-9a-f]{64}$/u);
+  });
+});
+
+describe('resolvePactApiMachineToken — persistence contract (pact-api<->pact-app path)', () => {
+  const ctx = resolveContext(tempWorktree());
+  const env = pulumiEnv(ctx, { kind: 'inline', value: 'unit-test-pass' });
+
+  it('pact-broker-api-deploy generates a fresh token (it runs first and persists it)', () => {
+    const a = resolvePactApiMachineToken('pact-broker-api-deploy', ctx, env);
+    const b = resolvePactApiMachineToken('pact-broker-api-deploy', ctx, env);
+    expect(a).toMatch(/^[A-Za-z0-9_-]+$/u);
+    expect(a?.length).toBeGreaterThanOrEqual(32);
+    expect(a).not.toBe(b);
+    // Token sinh ĐỘC LẬP với hai đường secret cross-stack khác.
+    expect(a).not.toBe(resolveIdentityInternalSecret('account-deploy', ctx, env));
+    expect(a).not.toBe(resolveMailInternalAuthSecret('account-deploy', ctx, env));
+  });
+
+  it('non-pact projects get an empty string (no token needed)', () => {
+    expect(resolvePactApiMachineToken('home-deploy', ctx, env)).toBe('');
+    expect(resolvePactApiMachineToken('backoffice-deploy', ctx, env)).toBe('');
+    expect(resolvePactApiMachineToken('platform-deploy', ctx, env)).toBe('');
+    expect(resolvePactApiMachineToken('account-deploy', ctx, env)).toBe('');
+    expect(resolvePactApiMachineToken('auth-deploy', ctx, env)).toBe('');
+    expect(resolvePactApiMachineToken('transactional-mail-deploy', ctx, env)).toBe('');
+    expect(resolvePactApiMachineToken('push-notification-deploy', ctx, env)).toBe('');
+  });
+
+  it('pact-broker-app-deploy reads the persisted token from the pact-broker-api stack', () => {
+    const calls: Array<readonly string[]> = [];
+    execMock.mockImplementation((_command, args) => {
+      if (args[1] === 'get') {
+        calls.push(args);
+        return {
+          status: 0,
+          stdout: 'persisted-pact-machine-token-32-chars!!\n',
+          stderr: '',
+        } satisfies ExecResult;
+      }
+      return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+    });
+    expect(resolvePactApiMachineToken('pact-broker-app-deploy', ctx, env)).toBe(
+      'persisted-pact-machine-token-32-chars!!',
+    );
+    const getCall = calls[0];
+    expect(getCall[2]).toBe('namespace:machineToken');
+    expect(getCall[getCall.indexOf('--stack') + 1]).toContain('pact-broker-api-deploy');
+  });
+
+  it('pact-broker-app-deploy FAILS (undefined) when the api stack has no machine token', () => {
+    execMock.mockImplementation((_command, args) => {
+      if (args[1] === 'get') {
+        return {
+          status: 6,
+          stdout: '',
+          stderr: 'error: no value for the key',
+        } satisfies ExecResult;
+      }
+      return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+    });
+    expect(resolvePactApiMachineToken('pact-broker-app-deploy', ctx, env)).toBeUndefined();
+  });
+
+  it('pact-broker-app-deploy up FAILS CLOSED before touching Pulumi when the token is unreadable', async () => {
+    const root = tempWorktree();
+    process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
+    writeFileSync(join(root, '.env'), 'ROOT_HOST=fbi.com:40016\n', 'utf8');
+    execMock.mockImplementation((_command, args) => {
+      if (args[1] === 'get') {
+        return {
+          status: 6,
+          stdout: '',
+          stderr: "error: no stack named 'organization/pact-broker-api-deploy/local-x' found",
+        } satisfies ExecResult;
+      }
+      return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+    });
+    pulumiRunMock.mockReturnValue(undefined);
+
+    const exit = await runLocalStackStep('pact-broker-app-deploy', 'up', {
+      worktreeRoot: root,
+    });
+    expect(exit).toBe(1);
+    expect(vi.mocked(ensureStack)).not.toHaveBeenCalled();
+    expect(pulumiRunMock).not.toHaveBeenCalled();
+  });
+
+  it('pact-broker-app-deploy up persists the SAME token the api stack holds', async () => {
+    const root = tempWorktree();
+    process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
+    writeFileSync(join(root, '.env'), 'ROOT_HOST=fbi.com:40017\n', 'utf8');
+    execMock.mockImplementation((_command, args) => {
+      if (args[1] === 'get') {
+        return {
+          status: 0,
+          stdout: 'persisted-pact-machine-token-32-chars!!\n',
+          stderr: '',
+        } satisfies ExecResult;
+      }
+      return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+    });
+    pulumiRunMock.mockReturnValue(undefined);
+
+    const exit = await runLocalStackStep('pact-broker-app-deploy', 'up', {
+      worktreeRoot: root,
+    });
+    expect(exit).toBe(0);
+
+    const pactSets = execMock.mock.calls.filter(
+      ([, args]) =>
+        args[1] === 'set' &&
+        (args[args.indexOf('--stack') + 1] ?? '').includes('pact-broker-app-deploy'),
+    );
+    // Duy NHẤT một secret: machine token đọc từ stack api (plaintext của BFF;
+    // api giữ plaintext, DB của api chỉ seed HASH SHA-256).
+    expect(pactSets.map(([, args]) => args[2])).toEqual(['namespace:apiToken']);
+    // CÙNG giá trị với token stack api đã persist — invariant path pact.
+    expect(pactSets[0]?.[4]).toEqual({ input: 'persisted-pact-machine-token-32-chars!!' });
+  });
+});
+
+describe('verifyLaneHealth — wave-2 container health gate', () => {
+  it('all four lane containers healthy → exit 0 (one docker inspect per container)', () => {
+    const ctx = resolveContext(tempWorktree());
+    const inspected: string[] = [];
+    execMock.mockImplementation((_command, args) => {
+      if (args[0] === 'inspect') {
+        inspected.push(args[3]);
+        return { status: 0, stdout: 'running|healthy\n', stderr: '' } satisfies ExecResult;
+      }
+      return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+    });
+    expect(verifyLaneHealth(ctx)).toBe(0);
+    // Đúng BỐN container wave-2: WIC của pact-api/mail/push + BFF pact-app —
+    // thiếu một kind là gate khẳng định ít hơn những gì lane triển khai.
+    expect(inspected).toHaveLength(4);
+    expect(inspected.some((name) => name.endsWith('-pact-api-wic'))).toBe(true);
+    expect(inspected.some((name) => name.endsWith('-pact-app'))).toBe(true);
+    expect(inspected.some((name) => name.endsWith('-mail-wic'))).toBe(true);
+    expect(inspected.some((name) => name.endsWith('-push-wic'))).toBe(true);
+    // Namespace của ctx đi vào TẤT CẢ tên container — không đụng worktree khác.
+    for (const name of inspected) {
+      expect(name).toBe(`ecoma-${ctx.namespace}-${name.split(`ecoma-${ctx.namespace}-`)[1]}`);
+    }
+  });
+
+  it('missing container → exit 1 immediately without retry (terminal state)', () => {
+    const ctx = resolveContext(tempWorktree());
+    let inspectCalls = 0;
+    execMock.mockImplementation((_command, args) => {
+      if (args[0] === 'inspect') {
+        inspectCalls += 1;
+        return { status: 1, stdout: '', stderr: 'no such object' } satisfies ExecResult;
+      }
+      return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+    });
+    expect(verifyLaneHealth(ctx)).toBe(1);
+    // Container vắng là trạng thái cuối — đúng MỘT inspect, không poll budget.
+    expect(inspectCalls).toBe(1);
+  });
+
+  it('not-running container → exit 1 immediately (dead container is not "not ready yet")', () => {
+    const ctx = resolveContext(tempWorktree());
+    let inspectCalls = 0;
+    execMock.mockImplementation((_command, args) => {
+      if (args[0] === 'inspect') {
+        inspectCalls += 1;
+        // Container đầu (pact-api-wic) exited — fail ngay trước khi tới unit sau.
+        return { status: 0, stdout: 'exited|healthy\n', stderr: '' } satisfies ExecResult;
+      }
+      return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+    });
+    expect(verifyLaneHealth(ctx)).toBe(1);
+    expect(inspectCalls).toBe(1);
+  });
+
+  it('health starting → retries until healthy within budget → exit 0', () => {
+    const ctx = resolveContext(tempWorktree());
+    // Hai lượt đầu: CẢ BỐN container đang `starting` (4 inspect mỗi lượt) —
+    // lượt thứ ba tất cả healthy. Poll dừng ngay khi mọi container xanh.
+    let polls = 0;
+    execMock.mockImplementation((_command, args) => {
+      if (args[0] === 'inspect') {
+        polls += 1;
+        const health = polls <= 8 ? 'starting' : 'healthy';
+        return { status: 0, stdout: `running|${health}\n`, stderr: '' } satisfies ExecResult;
+      }
+      if (args[0] === 'sleep') {
+        return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+      }
+      return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+    });
+    expect(verifyLaneHealth(ctx)).toBe(0);
+    expect(polls).toBe(12);
+  });
+
+  it('health unhealthy at budget exhaustion → exit 1 (no infinite poll)', () => {
+    const ctx = resolveContext(tempWorktree());
+    let polls = 0;
+    execMock.mockImplementation((command, args) => {
+      if (command === 'docker' && args[0] === 'inspect') {
+        polls += 1;
+        return { status: 0, stdout: 'running|unhealthy\n', stderr: '' } satisfies ExecResult;
+      }
+      if (command === 'sleep') {
+        return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+      }
+      return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+    });
+    // Budget/poll nhỏ qua seam — không đợi 90s: tính chất được khẳng định là
+    // "unhealthy kéo dài chốt FAIL khi hết budget, KHÔNG poll vô hạn".
+    const exit = verifyLaneHealth(ctx, { budgetMs: 150, pollMs: 50 });
+    expect(exit).toBe(1);
+    expect(polls).toBeGreaterThan(1);
   });
 });
 

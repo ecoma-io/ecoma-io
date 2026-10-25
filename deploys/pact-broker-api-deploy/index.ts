@@ -127,7 +127,7 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
   return pulumi.output(platform.getOutput(key)).apply((raw) => {
     if (raw === undefined || raw === null) {
       throw new Error(
-        `platformStackRef không export "${key}". Chạy \`pnpm dx local-deploy\` (apply platform) trước.`,
+        `platformStackRef does not export "${key}". Run \`pnpm dx local-deploy\` (apply platform) first.`,
       );
     }
     return raw as PlatformOutputs[K];
@@ -153,7 +153,7 @@ const machineToken = conf.require('machineToken');
 const verifiedNamespace = pulumi.output(platformNamespace).apply((upstreamNs) => {
   if (upstreamNs !== ns) {
     throw new Error(
-      `platformStackRef trỏ sang stack của namespace khác: platform export "${upstreamNs}" còn worktree này là "${ns}".`,
+      `platformStackRef points to a stack of a different namespace: platform exports "${upstreamNs}" but this worktree is "${ns}".`,
     );
   }
   return ns;
@@ -364,6 +364,7 @@ const wicStateInit = new docker.Container(
     image: NODE_IMAGE,
     // `rm` sau khi thoát — container init một-shot không nằm lại `docker ps -a`.
     rm: true,
+    mustRun: false,
     mounts: [
       {
         source: wicStateVolume.name,

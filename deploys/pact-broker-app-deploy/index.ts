@@ -48,14 +48,14 @@ const PACT_APP_INTERNAL_PORT = 3000;
 /**
  * Cổng nội bộ của container `pact-broker-api` mà BFF gọi qua HTTP.
  *
- * ⚠️ TODO(wiring PR): giá trị `8080` là PLACEHOLDER — port thật do unit
- * `pact-broker-api-deploy` (song song) quyết định, và wiring PR sẽ đồng bộ
- * hằng số này với `pact-broker-api-deploy`. Alias `ecoma-pact-api` ở dưới cũng
- * phải khớp alias mà `pact-broker-api-deploy` đặt cho container của nó.
+ * Cùng giá trị với `PACT_API_INTERNAL_PORT` của unit `pact-broker-api-deploy`
+ * (healthcheck của nó nghe đúng port này); alias `PACT_API_ALIAS` khớp alias
+ * mà `pact-broker-api-deploy` đặt cho container của nó. Đổi một bên là đổi cả
+ * hai — hai hằng số này là contract một chặng fetch server-side.
  */
-const PACT_API_INTERNAL_PORT = 8080;
+const PACT_API_INTERNAL_PORT = 4204;
 
-/** Alias DNS của container pact-broker-api trong network nội bộ — xem TODO phía trên. */
+/** Alias DNS của container pact-broker-api trong network nội bộ — xem contract phía trên. */
 const PACT_API_ALIAS = 'ecoma-pact-api';
 
 /**
@@ -94,10 +94,10 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
   return pulumi.output(platform.getOutput(key)).apply((raw) => {
     if (raw === undefined || raw === null) {
       throw new Error(
-        `platformStackRef không export "${key}". Nguyên nhân thường gặp nhất: ` +
-          `stack platform chưa từng \`up\` thành công (outputs rỗng) hoặc đã bị ` +
-          `destroy — chạy \`pnpm dx local-deploy\` (apply platform) trước. Không ` +
-          `deploy pact-broker-app với cấu hình rỗng.`,
+        `platformStackRef does not export "${key}". Most common cause: the ` +
+          `platform stack never completed \`up\` (empty outputs) or was ` +
+          `destroyed — run \`pnpm dx local-deploy\` (apply platform) first. ` +
+          `Refusing to deploy pact-broker-app with an empty configuration.`,
       );
     }
     return raw as PlatformOutputs[K];
@@ -121,9 +121,9 @@ const apiToken = pulumi.secret(conf.require('apiToken'));
 const verifiedNamespace = pulumi.output(platformNamespace).apply((upstreamNs) => {
   if (upstreamNs !== ns) {
     throw new Error(
-      `platformStackRef trỏ sang stack của namespace khác: ` +
-        `platform export "${upstreamNs}" còn worktree này là "${ns}". ` +
-        `Hai stack phải cùng worktree — nếu không, pact-broker-app sẽ join nhầm network.`,
+      `platformStackRef points to a stack of a different namespace: ` +
+        `platform exports "${upstreamNs}" but this worktree is "${ns}". ` +
+        `Both stacks must belong to the same worktree — otherwise pact-broker-app joins the wrong network.`,
     );
   }
   return ns;
@@ -165,7 +165,7 @@ const pactApp = new docker.Container(dockerResourceName(ns, 'pact-app'), {
   // `envs` (không phải `environment`): cặp `KEY=VALUE` dạng mảng chuỗi — shape
   // của `docker run -e`.
   //
-  // Broker config: base URL là placeholder port (TODO(wiring PR) phía trên) —
+  // Broker config: base URL trỏ alias nội bộ với port contract (phía trên) —
   // sai port chỉ làm `/api/broker/**` trả 502, còn `/health` vẫn xanh vì
   // healthcheck cố ý không phụ thuộc API. Token bọc `pulumi.secret` ở trên nên
   // interpolate giữ redact.

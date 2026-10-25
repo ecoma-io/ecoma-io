@@ -88,12 +88,55 @@ describe('local lane Nx declarations (source of truth)', () => {
     expect(dependsOnNames(authDeps)).toContain('account-deploy:local-up');
   });
 
-  it('platform local-smoke depends on auth local-up (smoke runs after the whole chain)', () => {
+  it('wave-2 spine edges: pact-app→pact-api, pact-api→platform, mail→account, push→platform', () => {
+    // Bốn unit wave-2 diễn đạt thứ tự chạy NGAY TẠI ĐÂY (không phải ở
+    // orchestration): app đọc machineToken từ stack api qua cross-stack read
+    // (api phải up trước); api cần network + StackReference platform; mail đọc
+    // mailInternalAuthSecret từ stack account; push cần network platform.
+    const pactApiDeps =
+      readProjectLaneTargets('pact-broker-api-deploy')['local-up'].dependsOn ?? [];
+    const pactAppDeps =
+      readProjectLaneTargets('pact-broker-app-deploy')['local-up'].dependsOn ?? [];
+    const mailDeps =
+      readProjectLaneTargets('transactional-mail-deploy')['local-up'].dependsOn ?? [];
+    const pushDeps = readProjectLaneTargets('push-notification-deploy')['local-up'].dependsOn ?? [];
+    expect(dependsOnNames(pactApiDeps)).toContain('platform-deploy:local-up');
+    expect(dependsOnNames(pactAppDeps)).toContain('pact-broker-api-deploy:local-up');
+    expect(dependsOnNames(mailDeps)).toContain('account-deploy:local-up');
+    expect(dependsOnNames(pushDeps)).toContain('platform-deploy:local-up');
+  });
+
+  it('wave-2 WIC units declare build prerequisites on their app bundles', () => {
+    // WIC chạy `wrangler dev` từ bundle `dist/` mount lúc container start —
+    // cùng lập luận auth (#247): thiếu edge build là restart loop ngay lúc up.
+    // pact-broker-app build BÊN TRONG Docker (image Nitro) nên KHÔNG có edge
+    // build — edge build chỉ trên ba unit WIC.
+    const pactApiDeps =
+      readProjectLaneTargets('pact-broker-api-deploy')['local-up'].dependsOn ?? [];
+    const mailDeps =
+      readProjectLaneTargets('transactional-mail-deploy')['local-up'].dependsOn ?? [];
+    const pushDeps = readProjectLaneTargets('push-notification-deploy')['local-up'].dependsOn ?? [];
+    const pactAppDeps =
+      readProjectLaneTargets('pact-broker-app-deploy')['local-up'].dependsOn ?? [];
+    expect(dependsOnNames(pactApiDeps)).toContain('@ecoma-io/pact-broker-api:build');
+    expect(dependsOnNames(mailDeps)).toContain('@ecoma-io/transactional-mail:build');
+    expect(dependsOnNames(mailDeps)).toContain('@ecoma-io/transactional-mailer-job:build');
+    expect(dependsOnNames(pushDeps)).toContain('@ecoma-io/push-notification:build');
+    expect(dependsOnNames(pushDeps)).toContain('@ecoma-io/web-push-notification-job:build');
+    expect(dependsOnNames(pactAppDeps).some((n) => n.endsWith(':build'))).toBe(false);
+  });
+
+  it('platform local-smoke depends on the chain tail AND every wave-2 leaf (smoke runs after the whole chain)', () => {
     const deps = readProjectLaneTargets('platform-deploy')['local-smoke'].dependsOn ?? [];
     const names = deps.map((d) =>
       typeof d === 'string' ? d : `${(d.projects ?? []).join('|')}:${d.target ?? ''}`,
     );
     expect(names).toContain('auth-deploy:local-up');
+    // Lá của các nhánh wave-2: smoke là node CUỐI của orchestration — thiếu
+    // edge tới một lá là smoke có thể chạy trước unit đó kết thúc.
+    expect(names).toContain('pact-broker-app-deploy:local-up');
+    expect(names).toContain('transactional-mail-deploy:local-up');
+    expect(names).toContain('push-notification-deploy:local-up');
   });
 
   it('platform local-env declares a RAW dependsOn edge on platform local-up (outputs exist only after up)', () => {
@@ -147,32 +190,44 @@ describe('build-prerequisite edges (target "build" outside the lane)', () => {
     // cho developer, đổi chữ là đổi contract lỗi.
     const entry = { projects: ['auth'], target: 'local-up' };
     expect(() => classifyLocalUpDependsOnEntry('auth-deploy', entry)).toThrowError(
-      new LocalLaneGraphError('auth-deploy:local-up phụ thuộc auth ngoài chuỗi local lane'),
+      new LocalLaneGraphError(
+        'auth-deploy:local-up depends on auth which is outside the local lane',
+      ),
     );
   });
 
-  it('an unknown target on an in-lane project is still rejected ("target lạ")', () => {
+  it('an unknown target on an in-lane project is still rejected ("unexpected target")', () => {
     const entry = { projects: ['platform-deploy'], target: 'deploy' };
     expect(() => classifyLocalUpDependsOnEntry('auth-deploy', entry)).toThrowError(
-      /phụ thuộc target lạ "deploy"/u,
+      /depends on unexpected target "deploy"/u,
     );
   });
 
   it('a build edge does NOT enter the spine topo (sequence and destroy order unchanged)', () => {
-    // Bất biến cấu trúc: thêm build prerequisite vào auth-deploy không được đổi
-    // thứ tự spine lẫn destroy order — edge chỉ là ràng buộc thứ tự Nx giữa
-    // task build của app và task up của deploy unit.
+    // Bất biến cấu trúc: build prerequisite KHÔNG tham gia topo — chuỗi dưới
+    // là suy thuần từ spine edge (Kahn FIFO ổn định theo thứ tự khai báo):
+    // các unit wave-2 chỉ phụ thuộc platform/account nên Kahn cho vào sớm ngay
+    // khi dependency của chính nó xong (không đợi cả chuỗi cũ) — hợp lệ topo,
+    // deterministic, và destroy là đảo chính xác.
     expect(localUpProjectSequence()).toEqual([
       'platform-deploy',
       'home-deploy',
+      'pact-broker-api-deploy',
+      'push-notification-deploy',
       'backoffice-deploy',
+      'pact-broker-app-deploy',
       'account-deploy',
       'auth-deploy',
+      'transactional-mail-deploy',
     ]);
     expect(localDestroyStackOrder()).toEqual([
+      'transactional-mail-deploy',
       'auth-deploy',
       'account-deploy',
+      'pact-broker-app-deploy',
       'backoffice-deploy',
+      'push-notification-deploy',
+      'pact-broker-api-deploy',
       'home-deploy',
       'platform-deploy',
     ]);
@@ -184,12 +239,16 @@ describe('localUpProjectSequence — structural invariants', () => {
     const sequence = localUpProjectSequence();
     expect(sequence[0]).toBe('platform-deploy');
     const platformIndex = sequence.indexOf('platform-deploy');
-    const units: Array<'home-deploy' | 'backoffice-deploy' | 'account-deploy' | 'auth-deploy'> = [
+    const units = [
       'home-deploy',
       'backoffice-deploy',
       'account-deploy',
       'auth-deploy',
-    ];
+      'pact-broker-api-deploy',
+      'pact-broker-app-deploy',
+      'transactional-mail-deploy',
+      'push-notification-deploy',
+    ] as const;
     for (const unit of units) {
       expect(sequence.indexOf(unit)).toBeGreaterThan(platformIndex);
     }
@@ -198,6 +257,19 @@ describe('localUpProjectSequence — structural invariants', () => {
   it('account before auth (identity invariant: owner password role + WIC upstream)', () => {
     const sequence = localUpProjectSequence();
     expect(sequence.indexOf('account-deploy')).toBeLessThan(sequence.indexOf('auth-deploy'));
+  });
+
+  it('wave-2 wiring invariants (pact chain, mail after account, push after platform)', () => {
+    const sequence = localUpProjectSequence();
+    // pact-app đọc machineToken từ stack pact-api (cross-stack read) — up sau
+    // pact-api. pact-api cần network/postgres platform — up sau platform.
+    expect(sequence.indexOf('pact-broker-api-deploy')).toBeLessThan(
+      sequence.indexOf('pact-broker-app-deploy'),
+    );
+    // mail đọc mailInternalAuthSecret từ stack account — up sau account.
+    expect(sequence.indexOf('account-deploy')).toBeLessThan(
+      sequence.indexOf('transactional-mail-deploy'),
+    );
   });
 
   it('sequence agrees with an INDEPENDENT topological sort of the declared dependsOn graph', () => {
@@ -218,41 +290,64 @@ describe('localUpProjectSequence — structural invariants', () => {
     }
     const expected = specTopoSequence(declared, [...LOCAL_LANE_PROJECTS]);
     expect(localUpProjectSequence()).toEqual(expected);
-    expect(expected).toHaveLength(5);
+    expect(expected).toHaveLength(9);
   });
 
-  it('covers exactly the five local stacks — destroy must not inherit a silently smaller set', () => {
+  it('covers exactly the nine local stacks — destroy must not inherit a silently smaller set', () => {
     expect([...LOCAL_LANE_PROJECTS]).toEqual([
       'platform-deploy',
       'home-deploy',
       'backoffice-deploy',
       'account-deploy',
       'auth-deploy',
+      'pact-broker-api-deploy',
+      'pact-broker-app-deploy',
+      'transactional-mail-deploy',
+      'push-notification-deploy',
     ]);
   });
 });
 
-describe('localDeployTaskSequence — 8-step parity with DEPLOY_STEPS', () => {
-  it('task sequence is the Nx mirror of the legacy hard-coded order', async () => {
+describe('localDeployTaskSequence — legacy parity and wave-2 extension', () => {
+  it('task sequence EXTENDS the legacy 8-step mirror with the four wave-2 units', async () => {
     // Import muộn để song song hoá rõ hai nguồn: DEPLOY_STEPS (bản hard-coded)
-    // và task sequence (dẫn xuất từ khai báo Nx).
+    // và task sequence (dẫn xuất từ khai báo Nx). Wave 2 (#264) mở rộng lane
+    // thêm 4 unit — chuỗi unit cũ nằm NGAY SAU platform-env và giữ nguyên thứ
+    // tự tương đối; smoke vẫn là node lá ở vị trí cuối.
     const { DEPLOY_STEPS, STEP_TO_TASK } = await import('./local-deploy.js');
     const tasks = localDeployTaskSequence().map((t) => `${t.project}:${t.target}`);
 
-    // Mỗi step legacy ánh xạ sang đúng task, và THỨ TỰ hai danh sách tương đương.
     const mapped = DEPLOY_STEPS.map((step) => STEP_TO_TASK[step]);
     // Hai bước read-outputs + update-env gộp thành MỘT task local-env (outputs
-    // và ghi .env là một biến đổi dữ liệu) — nên mapped có 8 phần tử, tasks có 7.
+    // và ghi .env là một biến đổi dữ liệu). Chuỗi mới 11 phần tử: các unit
+    // wave-2 (chỉ phụ thuộc platform/account) được Kahn cho vào ngay khi
+    // dependency của chính nó xong — xen giữa chuỗi cũ nhưng KHÔNG đổi thứ tự
+    // tương đối của chuỗi cũ; smoke vẫn CUỐI.
     expect(mapped).toHaveLength(8);
-    expect(tasks).toHaveLength(7);
-    expect(mapped[0]).toBe(tasks[0]); // platform-up == platform-deploy:local-up
-    expect(mapped[1]).toBe(tasks[1]); // read-outputs == platform-deploy:local-env
-    expect(mapped[2]).toBe(tasks[1]); // update-env == platform-deploy:local-env (gộp)
-    expect(mapped.slice(3, 7)).toEqual(tasks.slice(2, 6)); // 4 unit up, đúng thứ tự
-    expect(mapped[7]).toBe(tasks[6]); // smoke-https == platform-deploy:local-smoke
-    // Bất biến chính nằm trong mapped (chứng minh parity): account trước auth.
-    expect(mapped.indexOf('account-deploy:local-up')).toBeLessThan(
-      mapped.indexOf('auth-deploy:local-up'),
+    expect(tasks).toHaveLength(11);
+    expect(tasks[0]).toBe(mapped[0]); // platform-up
+    expect(tasks[1]).toBe(mapped[1]); // local-env (read-outputs + update-env gộp)
+    const legacyUnits = mapped.slice(3, 7); // home → backoffice → account → auth
+    // Chuỗi cũ giữ nguyên thứ tự tương đối trong chuỗi mới (subsequence).
+    let cursor = 2;
+    for (const legacyTask of legacyUnits) {
+      const found = tasks.indexOf(legacyTask, cursor);
+      expect(found).toBeGreaterThan(cursor - 1);
+      cursor = found + 1;
+    }
+    // Bốn unit wave-2 đủ mặt trong chuỗi, sau platform-env.
+    for (const wave2 of [
+      'pact-broker-api-deploy:local-up',
+      'pact-broker-app-deploy:local-up',
+      'transactional-mail-deploy:local-up',
+      'push-notification-deploy:local-up',
+    ]) {
+      expect(tasks).toContain(wave2);
+    }
+    expect(tasks[10]).toBe('platform-deploy:local-smoke'); // smoke vẫn CUỐI
+    // Bất biến chính vẫn được chứng minh trên chuỗi mới: account trước auth.
+    expect(tasks.indexOf('account-deploy:local-up')).toBeLessThan(
+      tasks.indexOf('auth-deploy:local-up'),
     );
   });
 
@@ -277,11 +372,15 @@ describe('localDeployTaskSequence — 8-step parity with DEPLOY_STEPS', () => {
 });
 
 describe('localDestroyStackOrder — reverse dependency order', () => {
-  it('destroys dependents first and platform LAST (auth → account → backoffice → home → platform)', () => {
+  it('destroys dependents first and platform LAST (wave-2 units → auth → account → backoffice → home → platform)', () => {
     expect(localDestroyStackOrder()).toEqual([
+      'transactional-mail-deploy',
       'auth-deploy',
       'account-deploy',
+      'pact-broker-app-deploy',
       'backoffice-deploy',
+      'push-notification-deploy',
+      'pact-broker-api-deploy',
       'home-deploy',
       'platform-deploy',
     ]);
@@ -331,12 +430,14 @@ describe('readProjectLaneTargets — fail-closed on broken declarations', () => 
   it('throws LocalLaneGraphError when a lane target is missing', () => {
     // Project ngoài danh sách lane không có target local → module phải ném lỗi
     // tường minh (không trả về spec rỗng cho caller "đoán" tiếp). Fixture phải
-    // là project KHÔNG khai `local-up` — kiểm `deploys/*/package.json` trước
-    // khi đổi; #239 đã thêm `local-up` cho `pact-broker-api-deploy`, nên
-    // fixture cũ đó không còn là "thiếu target" nữa.
-    expect(() => readProjectLaneTargets('push-notification-deploy')).toThrowError(
+    // là project KHÔNG khai `local-up`: wave 2 (#264) đã đưa
+    // `push-notification-deploy` vào lane (có `local-up`), nên fixture chuyển
+    // sang `transactional-mailer-job-deploy` — deploy project ngoài lane không
+    // có target `local-up` (runtime của nó là worker thứ hai trong WIC của
+    // transactional-mail-deploy).
+    expect(() => readProjectLaneTargets('transactional-mailer-job-deploy')).toThrowError(
       new LocalLaneGraphError(
-        'push-notification-deploy thiếu target local-up — khai báo Nx là nguồn sự thật thứ tự lane local',
+        'transactional-mailer-job-deploy is missing target local-up — the Nx declaration is the source of truth for local lane order',
       ),
     );
   });

@@ -26,7 +26,7 @@
         }
       },
       "local-up": {
-        "//": "Local lane — duy nhất một lane (`-c local`). CHƯA có `dependsOn` nào: unit này chưa thuộc `LOCAL_LANE_PROJECTS` (membership + thứ tự trong chuỗi local là PR wiring riêng — cùng PR nối giá trị thật cho `NITRO_PACT_BROKER_API_BASE_URL`/port và `namespace:apiToken`). Chạy tay: `nx run pact-broker-app-deploy:local-up`.",
+        "//": "Local lane — duy nhất một lane (`-c local`). Wave 2 (#264): dependsOn pact-broker-api-deploy:local-up — app đọc `namespace:machineToken` từ stack api qua cross-stack read (api phải up trước và persist token), và container app gọi api qua alias DNS `ecoma-pact-api` trong platform network. KHÔNG edge `build`: image Nitro build BÊN TRONG Docker từ context repo (không đọc `dist/` của host).",
         "executor": "nx:run-commands",
         "options": {
           "cwd": "deploys/pact-broker-app-deploy",
@@ -34,7 +34,21 @@
         },
         "configurations": {
           "local": {}
-        }
+        },
+        "dependsOn": [
+          {
+            "projects": [
+              "pact-broker-api-deploy"
+            ],
+            "target": "local-up"
+          },
+          {
+            "projects": [
+              "platform-deploy"
+            ],
+            "target": "local-env"
+          }
+        ]
       }
     }
   }

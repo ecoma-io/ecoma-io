@@ -53,7 +53,7 @@
         ]
       },
       "local-smoke": {
-        "//": "Bước CUỐI của chuỗi local: smoke HTTPS qua Traefik. `dependsOn auth:local-up` — smoke chỉ có nghĩa khi toàn bộ chuỗi (qua chuỗi dependsOn: platform → home → backoffice → account → auth) đã xanh. Là node lá (không ai dependsOn nó), nên orchestrator dùng nó làm điểm hoàn tất.",
+        "//": "Bước CUỐI của chuỗi local: smoke HTTPS qua Traefik. `dependsOn` gồm ĐUÔI chuỗi cũ (auth) và CÁC LÁ của nhánh wave 2 (#264: pact-app, mail, push) — smoke chỉ có nghĩa khi toàn bộ chuỗi đã xanh; thiếu edge tới một lá là Nx có thể chạy smoke trước unit đó kết thúc (thứ tự chạy do dependsOn quyết định, không phải danh sách in ra). Là node lá (không ai dependsOn nó), nên orchestrator dùng nó làm điểm hoàn tất.",
         "executor": "nx:run-commands",
         "options": {
           "cwd": "deploys/platform-deploy",
@@ -66,6 +66,24 @@
           {
             "projects": [
               "auth-deploy"
+            ],
+            "target": "local-up"
+          },
+          {
+            "projects": [
+              "pact-broker-app-deploy"
+            ],
+            "target": "local-up"
+          },
+          {
+            "projects": [
+              "transactional-mail-deploy"
+            ],
+            "target": "local-up"
+          },
+          {
+            "projects": [
+              "push-notification-deploy"
             ],
             "target": "local-up"
           }

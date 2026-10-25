@@ -119,6 +119,21 @@ export function generateHexKey64(): string {
   return randomBytes(32).toString('hex');
 }
 
+/**
+ * Sinh root key AES-256 **32 byte dạng base64** cho lane push-notification
+ * local (Worker Secret `PUSH_CREDENTIAL_ROOT_KEY_K1` của cặp WIC push).
+ *
+ * Hình giá trị là CONTRACT của composition root (`main.ts` của app push):
+ * giá trị được `atob` giải mã rồi kiểm ĐÚNG 32 byte (AES-256) — hình khác làm
+ * cả control plane lẫn consumer chết ngay lúc boot với lỗi độ dài key. Base64
+ * chuẩn (có `+/=`) là hình secret production dùng nên giữ nguyên ở local; giá
+ * trị xoay mỗi lần `up` là vô hại vì D1 `push` trên volume state là ephemeral
+ * theo thiết kế local (không credential nào sống qua hai lần up).
+ */
+export function generateBase64Key32(): string {
+  return randomBytes(32).toString('base64');
+}
+
 /** Kết quả đọc mật khẩu PostgreSQL từ stack config (nguồn sự thật canonical). */
 export type PostgresPasswordLookup =
   | { state: 'found'; password: string }

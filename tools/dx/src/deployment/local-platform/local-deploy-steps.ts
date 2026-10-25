@@ -23,6 +23,7 @@ import { ensureStack, pulumiRun, type LocalDeployContext } from './pulumi-contex
 import { resolvePostgresPassword } from './local-deploy.js';
 
 export {
+  generateBase64Key32,
   generateEs256SigningKeyPem,
   generateHexKey64,
   generateInternalHmacSecret,

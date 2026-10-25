@@ -123,7 +123,15 @@ export type DeployResourceKind =
   /** Volume state wrangler của WIC mail (persist D1 mail/mail-job + dev registry). */
   | 'mail-wic-state'
   /** Container init một-shot chown volume state WIC mail cho uid node. */
-  | 'mail-wic-state-init';
+  | 'mail-wic-state-init'
+  /** WIC container của push-notification-deploy (control plane + consumer). */
+  | 'push-wic'
+  /** Image của WIC push container. */
+  | 'push-wic-image'
+  /** Volume state wrangler của WIC push (persist D1 push/push-job + dev registry). */
+  | 'push-wic-state'
+  /** Container init một-shot chown volume state WIC push cho uid node. */
+  | 'push-wic-state-init';
 
 /**
  * Tên Docker resource hợp lệ và nhất quán cho một namespace.

@@ -24,6 +24,43 @@
           "cwd": "deploys/push-notification-deploy",
           "command": "npx tsx ../../tools/dx provision-gate"
         }
+      },
+      "local-up": {
+        "//": "Local lane — duy nhất một lane (`-c local`). Wave 2 (#264): unit nằm trong LOCAL_LANE_PROJECTS. dependsOn platform:local-up — stack đọc network qua StackReference platform, platform chưa up là StackReference rỗng. Hai edge `build` là build prerequisite NGOÀI lane: WIC container chạy `wrangler dev` từ bundle `dist/` của HAI app (control plane + consumer) mount lúc container start — thiếu edge là restart loop (#247).",
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "deploys/push-notification-deploy",
+          "command": "npx tsx ../../tools/dx local-stack-step --stack push-notification-deploy --step up"
+        },
+        "configurations": {
+          "local": {}
+        },
+        "dependsOn": [
+          {
+            "projects": [
+              "platform-deploy"
+            ],
+            "target": "local-up"
+          },
+          {
+            "projects": [
+              "@ecoma-io/push-notification"
+            ],
+            "target": "build"
+          },
+          {
+            "projects": [
+              "@ecoma-io/web-push-notification-job"
+            ],
+            "target": "build"
+          },
+          {
+            "projects": [
+              "platform-deploy"
+            ],
+            "target": "local-env"
+          }
+        ]
       }
     }
   }
