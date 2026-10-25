@@ -74,7 +74,9 @@ việc phải làm thủ công mỗi lần tích hợp.
 
 `@source` cũng là đường dẫn tương đối tính từ chính file CSS này; số cấp `..` tuỳ vị trí, phải
 kiểm tra lại khi đổi chỗ stylesheet. Đếm sai một cấp là lỗi **im lặng** của Tailwind (không lỗi
-build, chỉ mất utility), nên mỗi app consumer giữ một test ghim số cấp: `apps/backoffice/app/assets/css/styles.spec.ts` (đặt cạnh stylesheet) và `apps/{home,pact-broker-app}/tests/tailwind-source.spec.ts`.
+build, chỉ mất utility), nên mỗi app consumer của library này giữ một test ghim số cấp:
+`apps/backoffice/app/assets/css/styles.spec.ts` (đặt cạnh stylesheet) và
+`apps/pact-broker-app/tests/tailwind-source.spec.ts`.
 
 Về `@source`, đo bằng A/B build thật trên `apps/backoffice` (bỏ từng dòng rồi build lại):
 
@@ -224,8 +226,11 @@ PY
 ```
 
 Đừng grep một class mà app cũng nhắc tới (kể cả trong comment hay assertion): Tailwind quét cả
-những file đó nên phép kiểm sẽ xanh giả. Các app consumer giữ test ghim số cấp của `@source` và
-của `@import`: `apps/backoffice/app/assets/css/styles.spec.ts` và `apps/{home,pact-broker-app}/tests/tailwind-source.spec.ts` (home chỉ ghim `@source` — nó không `@import` app-shell).
+những file đó nên phép kiểm sẽ xanh giả. Các app consumer của library này giữ test ghim số cấp
+của `@source` và của `@import`: `apps/backoffice/app/assets/css/styles.spec.ts` và
+`apps/pact-broker-app/tests/tailwind-source.spec.ts`. (`apps/home` dùng `ui-ecoma-logo`, không
+phải consumer của library này; test `apps/home/tests/tailwind-source.spec.ts` ghim riêng thư mục
+nguồn `libs/ui-ecoma-logo/src`.)
 
 ## Runtime
 

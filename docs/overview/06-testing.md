@@ -36,6 +36,7 @@ Tài liệu này là **nguồn sự thật canonical duy nhất** về testing a
 | `integrations/` | Tương tác giữa các thành phần của app: component với nhau, adapter, runtime, dependency thật (PostgreSQL, D1, Queue)             |
 | `contracts/`    | Verify contract ở biên service. **Không** là nhà thứ hai cho định nghĩa contract — định nghĩa thuộc contract project (`05` §4)   |
 | `databases/`    | Hành vi riêng của database: migration, constraint, index, transaction, data integrity — trong phạm vi database project đó sở hữu |
+| `browser/`      | Browser regression của UI do app đó sở hữu (ví dụ Playwright) — không phải system E2E                                            |
 
 Danh sách trên phân loại theo **mục đích**, không đóng (non-exhaustive): chỉ tạo thư mục khi có test thật cần nó, không dựng
 scaffolding rỗng. Một `tests/fixtures/` hoặc `tests/support/` dùng chung trong app chỉ được phép khi có lý do cụ thể và
