@@ -5,7 +5,9 @@
  * PR database isolation (issue #181): stack này provision `db-auth` + bộ 4 role
  * chuẩn (owner/migrator/runtime/pruner) trên PostgreSQL của platform, chạy
  * migration qua **đường canonical** (`apps/auth/db/apply.mts` — advisory lock
- * `hashtext('db-auth')`, history `auth.schema_migrations`, checksum).
+ * `hashtext('db-auth')`, history `auth.schema_migrations`, checksum), rồi seed
+ * client public `backoffice` cho lane local (issue #194 — seed per-environment
+ * vì redirect URI exact-match phải mang port động của platform).
  *
  * PR Worker runtime (issue #183): dựng WIC container (worker-in-container) —
  * image mỏng ghim `node:24-bookworm-slim` + `ca-certificates` (PF2), chứa
@@ -133,6 +135,7 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
 const networkName = requirePlatformOutput('networkName');
 const platformNamespace = requirePlatformOutput('namespace');
 const rootHostname = requirePlatformOutput('rootHostname');
+const traefikHostPort = requirePlatformOutput('traefikHostPort');
 
 // Mật khẩu ba role của db-auth — do orchestration sinh và truyền qua --config
 // (stdin, không argv). KHÔNG có ownerPassword ở đây: password của `ecoma_owner`
@@ -230,6 +233,97 @@ const migrate = new command.local.Command(
     triggers: [migratorPassword, worktreeRoot],
   },
   { dependsOn: [provision] },
+);
+
+/**
+ * Client ID của client backoffice trên lane local — cùng một giá trị mà
+ * `BACKOFFICE_AUTH_CLIENT_ID` phía backoffice sẽ cấu hình khi luồng BFF được
+ * wire vào local lane. Hằng ở đây (không sinh ngẫu nhiên): client_id là định
+ * danh công khai trong giao thức OAuth, không phải secret, và phải ổn định
+ * qua các lần up để row cũ không bị bỏ lại mồ côi redirect URI.
+ */
+const LOCAL_BACKOFFICE_CLIENT_ID = 'ecoma-backoffice-local';
+
+/**
+ * Redirect URI đăng ký cho client backoffice local: callback BFF là thành phần
+ * path cố định `/api/auth/callback` của chính app backoffice
+ * (`apps/backoffice/server/api/auth/login.get.ts` — `callbackRedirectUri` ghép
+ * header `Host` của request với path này), nên URI đăng ký là
+ * `https://office.<rootHostname>:<traefikHostPort>/api/auth/callback` — đúng
+ * origin Traefik serve (`office.<rootHostname>`, cùng bảng hostname của
+ * `02-identity.md`). So khớp ở `auth` là exact string, và `Host` mà browser
+ * gửi luôn mang port (`fbi.com:<port>` — port là một phần của URL client,
+ * Traefik vẫn match rule `Host(office.fbi.com)` không port) — bỏ port là
+ * exact-match fail ở bước authorize. URI theo output platform là cách duy nhất
+ * khớp exact-match mà không seed dải port đoán trước.
+ */
+const redirectUriLocal = pulumi.interpolate`https://office.${rootHostname}:${traefikHostPort}/api/auth/callback`;
+
+/**
+ * Seed client public `backoffice` cho authorize endpoint sống lại trên local
+ * (issue #194, phần local): `oauth_clients` rỗng là `createProvider` ném lúc
+ * dựng provider — mọi `/authorize` 500 trong khi `/ready` vẫn xanh.
+ *
+ * ⚠️ Vì sao seed ở deploy program mà KHÔNG phải migration `apps/auth/migrations/`:
+ * redirect URI được so **exact string** (`client_redirect_uris`, FR-002), và
+ * origin thật của callback BFF trên local là `https://office.<rootHostname>` với
+ * `<rootHostname>` mang port Docker cấp động lúc create (`buildRootHost` — port
+ * chỉ có SAU khi platform up). Migration là tài sản dùng chung mọi môi trường,
+ * không thể mang một URI theo môi trường — đường đúng là seed per-environment
+ * thuộc deployment, cùng pattern seed machine token của `pact-broker-api-deploy`
+ * (#238). Phần staging/production + audience riêng cho backoffice là việc còn
+ * lại của #194, không thuộc PR này.
+ *
+ * ⚠️ Hình dạng client theo `provider.ts` (`loadStaticClients` chỉ nạp client
+ * `active` + `public` + có ít nhất một redirect URI) và CHECK của migration
+ * `0001` (public ⇒ `client_secret_hash` IS NULL — client public không secret).
+ * `subject_type` mặc định `public` của schema không được ghi đè. PKCE S256,
+ * `token_endpoint_auth_method: 'none'` và `id_token_signed_response_alg:
+ * 'ES256'` do `toProviderClientMetadata` ghim cho MỌI client load từ db —
+ * seed không (và không thể) khai lại ở row.
+ *
+ * Idempotent:
+ * - Client: `ON CONFLICT (client_id) DO UPDATE SET allowed_scopes` — đồng bộ
+ *   lại ceiling scope nếu nó đổi giữa các lần deploy; `DO NOTHING` làm mất
+ *   row trả về của chính row đích, còn `DO UPDATE` luôn trả row như pattern
+ *   CTE của `pact-broker-api-deploy`.
+ * - Redirect URI: `ON CONFLICT DO NOTHING` (PK `(client_id, redirect_uri)`)
+ *   — thêm URI mới khi port đổi; URI của port cũ vẫn còn trong bảng (vô hại,
+ *   origin cũ không còn router nào trỏ về) và `local-destroy --remove-data`
+ *   là đường dọn sạch chính thức.
+ *
+ * Chạy bằng role **migrator** qua `docker exec` trust auth trong container
+ * PostgreSQL (cùng đường với provision script phía trên — platform không
+ * publish host port nên host không kết nối được container bằng TCP).
+ *
+ * Trigger gồm `rootHostname` + `traefikHostPort`: port động đổi là platform
+ * redeploy → URI mới phải được seed; hai giá trị còn lại là hằng compile-time.
+ *
+ * `redirectUriLocal` là Output (StackReference) nên câu SQL dựng bằng
+ * `pulumi.interpolate` và được quote theo đúng hai lớp: `sqlQuote` cho string
+ * literal SQL (qua `.apply`), `shellQuote` cho argument của shell.
+ */
+const seedSql = pulumi.interpolate`INSERT INTO auth.oauth_clients (client_id, client_name, client_type, allowed_scopes)
+VALUES (${sqlQuote(LOCAL_BACKOFFICE_CLIENT_ID)}, 'Backoffice (local)', 'public',
+        ARRAY['openid', 'offline_access']::text[])
+ON CONFLICT (client_id) DO UPDATE SET allowed_scopes = EXCLUDED.allowed_scopes;
+INSERT INTO auth.client_redirect_uris (client_id, redirect_uri)
+VALUES (${sqlQuote(LOCAL_BACKOFFICE_CLIENT_ID)}, ${redirectUriLocal.apply(sqlQuote)})
+ON CONFLICT DO NOTHING;`;
+
+const seedScript = pulumi.interpolate`set -e
+PG=${postgresContainerName}
+docker exec "$PG" psql -U ecoma_auth_migrator -d db-auth -v ON_ERROR_STOP=1 -c ${seedSql.apply(shellQuote)}
+`;
+
+const seed = new command.local.Command(
+  dockerResourceName(ns, 'auth') + '-seed',
+  {
+    create: seedScript,
+    update: seedScript,
+    triggers: [rootHostname, traefikHostPort, worktreeRoot],
+  },
+  { dependsOn: [migrate] },
 );
 
 /**
@@ -395,9 +489,11 @@ const wicBundleHash = pulumi.output(
  * `wic-entrypoint.sh`, plain HTTP trên platform network, TLS do Traefik chấm
  * dứt phía trước (cùng model home/backoffice/account).
  *
- * Thứ tự phụ thuộc: provision → migrate → image → volume → container —
- * container chỉ lên sau khi schema `db-auth` sẵn sàng, để readiness đỏ của
- * cửa sổ chưa-migrate không bị healthcheck giết lặp vô tận.
+ * Thứ tự phụ thuộc: provision → migrate → seed → image → volume → container —
+ * container chỉ lên sau khi schema `db-auth` sẵn sàng VÀ client public đã có
+ * row (provider ném khi `oauth_clients` rỗng — `/ready` qua DB probe vẫn thấy
+ * bảng, nhưng mọi `/authorize` sẽ 500), để readiness đỏ của cửa sổ
+ * chưa-migrate không bị healthcheck giết lặp vô tận.
  *
  * `wicBundleHash` là input của container (không phải của migrate): container
  * phải mang hash của LẦN build hiện hành — bundle vừa build lại thì hash mới
@@ -545,11 +641,12 @@ const wic = new docker.Container(
       startPeriod: '120s',
     },
   },
-  { dependsOn: [migrate, wicImage, wicStateVolume, wicStateInit] },
+  { dependsOn: [seed, wicImage, wicStateVolume, wicStateInit] },
 );
 
 export const provisionCommandName = provision.id;
 export const migrateCommandName = migrate.id;
+export const seedCommandName = seed.id;
 export const imageDigest = wicImage.digest;
 export const containerName = wic.name;
 export const containerId = wic.id;
