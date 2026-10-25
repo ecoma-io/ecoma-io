@@ -20,8 +20,8 @@ import {
   INTERNAL_NONCE_BUFFER_SECONDS,
   INTERNAL_SKEW_SECONDS,
   nonceExpiry,
-} from '../../db/migrate.mts';
-import { makeNonceGuard } from '../../server/middleware/internal-auth';
+} from '../db/migrate.mts';
+import { makeNonceGuard } from '../server/middleware/internal-auth';
 import { type AccountDatabase, startAccountDatabase } from './harness.ts';
 describe('internal_nonces', () => {
   let db: AccountDatabase;
@@ -80,7 +80,7 @@ describe('internal_nonces', () => {
     const { resolve } = await import('node:path');
 
     const source = readFileSync(
-      resolve(import.meta.dirname, '../../../../libs/internal-auth-contracts/src/internal-auth.ts'),
+      resolve(import.meta.dirname, '../../../libs/internal-auth-contracts/src/internal-auth.ts'),
       'utf8',
     );
     const declared = /DEFAULT_SKEW_SECONDS = (\d+)/u.exec(source);
@@ -101,7 +101,7 @@ describe('internal_nonces', () => {
     const { resolve } = await import('node:path');
 
     const middlewareSource = readFileSync(
-      resolve(import.meta.dirname, '../../server/middleware/internal-auth.ts'),
+      resolve(import.meta.dirname, '../server/middleware/internal-auth.ts'),
       'utf8',
     );
     // Middleware import thẳng hằng canonical; không tự khai một giá trị mới.
@@ -109,10 +109,7 @@ describe('internal_nonces', () => {
     expect(middlewareImported).toBe(true);
     expect(/INTERNAL_NONCE_BUFFER_SECONDS = \d+/u.test(middlewareSource)).toBe(false);
 
-    const migrateSource = readFileSync(
-      resolve(import.meta.dirname, '../../db/migrate.mts'),
-      'utf8',
-    );
+    const migrateSource = readFileSync(resolve(import.meta.dirname, '../db/migrate.mts'), 'utf8');
     const declared = /INTERNAL_NONCE_BUFFER_SECONDS = (\d+)/u.exec(migrateSource);
 
     expect(declared).not.toBeNull();

@@ -16,7 +16,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { recordNonce, selectAccountStatus } from '../../server/utils/db';
+import { recordNonce, selectAccountStatus } from '../server/utils/db';
 import { type AccountDatabase, startAccountDatabase } from './harness.ts';
 /** Sub hợp lệ theo định dạng `sub_` + 32 ký tự; giá trị cụ thể không quan trọng. */
 const SUB_ACTIVE = 'sub_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';

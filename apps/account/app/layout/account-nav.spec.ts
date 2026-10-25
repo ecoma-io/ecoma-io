@@ -11,8 +11,8 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { ACCOUNT_NAV_ITEMS, isActiveNavItem } from '../app/layout/account-nav';
-import en from '../app/i18n/locales/en';
+import { ACCOUNT_NAV_ITEMS, isActiveNavItem } from './account-nav';
+import en from '../i18n/locales/en';
 
 const PASSWORD_ROUTE_PATTERN = /password|mat-khau|passwort|mot-mat-khau|dang-nhap-…?mat/iu;
 

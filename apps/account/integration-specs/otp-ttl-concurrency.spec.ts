@@ -14,12 +14,12 @@
 import { createApp, createRouter, toWebHandler, type WebHandler } from 'h3';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import challengeRoute from '../../server/api/auth/challenge.post';
-import verifyRoute from '../../server/api/auth/verify.post';
+import challengeRoute from '../server/api/auth/challenge.post';
+import verifyRoute from '../server/api/auth/verify.post';
 import { ACCOUNT_DATABASE, type AccountDatabase, startAccountDatabase } from './harness.ts';
 import { installRuntimeConfigStub, type AccountTestRuntimeConfig } from './nuxt-globals.ts';
 
-vi.mock('../../server/utils/logger', () => ({
+vi.mock('../server/utils/logger', () => ({
   writeLog: vi.fn<(entry: Record<string, unknown>) => void>(),
 }));
 const OTP_SECRET = 'test-otp-hmac-secret-0123456789abcdef';

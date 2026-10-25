@@ -17,10 +17,10 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import en from '../app/i18n/locales/en';
-import vi from '../app/i18n/locales/vi';
-import zhCN from '../app/i18n/locales/zh-CN';
-import { ACCOUNT_LOCALE_DEFINITIONS, type AccountLocale } from '../app/i18n/locale-registry';
+import en from './en';
+import vi from './vi';
+import zhCN from './zh-CN';
+import { ACCOUNT_LOCALE_DEFINITIONS, type AccountLocale } from '../locale-registry';
 
 /** Cây key phẳng, phân biệt chữ hoa — `nav.x` khác `nav.X`. */
 function flattenKeys(tree: unknown, prefix = ''): Set<string> {

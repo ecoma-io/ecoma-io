@@ -22,8 +22,21 @@
     "src/**/*.test.jsx",
     "src/**/*.spec.jsx",
     "src/**/*.d.ts",
+    "integration-specs/**/*.test.ts",
+    "integration-specs/**/*.spec.ts",
+    "integration-specs/**/*.d.ts",
+    "app/**/*.test.ts",
+    "app/**/*.spec.ts",
+    "app/**/*.test.tsx",
+    "app/**/*.spec.tsx",
+    "app/**/*.test.js",
+    "app/**/*.spec.js",
+    "app/**/*.test.jsx",
+    "app/**/*.spec.jsx",
+    "app/**/*.d.ts",
     "server/**/*.test.ts",
-    "server/**/*.spec.ts"
+    "server/**/*.spec.ts",
+    "server/**/*.d.ts"
   ],
   "references": [
     {

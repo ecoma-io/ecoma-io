@@ -8,8 +8,8 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { applyAllMigrations } from '../../db/apply.mts';
-import { ACCOUNT_DATABASE, AUTH_DATABASE } from '../../db/migrate.mts';
+import { applyAllMigrations } from '../db/apply.mts';
+import { ACCOUNT_DATABASE, AUTH_DATABASE } from '../db/migrate.mts';
 import { type AccountDatabase, applyMigrations, startAccountDatabase } from './harness.ts';
 const EXPECTED_TABLES = [
   'account_outbox_events',
@@ -169,7 +169,7 @@ describe('db-account migrations on a real PostgreSQL', () => {
     const { resolve } = await import('node:path');
 
     const manifest = JSON.parse(
-      readFileSync(resolve(import.meta.dirname, '../../package.json'), 'utf8'),
+      readFileSync(resolve(import.meta.dirname, '../package.json'), 'utf8'),
     ) as { nx?: { targets?: Record<string, { cache?: boolean }> } };
 
     expect(manifest.nx?.targets?.['db:migrate']?.cache).toBe(false);

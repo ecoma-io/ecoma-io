@@ -16,8 +16,8 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { createMockAccountAdapter, MOCK_CONSENT_HANDLE } from '../app/account-data';
-import type { AccountAdapter, Result } from '../app/account-data/types';
+import { createMockAccountAdapter, MOCK_CONSENT_HANDLE } from './';
+import type { AccountAdapter, Result } from './types';
 
 /**
  * Thu hẹp `Result<T>` sang nhánh thành công.

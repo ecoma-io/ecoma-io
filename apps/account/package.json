@@ -51,7 +51,7 @@
         ],
         "options": {
           "cwd": "apps/account",
-          "command": "npx vitest run tests/integration"
+          "command": "npx vitest run integration-specs"
         }
       },
       "typecheck-db": {

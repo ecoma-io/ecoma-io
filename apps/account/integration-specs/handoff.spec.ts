@@ -10,9 +10,9 @@
 import { createApp, createRouter, toWebHandler, type WebHandler } from 'h3';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import challengeRoute from '../../server/api/auth/challenge.post';
-import verifyRoute from '../../server/api/auth/verify.post';
-import handoffRoute from '../../server/api/auth/handoff.post';
+import challengeRoute from '../server/api/auth/challenge.post';
+import verifyRoute from '../server/api/auth/verify.post';
+import handoffRoute from '../server/api/auth/handoff.post';
 
 import {
   ACCOUNT_DATABASE,
@@ -23,7 +23,7 @@ import {
 } from './harness.ts';
 import { installRuntimeConfigStub, type AccountTestRuntimeConfig } from './nuxt-globals.ts';
 
-vi.mock('../../server/utils/logger', () => ({
+vi.mock('../server/utils/logger', () => ({
   writeLog: vi.fn<(entry: Record<string, unknown>) => void>(),
 }));
 /** Handle X đến từ query string; database chỉ lưu hash của nó. */

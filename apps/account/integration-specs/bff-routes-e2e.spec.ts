@@ -31,18 +31,18 @@
 import { createApp, createRouter, toWebHandler, type WebHandler } from 'h3';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import contextRoute from '../../server/api/consent/context.post';
-import decideRoute from '../../server/api/consent/decide.post';
-import handoffRoute from '../../server/api/auth/handoff.post';
-import challengeRoute from '../../server/api/auth/challenge.post';
-import verifyRoute from '../../server/api/auth/verify.post';
+import contextRoute from '../server/api/consent/context.post';
+import decideRoute from '../server/api/consent/decide.post';
+import handoffRoute from '../server/api/auth/handoff.post';
+import challengeRoute from '../server/api/auth/challenge.post';
+import verifyRoute from '../server/api/auth/verify.post';
 
 import { ACCOUNT_DATABASE, type AccountDatabase, startAccountDatabase } from './harness.ts';
 import { INTERNAL_TIMESTAMP_HEADER, verifyRequest } from '@ecoma-io/identity-contracts';
-import { OTP_ACR, type AccountSessionRow } from '../../server/lib/session';
+import { OTP_ACR, type AccountSessionRow } from '../server/lib/session';
 import { installRuntimeConfigStub, type AccountTestRuntimeConfig } from './nuxt-globals.ts';
 
-vi.mock('../../server/utils/logger', () => ({
+vi.mock('../server/utils/logger', () => ({
   writeLog: vi.fn<(entry: Record<string, unknown>) => void>(),
 }));
 const OTP_SECRET = 'test-otp-hmac-secret-0123456789abcdef';
@@ -482,7 +482,7 @@ describe('BFF handoff and consent routes end-to-end', () => {
 
     // Mô phỏng DB hiccup ở nhánh consume sau push thành công: binding giữ
     // nguyên `bound`/`session_rotated` thay vì chuyển `consumed`.
-    const handoffModule = await import('../../server/lib/handoff');
+    const handoffModule = await import('../server/lib/handoff');
     const spy = vi.spyOn(handoffModule, 'consumeHandoff').mockRejectedValue(new Error('db hiccup'));
 
     const first = await post('/api/auth/handoff', { handle: HANDLE }, init);
