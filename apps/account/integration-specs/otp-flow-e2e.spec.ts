@@ -22,22 +22,22 @@
 import { createApp, createRouter, toWebHandler, type WebHandler } from 'h3';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import challengeRoute from '../../server/api/auth/challenge.post';
-import logoutRoute from '../../server/api/auth/logout.post';
-import sessionRoute from '../../server/api/auth/session.get';
-import verifyRoute from '../../server/api/auth/verify.post';
-import { writeLog } from '../../server/utils/logger';
-import { OTP_ACR } from '../../server/lib/session';
+import challengeRoute from '../server/api/auth/challenge.post';
+import logoutRoute from '../server/api/auth/logout.post';
+import sessionRoute from '../server/api/auth/session.get';
+import verifyRoute from '../server/api/auth/verify.post';
+import { writeLog } from '../server/utils/logger';
+import { OTP_ACR } from '../server/lib/session';
 import {
   OTP_RATE_LIMIT_SHORT_MAX,
   OTP_RATE_LIMIT_SHORT_WINDOW_SECONDS,
   countChallengesSince,
   insertChallenge,
-} from '../../server/lib/otp';
+} from '../server/lib/otp';
 import { ACCOUNT_DATABASE, type AccountDatabase, startAccountDatabase } from './harness.ts';
 import { installRuntimeConfigStub, type AccountTestRuntimeConfig } from './nuxt-globals.ts';
 
-vi.mock('../../server/utils/logger', () => ({
+vi.mock('../server/utils/logger', () => ({
   writeLog: vi.fn<(entry: Record<string, unknown>) => void>(),
 }));
 /** Secret OTP của test — đủ dài theo validation, không phải secret thật. */

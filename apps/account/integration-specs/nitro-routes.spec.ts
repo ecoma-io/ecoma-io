@@ -18,7 +18,7 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-const NITRO_CHUNK = resolve(import.meta.dirname, '../../.output/server/chunks/nitro/nitro.mjs');
+const NITRO_CHUNK = resolve(import.meta.dirname, '../.output/server/chunks/nitro/nitro.mjs');
 
 describe('built Nitro route table', () => {
   const nitro = readFileSync(NITRO_CHUNK, 'utf8');

@@ -9,7 +9,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { AUTH_DATABASE, listMigrations } from '../../db/migrate.mts';
+import { AUTH_DATABASE, listMigrations } from '../db/migrate.mts';
 import { type AccountDatabase, startAccountDatabase } from './harness.ts';
 const RUNTIME = 'ecoma_account_runtime';
 
@@ -336,7 +336,7 @@ describe('roles and grants on db-account', () => {
     // qua role đã tồn tại.
     //
     // ⚠️ Assert trên FILE, không trên catalog: database test được provisioning
-    // tạo role TRƯỚC khi migration chạy (harness `tests/integration/harness.ts`),
+    // tạo role TRƯỚC khi migration chạy (harness `integration-specs/harness.ts`),
     // nên guard của `0007` đi theo nhánh "đã tồn tại" và một mutation trong câu
     // `CREATE ROLE` không bao giờ lộ ra ở database đang chạy — chỉ mỗi file là
     // thứ sẽ lên production.

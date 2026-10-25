@@ -79,13 +79,17 @@ export default defineConfig(() => ({
     // ⚠️ Bridge phải nạp trước **mọi** module app: composable trong
     // `app/composables/` gọi `useState()` ở phạm vi module. Xem `tests/setup.ts`.
     setupFiles: ['./tests/setup.ts'],
-    // Nuxt dựng app trong `app/` (srcDir của Nuxt 4), không dùng `src/`; `tests/` là
-    // nơi đặt spec của app. `server/` giữ lại để không phá project được generate.
-    include: ['{src,tests,app,server}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    // Nuxt dựng app trong `app/` (srcDir của Nuxt 4), không dùng `src/`; spec
+    // colocated cạnh code subject (`app/`, `server/`), suite integration nằm ở
+    // `integration-specs/` (ngang `app/`, `server/`). `tests/` giữ lại cho phần
+    // support chung (harness, bridge) và những spec có subject ở chính `tests/`.
+    include: [
+      '{src,tests,integration-specs,app,server}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}',
+    ],
     // Probe Docker một lần mỗi lần chạy (trước khi worker khởi động); xem
-    // `tests/integration/docker-probe.global-setup.ts`. Không có đó thì mỗi
+    // `integration-specs/docker-probe.global-setup.ts`. Không có đó thì mỗi
     // spec file tự probe — mỗi probe là một container PostgreSQL thật.
-    globalSetup: ['./tests/integration/docker-probe.global-setup.ts'],
+    globalSetup: ['./integration-specs/docker-probe.global-setup.ts'],
     reporters: ['default'],
     coverage: {
       reportsDirectory: './test-output/vitest/coverage',

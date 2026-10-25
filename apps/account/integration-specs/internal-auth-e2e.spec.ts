@@ -29,12 +29,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 import { createNonce, signRequest } from '@ecoma-io/identity-contracts';
 
-import internalAuthMiddleware from '../../server/middleware/internal-auth';
-import { writeLog } from '../../server/utils/logger';
+import internalAuthMiddleware from '../server/middleware/internal-auth';
+import { writeLog } from '../server/utils/logger';
 import { ACCOUNT_DATABASE, type AccountDatabase, startAccountDatabase } from './harness.ts';
 import { installRuntimeConfigStub } from './nuxt-globals.ts';
 
-vi.mock('../../server/utils/logger', () => ({
+vi.mock('../server/utils/logger', () => ({
   writeLog: vi.fn<(entry: Record<string, unknown>) => void>(),
 }));
 /** Secret hợp lệ cho test — độ dài >= 32 như validation của app. */

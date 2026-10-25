@@ -32,7 +32,7 @@ import { createHash } from 'node:crypto';
 import { createApp, createRouter, toWebHandler, type WebHandler } from 'h3';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import verifyRoute from '../../server/api/auth/verify.post';
+import verifyRoute from '../server/api/auth/verify.post';
 import {
   expireChallengeIfExpired,
   findActiveChallenge,
@@ -40,11 +40,11 @@ import {
   normalizeAndHashEmail,
   OTP_PURPOSE_LOGIN,
   otpDigest,
-} from '../../server/lib/otp';
+} from '../server/lib/otp';
 import { ACCOUNT_DATABASE, type AccountDatabase, startAccountDatabase } from './harness.ts';
 import { installRuntimeConfigStub, type AccountTestRuntimeConfig } from './nuxt-globals.ts';
 
-vi.mock('../../server/utils/logger', () => ({
+vi.mock('../server/utils/logger', () => ({
   writeLog: vi.fn<(entry: Record<string, unknown>) => void>(),
 }));
 /** Secret OTP của test — phải khớp giữa config và phép tính digest của seed. */

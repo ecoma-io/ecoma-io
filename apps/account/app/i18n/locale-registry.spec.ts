@@ -18,7 +18,7 @@ import {
   getAccountLocaleDefinition,
   isAccountLocale,
   parseAccountLocale,
-} from '../app/i18n/locale-registry';
+} from './locale-registry';
 
 describe('locale registry', () => {
   it('defaults to English', () => {

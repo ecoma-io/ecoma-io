@@ -9,8 +9,8 @@
 
 import { createHash } from 'node:crypto';
 
-import { applyAllMigrations } from '../../db/apply.mts';
-import { ACCOUNT_DATABASE, AUTH_DATABASE } from '../../db/migrate.mts';
+import { applyAllMigrations } from '../db/apply.mts';
+import { ACCOUNT_DATABASE, AUTH_DATABASE } from '../db/migrate.mts';
 
 /**
  * Image PostgreSQL: 17 là major hiện hành; alpine để pull nhanh trên CI.
