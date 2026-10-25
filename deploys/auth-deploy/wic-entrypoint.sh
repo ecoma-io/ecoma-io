@@ -181,6 +181,14 @@ trap on_signal TERM INT
 # `Address already in use (socket "direct:1:default")`. Ghim sẵn một port
 # inspector khác nhau cho mỗi process (`--inspector-port`) bỏ dò port khỏi
 # phương trình; WIC không cần debugger.
+# Bind address KHÁC NHAU giữa hai worker (#267): miniflare mặc định bind
+# localhost (127.0.0.1) — loopback-only trong netns của container. Worker
+# `ecoma-auth` (4203) bind `--ip 0.0.0.0` vì router Traefik `Host(auth.fbi.com)`
+# trỏ tới nó QUA Docker network (alias network không với tới loopback-only —
+# thiếu flag thì mọi request ngoài vào là 502 trong khi healthcheck nội bộ vẫn
+# xanh, lỗi vô hình qua health gate). Shim `ecoma-account-bridge` (4204) GIỮ
+# bind mặc định loopback: chỉ auth worker gọi nó qua service binding nội bộ
+# workerd (cùng container), không có poller nào ngoài network cần tới.
 log '{"event":"wic.starting","worker":"ecoma-account-bridge"}'
 (cd "$RUNTIME_TREE/apps/account-bridge" && exec "$WRANGLER" dev \
   --config "$RUNTIME_TREE/apps/account-bridge/wrangler.jsonc" \
@@ -193,6 +201,7 @@ BRIDGE_PID=$!
 log '{"event":"wic.starting","worker":"ecoma-auth"}'
 (cd "$RUNTIME_TREE/apps/auth" && exec "$WRANGLER" dev \
   --config "$RUNTIME_TREE/apps/auth/wrangler.jsonc" \
+  --ip 0.0.0.0 \
   --persist-to "$PERSIST_DIR" \
   --inspector-port 9234 \
   ) &
