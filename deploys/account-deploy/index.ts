@@ -25,9 +25,17 @@
  * ...}}` — Nitro envmap (`applyEnv` + `destr`) merge nó vào
  * `runtimeConfig.cloudflare.env` được khai tường minh trong `nuxt.config.ts`, đúng
  * hình dạng mà `accountHyperdrive()` kiểm. Không đặt biến ⇒ object rỗng ⇒ binding
- * `null` ⇒ `/ready` 503 — fail-closed như production. `AUTH_SERVICE` chưa có ở
- * phiên này: `authServiceBinding()` trả `null` ⇒ mọi gọi auth là
- * `binding_missing` (shim HTTP là scope issue #183).
+ * `null` ⇒ `/ready` 503 — fail-closed như production.
+ *
+ * Binding `AUTH_SERVICE` (issue #183): JSON envmap không chứa được function
+ * `fetch`, nên adapter HTTP của chiều account → auth được mount lúc runtime
+ * bởi `server/plugins/auth-service-shim.ts`, đọc origin từ biến
+ * `NUXT_AUTH_SERVICE_URL` — fetch thẳng worker auth trong WIC qua alias
+ * `ecoma-<ns>-auth:4203` (`02-identity.md` §Service bindings, chiều account →
+ * auth). Bảo mật lớp application là envelope HMAC `ecoma-internal-v1` của
+ * `auth-client` — shim không ký thêm gì. Thiếu biến ⇒ không mount ⇒ mọi gọi
+ * auth fail-closed `binding_missing` (production Workers dùng binding thật,
+ * không đọc biến này).
  */
 
 import * as command from '@pulumi/command';
@@ -77,6 +85,14 @@ const ACCOUNT_INTERNAL_PORT = 3000;
  * được BÁO trong PR của transactional-mail-deploy.
  */
 const MAIL_INTERNAL_PORT_OF_MAIL_WIC = 4206;
+
+/**
+ * Cổng HTTP nội bộ của worker `ecoma-auth` trong WIC của auth-deploy — GIÁ TRỊ
+ * GHIM ở stack đó (`AUTH_INTERNAL_PORT`, nguồn số duy nhất là `dev.port` của
+ * `apps/auth/wrangler.jsonc`), copy tại đây vì hai stack là hai Pulumi program
+ * độc lập; lệch giá trị là connection refused ở lần gọi auth đầu tiên.
+ */
+const AUTH_INTERNAL_PORT_OF_AUTH_WIC = 4203;
 
 /** Prefix router/service Traefik của app này — namespace vào tên để multi-tenant. */
 const traefikPrefix = (ns: string): string => `account-${ns}`;
@@ -292,7 +308,10 @@ const migrate = new command.local.Command(
  * `MAIL_INTERNAL_PORT` của transactional-mail-deploy) và
  * `NUXT_MAIL_INTERNAL_AUTH_SECRET` là credential path đó — bật đường OTP login
  * local (validation của account bật cặp này cùng nhau; URL rỗng = đường mail
- * tắt).
+ * tắt); `NUXT_AUTH_SERVICE_URL` trỏ alias `ecoma-auth` của WIC auth (port nội
+ * bộ 4203 — nguồn hằng `AUTH_INTERNAL_PORT` của auth-deploy) — bật đường
+ * account → auth qua shim `server/plugins/auth-service-shim.ts`; URL rỗng =
+ * mọi gọi auth `binding_missing` fail-closed.
  */
 const account = new docker.Container(
   dockerResourceName(ns, 'account'),
@@ -311,6 +330,11 @@ const account = new docker.Container(
       // alias duy nhất trên platform network, account container cùng network).
       pulumi.interpolate`NUXT_MAIL_SERVICE_URL=http://ecoma-mail:${MAIL_INTERNAL_PORT_OF_MAIL_WIC}`,
       pulumi.interpolate`NUXT_MAIL_INTERNAL_AUTH_SECRET=${pulumi.secret(mailInternalAuthSecret)}`,
+      // Alias `ecoma-<ns>-auth` của WIC auth-deploy — nguồn hằng
+      // `AUTH_INTERNAL_PORT` của auth-deploy (`dev.port` của
+      // apps/auth/wrangler.jsonc). Shim Nitro trong account biến URL này thành
+      // binding AUTH_SERVICE lúc runtime.
+      pulumi.interpolate`NUXT_AUTH_SERVICE_URL=http://ecoma-${ns}-auth:${AUTH_INTERNAL_PORT_OF_AUTH_WIC}`,
     ],
     labels: [
       ...Object.entries(labels).map(([label, value]) => ({ label, value })),

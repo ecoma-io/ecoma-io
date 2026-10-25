@@ -146,6 +146,24 @@ export default defineNuxtConfig({
     // 300s. Để trống chứ không đặt số ở đây để chỉ có **một** nơi định nghĩa mặc định
     // (trong `identity-contracts`) — tránh hai nguồn sự thật cho cùng một luật.
     internalAuthSkewSeconds: '',
+    // Adapter HTTP cho Service Binding `AUTH_SERVICE` — CHỈ preset `node-server`
+    // (local Docker lane). Rỗng = chưa cấu hình ⇒ không mount gì ⇒
+    // `authServiceBinding()` trả `null` ⇒ mọi gọi auth fail-closed
+    // `binding_missing`, đúng trạng thái production khi hạ tầng chưa provision.
+    //
+    // ## Vì sao không nhét binding vào `NUXT_CLOUDFLARE_ENV`
+    //
+    // Envmmap của Nitro (`applyEnv` + `destr`) parse giá trị biến từ **JSON** —
+    // JSON không chứa được function, mà `authServiceBinding()` bắt buộc entry
+    // có `fetch` là function. Binding thật (Workers) và shim (local) đều là
+    // function `fetch`, nên đường duy nhất để "nuôi" binding trên Node server
+    // là một Nitro plugin mount lúc runtime (`server/plugins/auth-service-shim.ts`)
+    // đọc origin từ đây. Code app chỉ chứa **tên** binding; origin nằm trong
+    // env của deployment layer — cùng invariant với `NUXT_MAIL_SERVICE_URL`.
+    //
+    // Production (Workers) không đặt `NUXT_AUTH_SERVICE_URL`: binding thật được
+    // nạp qua `__env__`, plugin thấy binding đã có hình dạng hợp lệ và no-op.
+    authServiceUrl: '',
     // Binding container của Cloudflare — preset `cloudflare-module` tự nạp qua
     // `globalThis.__env__` (production) và `getPlatformProxy` (dev), Nuxt core
     // không đụng vào key này. Khai báo ở đây để preset `node-server` (local Docker)

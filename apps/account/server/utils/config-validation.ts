@@ -54,6 +54,13 @@ export interface AccountRuntimeConfig {
    * hai path" là một cấu hình mơ hồ mà chỉ receiver lật ra được, ở request thật.
    */
   mailInternalAuthSecret?: unknown;
+  /**
+   * Origin HTTP của worker auth cho adapter Service Binding `AUTH_SERVICE` trên
+   * preset `node-server` (local lane) — rỗng ⇒ đường tắt, mọi gọi auth fail-closed
+   * `binding_missing`. Chỉ kiểm hình dạng khi được đặt: một origin sai là lỗi
+   * cấu hình lộ ở lần gọi thật, không phải lý do mở thêm một đường public.
+   */
+  authServiceUrl?: unknown;
 }
 
 /**
@@ -122,6 +129,19 @@ export function validateAccountConfig(config: AccountRuntimeConfig): void {
   // được đặt là cấu hình sai rõ ràng, fail closed ở request đầu.
   validateOptionalKid(config.internalHmacKid, 'NUXT_INTERNAL_HMAC_KID');
   validateOptionalKid(config.internalHmacPreviousKid, 'NUXT_INTERNAL_HMAC_PREVIOUS_KID');
+
+  // Auth service origin — adapter HTTP của Service Binding `AUTH_SERVICE` trên
+  // preset `node-server`. Rỗng = đường tắt (`binding_missing` giữ nguyên, cùng
+  // trạng thái production khi hạ tầng chưa provision). Được đặt thì phải là
+  // origin http(s): shim chỉ thay protocol + authority, path của envelope được
+  // ký phải đi nguyên vẹn — một URL có path tại đây là cấu hình sai lộ ra ở
+  // lần gọi đầu thay vì lệch chữ ký im lặng.
+  const authUrl = config.authServiceUrl;
+  if (authUrl !== undefined && authUrl !== '') {
+    if (typeof authUrl !== 'string' || !/^https?:\/\//u.test(authUrl)) {
+      throw new Error('NUXT_AUTH_SERVICE_URL phải là origin http(s) của worker auth.');
+    }
+  }
 
   // Cặp previous: cả hai cùng được đặt hoặc cùng vắng mặt — một mình một cái là cấu hình
   // sai rõ ràng (envelope có `kid` previous không tra được, hoặc `kid` cũ không có khoá

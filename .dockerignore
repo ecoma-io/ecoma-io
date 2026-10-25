@@ -117,7 +117,10 @@ deploys/*
 .git
 
 # Source test và config test của app không phải input của image — subtree
-# `apps/home` được mở trọn nên phải loại tường minh.
+# `apps/home` được mở trọn nên phải loại tường minh. Spec colocated dưới
+# `app/**` cùng loại: chúng là source test, và typecheck lúc build (`nuxt
+# build` với `typescript.typeCheck: true`) gãy nếu chúng vào context mà helper
+# `tests/` của chúng thì bị loại (`../tests/harness` không resolve).
 apps/home/tests
 apps/home/vitest.config.mts
 apps/backoffice/tests
@@ -128,5 +131,6 @@ apps/account/tests
 apps/account/vitest.config.mts
 apps/account/tsconfig.db.json
 apps/account/tsconfig.spec.json
+apps/account/app/**/*.spec.ts
 apps/pact-broker-app/tests
 apps/pact-broker-app/vitest.config.mts
