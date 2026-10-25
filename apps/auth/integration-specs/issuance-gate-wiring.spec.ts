@@ -42,10 +42,10 @@ import postgres from 'postgres';
 
 import type { PostgresClientLike } from '@ecoma-io/identity-auth-infrastructure';
 
-import { checkRevocationAtIssuance } from '../../src/authorization-store';
-import type { PostgresAdapter } from '../../src/oidc/adapter';
-import { createAdapterFactory } from '../../src/oidc/adapter';
-import { createIssuanceGateFromDeps } from '../../src/oidc/issuance-gate';
+import { checkRevocationAtIssuance } from '../src/authorization-store';
+import type { PostgresAdapter } from '../src/oidc/adapter';
+import { createAdapterFactory } from '../src/oidc/adapter';
+import { createIssuanceGateFromDeps } from '../src/oidc/issuance-gate';
 import { startAuthDatabase, type AuthDatabase } from './harness';
 
 /** Probe Docker một lần ở tầng module — kết quả do globalSetup đăng ký qua env. */

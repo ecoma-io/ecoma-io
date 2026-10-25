@@ -53,7 +53,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { bytesToBase64Url } from '@ecoma-io/identity-auth-domain';
 
-import { loadAuthConfig, type AuthEnv } from '../../src/config';
+import { loadAuthConfig, type AuthEnv } from '../src/config';
 import { createPostgresClient } from '@ecoma-io/identity-auth-infrastructure';
 import { startAuthDatabase, type AuthDatabase } from './harness';
 
@@ -173,7 +173,7 @@ async function bootProvider(pem: string): Promise<void> {
 
   const env = makeEnv(pem);
   const config = await loadAuthConfig(env);
-  const { createProvider } = await import('../../src/oidc/provider');
+  const { createProvider } = await import('../src/oidc/provider');
   const postgresClient = createPostgresClient(config.hyperdrive);
   const provider = await createProvider({
     config,
@@ -242,7 +242,7 @@ describe('OIDC Discovery — the advertised authorization_endpoint is the entryp
       `;
     await bootProvider(pem);
     const env = makeEnv(pem);
-    const { default: app } = await import('../../src/main');
+    const { default: app } = await import('../src/main');
 
     // ── Bước 1: đọc Discovery ───────────────────────────────────────────
     // ⚠️ Đây là nguồn sự thật của endpoint — KHÔNG hardcode path ở đây.
@@ -380,7 +380,7 @@ describe('OIDC Discovery — the advertised authorization_endpoint is the entryp
     const { privateKey } = await generateKeyPair('ES256', { extractable: true });
     const pem = await exportPKCS8(privateKey);
     const env = makeEnv(pem);
-    const { default: app } = await import('../../src/main');
+    const { default: app } = await import('../src/main');
 
     const oidc = (await (
       await app.request('/.well-known/openid-configuration', {}, env)

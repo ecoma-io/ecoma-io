@@ -9,7 +9,7 @@ import { createProvider } from './provider';
 import { createIssuanceGate } from './runtime';
 import { loadAuthConfig, type AuthEnv } from '../config';
 import { exportPKCS8, generateKeyPair } from 'jose';
-import { startAuthDatabase, type AuthDatabase } from '../../tests/integration/harness.ts';
+import { startAuthDatabase, type AuthDatabase } from '../../integration-specs/harness.ts';
 
 /**
  * Anchor test cho đường gate cấp phát PRODUCTION: composition `oidc/runtime.ts`

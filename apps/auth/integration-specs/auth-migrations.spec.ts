@@ -30,8 +30,8 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Client } from 'pg';
 
-import { applyAllMigrations } from '../../db/apply.mts';
-import { AUTH_DATABASE, checksumMigration, listMigrations } from '../../db/migrate.mts';
+import { applyAllMigrations } from '../db/apply.mts';
+import { AUTH_DATABASE, checksumMigration, listMigrations } from '../db/migrate.mts';
 import { startAuthRunnerDatabase, type RunnerDatabase } from './runner-harness.ts';
 
 let db: RunnerDatabase;

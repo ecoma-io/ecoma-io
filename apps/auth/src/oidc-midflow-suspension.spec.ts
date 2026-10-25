@@ -58,7 +58,7 @@ import type { IssuanceGate } from './oidc/adapter';
 import { AccountClient } from './account-client';
 import { checkRevocationAtIssuance, insertAuditEvent } from './authorization-store';
 import { loadAuthConfig, type AuthEnv } from './config';
-import { startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
+import { startAuthDatabase, type AuthDatabase } from '../integration-specs/harness.ts';
 
 /* ------------------------------------------------------------------ */
 /* PostgreSQL harness — cùng luật với oidc-fullflow.spec.ts            */

@@ -52,7 +52,7 @@ const SUPERUSER_PASSWORD = 'ecoma_test_superuser_pw';
 const ROLE_PASSWORD = 'ecoma_test_role_pw';
 
 /** Thư mục migration — trong chính app này, đường dẫn ngắn. */
-export const MIGRATIONS_DIR = join(import.meta.dirname, '../../migrations');
+export const MIGRATIONS_DIR = join(import.meta.dirname, '../migrations');
 
 type Sql = import('postgres').Sql;
 
