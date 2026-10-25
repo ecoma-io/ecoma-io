@@ -94,15 +94,31 @@ export function generatePostgresPassword(): string {
  * Sinh secret HMAC cho envelope internal `ecoma-internal-v1` hai chiều
  * auth <-> account.
  *
- * Cùng hình dạng giá trị với `generatePostgresPassword` (base64url 24 byte =
- * 32 ký tự — đủ độ dài tối thiểu 32 ký tự mà `config-validation.ts` của
- * account đòi). Tách tên riêng vì NGHĨA khác: đây là secret HMAC ứng dụng
- * (không phải credential database), và orchestration là nơi giữ bất biến
- * "auth và account nhận CÙNG giá trị" — sinh hai lần độc lập là mọi envelope
- * internal chết `bad_signature` lúc runtime.
+ * Một secret ứng dụng dùng {@link generateAppSecret} (32 byte): cùng hình
+ * base64url, nhưng đủ entropy chuẩn HMAC-SHA-256 thay vì đoán theo ngưỡng ký
+ * tự. Tách tên riêng vì NGHĨA khác với `generatePostgresPassword`: đây là
+ * secret HMAC ứng dụng (không phải credential database), và orchestration là
+ * nơi giữ bất biến "auth và account nhận CÙNG giá trị" — sinh hai lần độc
+ * lập là mọi envelope internal chết `bad_signature` lúc runtime.
  */
 export function generateInternalHmacSecret(): string {
-  return randomBytes(24).toString('base64url');
+  return generateAppSecret();
+}
+
+/**
+ * Sinh secret ỨNG DỤNG 32 byte base64url — hình chuẩn cho mọi secret mà
+ * contract phía consumer kiểm theo byte (không phải credential database).
+ *
+ * 32 byte = 256 bit là kích thước chuẩn HMAC-SHA-256: contract của
+ * `identity-auth-domain` (`importKey`) bắt ĐÚNG 32 byte từ `AUTH_HANDLE_KEY`,
+ * và cookie keyring của oidc-provider cũng là key ký ứng dụng — dùng mật
+ * khẩu 24 byte của database cho secret ứng dụng là che giấu hai NGHĨA khác
+ * nhau sau một hình dạng giá trị chung (#284). `base64url` giữ tính an toàn
+ * khi nhúng: chỉ ký tự `A-Za-z0-9-_`, an toàn trong `.env`, argv của
+ * `pulumi config set` và container env không cần quote.
+ */
+export function generateAppSecret(): string {
+  return randomBytes(32).toString('base64url');
 }
 
 /**
@@ -1029,11 +1045,11 @@ async function runApply(
           // kid; config.ts chấp nhận tường minh).
           ['namespace:signingKeyPem', await generateEs256SigningKeyPem()],
           ['namespace:signingKeyId', 'local-identity-1'],
-          ['namespace:handleKey', generatePostgresPassword()],
+          ['namespace:handleKey', generateAppSecret()],
           ['namespace:internalSecret', identityInternalSecret],
           ['namespace:issuer', `https://auth.${outputs.rootHost}`],
           ['namespace:audience', `https://api.${outputs.rootHost}`],
-          ['namespace:cookieKeys', generatePostgresPassword()],
+          ['namespace:cookieKeys', generateAppSecret()],
         ] as const)) {
       const setResult = exec(
         'pulumi',

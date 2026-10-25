@@ -13,6 +13,7 @@ import {
   DEPLOY_STEPS,
   upsertLocalEnv,
   isConfigKeyMissing,
+  generateAppSecret,
   generatePostgresPassword,
   lookupPostgresPassword,
   probePostgresVolume,
@@ -466,6 +467,20 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
       'namespace:audience',
       'namespace:cookieKeys',
     ]);
+    // Hai secret ứng dụng của auth là hình 32 byte base64url — contract
+    // `importKey` của identity-auth-domain bắt ĐÚNG 32 byte từ AUTH_HANDLE_KEY
+    // và cookieKeys là keygrip key của oidc-provider (#284: mật khẩu 24 byte
+    // của database bị tái dùng nhầm làm mọi /authorize chết lúc mint đầu).
+    const authHandleInput = identityConfigSets.find(
+      ([, args]) => args[2] === 'namespace:handleKey',
+    )?.[4]?.['input'];
+    const authCookieKeysInput = identityConfigSets.find(
+      ([, args]) => args[2] === 'namespace:cookieKeys',
+    )?.[4]?.['input'];
+    expect(Buffer.from(authHandleInput ?? '', 'base64url').byteLength).toBe(32);
+    expect(Buffer.from(authCookieKeysInput ?? '', 'base64url').byteLength).toBe(32);
+    // Hai giá trị sinh ĐỘC LẬP — trùng nhau là hai ngữ cảnh dùng chung khoá.
+    expect(authHandleInput).not.toBe(authCookieKeysInput);
     // Cùng giá trị cho hai nửa của secret HMAC internal (stdin input của hai
     // lần `config set` — exec mock ghi lại options.input).
     const accountInternalSet = identityConfigSets.find(
@@ -478,7 +493,11 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
     const authInternalInput = authInternalSet?.[4]?.['input'];
     expect(typeof accountInternalInput).toBe('string');
     expect(accountInternalInput).toBe(authInternalInput);
+    // Ngưỡng ký tự 32 của `config-validation.ts` account (thông qua cả khi
+    // 24 byte), nhưng generator đã là 32 byte chuẩn HMAC-SHA-256 (#284) —
+    // ghim cả hai để hai contract không thể trôi lệch nhau.
     expect(accountInternalInput?.length ?? 0).toBeGreaterThanOrEqual(32);
+    expect(Buffer.from(accountInternalInput ?? '', 'base64url').byteLength).toBe(32);
     // Khoá ký là PEM PKCS#8 thật (SigningKeyProvider.fromPem parse được) —
     // header/hình dạng đúng, không đụng tới giá trị.
     const signingPemInput = identityConfigSets.find(
@@ -870,6 +889,20 @@ describe('generatePostgresPassword', () => {
 
   it('does not reuse a value across calls', () => {
     expect(generatePostgresPassword()).not.toBe(generatePostgresPassword());
+  });
+});
+
+describe('generateAppSecret', () => {
+  it('is exactly 32 bytes decoded from base64url — the HMAC-SHA-256 contract size', () => {
+    // `importKey` của identity-auth-domain bắt ĐÚNG 32 byte từ AUTH_HANDLE_KEY
+    // (#284): 24 byte của mật khẩu database là chết lúc mint đầu tiên.
+    const secret = generateAppSecret();
+    expect(Buffer.from(secret, 'base64url').byteLength).toBe(32);
+    expect(secret).toMatch(/^[A-Za-z0-9_-]+$/u);
+  });
+
+  it('does not reuse a value across calls', () => {
+    expect(generateAppSecret()).not.toBe(generateAppSecret());
   });
 });
 

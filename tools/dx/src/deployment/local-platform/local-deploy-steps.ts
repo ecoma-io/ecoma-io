@@ -10,7 +10,7 @@
  * - `resolvePlatformEnv`: đọc outputs platform, trả port Traefik đã validate —
  *   KHÔNG đụng password (caller tự ghi `.env`, tách taint-flow khỏi password).
  *
- * Các secret generator (`generatePostgresPassword`,
+ * Các secret generator (`generatePostgresPassword`, `generateAppSecret`,
  * `generateInternalHmacSecret`, `generateEs256SigningKeyPem`) và hàm thuần
  * (`resolvePostgresPassword`, `upsertLocalEnv`) vẫn sống trong
  * `local-deploy.ts` / `pulumi-context.ts` — module này import từ đó thay vì
@@ -23,6 +23,7 @@ import { ensureStack, pulumiRun, type LocalDeployContext } from './pulumi-contex
 import { resolvePostgresPassword } from './local-deploy.js';
 
 export {
+  generateAppSecret,
   generateBase64Key32,
   generateEs256SigningKeyPem,
   generateHexKey64,
