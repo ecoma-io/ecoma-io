@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { readNuxtApp, setNuxtApp, setRuntimeConfig } from './nuxt-app-state';
-import { useBackofficeAdapter } from '../app/composables/use-backoffice-adapter';
+import { readNuxtApp, setNuxtApp, setRuntimeConfig } from '../../tests/nuxt-app-state';
+import { useBackofficeAdapter } from './use-backoffice-adapter';
 
 /**
  * Dựng một phiên Nuxt giả với `runtimeConfig.public.backofficeDataMode` đã cho.

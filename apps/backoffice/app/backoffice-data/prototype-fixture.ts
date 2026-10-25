@@ -15,7 +15,7 @@
  *    đi cùng phép kiểm SSR/client cùng chuỗi — một quyết định không thuộc phạm vi
  *    prototype này.
  * 3. **Không có bản dịch.** Role và permission chỉ mang **id**; nhãn hiển thị
- *    lấy từ catalog i18n theo id (`tests/catalogs.spec.ts` buộc đủ key cho mọi id
+ *    lấy từ catalog i18n theo id (`catalogs.spec.ts` (colocated cạnh file này) buộc đủ key cho mọi id
  *    ở đây). Giữ nhãn trong fixture là tạo nguồn sự thật thứ hai cho cùng một
  *    chuỗi, và hai nguồn sẽ trôi khỏi nhau.
  */
@@ -25,7 +25,7 @@ import type { BackofficePrototypeData, Permission, StaffMember, SystemRole } fro
  * Account ID (`sub`) dạng ULID — **giả lập**, nhưng có đúng hình dạng của một
  * định danh opaque: 26 ký tự Crockford base32 sau tiền tố, ký tự đầu trong
  * `[0-7]`. ⚠️ Crockford **loại** các chữ `I`, `L`, `O`, `U` khỏi alphabet, nên một
- * id chứa chúng không phải ULID — `tests/prototype-data.spec.ts` kiểm đúng điều
+ * id chứa chúng không phải ULID — `prototype-fixture.spec.ts` (colocated cạnh fixture) kiểm đúng điều
  * đó bằng assertion, không phải bằng lời bình.
  *
  * ⚠️ Cố ý **không** phải email, **không** phải username, **không** phải thứ gì
@@ -69,7 +69,7 @@ const PERMISSIONS: readonly Permission[] = [
  *
  * Không role nào chứa toàn bộ permission: `auditor` gần nhất cũng chỉ có hai
  * cái. Đây là minh hoạ sống động nhất của `01-architecture.md` §4.4 ("mọi role
- * đều là tập permission hữu hạn"), và `tests/prototype-data.spec.ts` ghim điều
+ * đều là tập permission hữu hạn"), và `prototype-fixture.spec.ts` (colocated cạnh fixture) ghim điều
  * đó bằng assertion — không phải bằng lời bình.
  *
  * ⚠️ **Không** có role `admin`, `superadmin` hay `owner`. Bootstrap

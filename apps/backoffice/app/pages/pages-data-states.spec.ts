@@ -1,7 +1,7 @@
 /**
  * Bốn trạng thái dữ liệu ở **mức page thật** của ba trang dữ liệu prototype.
  *
- * `tests/use-async-state.spec.ts` ghim hợp đồng của composable; file này ghim điều mà
+ * `../composables/use-async-state.spec.ts` ghim hợp đồng của composable; file này ghim điều mà
  * người dùng thật nhìn thấy: mỗi page nối composable vào template đúng cách, và không
  * page nào tự xử lý lỗi theo cách riêng.
  *
@@ -18,15 +18,15 @@
 import { describe, expect, it } from 'vitest';
 import type { Component } from 'vue';
 
-import PermissionsPage from '../app/pages/permissions.vue';
-import RolesPage from '../app/pages/roles.vue';
-import StaffPage from '../app/pages/staff.vue';
-import { PROTOTYPE_DATA } from '../app/backoffice-data/prototype-fixture';
-import type { Permission, StaffMember, SystemRole } from '../app/backoffice-data/types';
-import en from '../app/i18n/locales/en';
-import type { FakeAdapterData, FakeBackofficeAdapter } from './fake-adapter';
-import { createFakeBackofficeAdapter } from './fake-adapter';
-import { at, mountBackofficePage } from './harness';
+import PermissionsPage from './permissions.vue';
+import RolesPage from './roles.vue';
+import StaffPage from './staff.vue';
+import { PROTOTYPE_DATA } from '../backoffice-data/prototype-fixture';
+import type { Permission, StaffMember, SystemRole } from '../backoffice-data/types';
+import en from '../i18n/locales/en';
+import type { FakeAdapterData, FakeBackofficeAdapter } from '../../tests/fake-adapter';
+import { createFakeBackofficeAdapter } from '../../tests/fake-adapter';
+import { at, mountBackofficePage } from '../../tests/harness';
 
 const LOADING = '[data-testid="backoffice-loading"]';
 const ERROR = '[data-testid="backoffice-error"]';

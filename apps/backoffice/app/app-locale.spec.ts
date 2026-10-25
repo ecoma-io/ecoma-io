@@ -18,13 +18,13 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import en from '../app/i18n/locales/en';
-import vi from '../app/i18n/locales/vi';
-import zhCN from '../app/i18n/locales/zh-CN';
-import type { BackofficeLocale } from '../app/i18n/locale-registry';
-import StaffPage from '../app/pages/staff.vue';
-import { backofficeStores, headHtmlAttrs, i18n, useCookie } from './nuxt-globals';
-import { flushPromises, mountBackofficeApp, renderBackofficeAppToHtml } from './harness';
+import en from './i18n/locales/en';
+import vi from './i18n/locales/vi';
+import zhCN from './i18n/locales/zh-CN';
+import type { BackofficeLocale } from './i18n/locale-registry';
+import StaffPage from './pages/staff.vue';
+import { backofficeStores, headHtmlAttrs, i18n, useCookie } from '../tests/nuxt-globals';
+import { flushPromises, mountBackofficeApp, renderBackofficeAppToHtml } from '../tests/harness';
 
 /**
  * Tên cookie locale — viết lại ở đây thay vì import hằng (nó không được export).

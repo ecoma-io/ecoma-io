@@ -11,7 +11,7 @@ chép mù.
 | `migrations/*.sql`      | Migration, áp dụng **theo thứ tự tên file** (tên file có tiền tố số) |
 | `migrate.mts`           | Hằng số và helper dùng chung cho runner và test harness              |
 | `apply.mts`             | CLI runner, chạy trong CI                                            |
-| `../tests/integration/` | Test integration trên PostgreSQL thật (testcontainers)               |
+| `../integration-specs/` | Test integration trên PostgreSQL thật (testcontainers)               |
 
 ## Thứ tự migration hiện tại
 

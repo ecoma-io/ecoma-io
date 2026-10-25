@@ -44,9 +44,9 @@ import { readNuxtApp, readRuntimeConfig } from './nuxt-app-state';
  * cùng một object, không phải bản sao; thêm một locale là thêm một lần ở một chỗ.
  *
  * `missingWarn`/`fallbackWarn` tắt ở đây khác `app/i18n/vue-i18n.config.ts` (nơi cả
- * hai đều bật): chốt chặn cấu trúc của key là `tests/catalogs.spec.ts`, còn chốt
+ * hai đều bật): chốt chặn cấu trúc của key là `catalogs.spec.ts` (colocated cạnh file này), còn chốt
  * chặn runtime — key dựng động như ``roles.items.${id}.name`` — là
- * `tests/prototype-data.spec.ts`. Bật cảnh báo ở đây chỉ làm mỗi lần render một
+ * `prototype-fixture.spec.ts` (colocated cạnh fixture). Bật cảnh báo ở đây chỉ làm mỗi lần render một
  * trang in ra vài dòng nhiễu, không làm key thiếu trở nên đỏ.
  *
  * Ở mode `legacy: false`, `createI18n()` trả chính composer có `install()` — không
@@ -166,7 +166,7 @@ function resolveHeadInput(input: HeadInput): Record<string, unknown> {
  * thứ Nuxt đọc để ghi ra thẻ `<html>`. Nó **không** chứng minh unhead đã ghi
  * `<html lang="…">` vào DOM: không plugin unhead nào chạy trong test này, và
  * `renderToString` chỉ render fragment của app nên đầu ra không có thẻ `<html>`
- * (xem `tests/runtime-locale.spec.ts`). Muốn chứng minh vế DOM thì phải chạy Nuxt
+ * (xem `app-locale.spec.ts` (cùng thư mục `app/`)). Muốn chứng minh vế DOM thì phải chạy Nuxt
  * thật, nằm ngoài phạm vi unit test.
  *
  * Lỗi dạng input (mảng, `null`, kiểu lạ) được ném **ngay lúc gọi** thay vì bỏ qua
@@ -301,7 +301,7 @@ export const backofficeStores = {
  *
  * ⚠️ Đây là bề mặt global của test, không phải bề mặt module `#app`: `useCookie` và
  * `useState` có mặt vì Nuxt auto-import chúng, còn app hiện import tường minh từ
- * `#app` (xem `tests/nuxt-app-bridge.ts`). `tests/harness.spec.ts` ghim từng tên là
+ * `#app` (xem `tests/nuxt-app-bridge.ts`). `harness.spec.ts` (cùng thư mục) ghim từng tên là
  * hàm trên `globalThis`.
  *
  * ⚠️ `navigateTo` có mặt dù app **không** gọi nó: nó là tripwire cho bất biến "đổi

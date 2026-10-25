@@ -28,8 +28,8 @@ import { createServer, type Server } from 'node:http';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import authnMiddleware from '../../server/middleware/authn';
-import { resetJwksCacheForTests } from '../../server/auth/jwks';
+import authnMiddleware from '../server/middleware/authn';
+import { resetJwksCacheForTests } from '../server/auth/jwks';
 import {
   SESSION_COOKIE_NAME,
   SESSION_IDLE_SECONDS,
@@ -37,7 +37,7 @@ import {
   hashSessionIdentifier,
   insertSession,
   sessionDeadlines,
-} from '../../server/auth/session-store';
+} from '../server/auth/session-store';
 import {
   BACKOFFICE_DATABASE,
   type BackofficeDatabase,

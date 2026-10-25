@@ -4,7 +4,7 @@
  * App import lớp dữ liệu **qua barrel này**, không qua đường dẫn sâu:
  * `composables/use-backoffice-adapter.ts` lấy `createBackofficeAdapter` +
  * `resolveBackofficeDataMode` + kiểu `BackofficeDataAdapter`, `pages/staff.vue`
- * lấy kiểu `StaffStatus`. `tests/data-gate.spec.ts` ghim đúng bề mặt đó: barrel
+ * lấy kiểu `StaffStatus`. `data-gate.spec.ts` (colocated trong `app/backoffice-data/`) ghim đúng bề mặt đó: barrel
  * phải có consumer thật (không phải dead code) và các file app phải không tự đi
  * đường dẫn sâu.
  *

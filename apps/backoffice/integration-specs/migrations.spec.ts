@@ -8,7 +8,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { BACKOFFICE_DATABASE } from '../../db/migrate.mts';
+import { BACKOFFICE_DATABASE } from '../db/migrate.mts';
 import {
   type BackofficeDatabase,
   applyMigrations,
@@ -202,7 +202,7 @@ describe.skipIf(!dockerAvailable)('db-backoffice migrations on a real PostgreSQL
     const { resolve } = await import('node:path');
 
     const manifest = JSON.parse(
-      readFileSync(resolve(import.meta.dirname, '../../package.json'), 'utf8'),
+      readFileSync(resolve(import.meta.dirname, '../package.json'), 'utf8'),
     ) as { nx?: { targets?: Record<string, { cache?: boolean }> } };
 
     expect(manifest.nx?.targets?.['db:migrate']?.cache).toBe(false);

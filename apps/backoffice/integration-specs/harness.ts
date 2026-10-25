@@ -11,8 +11,8 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { applyAllMigrations } from '../../db/apply.mts';
-import { BACKOFFICE_DATABASE } from '../../db/migrate.mts';
+import { applyAllMigrations } from '../db/apply.mts';
+import { BACKOFFICE_DATABASE } from '../db/migrate.mts';
 
 /**
  * Image PostgreSQL: 17 là major hiện hành; alpine để pull nhanh trên CI.
@@ -191,7 +191,7 @@ async function runDockerProbe(): Promise<boolean> {
 }
 
 /**
- * Đếm số file spec trong `tests/integration` gọi `probeDocker` — con số cảnh
+ * Đếm số file spec trong `integration-specs` gọi `probeDocker` — con số cảnh
  * báo phải khớp thực tế, và đếm từ nguồn thay vì hard-code.
  */
 function countProbeGuardedSuites(): number {

@@ -20,7 +20,7 @@
  *
  * {@link applyAllMigrations} là **thứ tự duy nhất** mà migration được apply:
  * cả CLI (`main` bên dưới) lẫn harness integration
- * `apps/backoffice/tests/integration/harness.ts` đều gọi nó — đúng hình thức
+ * `apps/backoffice/integration-specs/harness.ts` đều gọi nó — đúng hình thức
  * `apps/account` đã dùng. Viết lại vòng apply bên harness là tạo runner thứ hai
  * không có advisory lock: test "apply hai lần no-op" chỉ chứng minh bản sao
  * của nó trong khi runner production kém hơn.

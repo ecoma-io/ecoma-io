@@ -12,7 +12,7 @@
  * ⚠️ Kiểu này kiểm **chiều thiếu** (key nào của `en` bị thiếu trong `vi` thì lỗi
  * compile). Nó **không** kiểm được key **thừa** ở `vi`: object literal gán vào
  * kiểu không có index signature vẫn bị excess-property check chặn ở **cùng cấp**,
- * nhưng key lạ trong object lồng nhau thì không. Vì vậy `tests/catalogs.spec.ts`
+ * nhưng key lạ trong object lồng nhau thì không. Vì vậy `catalogs.spec.ts` (colocated cạnh file này)
  * so **hai chiều** trên cả ba catalog — test mới là chốt chặn đầy đủ, kiểu chỉ là
  * lớp thứ nhất. Lý do đầy đủ nằm trong file tương ứng của `apps/account` — cùng
  * một thiết kế, hai app không cần hai lời giải thích.

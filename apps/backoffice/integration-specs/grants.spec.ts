@@ -9,7 +9,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { listMigrations } from '../../db/migrate.mts';
+import { listMigrations } from '../db/migrate.mts';
 import { type BackofficeDatabase, probeDocker, startBackofficeDatabase } from './harness.ts';
 
 const dockerAvailable = await probeDocker();

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const APP_VUE = resolve(import.meta.dirname, '../app/app.vue');
+const APP_VUE = resolve(import.meta.dirname, './app.vue');
 const APP_VUE_SOURCE = readFileSync(APP_VUE, 'utf8');
 const APP_VUE_CODE = APP_VUE_SOURCE.replaceAll(/\/\*[\s\S]*?\*\//gu, '').replaceAll(
   /\/\/[^\n]*/gu,

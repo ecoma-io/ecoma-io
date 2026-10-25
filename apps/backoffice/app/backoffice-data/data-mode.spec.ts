@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  BACKOFFICE_PREVIEW_DATA_MODE,
-  resolveBackofficeDataMode,
-} from '../app/backoffice-data/data-mode';
+import { BACKOFFICE_PREVIEW_DATA_MODE, resolveBackofficeDataMode } from './data-mode';
 
 /**
  * Matrix quyết định chế độ dữ liệu.

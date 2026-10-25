@@ -4,7 +4,7 @@
  * Hyperdrive (HD9/HD10).
  *
  * ⚠️ Test này **không** dựng DB: phần đúng của DB đã được
- * `tests/integration/read-routes.spec.ts` kiểm chứng trên PostgreSQL thật với
+ * `integration-specs/read-routes.spec.ts` kiểm chứng trên PostgreSQL thật với
  * credential runtime role thật. Ở đây chỉ ghim hình dạng đầu vào và các con
  * số cấu hình — hai thứ mà test integration không bắt được (vì nó dùng
  * connection string thật).

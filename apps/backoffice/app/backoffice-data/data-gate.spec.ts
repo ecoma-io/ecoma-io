@@ -2,12 +2,12 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { createBackofficeAdapter } from '../app/backoffice-data/adapter';
+import { createBackofficeAdapter } from './adapter';
 import {
   BACKOFFICE_DATA_MODE_DISABLED,
   BACKOFFICE_PREVIEW_DATA_MODE,
   resolveBackofficeDataMode,
-} from '../app/backoffice-data/data-mode';
+} from './data-mode';
 
 /**
  * Hợp đồng cấu hình gating dữ liệu backoffice (E1, issue #256).
@@ -33,7 +33,7 @@ function withoutComments(source: string): string {
   return source.replaceAll(/\/\*[\s\S]*?\*\//gu, '').replaceAll(/\/\/[^\n]*/gu, '');
 }
 
-const APP_DIR = resolve(import.meta.dirname, '../app');
+const APP_DIR = resolve(import.meta.dirname, '..');
 const DATA_DIR = resolve(APP_DIR, 'backoffice-data');
 
 function readSource(path: string): string {
@@ -54,9 +54,15 @@ const APP_SOURCE_EXTENSION = /\.(?:ts|mts|vue)$/u;
 
 /** Đường dẫn tương đối (POSIX) của mọi file nguồn trong `app/`. */
 function listAppSources(): string[] {
-  return (readdirSync(APP_DIR, { recursive: true, encoding: 'utf8' }) as string[])
-    .map((entry) => entry.replaceAll('\\', '/'))
-    .filter((entry) => APP_SOURCE_EXTENSION.test(entry));
+  return (
+    (readdirSync(APP_DIR, { recursive: true, encoding: 'utf8' }) as string[])
+      .map((entry) => entry.replaceAll('\\', '/'))
+      .filter((entry) => APP_SOURCE_EXTENSION.test(entry))
+      // Spec colocate nằm trong `app/` (chính sách test layout) nhưng là test
+      // code — được phép import mock adapter/fixture — nên loại khỏi scan nguồn
+      // app, giữ nguyên bất biến như khi spec còn ở `tests/`.
+      .filter((entry) => !/\.(?:spec|test)\.[^.]+$/u.test(entry))
+  );
 }
 
 /** Mọi module specifier của `import ... from '...'` và `import('...')`. */
@@ -93,11 +99,11 @@ const BACKOFFICE_DATA = {
 } as const;
 
 const COMPOSABLE = readSource(resolve(APP_DIR, 'composables/use-backoffice-adapter.ts'));
-const NUXT_CONFIG = readSource(resolve(import.meta.dirname, '../nuxt.config.ts'));
-const NITRO_CONFIG = readSource(resolve(import.meta.dirname, '../nitro.config.ts'));
+const NUXT_CONFIG = readSource(resolve(import.meta.dirname, '../../nuxt.config.ts'));
+const NITRO_CONFIG = readSource(resolve(import.meta.dirname, '../../nitro.config.ts'));
 /** Wrangler config là JSONC, không phải TS: dùng cùng luật gỡ comment. */
 const WRANGLER_CONFIG = withoutComments(
-  readFileSync(resolve(import.meta.dirname, '../wrangler.jsonc'), 'utf8'),
+  readFileSync(resolve(import.meta.dirname, '../../wrangler.jsonc'), 'utf8'),
 );
 
 /** Giá trị thô của `NITRO_PUBLIC_BACKOFFICE_DATA_MODE` trong một env của wrangler. */

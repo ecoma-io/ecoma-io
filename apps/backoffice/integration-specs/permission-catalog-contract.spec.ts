@@ -41,7 +41,7 @@ const dockerAvailable = await probeDocker();
  * Vitest, `import.meta.url` của file ngoài `root` có tiền tố `/@fs/`, nên
  * `.pathname` cho ra một đường dẫn không tồn tại.
  */
-const PROJECT_ROOT = resolve(import.meta.dirname, '../..');
+const PROJECT_ROOT = resolve(import.meta.dirname, '..');
 const SERVER_DIR = join(PROJECT_ROOT, 'server');
 
 describe.skipIf(!dockerAvailable)(

@@ -33,10 +33,10 @@ import { describe, expect, it } from 'vitest';
  */
 
 /** Stylesheet khai báo `@source` — đường dẫn trong đó tính tương đối từ chính nó. */
-const STYLESHEET = resolve(import.meta.dirname, '../app/assets/css/styles.css');
+const STYLESHEET = resolve(import.meta.dirname, './styles.css');
 
 /** Gốc workspace, để đối chiếu base của `@source` với thư mục nguồn library. */
-const WORKSPACE_ROOT = resolve(import.meta.dirname, '../../..');
+const WORKSPACE_ROOT = resolve(import.meta.dirname, '../../../../..');
 
 /** Thư mục nguồn của library phải được phủ — nơi chứa class Tailwind của shell. */
 const LIB_SOURCE_DIR = resolve(WORKSPACE_ROOT, 'libs/ui-app-shell/src');

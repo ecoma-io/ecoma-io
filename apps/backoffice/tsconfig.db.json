@@ -9,5 +9,5 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["db/**/*.mts", "tests/integration/**/*.ts"]
+  "include": ["db/**/*.mts", "integration-specs/**/*.ts"]
 }

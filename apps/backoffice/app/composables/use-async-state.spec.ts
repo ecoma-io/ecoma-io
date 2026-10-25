@@ -14,10 +14,10 @@ import { mount } from '@vue/test-utils';
 import { defineComponent, nextTick } from 'vue';
 import { describe, expect, it } from 'vitest';
 
-import { useAsyncState } from '../app/composables/use-async-state';
-import type { StaffMember } from '../app/backoffice-data/types';
-import { createFakeBackofficeAdapter } from './fake-adapter';
-import { at, flushPromises } from './harness';
+import { useAsyncState } from './use-async-state';
+import type { StaffMember } from '../backoffice-data/types';
+import { createFakeBackofficeAdapter } from '../../tests/fake-adapter';
+import { at, flushPromises } from '../../tests/harness';
 
 const OLDER: readonly StaffMember[] = [
   {
