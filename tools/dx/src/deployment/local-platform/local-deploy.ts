@@ -703,7 +703,11 @@ export async function generateEs256SigningKeyPem(): Promise<string> {
   const pkcs8 = await crypto.subtle.exportKey('pkcs8', pair.privateKey);
   const derBase64 = Buffer.from(pkcs8).toString('base64');
   const lines = derBase64.match(/.{1,64}/gu) ?? [];
-  return ['-----BEGIN PRIVATE KEY-----', ...lines, '-----END PRIVATE KEY-----', ''].join('\n');
+  // KHÔNG phần tử '' cuối: join('\n') với '' đuôi sinh PEM kết thúc bằng '\n'
+  // — `requireSecret` của app từ chối mọi giá trị có whitespace đầu/cuối, WIC
+  // local rơi vào /ready 503 config_invalid vĩnh viễn (đo trực tiếp ở #249).
+  // PEM RFC 7468 không đòi newline cuối; generator này chỉ phục vụ config set.
+  return ['-----BEGIN PRIVATE KEY-----', ...lines, '-----END PRIVATE KEY-----'].join('\n');
 }
 
 /**
