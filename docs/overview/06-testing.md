@@ -1,0 +1,162 @@
+# 06 — Testing Architecture
+
+> **Phạm vi:** phân loại test theo phạm vi verify, ownership và layout thư mục, nghĩa của ba canonical Nx targets (`test`,
+> `test-integration`, `system-test`), cách suite có database/môi trường, và minimum bar theo trách nhiệm service.
+> **Không chứa:** cách chạy test trong CI, scheduling, môi trường preview → [`02-delivery.md`](./02-delivery.md) · facts
+> platform → [`04-platform-facts.md`](./04-platform-facts.md) · invariant hệ thống → [`01-architecture.md`](./01-architecture.md)
+> · cấu trúc Nx project, tag taxonomy → [`05-code-architecture.md`](./05-code-architecture.md).
+
+---
+
+## 1. Purpose and principles
+
+Tài liệu này là **nguồn sự thật canonical duy nhất** về testing architecture; tài liệu khác reference, không duplicate.
+
+1. **Phân loại theo phạm vi verify, không theo tool.** Một test Playwright chạy UI cô lập của một app là test do app đó sở
+   hữu, không tự động thành system E2E. Công cụ chạy không quyết định tầng của test.
+2. **Unit/component test colocated với subject** trong owning Nx project.
+3. **Mỗi suite tự sở hữu setup, support code, fixture và configuration** của chính nó. Chia sẻ hạ tầng test giữa các suite
+   phải có lý do tường minh và consumer được nêu tên — không chia sẻ "phòng khi cần".
+4. **Test tôn trọng bounded context và database ownership:** truy cập chéo service chỉ qua contract; database của service
+   này không bị suite của service khác chạm vào. Invariants → `01-architecture.md` §9, tài liệu này không nhắc lại nội dung.
+5. **Tài liệu này là architecture of record.** Nó định nghĩa kiến trúc đã thống nhất của hệ thống, không phải báo cáo trạng
+   thái triển khai; khác biệt giữa bản ghi kiến trúc và cây code được theo dõi ở quá trình delivery, không nằm trong tài liệu.
+
+## 2. Test ownership and directory layout
+
+**Colocated (mặc định cho unit/component).** Spec nằm cạnh subject trong owning Nx project; tên file spec = tên file subject
+
+- `.spec.` (vd `main.ts` → `main.spec.ts`).
+
+**App-owned non-colocated.** Suite không colocated của một app nằm dưới `apps/<app>/tests/`, phân loại bằng **thư mục mục
+đích**:
+
+| Thư mục         | Chứa gì                                                                                                                          |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `integrations/` | Tương tác giữa các thành phần của app: component với nhau, adapter, runtime, dependency thật (PostgreSQL, D1, Queue)             |
+| `contracts/`    | Verify contract ở biên service. **Không** là nhà thứ hai cho định nghĩa contract — định nghĩa thuộc contract project (`05` §4)   |
+| `databases/`    | Hành vi riêng của database: migration, constraint, index, transaction, data integrity — trong phạm vi database project đó sở hữu |
+
+Danh sách trên phân loại theo **mục đích**, không đóng (non-exhaustive): chỉ tạo thư mục khi có test thật cần nó, không dựng
+scaffolding rỗng. Một `tests/fixtures/` hoặc `tests/support/` dùng chung trong app chỉ được phép khi có lý do cụ thể và
+consumer được nêu tên.
+
+**System tests.** Nằm ở repo root `system-tests/`, bốn nhóm mục đích `e2e/`, `performance/`, `resilience/`, `smoke/`. Mỗi
+suite thực thi được là **một Nx project độc lập** — project config, setup, support, fixture của riêng nó. Mặc định **không
+có** `support/` hay `fixtures/` chung ở root; chỉ tách helper dùng chung khi consumer và dependency của nó tường minh.
+
+Ví dụ layout canonical cho `backoffice`:
+
+```text
+apps/backoffice/
+  server/…                      # colocated *.spec.ts cạnh subject
+  tests/
+    integrations/               # authn middleware, grants, read-routes…
+    databases/                  # migration, constraint, data integrity của db-backoffice
+    browser/                    # browser regression của UI backoffice (Playwright) — app-owned, không phải system E2E
+system-tests/
+  e2e/<suite>/                  # mỗi <suite> là một Nx project độc lập
+  performance/<suite>/
+  resilience/<suite>/
+  smoke/<suite>/
+```
+
+## 3. Test category semantics
+
+Phân loại theo **phạm vi được verify**:
+
+| Category                | Verify cái gì                                                                                                              |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Unit/component          | Logic của một subject trong owning project; dependency ngoài được thay thế bằng giả lập                                    |
+| Integration (app-owned) | Nhiều thành phần của **một** app hoạt động với nhau trên dependency thật (PostgreSQL testcontainers, D1 proxy, …)          |
+| Contract                | Biên giữa hai deploy unit: consumer verify provider contract qua public surface, không import internals (`05` §4)          |
+| Database                | Hành vi của chính database: migration, constraint, index, transaction, data integrity                                      |
+| System test             | **Cả hệ thống đang chạy thật**, nhiều deploy unit — không phải một app đơn lẻ: `e2e`, `performance`, `resilience`, `smoke` |
+
+Ba quy tắc áp dụng cho mọi bảng trên:
+
+- **Runner không quyết định category.** Vitest, Playwright hay k6 chỉ là công cụ; đọc test thuộc tầng nào bằng cách đọc nó
+  verify phạm vi nào.
+- `test-integration` là **nhóm thực thi** (execution grouping), không phải tuyên bố taxonomy: mọi suite nó chạy là
+  "app-owned suite", dù về mặt học thuật một file trong đó có thể là unit-type check.
+
+## 4. Canonical Nx targets
+
+Ba tên dưới đây là **canonical contract** — thêm suite mới phải gắn vào đúng target này:
+
+| Target             | Contract                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `test`             | Colocated unit/component tests của project sở hữu                                                                   |
+| `test-integration` | **Toàn bộ** app-owned suites dưới `apps/<app>/tests/` — integration, contract, database và mọi suite app-owned khác |
+| `system-test`      | Execution target do **từng** system-test Nx project thực thi tự định nghĩa                                          |
+
+Thực thi: `nx run-many -t system-test` chạy mọi system-test project; `nx affected -t system-test` chỉ chọn đúng các suite bị
+ảnh hưởng khi project graph phản ánh đúng dependency thật của chúng.
+
+Phân biệt ba khái niệm Nx hay bị lẫn:
+
+- **Project dependency** — cạnh trên project graph, suy từ import (JS/TS) hoặc `implicitDependencies`; là input của
+  `nx affected`.
+- **Task-pipeline `dependsOn`** — thứ tự chạy giữa target của các project (vd `targetDefaults.test: dependsOn ["^build"]`);
+  không đổi tập project được chọn.
+- **Task inputs / cache validity** — cái gì khiến một cache entry còn hợp; không đổi thứ tự hay tập project.
+
+Đặt file vào đúng thư mục **không tự làm** `nx affected` chọn đúng — selection chỉ đúng khi project dependency truthful (§5).
+
+## 5. Dependency graph, affected and cache
+
+- Test được chọn như mọi task khác: `nx affected` đọc project graph. Giữ project dependency truthful — với JS/TS, plugin suy
+  từ import, nên import sai là graph sai.
+- Cache: task inputs phải phủ mọi thứ test đọc — source, config, fixture. Khi `namedInputs.production` loại spec file, đổi
+  một spec làm `test` chạy lại nhưng không buộc build lại production artifact. Cơ chế `namedInputs`/`inputs` → `nx.json`.
+
+## 6. Test environment, isolation, setup, fixtures, cleanup
+
+- **Mặc định:** mỗi suite tự mang harness của mình (container, D1 proxy, …) và tự dọn sau khi chạy. Resource ephemeral trong
+  CI phải được thu hồi — quy tắc vệ sinh phía thực thi thuộc `02-delivery.md` §4.
+- **Suite phụ thuộc Docker đi theo probe pattern fail-loud:** probe Docker **một lần mỗi lần chạy** (vitest `globalSetup`).
+  Không có Docker thì suite **skip với exit 0**, trừ khi `ECOMA_REQUIRE_DOCKER=1` biến skip thành failure. Hệ quả cần biết:
+  "xanh" trong môi trường degraded có thể nghĩa là "đã skip" — CI có thể đặt biến này để fail closed.
+- **Database test không vượt ranh giới database ownership** (`01` §9 invariant 5, 7, 25): harness thuộc sở hữu của suite hoặc
+  project cần nó — mỗi project tự dựng harness của mình (PostgreSQL qua testcontainers, D1 qua wrangler `getPlatformProxy`).
+  **Không** có shared test-support library: import chéo deploy unit bị cấm bởi module-boundary rules (`05` §7), nên hai
+  harness giống hệt nhau ở hai deploy unit là **có chủ đích**, không phải nợ kỹ thuật.
+
+## 7. Minimum requirements by responsibility and risk
+
+Mục này là **chỉ mục của enforcement kiến trúc**, không phải yêu cầu mới phát minh — mỗi dòng trỏ về invariant của
+`01-architecture.md` §9 (trừ A10 ở §8 Decision records):
+
+| Trách nhiệm / rủi ro                                     | Minimum test                                         | Invariant            |
+| -------------------------------------------------------- | ---------------------------------------------------- | -------------------- |
+| Domain/policy logic (`libs/<bc>-domain`, `-application`) | Unit test trong owning project                       | §9 (vd 8, 16, 26–34) |
+| Biên giữa hai deploy unit                                | Contract test qua public surface                     | A10, 7, 15           |
+| Service sở hữu database                                  | Database test: migration, constraint, data integrity | 5, 6, 10, 25         |
+| Worker reliability (lease, idempotency, retry, DLQ)      | Integration test với dependency thật                 | 8, 9, 12, 13, 14     |
+
+Minimum bar **scale theo blast radius**: một hàm thuần không state cần ít hơn một worker sở hữu migration — càng gần
+authoritative state và cross-service contract, bằng chứng test càng không được thiếu.
+
+## 8. CI quality gates
+
+CI chạy target nào trên PR là **delivery policy**, sở hữu bởi `02-delivery.md` (§1 pipeline, §10 test execution) — tài liệu
+này chỉ chốt **semantics**: target canonical nào phủ suite nào.
+
+## 9. Naming conventions and anti-patterns
+
+Conventions:
+
+- Colocated spec: `<subject>.spec.ts` cạnh subject, cùng thư mục.
+- Support/harness/fixture của một suite nằm **bên trong thư mục suite** đó.
+- System-test project: `system-tests/<category>/<suite>/`, mỗi suite một Nx project.
+
+Anti-patterns:
+
+- Phân loại test theo runner/tool thay vì theo phạm vi verify.
+- Thư mục `tests/` bãi rác ở root chứa tạp mọi loại.
+- Dựng scaffolding thư mục category rỗng trước khi có test thật.
+- Nhân bản định nghĩa contract vào `tests/contracts/` của consumer.
+- Root test support dùng chung "phòng khi cần", không có consumer tường minh.
+- Tin rằng chuyển thư mục là `nx affected` sẽ chọn đúng.
+- Đọc `test-integration` như nhãn taxonomy học thuật thay vì nhóm thực thi.
+- Spec colocated boot database thật — thứ đó thuộc app-owned suite.

@@ -9,7 +9,7 @@ migration là file SQL thuần.
 | `migrations/*.sql`      | Migration, áp dụng **theo thứ tự tên file** (tên file có tiền tố số) |
 | `migrate.ts`            | Hằng số và helper dùng chung cho runner và test harness              |
 | `apply.ts`              | CLI runner, chạy trong CI                                            |
-| `../tests/integration/` | Test integration trên PostgreSQL thật (testcontainers)               |
+| `../integration-specs/` | Test integration trên PostgreSQL thật (testcontainers)               |
 
 ## Vì sao không có `db-identity` để migrate
 
@@ -75,7 +75,7 @@ lệch với schema thật.
 Đổi lại, **mọi câu DDL phải idempotent**, và điều đó không tự động xảy ra:
 `CREATE ROLE` không có dạng `IF NOT EXISTS`, nên `0002` phải guard bằng `pg_roles` trong
 `DO $$ $$`. Thêm câu DDL mới thì bắt buộc nghĩ tới chạy lần hai — test
-`migrations.spec.ts` chạy apply hai lần để giữ điều đó thật.
+`../integration-specs/migrations.spec.ts` chạy apply hai lần để giữ điều đó thật.
 
 Lock là session-scoped nên tự nhả khi kết nối đóng, không để lại lock trôi nếu runner bị
 kill giữa chừng.
@@ -128,7 +128,7 @@ vẫn là `{=Tc/postgres,postgres=CTc/postgres}` — không có entry của
 `ecoma_account_runtime`). Chỉ khi `PUBLIC` cũng bị rút mới còn `false`, và một
 kết nối thật mới bị từ chối: `FATAL: permission denied for database "db-auth"`.
 
-`tests/integration/roles.spec.ts` có **ba** test riêng cho chỗ này: `has_database_privilege`
+`integration-specs/roles.spec.ts` có **ba** test riêng cho chỗ này: `has_database_privilege`
 trả `false`, một kết nối thật bị từ chối, và item `PUBLIC` trong `datacl` không chứa `C`.
 
 ⚠️ **Hệ quả phối hợp:** rút `CONNECT` khỏi `PUBLIC` trên `db-auth` cũng chặn
@@ -179,14 +179,14 @@ Chạy trên **PostgreSQL thật** qua testcontainers (`postgres:17-alpine`), kh
 pnpm nx run @ecoma-io/account:test-integration
 ```
 
-| File                      | Phủ cách                                                                 |
-| ------------------------- | ------------------------------------------------------------------------ |
-| `migrations.spec.ts`      | AC-001: áp từ rỗng, chạy lại là no-op, runtime không DDL                 |
-| `roles.spec.ts`           | AC-012, AC-013, AC-014, NFR-002a, NFR-002b, SR-008                       |
-| `session.spec.ts`         | FR-004, FR-004a, FR-004b, SR-002, AC-001, AC-002                         |
-| `handoff.spec.ts`         | AC-008b2 (concurrency), AC-008b3, AC-008b4, AC-008b5, FR-006c3, FR-006c4 |
-| `tombstone.spec.ts`       | AC-005, FR-012, FR-012e, NFR-001, invariant 6                            |
-| `internal-nonces.spec.ts` | Replay guard: nonce một lần, TTL lớn hơn skew, không `UPDATE`            |
+| File (trong `../integration-specs/`) | Phủ cách                                                                 |
+| ------------------------------------ | ------------------------------------------------------------------------ |
+| `migrations.spec.ts`                 | AC-001: áp từ rỗng, chạy lại là no-op, runtime không DDL                 |
+| `roles.spec.ts`                      | AC-012, AC-013, AC-014, NFR-002a, NFR-002b, SR-008                       |
+| `session.spec.ts`                    | FR-004, FR-004a, FR-004b, SR-002, AC-001, AC-002                         |
+| `handoff.spec.ts`                    | AC-008b2 (concurrency), AC-008b3, AC-008b4, AC-008b5, FR-006c3, FR-006c4 |
+| `tombstone.spec.ts`                  | AC-005, FR-012, FR-012e, NFR-001, invariant 6                            |
+| `internal-nonces.spec.ts`            | Replay guard: nonce một lần, TTL lớn hơn skew, không `UPDATE`            |
 
 Nếu **không có Docker**, toàn bộ suite **skip** chứ không fail — `probeDocker()` thử
 khởi động một container thật trước, thất bại thì `describe.skipIf`. CI nào bắt buộc
@@ -207,9 +207,9 @@ dòng `Tests`** của Vitest, không chỉ exit code — `pnpm nx run
 ps -aq --filter ancestor=postgres:17-alpine)`; container tồn đọng từ lần chạy bị bỏ dở
 chính là nguyên nhân.
 
-Test `handoff.spec.ts` dùng **hai connection thật** với `pg_sleep` làm barrier cho case
+Test `../integration-specs/handoff.spec.ts` dùng **hai connection thật** với `pg_sleep` làm barrier cho case
 first-binding-wins dưới tải đồng thời (AC-008b2): nếu chỉ chạy tuần tự thì race
-condition của read-then-write sẽ không bao giờ lộ. `internal-nonces.spec.ts` dùng
+condition của read-then-write sẽ không bao giờ lộ. `../integration-specs/internal-nonces.spec.ts` dùng
 đúng kỹ thuật đó cho `claimNonce`, vì nó cùng loại: đọc-rồi-ghi sẽ xanh mọi test tuần tự
 rồi hỏng dưới tải đồng thời.
 

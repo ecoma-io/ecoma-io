@@ -58,6 +58,7 @@ The English rule applies to developer-authored content. The following are exempt
 - Secrets never enter Git, PR builds, or Preview runtime from production environments.
 - One Cloudflare account owns every environment; secrets use native Worker Secrets and deployment environment mechanisms.
 - Database changes use expand → compatible rollout → contract; prefer forward-fix over data rollback.
+- Test placement, test category semantics and Nx test targets follow `docs/overview/06-testing.md`; `test`, `test-integration` and `system-test` are the canonical target names.
 - Do not introduce node-local application state that breaks recovery or topology changes.
 - Observability must not become a serving-path dependency; never log prompt/response bodies.
 

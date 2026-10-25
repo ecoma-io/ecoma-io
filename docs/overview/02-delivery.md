@@ -2,7 +2,7 @@
 
 > **Phạm vi:** Code được validate, test, migrate, release, deploy và rollback như thế nào?
 > Topology, data ownership, invariant → `01-architecture.md` · backup/DR, observability, runbook → `03-operations.md` ·
-> platform fact → `04-platform-facts.md` · Nx taxonomy, DDD, testing architecture → `05-code-architecture.md` · runbook của service → `services/<service>/`.
+> platform fact → `04-platform-facts.md` · Nx taxonomy, DDD → `05-code-architecture.md` · kiến trúc test → `06-testing.md` · runbook của service → `services/<service>/`.
 
 > ### ⚠️ Trạng thái tài liệu này — đọc trước khi dùng làm mô tả hệ thống đang chạy
 >
@@ -82,7 +82,7 @@ Hai làn dùng hai Worker identity tách biệt (staging `stg-*`, production —
 - Xác minh selection **không cần LLM**: bước **Verify the selection contract on the pinned CLI** chạy `ocr-selection-probe.mjs` ngay **trước** bước review, nên rule mất hiệu lực làm CI đỏ trước khi tốn một lần review thật — không phải chỉ đỏ khi có người nhớ chạy tay. Lệnh cũng chạy được độc lập để kiểm cấu hình của một nhánh trước khi merge. Probe chạy `ocr review --preview` trên repo thí nghiệm, in `will_review`/`exclude_reason` cho từng đường dẫn, và fail khi `.md` không được chọn, khi `include` vượt qua bộ lọc secret, hoặc khi `exclude` của rule mất hiệu lực. Nó đọc rule của **ref tin cậy** (base trên `pull_request_target`, ref được dispatch trên `workflow_dispatch`), không phải rule trong cây PR head: một PR tự làm hỏng `rule.json` không vì thế mà đỏ trước khi merge, phải chờ merge rồi các PR sau mới đỏ. Với range rỗng, probe chỉ **ghim hình dạng** mà CLI phải trả (`files: []`, `total_files: 0`, `reviewable_count: 0`); việc từ chối đọc hình dạng đó như một review sạch thuộc về cổng **Verify the review result** ở trên. Probe phân biệt ba exit code để không đổ lỗi sai chỗ: `0` contract đúng, `1` contract **sai** (một assertion trên `files[]` — `will_review`, `exclude_reason` — **hoặc trên con số tổng** (`total_files`, `reviewable_count`) không giữ), `2` **chưa đo được** (thiếu git, CLI không chạy được / bị kill / quá thời gian / stdout không phải JSON, setup repo thí nghiệm hỏng) — một lần chạy exit 2 không được đọc là "markdown không được chọn". Nó cũng từ chối chạy khi không đọc được pin, khi hai pin `OCR_VERSION_PIN` và `ocr_version` của action lệch nhau, hoặc khi phiên bản CLI thực tế khác pin — nên kết quả không thể đến từ một bản CLI khác bản mà lần review thật dùng. Để kết quả chạy tay cũng là bằng chứng, probe cô lập môi trường của mọi lệnh con: bỏ mọi biến `GIT_*` kế thừa, tắt git config global/system, và ghi đè toàn bộ nhóm biến home (`HOME`, `USERPROFILE`, `APPDATA`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME`) về thư mục rỗng của chính nó — vì CLI đọc thêm rule cấp người dùng ở `$HOME/.opencodereview/rule.json` (đo trên `1.12.12`), nếu không thì một máy đã cấu hình `ocr` toàn cục sẽ làm ca "không rule" báo contract sai và đổ lỗi cho rule của repo.
 - Module-boundary lint enforce ranh giới project — không lặp chi tiết ở đây.
 
-Taxonomy (`apps`/`libs`/`tests`) và cấu trúc Nx project → [`05-code-architecture.md`](./05-code-architecture.md).
+Taxonomy (`apps`/`libs`/`system-tests`) và cấu trúc Nx project → [`05-code-architecture.md`](./05-code-architecture.md).
 
 ---
 
@@ -839,22 +839,25 @@ Mỗi khẳng định trên đều có test đối kháng: `resource-bindings.sp
 
 ## 10. Test execution
 
-| Tầng                          | Công cụ                                                                   | Chạy ở                                                                       |
-| ----------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Unit/domain                   | Vitest                                                                    | PR                                                                           |
-| Port conformance              | Miniflare + Testcontainers (PostgreSQL + TimescaleDB)                     | PR                                                                           |
-| Worker integration            | `vitest-pool-workers`                                                     | PR                                                                           |
-| `llm-api` integration/e2e     | CI runner + mock upstream                                                 | PR (khi affected)                                                            |
-| API contract (nội bộ)         | Pact                                                                      | PR                                                                           |
-| Public API                    | OpenAPI + `oasdiff` + SDK conformance                                     | PR                                                                           |
-| Preview E2E                   | Playwright                                                                | Preview                                                                      |
-| Serve-mode UI preview         | mock adapter qua data-mode seam (`nuxt dev` only)                         | Dev workstation — KHÔNG chạy ở CI gate                                       |
-| Staging E2E                   | OTP mailbox + OAuth nightly                                               | Staging                                                                      |
-| `llm-api` load/soak           | k6 + mock upstream                                                        | Ngoài giờ cao điểm hoặc host riêng                                           |
-| Restore test PostgreSQL       | Restore backup vào instance tạm trên host riêng                           | Định kỳ (`03` §3.4)                                                          |
-| Nx remote cache compatibility | GET/PUT cache artifact, auth, immutable entry / 409, local → CI cache hit | PR ([`services/cache/03-operations.md`](../services/cache/03-operations.md)) |
+| Tầng                          | Công cụ                                                                                                                                        | Chạy ở                                                                       |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Unit/domain                   | Vitest                                                                                                                                         | PR                                                                           |
+| Port conformance              | Miniflare + Testcontainers (PostgreSQL + TimescaleDB)                                                                                          | PR                                                                           |
+| Worker integration            | `vitest-pool-workers`                                                                                                                          | PR                                                                           |
+| `llm-api` integration/e2e     | CI runner + mock upstream                                                                                                                      | PR (khi affected)                                                            |
+| API contract (nội bộ)         | Pact                                                                                                                                           | PR                                                                           |
+| Public API                    | OpenAPI + `oasdiff` + SDK conformance                                                                                                          | PR                                                                           |
+| Backoffice browser regression | Playwright — suite app-owned dưới `apps/backoffice/tests/` (phạm vi UI của backoffice, không phải system E2E — phân loại theo `06-testing.md`) | PR, chạy qua target `test-integration`                                       |
+| Preview E2E                   | Playwright                                                                                                                                     | Preview                                                                      |
+| Serve-mode UI preview         | mock adapter qua data-mode seam (`nuxt dev` only) — chi tiết: `05-code-architecture.md` §5                                                     | Dev workstation — KHÔNG chạy ở CI gate                                       |
+| Staging E2E                   | OTP mailbox + OAuth nightly                                                                                                                    | Staging                                                                      |
+| `llm-api` load/soak           | k6 + mock upstream                                                                                                                             | Ngoài giờ cao điểm hoặc host riêng                                           |
+| Restore test PostgreSQL       | Restore backup vào instance tạm trên host riêng                                                                                                | Định kỳ (`03` §3.4)                                                          |
+| Nx remote cache compatibility | GET/PUT cache artifact, auth, immutable entry / 409, local → CI cache hit                                                                      | PR ([`services/cache/03-operations.md`](../services/cache/03-operations.md)) |
 
-Testing architecture (topology, vị trí unit/contract/E2E test) → `05-code-architecture.md`.
+Ba loại kiểm trên browser phải không bị lẫn: **browser regression** là UI của một app duy nhất — suite app-owned (không colocated) thuộc `apps/<app>/tests/`, chạy qua target `test-integration` (phân loại theo `06-testing.md`); **system E2E** là kiểm liên dịch vụ qua runtime/service boundary, ở `system-tests/e2e/` với Nx target `system-test` (phân loại và taxonomy → `06-testing.md`); còn **manual UI preview** là serve-mode data policy khi chạy app bằng tay, không phải test — chính sách → `05-code-architecture.md` §5.
+
+Testing architecture (taxonomy test, vị trí unit/contract/E2E test, target contract của từng tầng) → `06-testing.md`.
 
 ---
 

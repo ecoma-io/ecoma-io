@@ -68,13 +68,13 @@ và khi quét `@font-face` từ CSS sẽ chỉ lấy weight 400 nếu app không
 `shell` đặt `font-synthesis-weight: none` để không tự bù độ đậm, việc không khai đủ weight dẫn đến
 face weight cần thiết không được tải (đo trên build thật: chỉ còn 15 face toàn 400). Khai giống
 upstream `[300, 400, 500, 600, 700, 800]` để các lớp `font-medium`/`font-semibold` của shell được
-tải đúng weight. Test `tests/font-weights.spec.ts` của từng app ghim rằng `fonts.defaults.weights`
-phải phủ toàn bộ weight mà source shell thực sự dùng.
+tải đúng weight. Chưa app consumer nào có test ghim `fonts.defaults.weights` (pattern mục tiêu
+là một test per-app, đặt cạnh stylesheet của app); đến khi có, khai liệt kê sáu weight là
+việc phải làm thủ công mỗi lần tích hợp.
 
 `@source` cũng là đường dẫn tương đối tính từ chính file CSS này; số cấp `..` tuỳ vị trí, phải
 kiểm tra lại khi đổi chỗ stylesheet. Đếm sai một cấp là lỗi **im lặng** của Tailwind (không lỗi
-build, chỉ mất utility), nên mỗi app consumer giữ một test ghim số cấp
-(`tests/tailwind-source.spec.ts`).
+build, chỉ mất utility), nên mỗi app consumer giữ một test ghim số cấp: `apps/backoffice/app/assets/css/styles.spec.ts` (đặt cạnh stylesheet) và `apps/{home,pact-broker-app}/tests/tailwind-source.spec.ts`.
 
 Về `@source`, đo bằng A/B build thật trên `apps/backoffice` (bỏ từng dòng rồi build lại):
 
@@ -224,8 +224,8 @@ PY
 ```
 
 Đừng grep một class mà app cũng nhắc tới (kể cả trong comment hay assertion): Tailwind quét cả
-những file đó nên phép kiểm sẽ xanh giả. Ba app consumer giữ test ghim số cấp của `@source` và
-của `@import` (`tests/tailwind-source.spec.ts`).
+những file đó nên phép kiểm sẽ xanh giả. Các app consumer giữ test ghim số cấp của `@source` và
+của `@import`: `apps/backoffice/app/assets/css/styles.spec.ts` và `apps/{home,pact-broker-app}/tests/tailwind-source.spec.ts` (home chỉ ghim `@source` — nó không `@import` app-shell).
 
 ## Runtime
 

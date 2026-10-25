@@ -24,7 +24,8 @@
 - `02-delivery.md`: Git, Nx, CI/CD, contracts delivery, migrations, environments, release and rollout.
 - `03-operations.md`: deployment operations, observability, failure handling, backup/DR, recovery and operational policies.
 - `04-platform-facts.md`: verified external platform facts only.
-- `05-code-architecture.md`: Nx project structure, Bounded Context, DDD layers, dependency rules, contracts and testing architecture.
+- `05-code-architecture.md`: Nx project structure, Bounded Context, DDD layers, dependency rules, contracts.
+- `06-testing.md`: canonical testing architecture — taxonomy, ownership/layout, Nx target contracts, test environment.
 
 `overview/` describes services only at boundary level. Design details, API, storage, procedures and runbooks belong in service documents.
 
@@ -49,6 +50,7 @@ Each fact or decision has exactly **one canonical location**:
 | ----------------------------------- | ---------------------------------- |
 | System architecture/policy          | `overview/`                        |
 | Code architecture                   | `overview/05-code-architecture.md` |
+| Testing architecture                | `overview/06-testing.md`           |
 | Service design/behaviour/operations | `services/<service>/`              |
 | External platform fact              | `overview/04-platform-facts.md`    |
 | Exact API/schema/contract           | Machine-readable contract          |
