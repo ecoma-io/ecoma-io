@@ -848,6 +848,7 @@ Mỗi khẳng định trên đều có test đối kháng: `resource-bindings.sp
 | API contract (nội bộ)         | Pact                                                                      | PR                                                                           |
 | Public API                    | OpenAPI + `oasdiff` + SDK conformance                                     | PR                                                                           |
 | Preview E2E                   | Playwright                                                                | Preview                                                                      |
+| Serve-mode UI preview         | mock adapter qua data-mode seam (`nuxt dev` only)                         | Dev workstation — KHÔNG chạy ở CI gate                                       |
 | Staging E2E                   | OTP mailbox + OAuth nightly                                               | Staging                                                                      |
 | `llm-api` load/soak           | k6 + mock upstream                                                        | Ngoài giờ cao điểm hoặc host riêng                                           |
 | Restore test PostgreSQL       | Restore backup vào instance tạm trên host riêng                           | Định kỳ (`03` §3.4)                                                          |
