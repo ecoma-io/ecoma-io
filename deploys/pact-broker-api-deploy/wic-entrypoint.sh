@@ -151,9 +151,17 @@ trap on_signal TERM INT
 # Output: process con kế thừa stdout/stderr của entrypoint (docker logs gộp
 # chung). Wrangler dò port inspector từ 9229 — WIC không cần debugger, ghim
 # sẵn một port riêng bỏ dò port khỏi phương trình (cùng lý do auth-deploy).
+# `--ip 0.0.0.0` (#267): miniflare mặc định bind localhost (127.0.0.1) —
+# loopback-only trong netns của container, mà `pact-broker-app` gọi API này QUA
+# Docker network (`NITRO_PACT_BROKER_API_BASE_URL=http://ecoma-pact-api:4204`,
+# alias network không với tới loopback-only) — thiếu flag thì mọi call của app
+# là ECONNREFUSED trong khi healthcheck nội bộ (probe 127.0.0.1 trong chính
+# container) vẫn xanh, lỗi vô hình qua health gate. Cùng lý giải với
+# `--ip 0.0.0.0` của mail/push WIC.
 log '{"event":"wic.starting","worker":"ecoma-pact-broker-api"}'
 (cd "$RUNTIME_TREE/apps/pact-broker-api" && exec "$WRANGLER" dev \
   --config "$RUNTIME_TREE/apps/pact-broker-api/wrangler.jsonc" \
+  --ip 0.0.0.0 \
   --persist-to "$PERSIST_DIR" \
   --inspector-port 9235 \
   ) &
