@@ -14,6 +14,10 @@ inputs:
       targets with a comma; surrounding whitespace is ignored, so 'test, typecheck'
       and 'test typecheck' are both accepted.
     required: true
+  threads:
+    description: 'Maximum number of Nx tasks to run in parallel.'
+    required: false
+    default: '6'
 
 runs:
   using: 'composite'
@@ -36,6 +40,7 @@ runs:
         # giá trị này, và `env:` giữ nó là dữ liệu vô hại thay vì văn bản script.
         AFFECTED: ${{ inputs.affected }}
         RAW_TARGETS: ${{ inputs.targets }}
+        THREADS: ${{ inputs.threads }}
       run: |
         set -euo pipefail
 
@@ -54,8 +59,8 @@ runs:
 
         if [ "$AFFECTED" = 'true' ]; then
           echo "Running on the affected set: npx nx affected -t $targets"
-          npx nx affected -t "$targets"
+          npx nx affected -t "$targets" --parallel="$THREADS"
         else
           echo "Running on every project: npx nx run-many -t $targets"
-          npx nx run-many -t "$targets"
+          npx nx run-many -t "$targets" --parallel="$THREADS"
         fi
