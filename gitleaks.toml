@@ -14,7 +14,12 @@ paths = [
   # nằm trong .gitignore (Pulumi.local-*.yaml), không bao giờ vào Git/PR.
   # `gitleaks dir` quét cả file gitignored trên máy developer nên cần allowlist
   # tường minh để không chặn push từ worktree đã dựng local stack.
-  '''^deploys/[^/]+/Pulumi\.local-[^/]+\.yaml$''',
+  # Prefix worktree lồng nhau (`^(\.claude/worktrees/[^/]+/)?`) khớp cả scan chạy
+  # từ checkout chính với worktree agent con (`agent-*/deploys/...`) — cùng quy
+  # ước với các pattern phía dưới; thiếu prefix thì mọi push từ checkout giữ
+  # worktree agent đã dựng local stack bị chặn bởi state Pulumi của agent (đo
+  # được: 18 findings generic-api-key chặn pre-push).
+  '''^(\.claude/worktrees/[^/]+/)?deploys/[^/]+/Pulumi\.local-[^/]+\.yaml$''',
   # Log wrangler dev của local worker stack: output wrangler nhét cả request
   # headers vào log, trong đó có shared secret cục bộ của worktree (mục đích
   # mỗi worktree tự xoay, không dùng chung). Thư mục nằm trong .gitignore
