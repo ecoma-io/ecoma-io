@@ -43,6 +43,10 @@
  * PUBLIC trước per-role sau.
  */
 
+import * as crypto from 'node:crypto';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import * as path from 'node:path';
+
 import * as command from '@pulumi/command';
 import * as docker from '@pulumi/docker';
 import * as dockerBuild from '@pulumi/docker-build';
@@ -57,7 +61,10 @@ import {
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
 import { shellQuote, sqlQuote } from '../../tools/dx/src/local-runtime/shell-quote';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import { ownershipLabels } from '../../tools/dx/src/deployment/local-platform/deploy-labels';
+import {
+  LABEL_PREFIX,
+  ownershipLabels,
+} from '../../tools/dx/src/deployment/local-platform/deploy-labels';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
 import type { PlatformOutputs } from '../../tools/dx/src/deployment/local-platform/platform-outputs-contract';
 
@@ -309,6 +316,80 @@ const wicStateInit = new docker.Container(
 );
 
 /**
+ * Content-hash của HAI cây bundle `dist/` (`apps/auth/dist` +
+ * `tools/account-bridge/dist`) — trigger recreate của container WIC.
+ *
+ * Vì sao cần: entrypoint chỉ COPY `dist` vào runtime tree LÚC CONTAINER
+ * START (`wic-entrypoint.sh`), còn container WIC là resource có định nghĩa
+ * bất biến giữa các lần `pulumi up` — bundle build lại trên host không làm
+ * thay đổi thuộc tính nào của container, Pulumi không recreate, worker chạy
+ * mãi trên bundle cũ (hoặc, với worktree lần đầu, trên bundle RỖNG → wrangler
+ * fail entry-point → restart loop, #247). Build prerequisite Nx
+ * (`auth:build`/`account-bridge:build` trong `dependsOn` của `local-up`) chỉ
+ * bảo đảm dist tồn tại TRƯỚC khi up; việc container NHẬN bundle mới phải do
+ * chính stack này phát hiện.
+ *
+ * Cơ chế: tính SHA-256 TRỰC TIẾP trên nội dung hai cây dist bằng code Node
+ * trong Pulumi program (không qua `command.local.Command`) — hàm thuần sync
+ * chạy ở MỖI lần đánh giá program: bundle build lại trên host là output đổi
+ * ngay tại lần up sau đó, không phụ thuộc trigger nào nhớ trạng thái cũ. Hash
+ * bao phủ CẢ TÊN FILE lẫn nội dung (walk có sort tên file để thứ tự duyệt
+ * không đổi kết quả), chảy vào `labels` của container (ForceNew) — hash đổi
+ * là container recreate, entrypoint copy lại bundle mới. `@pulumi/docker`
+ * 5.2.0 Container KHÔNG có property `triggers` (property đó thuộc
+ * `remoteImage`/`registryImage`/`@pulumi/command`) — label là cơ chế ForceNew
+ * tương đương.
+ *
+ * Hash của cây RỘNG hoặc dist vắng mặt vẫn tính được (chuỗi rỗng hash thành
+ * giá trị xác định — không fail-closed ở đây): empty dist là trạng thái không
+ * hợp lệ sẽ bị guard `wic.fatal: dist_missing` của entrypoint ném ra tường
+ * minh.
+ *
+ * Hash này không phải dữ liệu bảo mật, chỉ là thay đổi-detector — nhưng vẫn
+ * chỉ hash tên file tương đối + nội dung, không lẫn dữ liệu nào khác.
+ */
+function sha256DistTree(rootDir: string, relDir: string): string {
+  const treeRoot = path.join(rootDir, relDir);
+  const hash = crypto.createHash('sha256');
+  if (!existsSync(treeRoot)) {
+    // Dist vắng mặt (chưa build) — hash rỗng xác định; guard `dist_missing`
+    // của entrypoint là nơi fail tường minh, không phải ở đây.
+    return hash.digest('hex');
+  }
+  const files: string[] = [];
+  const walk = (dir: string): void => {
+    // Sort theo tên file để thứ tự duyệt không đổi kết quả hash. Target es2020
+    // chưa có `toSorted` — sort trên mảng do chính hàm tạo (cùng quy ước
+    // `local-deploy-graph.ts`: copy rồi sort tại chỗ).
+    const entries = [...readdirSync(dir, { withFileTypes: true })];
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const entry of entries) {
+      const filePath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(filePath);
+      } else if (entry.isFile()) {
+        files.push(path.relative(treeRoot, filePath).split(path.sep).join('/'));
+      }
+    }
+  };
+  walk(treeRoot);
+  for (const relFile of files) {
+    hash.update(relFile);
+    hash.update('\0');
+    hash.update(readFileSync(path.join(treeRoot, relFile)));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
+const wicBundleHash = pulumi.output(
+  [
+    sha256DistTree(worktreeRoot, 'apps/auth/dist'),
+    sha256DistTree(worktreeRoot, 'tools/account-bridge/dist'),
+  ].join('-'),
+);
+
+/**
  * Container WIC — HAI worker `wrangler dev` (auth + shim bridge) qua
  * `wic-entrypoint.sh`, plain HTTP trên platform network, TLS do Traefik chấm
  * dứt phía trước (cùng model home/backoffice/account).
@@ -316,6 +397,11 @@ const wicStateInit = new docker.Container(
  * Thứ tự phụ thuộc: provision → migrate → image → volume → container —
  * container chỉ lên sau khi schema `db-auth` sẵn sàng, để readiness đỏ của
  * cửa sổ chưa-migrate không bị healthcheck giết lặp vô tận.
+ *
+ * `wicBundleHash` là input của container (không phải của migrate): container
+ * phải mang hash của LẦN build hiện hành — bundle vừa build lại thì hash mới
+ * đã có trong label ngay khi Pulumi so sánh desired state, vì hash được tính
+ * trực tiếp ở mỗi lần đánh giá program.
  *
  * Env:
  * - `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` (secret):
@@ -405,6 +491,14 @@ const wic = new docker.Container(
     ],
     labels: [
       ...Object.entries(labels).map(([label, value]) => ({ label, value })),
+      // Bundle-hash trigger: hash SHA-256 của 2 cây dist hiện hành. ForceNew —
+      // bundle build lại trên host đổi hash ⇒ container recreate ⇒ entrypoint
+      // copy lại bundle (xem JSDoc của sha256DistTree). Thuộc namespace
+      // `io.ecoma` cùng họ ownership labels, không đụng `io.docker.*`.
+      {
+        label: `${LABEL_PREFIX}.bundle-hash`,
+        value: wicBundleHash,
+      },
       { label: 'traefik.enable', value: 'true' },
       // Bắt buộc với provider docker multi-tenant (memory: cùng network flag
       // KHÔNG lọc — container trên nhiều network bị Traefik thấy qua network

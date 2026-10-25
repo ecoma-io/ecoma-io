@@ -55,6 +55,15 @@ if [ ! -x "$WRANGLER" ]; then
   exit 1
 fi
 
+# deps check fail-loud: bundle `dist/` phải có thật trên mount repo. Rỗng hay
+# thiếu là lỗi chuỗi build upstream (target `build` của Nx chưa chạy — #247),
+# không phải trạng thái wrangler tự phục hồi được: copy dist rỗng để wrangler
+# chết với "entry-point not found" rồi restart loop là che mất nguyên nhân.
+if [ ! -f "$AUTH_DIR/dist/main.js" ] || [ ! -f "$BRIDGE_DIR/dist/main.js" ]; then
+  log '{"event":"wic.fatal","reason":"dist_missing"}'
+  exit 1
+fi
+
 # ---------------------------------------------------------------------------
 # Chuẩn bị cây runtime RW.
 #

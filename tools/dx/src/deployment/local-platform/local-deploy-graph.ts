@@ -12,6 +12,14 @@
  * - `localDestroyStackOrder()`: thứ tự destroy NGHỊCH của dependency (dependents
  *   trước, platform CUỐI) cho `localDestroy`.
  *
+ * Ngoài spine, một `dependsOn` của `local-up` được phép khai **build
+ * prerequisite** — entry `{"projects": [...], "target": "build"}` trỏ vào
+ * project app NGOÀI lane (vd `auth:build` từ `auth-deploy`): deploy unit cần
+ * bundle `dist/` đã build trước khi Pulumi up. Edge dạng này KHÔNG tham gia
+ * spine topo và không lọt destroy order — nó chỉ là ràng buộc thứ tự Nx giữa
+ * task build của app và task up của deploy unit (xem
+ * `classifyLocalUpDependsOnEntries`).
+ *
  * Vì cả orchestration lẫn destroy cùng đọc MỘT nguồn, một thay đổi `dependsOn`
  * trong khai báo Nx tự động đổi cả hai — và unit test cấu trúc
  * chặn mọi thay đổi phá bất biến (platform trước mọi unit, account trước auth,
@@ -25,6 +33,14 @@ import { ROOT_DIR } from '../../utils.js';
 
 /** Target Nx của lane local trên deploy project. */
 export type LocalLaneTarget = 'local-up' | 'local-env' | 'local-smoke';
+
+/**
+ * Target build-prerequisite mà một `dependsOn` của `local-up` được phép khai
+ * trỏ ra ngoài lane. Chỉ `build`: edge build là ràng buộc thứ tự giữa bundle
+ * `dist/` của app và task up của deploy unit; bất kỳ target nào khác ngoài
+ * lane vẫn là lỗi khai báo (target lạ).
+ */
+export const LOCAL_UP_PREREQUISITE_TARGET = 'build';
 
 /** MỘT task của đồ thị: `<project>:<target>` (cùng quy ước hiển thị của Nx). */
 export interface LocalLaneTask {
@@ -92,6 +108,58 @@ function normalizeDependsOnEntry(entry: NonNullable<JsonTargetSpec['dependsOn']>
   return { project: entry.projects?.[0], target, self: false };
 }
 
+/**
+ * Phân loại MỘT entry `dependsOn` của `local-up` thành spine hoặc build
+ * prerequisite — fail-closed với khai báo sai.
+ *
+ * - Entry thiếu `{"projects": [...]}` tường minh (chuỗi `'target'`, `'^target'`
+ *   hay implicit) vẫn là lỗi như cũ: thứ tự lane không bao giờ "đoán".
+ * - `{"projects": [<lane project>], "target": "local-up"}` là spine edge thật
+ *   giữa hai stack — tham gia topo.
+ * - `{"projects": [<lane project>], "target": "local-env"}` (platform) cung
+ *   cấp dữ liệu `.env` nhưng KHÔNG tham gia spine — đúng ngữ nghĩa hiện có.
+ * - `{"projects": [<bất kỳ>], "target": "build"}` là build prerequisite —
+ *   được phép trỏ ra ngoài lane (app bundle), KHÔNG tham gia spine. Target
+ *   `build` trên project trong lane cũng rơi vào đây: nó không phải up của
+ *   stack nào, giữ một classification duy nhất cho một target.
+ * - Mọi tổ hợp khác (project ngoài lane với `local-up`/`local-env`, target
+ *   lạ nói chung) ném `LocalLaneGraphError` với đúng thông điệp cũ — một
+ *   `dependsOn` sai phải đỏ ở validator TRƯỚC khi Nx kịp chạy.
+ */
+export function classifyLocalUpDependsOnEntry(
+  project: LocalLaneProject,
+  entry: NonNullable<JsonTargetSpec['dependsOn']>[number],
+): { kind: 'spine' | 'prerequisite'; dependency?: LocalLaneProject } {
+  const normalized = normalizeDependsOnEntry(entry);
+  if (normalized.project === undefined) {
+    throw new LocalLaneGraphError(
+      `${project}:local-up — dependsOn phải chỉ định {"projects": [...]} tường minh ` +
+        `(không dùng '^' hay implicit): ${JSON.stringify(entry)}`,
+    );
+  }
+  if (normalized.target === LOCAL_UP_PREREQUISITE_TARGET) {
+    return { kind: 'prerequisite' };
+  }
+  if (!(LOCAL_LANE_PROJECTS as readonly string[]).includes(normalized.project)) {
+    throw new LocalLaneGraphError(
+      `${project}:local-up phụ thuộc ${normalized.project} ngoài chuỗi local lane`,
+    );
+  }
+  if (normalized.target !== 'local-up' && normalized.target !== 'local-env') {
+    throw new LocalLaneGraphError(
+      `${project}:local-up phụ thuộc target lạ "${normalized.target}" — ` +
+        'chuỗi spine chỉ gồm target local-up (và local-env của platform cho dữ liệu .env; ' +
+        'target "build" là build prerequisite duy nhất được phép trỏ ngoài lane)',
+    );
+  }
+  if (normalized.target === 'local-up') {
+    return { kind: 'spine', dependency: normalized.project as LocalLaneProject };
+  }
+  // `local-env` chỉ tồn tại trên platform và không tham gia spine — edge
+  // spine chỉ đếm các phụ thuộc `local-up` (dependency thật giữa các stack).
+  return { kind: 'prerequisite' };
+}
+
 /** Target của MỘT project — từ package.json; không có target → lỗi (khai báo thiếu). */
 export function readProjectLaneTargets(project: string): Record<LocalLaneTarget, JsonTargetSpec> {
   const nx = readPackageNx(`deploys/${project}`);
@@ -118,7 +186,10 @@ export function readProjectLaneTargets(project: string): Record<LocalLaneTarget,
  *
  * Chỉ xét target `local-up` (chuỗi spine của lane); `local-env`/`local-smoke`
  * gắn trên platform và được orchestration chạy trong cùng lệnh `run-many`.
- * Fail-closed: thiếu project khai báo, thiếu target, thiếu dependsOn, hay có
+ * Build prerequisite (`target: "build"` trỏ ngoài lane) được chấp nhận nhưng
+ * KHÔNG tham gia topo — thứ tự build↔up do Nx đảm bảo lúc chạy task graph.
+ * Fail-closed: thiếu project khai báo, thiếu target, thiếu dependsOn, khai
+ * báo sai (project ngoài lane cho local-up/local-env, target lạ), hay có
  * chu trình đều là lỗi graph chứ không phải "chạy theo thứ tự cũ".
  */
 export function localUpProjectSequence(): LocalLaneProject[] {
@@ -127,33 +198,15 @@ export function localUpProjectSequence(): LocalLaneProject[] {
     specs.set(project, readProjectLaneTargets(project)['local-up']);
   }
 
-  // Edge: project → các project nó phụ thuộc (chỉ trong LOCAL_LANE_PROJECTS).
+  // Edge: project → các project nó phụ thuộc (chỉ spine edge tham gia topo;
+  // build prerequisite chỉ là ràng buộc thứ tự Nx, không đổi thứ tự stack).
   const edges = new Map<LocalLaneProject, LocalLaneProject[]>();
   for (const [project, spec] of specs) {
     const deps: LocalLaneProject[] = [];
     for (const entry of spec.dependsOn ?? []) {
-      const normalized = normalizeDependsOnEntry(entry);
-      if (normalized.project === undefined) {
-        throw new LocalLaneGraphError(
-          `${project}:local-up — dependsOn phải chỉ định {"projects": [...]} tường minh ` +
-            `(không dùng '^' hay implicit): ${JSON.stringify(entry)}`,
-        );
-      }
-      if (!(LOCAL_LANE_PROJECTS as readonly string[]).includes(normalized.project)) {
-        throw new LocalLaneGraphError(
-          `${project}:local-up phụ thuộc ${normalized.project} ngoài chuỗi local lane`,
-        );
-      }
-      if (normalized.target !== 'local-up' && normalized.target !== 'local-env') {
-        throw new LocalLaneGraphError(
-          `${project}:local-up phụ thuộc target lạ "${normalized.target}" — ` +
-            'chuỗi spine chỉ gồm target local-up (và local-env của platform cho dữ liệu .env)',
-        );
-      }
-      // `local-env` chỉ tồn tại trên platform và không tham gia spine — edge
-      // spine chỉ đếm các phụ thuộc `local-up` (dependency thật giữa các stack).
-      if (normalized.target === 'local-up') {
-        deps.push(normalized.project as LocalLaneProject);
+      const classified = classifyLocalUpDependsOnEntry(project, entry);
+      if (classified.kind === 'spine') {
+        deps.push(classified.dependency as LocalLaneProject);
       }
     }
     edges.set(project, deps);

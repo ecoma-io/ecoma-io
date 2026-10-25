@@ -4,12 +4,14 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  classifyLocalUpDependsOnEntry,
   localDeployTaskSequence,
   localDestroyStackOrder,
   localLaneConfigurationNames,
   localUpProjectSequence,
   LocalLaneGraphError,
   LOCAL_LANE_PROJECTS,
+  LOCAL_UP_PREREQUISITE_TARGET,
   readProjectLaneTargets,
   type JsonTargetSpec,
 } from './local-deploy-graph.js';
@@ -114,6 +116,67 @@ describe('local lane Nx declarations (source of truth)', () => {
     // dependency nào khác (nó cần duy nhất outputs của platform up).
     expect(dependsOnNames(envDeps)).toEqual(['platform-deploy:local-up']);
   });
+
+  it('auth local-up declares build prerequisites on BOTH app projects (WIC bundles exist before up)', () => {
+    // #247: WIC container chạy `wrangler dev` từ bundle `dist/` mount lúc
+    // container start — không edge build là wrangler fail entry-point ngay
+    // lúc container đầu tiên lên. Test đọc khai báo THÔ: xoá edge "cho gọn"
+    // sẽ đỏ tại đây. Hai project là ĐỦ (auth + bridge) — thiếu một là worker
+    // còn lại restart loop.
+    const deps = readProjectLaneTargets('auth-deploy')['local-up'].dependsOn ?? [];
+    const names = dependsOnNames(deps);
+    expect(names).toContain('auth:build');
+    expect(names).toContain('account-bridge:build');
+  });
+});
+
+describe('build-prerequisite edges (target "build" outside the lane)', () => {
+  it('classifies a build edge to an out-of-lane project as a prerequisite, not spine', () => {
+    // Edge build trỏ ra ngoài lane là HỢP LỆ — chính khai báo thật của
+    // auth-deploy dùng nó (#247). Nó không tham gia spine: kết quả không mang
+    // dependency nào.
+    const entry = { projects: ['auth'], target: LOCAL_UP_PREREQUISITE_TARGET };
+    expect(classifyLocalUpDependsOnEntry('auth-deploy', entry)).toEqual({
+      kind: 'prerequisite',
+    });
+  });
+
+  it('out-of-lane local-up stays REJECTED with the exact legacy message', () => {
+    // Hai chiều của contract: mở `build` KHÔNG mở cửa cho edge up ngoài lane.
+    // Thông điệp ghim nguyên văn — caller (orchestration fail-closed) in ra
+    // cho developer, đổi chữ là đổi contract lỗi.
+    const entry = { projects: ['auth'], target: 'local-up' };
+    expect(() => classifyLocalUpDependsOnEntry('auth-deploy', entry)).toThrowError(
+      new LocalLaneGraphError('auth-deploy:local-up phụ thuộc auth ngoài chuỗi local lane'),
+    );
+  });
+
+  it('an unknown target on an in-lane project is still rejected ("target lạ")', () => {
+    const entry = { projects: ['platform-deploy'], target: 'deploy' };
+    expect(() => classifyLocalUpDependsOnEntry('auth-deploy', entry)).toThrowError(
+      /phụ thuộc target lạ "deploy"/u,
+    );
+  });
+
+  it('a build edge does NOT enter the spine topo (sequence and destroy order unchanged)', () => {
+    // Bất biến cấu trúc: thêm build prerequisite vào auth-deploy không được đổi
+    // thứ tự spine lẫn destroy order — edge chỉ là ràng buộc thứ tự Nx giữa
+    // task build của app và task up của deploy unit.
+    expect(localUpProjectSequence()).toEqual([
+      'platform-deploy',
+      'home-deploy',
+      'backoffice-deploy',
+      'account-deploy',
+      'auth-deploy',
+    ]);
+    expect(localDestroyStackOrder()).toEqual([
+      'auth-deploy',
+      'account-deploy',
+      'backoffice-deploy',
+      'home-deploy',
+      'platform-deploy',
+    ]);
+  });
 });
 
 describe('localUpProjectSequence — structural invariants', () => {
@@ -144,9 +207,14 @@ describe('localUpProjectSequence — structural invariants', () => {
     const declared: Record<string, string[]> = {};
     for (const project of LOCAL_LANE_PROJECTS) {
       const deps = readProjectLaneTargets(project)['local-up'].dependsOn ?? [];
-      declared[project] = deps.map((d) =>
-        typeof d === 'string' ? d : ((d.projects ?? [])[0] ?? ''),
-      );
+      declared[project] = deps
+        .map((d) => (typeof d === 'string' ? d : ((d.projects ?? [])[0] ?? '')))
+        // Build prerequisite là entry target "build" (project app ngoài lane)
+        // — KHÔNG phải spine edge, không được lọt vào đồ thị tham chiếu này.
+        .filter((name, index) => {
+          const raw = deps[index];
+          return !(typeof raw !== 'string' && raw.target === 'build');
+        });
     }
     const expected = specTopoSequence(declared, [...LOCAL_LANE_PROJECTS]);
     expect(localUpProjectSequence()).toEqual(expected);
@@ -262,9 +330,10 @@ describe('local lane safety — single configuration, never cacheable', () => {
 describe('readProjectLaneTargets — fail-closed on broken declarations', () => {
   it('throws LocalLaneGraphError when a lane target is missing', () => {
     // Project ngoài danh sách lane không có target local → module phải ném lỗi
-    // tường minh (không trả về spec rỗng cho caller "đoán" tiếp).
-    // `pact-broker-api-deploy` từng là ví dụ ở đây nhưng đã có target local-up
-    // thật (WIC runtime) — dùng scaffold chưa triển khai thay thế.
+    // tường minh (không trả về spec rỗng cho caller "đoán" tiếp). Fixture phải
+    // là project KHÔNG khai `local-up` — kiểm `deploys/*/package.json` trước
+    // khi đổi; #239 đã thêm `local-up` cho `pact-broker-api-deploy`, nên
+    // fixture cũ đó không còn là "thiếu target" nữa.
     expect(() => readProjectLaneTargets('push-notification-deploy')).toThrowError(
       new LocalLaneGraphError(
         'push-notification-deploy thiếu target local-up — khai báo Nx là nguồn sự thật thứ tự lane local',

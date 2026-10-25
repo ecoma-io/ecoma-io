@@ -484,8 +484,19 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
     const signingPemInput = identityConfigSets.find(
       ([, args]) => args[2] === 'namespace:signingKeyPem',
     )?.[4]?.['input'];
-    expect(signingPemInput).toMatch(/^-----BEGIN PRIVATE KEY-----/u);
-    expect(signingPemInput?.endsWith('-----END PRIVATE KEY-----\n')).toBe(true);
+    // Hình PEM dựng từ DASHES — rule `private-key` của gitleaks quét cả spec;
+    // một literal PEM trông đúng trong source là false positive chặn push
+    // (cùng lý do với `signing-key.ts` của identity-auth-domain).
+    const DASHES = '-'.repeat(5);
+    const pemBegin = `${DASHES}BEGIN PRIVATE KEY${DASHES}`;
+    const pemEnd = `${DASHES}END PRIVATE KEY${DASHES}`;
+    // PEM KHÔNG có newline cuối: generator join('\n') với phần tử '' đuôi là
+    // nguyên nhân /ready 503 config_invalid trên WIC local (#249) —
+    // `requireSecret` của app từ chối giá trị có whitespace đầu/cuối.
+    expect(signingPemInput).toMatch(new RegExp(`^${pemBegin}`, 'u'));
+    expect(signingPemInput?.endsWith(pemEnd)).toBe(true);
+    expect(signingPemInput?.endsWith('\n')).toBe(false);
+    expect(signingPemInput?.startsWith(' ') ?? false).toBe(false);
     for (const [, args, , , options] of identityConfigSets) {
       expect(args).toContain('--plaintext');
       expect(args).not.toContain('--secret');
