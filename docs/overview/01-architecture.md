@@ -100,8 +100,8 @@ Workers (deploy unit độc lập · Service Binding nội bộ)
 
 ## 3. Monorepo
 
-Taxonomy (`apps`/`libs`/`tests`/`deploys`), DDD layer, dependency direction, Nx tag và testing →
-[`05-code-architecture.md`](./05-code-architecture.md). `01` không mô tả taxonomy/layer.
+Taxonomy (`apps`/`libs`/`system-tests`/`deploys`), DDD layer, dependency direction, Nx tag →
+[`05-code-architecture.md`](./05-code-architecture.md); kiến trúc test → [`06-testing.md`](./06-testing.md). `01` không mô tả taxonomy/layer.
 
 ⚠️ **Ranh giới giữa runtime service và deployment project.** `apps/` là **runtime/composition** — Worker chạy request, owns
 business logic, owns storage; `deploys/` là **provisioning** — Pulumi project tạo/cập nhật/xoá tài nguyên hạ tầng, không

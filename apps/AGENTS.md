@@ -8,4 +8,4 @@
 - Do not introduce shared mutable state or node-local state that violates the architecture's recovery/topology requirements.
 - Runtime-specific code must respect its Nx `runtime` boundary; do not introduce Node-only dependencies into `runtime:edge` projects.
 - Follow the project's local `AGENTS.md` when present; it overrides these rules for that subtree.
-- Canonical reference: [`docs/overview/05-code-architecture.md`](../docs/overview/05-code-architecture.md).
+- Canonical reference: [`docs/overview/05-code-architecture.md`](../docs/overview/05-code-architecture.md) for code architecture and [`docs/overview/06-testing.md`](../docs/overview/06-testing.md) for testing architecture (test placement, categories, Nx test targets).

@@ -315,8 +315,9 @@ PG của `apps/auth/src/`. Một fake `Map` cho đúng một winner và vẫn d�
 `SELECT` rồi `UPDATE`/`INSERT` là atomic.
 
 ⚠️ **PostgreSQL đến từ testcontainers.** Mỗi spec file tự dựng **một container**
-`postgres:17-alpine` riêng (`startAuthDatabase` trong `tests/integration/harness.ts`
-của từng project), provisioning hai role đúng trình tự operator ở
+`postgres:17-alpine` riêng (`startAuthDatabase` trong `integration-specs/harness.ts`
+của `apps/auth` và trong `tests/integration/harness.ts` của
+`libs/identity-auth-infrastructure`), provisioning hai role đúng trình tự operator ở
 §"Vai trò của operator" (migrator có DDL, runtime chỉ DML), rồi apply **chính các file
 trong thư mục này** bằng credential `ecoma_auth_migrator` thật — nên nó kiểm adapter
 với đúng schema production. Một bảng do test tự chế là một schema thứ hai, và test

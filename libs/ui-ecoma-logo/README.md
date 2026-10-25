@@ -65,7 +65,7 @@ Ví dụ cho `apps/home` (`apps/home/app/assets/css/styles.css`):
 
 Cách verify **sai** (đã từng cho kết quả xanh giả): grep `.fill-brand` trong `.output/public/_nuxt/*.css`. App thường đã chứa chuỗi đó ở chỗ khác (spec, comment) nên Tailwind tự quét `apps/home/**` và vẫn sinh utility dù `@source` trỏ sai.
 
-Cách verify **đúng**: thêm tạm một class chỉ tồn tại trong library vào `EcomaLogo.vue`, build production, rồi kiểm class đó có trong `.output/public/_nuxt/*.css`. `apps/home/tests/tailwind-source.spec.ts` ghim bất biến này tự động (resolve base của mọi `@source` từ thư mục chứa stylesheet + `existsSync` + khẳng định phủ đúng `libs/ui-ecoma-logo/src` với glob có `.vue`).
+Cách verify **đúng**: thêm tạm một class chỉ tồn tại trong library vào `EcomaLogo.vue`, build production, rồi kiểm class đó có trong `.output/public/_nuxt/*.css`. `apps/home/tests/tailwind-source.spec.ts` ghim bất biến này tự động cho `apps/home` (resolve base của mọi `@source` từ thư mục chứa stylesheet + `existsSync` + khẳng định phủ đúng `libs/ui-ecoma-logo/src` với glob có `.vue`). Hai consumer còn lại (`apps/backoffice`, `apps/pact-broker-app`) cũng đăng ký `@source` cho thư mục này nhưng test ghim của chúng (`apps/backoffice/app/assets/css/styles.spec.ts`, `apps/pact-broker-app/tests/tailwind-source.spec.ts`) hiện chỉ ghim riêng `libs/ui-app-shell/src` — chưa có app nào khác ghim riêng thư mục của logo.
 
 Không dùng broad workspace scan thay vì đăng ký tương đối — nó không giải quyết được vấn đề cho consumer mới.
 

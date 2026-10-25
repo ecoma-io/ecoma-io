@@ -121,20 +121,26 @@ example `lint` from `@nx/oxlint` has `executor: "@nx/oxlint:lint"` and no
 The common target names in this workspace come from the plugins configured in
 `nx.json`:
 
-| Target                                                                       | Provided by             |
-| ---------------------------------------------------------------------------- | ----------------------- |
-| `typecheck`                                                                  | `@nx/js/typescript`     |
-| `lint`                                                                       | `@nx/oxlint`            |
-| `test`, `test-ci`                                                            | `@nx/vitest`            |
-| `build`, `serve`, `build-static`, `serve-static`, `build-deps`, `watch-deps` | `@nx/nuxt/plugin`       |
-| `e2e`                                                                        | `@nx/playwright/plugin` |
+| Target                                                                                                                                                                  | Provided by             |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| `typecheck`                                                                                                                                                             | `@nx/js/typescript`     |
+| `lint`                                                                                                                                                                  | `@nx/oxlint`            |
+| `test`, `test-ci`                                                                                                                                                       | `@nx/vitest`            |
+| `build`, `serve`, `build-static`, `serve-static`, `build-deps`, `watch-deps`                                                                                            | `@nx/nuxt/plugin`       |
+| `e2e`                                                                                                                                                                   | `@nx/playwright/plugin` |
+| `test-integration` (explicit `nx:run-commands` on `@ecoma-io/backoffice`, `@ecoma-io/account`, `@ecoma-io/pact-broker-api`, running `npx vitest run integration-specs`) | project `package.json`  |
+
+`apps/auth` has an `integration-specs/` directory picked up by its `test` target
+but does not define a `test-integration` target yet. `system-test` is the
+canonical third target name defined in `docs/overview/06-testing.md` but no
+project implements it today — do not invoke it.
 
 Projects may also define their own targets (for example `deploy`,
 `nuxt-prepare` on the web apps). A plugin only infers targets for projects that
-match it, so not every target in the table exists on every project, and one may
-exist on no project at all — `e2e` is currently inferred for none, because no
-Playwright configuration exists yet. Treat the table as orientation only and
-confirm against `pnpm nx show project <name> --json`.
+match it, so not every target in the table exists on every project — `e2e` is
+currently inferred only for `@ecoma-io/backoffice`, the one project with a
+`playwright.config.ts`. Treat the table as orientation only and confirm against
+`pnpm nx show project <name> --json`.
 
 ## Dependency Graph
 
@@ -220,7 +226,9 @@ A plugin only infers targets for projects it matches. Check the `include` /
   them; do not restate or re-derive their full definitions here.
 - For architecture — bounded contexts, DDD layers, dependency direction — consult
   the canonical sources: the root `AGENTS.md` and
-  `docs/overview/05-code-architecture.md`. Do not treat this skill as an
+  `docs/overview/05-code-architecture.md`; for testing architecture — test
+  placement, categories, Nx test targets — consult
+  `docs/overview/06-testing.md`. Do not treat this skill as an
   architecture reference, and do not read `docs/overview/*.md` as a description
   of the current implementation.
 - Everything here is read-only exploration. Do not run generators, migrations,

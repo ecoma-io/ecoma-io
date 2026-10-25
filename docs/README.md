@@ -8,7 +8,8 @@
 2. [Delivery](./overview/02-delivery.md) — Git, CI/CD, contracts, migration, môi trường, release và rollback.
 3. [Operations](./overview/03-operations.md) — backup/DR, hành vi khi sự cố, observability, alert và database hosting tier.
 4. [Platform Facts](./overview/04-platform-facts.md) — capability và giới hạn đã xác minh của nền tảng.
-5. [Code Architecture](./overview/05-code-architecture.md) — Nx project structure, Bounded Context, DDD layers, dependency rules, contracts và testing architecture.
+5. [Code Architecture](./overview/05-code-architecture.md) — Nx project structure, Bounded Context, DDD layers, dependency rules, contracts.
+6. [Testing](./overview/06-testing.md) — testing architecture: quyền sở hữu test, layout thư mục (`apps/<app>/tests/`, `system-tests/`), ba target Nx canonical (`test`, `test-integration`, `system-test`), môi trường test.
 
 ## Services
 
