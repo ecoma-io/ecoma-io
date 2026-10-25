@@ -1,12 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { createBackofficeAdapter } from '../app/backoffice-data/adapter';
-import {
-  resolveBackofficeDataMode,
-  type BackofficeDataMode,
-} from '../app/backoffice-data/data-mode';
-import { BACKOFFICE_BACKEND_UNAVAILABLE_CODE } from '../app/backoffice-data/unavailable-adapter';
-import { PROTOTYPE_DATA } from '../app/backoffice-data/prototype-fixture';
+import { createBackofficeAdapter } from './adapter';
+import { resolveBackofficeDataMode, type BackofficeDataMode } from './data-mode';
+import { BACKOFFICE_BACKEND_UNAVAILABLE_CODE } from './unavailable-adapter';
+import { PROTOTYPE_DATA } from './prototype-fixture';
 
 /**
  * Hành vi của điểm chọn adapter.

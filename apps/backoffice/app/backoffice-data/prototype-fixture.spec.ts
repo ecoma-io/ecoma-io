@@ -1,19 +1,20 @@
 import { describe, expect, it } from 'vitest';
 
-import { PROTOTYPE_DATA, type StaffMember } from '../app/backoffice-data/prototype-fixture';
-import en from '../app/i18n/locales/en';
+import { PROTOTYPE_DATA } from './prototype-fixture';
+import type { StaffMember } from './types';
+import en from '../i18n/locales/en';
 
 const ROLE_IDS = new Set(PROTOTYPE_DATA.roles.map((role) => role.id));
 const PERMISSION_IDS = new Set(PROTOTYPE_DATA.permissions.map((permission) => permission.id));
 const ACCOUNT_ID_RE = /^acct_[0-7][0-9A-HJKMNP-TV-Z]{25}$/u;
 
-function getNestedKey(tree: unknown, path: string): unknown {
+function getNestedKey(tree: unknown, path: string): string | undefined {
   return path.split('.').reduce<unknown>((node, segment) => {
     if (typeof node !== 'object' || node === null) {
       return undefined;
     }
     return (node as Record<string, unknown>)[segment];
-  }, tree);
+  }, tree) as string | undefined;
 }
 
 describe('prototype data invariants', () => {
@@ -38,7 +39,7 @@ describe('prototype data invariants', () => {
 
   it('staff members do not use email as identity and use valid account ids', () => {
     for (const member of PROTOTYPE_DATA.staff) {
-      expect((member as Partial<StaffMember>).email).toBeUndefined();
+      expect((member as Partial<StaffMember> & { email?: unknown }).email).toBeUndefined();
       expect(member.accountId).toMatch(ACCOUNT_ID_RE);
       expect(member.displayName.trim().length > 0).toBe(true);
       expect(['active', 'suspended', 'terminated']).toContain(member.status);

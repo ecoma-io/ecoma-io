@@ -13,7 +13,7 @@ import type { Client } from 'pg';
 
 import type { BackofficeDatabase } from './harness';
 import { probeDocker, startBackofficeDatabase } from './harness';
-import { recordDecision } from '../../server/authorization-audit';
+import { recordDecision } from '../server/authorization-audit';
 
 const dockerAvailable = await probeDocker();
 

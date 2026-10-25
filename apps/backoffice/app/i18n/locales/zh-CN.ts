@@ -1,7 +1,7 @@
 /**
  * Message catalog tiếng Trung giản thể — **bản dịch**, không phải nguồn key.
  *
- * Cùng tập key với `en.ts`; kiểm bằng `tests/catalogs.spec.ts`.
+ * Cùng tập key với `en.ts`; kiểm bằng `catalogs.spec.ts` (colocated cạnh file này).
  *
  * ⚠️ Catalog này viết bằng **Hán tự giản thể** (`zh-Hans`), khớp `language` trong
  * registry — không phải `zh-CN` (đó là `code`, giá trị khoá). Hai khái niệm khác
@@ -56,7 +56,7 @@ const zhCN: BackofficeMessages = {
     loading: '加载中…',
     errorTitle: '无法加载数据',
     // Lý do đầy đủ (trung tính theo chế độ, và không giả định dòng detail luôn
-    // có) ở `en.ts` và `tests/catalogs.spec.ts`. Dùng "客服团队" (nhóm hỗ trợ nói
+    // có) ở `en.ts` và `catalogs.spec.ts` (colocated cạnh file này). Dùng "客服团队" (nhóm hỗ trợ nói
     // chung) chứ **không** dùng `roles.items.support.name` ("客服人员"), vì tên đó
     // là nhãn của một system-defined role chỉ tồn tại ở chế độ `prototype`: ở chế
     // độ `unavailable` trang Roles render trạng thái lỗi nên không có "客服人员"

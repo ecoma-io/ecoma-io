@@ -32,8 +32,8 @@
  * ## Phạm vi
  *
  * Phép kiểm này phủ **id của catalog thật**. Key của fixture prototype được
- * phủ ở `tests/prototype-data.spec.ts` (id trong fixture có mô tả ở `en`) và
- * `tests/catalogs.spec.ts` (ba catalog cùng tập key). Ở đây thêm một điều mà
+ * phủ ở `prototype-fixture.spec.ts` của `app/backoffice-data/` (id trong fixture có mô tả ở `en`) và
+ * `catalogs.spec.ts` của `app/i18n/` (ba catalog cùng tập key). Ở đây thêm một điều mà
  * hai file kia không nói trực tiếp: **mọi** id của fixture phải dịch được ở
  * **mọi** locale, không chỉ ở `en` — vì fixture vẫn là nguồn dữ liệu của UI ở
  * giai đoạn hiện tại, và xoá một key của nó là làm UI prototype mất nhãn.
@@ -44,12 +44,12 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { PROTOTYPE_DATA } from '../app/backoffice-data/prototype-fixture';
-import { backofficeMessages } from '../app/i18n/catalogs';
-import { BACKOFFICE_LOCALE_DEFINITIONS } from '../app/i18n/locale-registry';
+import { PROTOTYPE_DATA } from '../backoffice-data/prototype-fixture';
+import { backofficeMessages } from './catalogs';
+import { BACKOFFICE_LOCALE_DEFINITIONS } from './locale-registry';
 
 /** Thư mục migration — nơi duy nhất một permission được coi là có thật. */
-const MIGRATIONS_DIR = resolve(import.meta.dirname, '../db/migrations');
+const MIGRATIONS_DIR = resolve(import.meta.dirname, '../../db/migrations');
 
 /** Một permission đọc được từ câu `INSERT` của migration seed. */
 type SeededPermission = {
@@ -202,7 +202,7 @@ describe('permission catalog i18n coverage', () => {
   it('keeps a description for every prototype fixture permission in every locale', () => {
     // Fixture prototype vẫn là nguồn dữ liệu của UI ở giai đoạn hiện tại: xoá một
     // key của nó là làm UI prototype mất nhãn, dù id đó không có trong catalog
-    // thật. `tests/prototype-data.spec.ts` chỉ kiểm ở `en`, nên locale còn lại
+    // thật. `prototype-fixture.spec.ts` của `app/backoffice-data/` chỉ kiểm ở `en`, nên locale còn lại
     // cần một chốt chặn riêng.
     const missing: string[] = [];
 

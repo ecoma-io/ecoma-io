@@ -1,7 +1,7 @@
 /**
  * Message catalog tiếng Việt — **bản dịch**, không phải nguồn key.
  *
- * Cùng tập key với `en.ts`; kiểm bằng `tests/catalogs.spec.ts`. Nhóm `shell` và
+ * Cùng tập key với `en.ts`; kiểm bằng `catalogs.spec.ts` (colocated cạnh file này). Nhóm `shell` và
  * `shell.search` dịch chuỗi mà library sinh mặc định cho hai app không i18n,
  * nên người dùng tiếng Việt thấy đúng bảng tuỳ chỉnh / ô tìm kiếm mà llm-console
  * và llm-seller hiện bằng tiếng Anh.
@@ -53,7 +53,7 @@ const vi: BackofficeMessages = {
     loading: 'Đang tải…',
     errorTitle: 'Không tải được dữ liệu này',
     // Lý do đầy đủ (trung tính theo chế độ, và không giả định dòng detail luôn
-    // có) ở `en.ts` và `tests/catalogs.spec.ts`.
+    // có) ở `en.ts` và `catalogs.spec.ts` (colocated cạnh file này).
     errorBody: 'Chi tiết kỹ thuật hiện bên dưới (nếu có) có thể gửi cho bộ phận hỗ trợ.',
     retry: 'Thử lại',
   },

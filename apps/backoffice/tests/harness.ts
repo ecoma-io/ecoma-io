@@ -280,7 +280,7 @@ export async function mountBackofficeApp(
  * `<!DOCTYPE html>` và không có thẻ `<html>` (document template do Nuxt dựng, nằm
  * ngoài phạm vi unit test). Nên `<html lang>` được khẳng định ở tầng `useHead`
  * (`headHtmlAttrs()`), không phải bằng cách grep chuỗi HTML — xem
- * `tests/runtime-locale.spec.ts`.
+ * `app-locale.spec.ts` (cùng thư mục `app/`).
  *
  * ⚠️ `renderToString` cần resolve được `vue/server-renderer` — subpath export của
  * chính `vue`, không phải dependency mới.

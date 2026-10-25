@@ -17,7 +17,7 @@
  * - nhầm kiểu đặt tên (`staff:read` thay vì `staff.read`).
  *
  * Contract test đối chiếu id đó với catalog thật (status `active`) — xem
- * `tests/integration/permission-catalog-contract.spec.ts`.
+ * `integration-specs/permission-catalog-contract.spec.ts`.
  *
  * ## Vì sao quét bằng máy quét tự viết, không dùng TypeScript compiler API
  *

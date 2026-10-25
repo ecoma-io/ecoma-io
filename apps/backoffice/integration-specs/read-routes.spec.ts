@@ -35,10 +35,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { BACKOFFICE_ACCOUNT_ID_ENTROPY_CHARS } from '@ecoma-io/backoffice-domain';
 
-import staffRoute from '../../server/api/staff.get';
-import rolesRoute from '../../server/api/roles.get';
-import permissionsRoute from '../../server/api/permissions.get';
-import { PRINCIPAL_CONTEXT_KEY } from '../../server/principal';
+import staffRoute from '../server/api/staff.get';
+import rolesRoute from '../server/api/roles.get';
+import permissionsRoute from '../server/api/permissions.get';
+import { PRINCIPAL_CONTEXT_KEY } from '../server/principal';
 import {
   BACKOFFICE_DATABASE,
   type BackofficeDatabase,

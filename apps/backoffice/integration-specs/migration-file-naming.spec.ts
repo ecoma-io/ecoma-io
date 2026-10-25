@@ -23,7 +23,7 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { listMigrations, MIGRATION_FILE_NAME_PATTERN } from '../../db/migrate.mts';
+import { listMigrations, MIGRATION_FILE_NAME_PATTERN } from '../db/migrate.mts';
 
 const temporaryDirectories: string[] = [];
 

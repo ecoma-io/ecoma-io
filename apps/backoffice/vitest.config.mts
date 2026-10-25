@@ -109,12 +109,14 @@ export default defineConfig(() => ({
     // và global phải có mặt trước lần render đầu.
     setupFiles: ['./tests/setup.ts'],
     // Probe Docker một lần mỗi lần chạy (trước khi worker khởi động); xem
-    // `tests/integration/docker-probe.global-setup.ts`. Không có đó thì mỗi spec
+    // `integration-specs/docker-probe.global-setup.ts`. Không có đó thì mỗi spec
     // file integration tự probe — mỗi probe là một container PostgreSQL thật.
     // `jsdom` + `setupFiles` ở trên chạy như cũ: `globalSetup` chỉ chạy một lần
     // ở main process, không đụng môi trường test của unit test.
-    globalSetup: ['./tests/integration/docker-probe.global-setup.ts'],
-    include: ['{src,tests,server}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    globalSetup: ['./integration-specs/docker-probe.global-setup.ts'],
+    include: [
+      '{src,app,tests,server,integration-specs}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}',
+    ],
     reporters: ['default'],
     coverage: {
       reportsDirectory: './test-output/vitest/coverage',

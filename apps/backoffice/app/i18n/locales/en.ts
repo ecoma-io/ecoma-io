@@ -3,7 +3,7 @@
  * backoffice.
  *
  * Catalog này định nghĩa *key*, không phải *nội dung*: `vi` và `zh-CN` phải có
- * đúng tập key này. Tính đồng nhất được kiểm bằng `tests/catalogs.spec.ts`, không
+ * đúng tập key này. Tính đồng nhất được kiểm bằng `catalogs.spec.ts` (colocated cạnh file này), không
  * dựa vào kỷ luật khi viết — một key thừa ở đây là một key mà hai catalog còn lại
  * không dịch, và nó fallback về tiếng Anh ở giữa một giao diện tiếng Việt.
  *
@@ -61,7 +61,7 @@ export default {
     // Bổ sung thông tin thay vì lặp lại `errorTitle`, và **không** giả định dòng
     // detail luôn có mặt: `BackofficeErrorState` render nó theo `v-if`, mà
     // `message` có thể rỗng. Lý do câu phải trung tính theo chế độ (bỏ claim
-    // "prototype") nằm ở `tests/catalogs.spec.ts`; đây là nguồn sự thật cho key.
+    // "prototype") nằm ở `catalogs.spec.ts` (colocated cạnh file này); đây là nguồn sự thật cho key.
     errorBody: 'If a technical detail appears below, it can be shared with support.',
     retry: 'Try again',
   },
@@ -149,13 +149,13 @@ export default {
     //     route yêu cầu. Mô tả phải khớp **hành vi thật** của permission: đúng
     //     những cột mà query cho route đọc (`01-architecture.md` §4.3 là
     //     định danh, không phải nhãn để dịch), không phải một câu chung chung.
-    //     Ba id này được ghim ở `tests/permission-catalog-i18n.spec.ts` —
+    //     Ba id này được ghim ở `permission-catalog-i18n.spec.ts` (cùng thư mục `app/i18n/`) —
     //     catalogue seed là nguồn của phép kiểm, không phải danh sách chép tay.
     //   * **Fixture prototype** (`app/backoffice-data/prototype-fixture.ts`) —
     //     `delivery.redrive`, `mail.read`, `mail.send`, `role.assign`,
     //     `audit.read` là minh hoạ của UI prototype, không phải catalog thật và
     //     không được seed; `staff.read` đứng ở nhóm trên vì trùng id thật.
-    //     Giữ chúng là để UI prototype còn nhãn (`tests/prototype-data.spec.ts`
+    //     Giữ chúng là để UI prototype còn nhãn (`prototype-fixture.spec.ts` (colocated cạnh fixture)
     //     buộc đủ key cho mọi id trong fixture); xoá một cái là làm UI prototype
     //     hiện key rỗng.
     items: {

@@ -1,11 +1,13 @@
+import { describe, expect, it } from 'vitest';
+
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import en from '../app/i18n/locales/en';
-import vi from '../app/i18n/locales/vi';
-import zhCN from '../app/i18n/locales/zh-CN';
-import { BACKOFFICE_LOCALE_DEFINITIONS, type BackofficeLocale } from '../app/i18n/locale-registry';
+import en from './locales/en';
+import vi from './locales/vi';
+import zhCN from './locales/zh-CN';
+import { BACKOFFICE_LOCALE_DEFINITIONS, type BackofficeLocale } from './locale-registry';
 
 function flattenKeys(tree: unknown, prefix = ''): Set<string> {
   if (typeof tree !== 'object' || tree === null) {
@@ -146,7 +148,7 @@ describe('backoffice catalog parity', () => {
  * không thấy được bằng regex, nên `prototype-data.spec.ts` phủ nhóm đó theo
  * fixture; đây là chốt chặn cho phần còn lại, không phải chứng minh đầy đủ.
  */
-const APP_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'app');
+const APP_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 // `\bt` chỉ khớp khi `t` đứng riêng, nên không nuốt `format(` hay `split(`.
 const TRANSLATION_CALL_RE = /(?:\bi18n\s*\.\s*t|\$t|\btranslate|\bt)\s*\(\s*['"]([\w.]+)['"]/gu;

@@ -154,7 +154,7 @@ function resetClientState(): void {
 // Gỡ component đã mount **sau** mỗi test, tức trước `beforeEach` của test kế tiếp:
 // `resetBackofficeGlobals()` thay ref/reactive mà tree cũ đang giữ, và một tree còn
 // sống thì assertion của test sau có thể đọc dữ liệu của test trước. Cặp test phụ
-// thuộc thứ tự trong `tests/harness.spec.ts` ghim đúng ranh giới này.
+// thuộc thứ tự trong `harness.spec.ts` (cùng thư mục) ghim đúng ranh giới này.
 enableAutoUnmount(afterEach);
 
 beforeEach(() => {
