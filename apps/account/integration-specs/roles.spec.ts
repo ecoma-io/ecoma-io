@@ -19,6 +19,10 @@ const RUNTIME = 'ecoma_account_runtime';
  * `email_addresses` và `otp_challenges` (`0005`/`0006`) theo hình dạng DML đầy
  * đủ: OTP verify phải UPDATE `attempts`/`consumed_at` và DELETE của `users`
  * cascade sang địa chỉ (FK RESTRICT, xoá user là việc của chính nó).
+ *
+ * Ba bảng data domain (`0008`) cũng DML đầy đủ: chúng thuộc nhóm (2) của §7.1
+ * — bị xoá hoặc anonymize khi account bị xoá — nên DELETE là thao tác hợp lệ
+ * của luồng đó; không bảng nào là append-only hay tombstone.
  */
 const DML_TABLES = [
   'users',
@@ -27,6 +31,9 @@ const DML_TABLES = [
   'account_outbox_events',
   'email_addresses',
   'otp_challenges',
+  'notification_preferences',
+  'user_preferences',
+  'user_profiles',
 ];
 
 /** Bảng audit: đọc và ghi, nhưng **không** có `UPDATE`/`DELETE` (append-only). */
