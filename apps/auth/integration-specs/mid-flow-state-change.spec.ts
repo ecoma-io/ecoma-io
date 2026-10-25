@@ -34,11 +34,11 @@ import {
 } from '@ecoma-io/identity-auth-domain';
 import type { PostgresClientLike } from '@ecoma-io/identity-auth-infrastructure';
 
-import { createAuthorizationStore, checkRevocationAtIssuance } from '../../src/authorization-store';
-import { runConsentContext, runConsentDecide } from '../../src/consent-handler';
-import { runSessionVerified } from '../../src/session-verified-handler';
-import { createIssuanceGateFromDeps } from '../../src/oidc/issuance-gate';
-import type { IssuanceGate } from '../../src/oidc/adapter';
+import { createAuthorizationStore, checkRevocationAtIssuance } from '../src/authorization-store';
+import { runConsentContext, runConsentDecide } from '../src/consent-handler';
+import { runSessionVerified } from '../src/session-verified-handler';
+import { createIssuanceGateFromDeps } from '../src/oidc/issuance-gate';
+import type { IssuanceGate } from '../src/oidc/adapter';
 import { startAuthDatabase, type AuthDatabase } from './harness';
 
 /** Probe Docker một lần ở tầng module — kết quả do globalSetup đăng ký qua env. */

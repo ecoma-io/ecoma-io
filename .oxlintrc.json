@@ -710,7 +710,8 @@
       // override `**/*.spec.*` phía trên cho phép Node builtin cho spec. Tên file
       // **không** khớp `*.spec.*` vì đây là module tiện ích được spec import, nên
       // cần một block riêng; glob cho phép `tests/**` (lồng nhau) vì harness
-      // không nằm trực tiếp dưới `tests/`.
+      // không nằm trực tiếp dưới `tests/`, và `integration-specs/**` là vị trí
+      // chính sách mới (Issue #270) cho integration suite — ngang `src/`.
       //
       // `no-console` tắt cho cùng lý do tools khác trong repo (`tools/**`,
       // `db/**`, `deploy/**`): harness là tooling Node, và `probeDocker` phải
@@ -725,7 +726,9 @@
       // là tooling Node y hệt, chỉ khác thư mục gốc của project.
       "files": [
         "apps/*/tests/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}",
-        "libs/*/tests/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}"
+        "apps/*/integration-specs/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}",
+        "libs/*/tests/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}",
+        "libs/*/integration-specs/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}"
       ],
       "rules": {
         "no-console": "off",

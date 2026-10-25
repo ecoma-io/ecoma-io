@@ -337,7 +337,7 @@ describe('consumer/provider conformance — one shared parameter name', () => {
     //   phải đọc từ source.
     // - Giá trị của provider được **đọc từ source** của route — nên test này KHÔNG chứng
     //   minh provider hành xử đúng như source nói. Phần đó do
-    //   `apps/account/tests/integration/status-route-e2e.spec.ts` chứng minh: nó chạy
+    //   `apps/account/integration-specs/status-route-e2e.spec.ts` chứng minh: nó chạy
     //   handler thật với `?sub=` (200) và với `?account_id=` (400).
     //
     // Ghép hai thứ lại mới là bằng chứng compatibility: consumer gửi `X` (đo), provider

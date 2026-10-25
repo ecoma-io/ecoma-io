@@ -41,7 +41,7 @@ import {
   verifyRequest,
 } from '@ecoma-io/identity-auth-contracts';
 import { createPostgresClient } from '@ecoma-io/identity-auth-infrastructure';
-import { startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
+import { startAuthDatabase, type AuthDatabase } from '../integration-specs/harness.ts';
 
 import {
   NONCE_CLAIM_CONNECT_TIMEOUT_SECONDS,

@@ -39,7 +39,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PROVIDER_ROUTES } from './oidc/provider';
 import { loadAuthConfig, type AuthEnv } from './config';
 import { createPostgresClient } from '@ecoma-io/identity-auth-infrastructure';
-import { startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
+import { startAuthDatabase, type AuthDatabase } from '../integration-specs/harness.ts';
 
 /* ------------------------------------------------------------------ */
 /* PostgreSQL harness — cùng luật với oidc-fullflow.spec.ts            */

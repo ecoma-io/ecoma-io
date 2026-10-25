@@ -8,11 +8,11 @@ export default defineConfig(() => ({
     watch: false,
     globals: true,
     environment: 'node',
-    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    include: ['{src,integration-specs}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     // Probe Docker một lần mỗi lần chạy (trước khi worker khởi động); xem
-    // `tests/integration/docker-probe.global-setup.ts`. Không có đó thì mỗi
+    // `integration-specs/docker-probe.global-setup.ts`. Không có đó thì mỗi
     // spec file tự probe — mỗi probe là một container PostgreSQL thật.
-    globalSetup: ['./tests/integration/docker-probe.global-setup.ts'],
+    globalSetup: ['./integration-specs/docker-probe.global-setup.ts'],
     passWithNoTests: true,
     reporters: ['default'],
     coverage: {

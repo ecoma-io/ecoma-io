@@ -46,7 +46,7 @@ const SUPERUSER_PASSWORD = 'ecoma_test_superuser_pw';
 const ROLE_PASSWORD = 'ecoma_test_role_pw';
 
 /** Thư mục migration thật của app — runner mặc định đọc đúng nơi này. */
-export const MIGRATIONS_DIR = join(import.meta.dirname, '../../migrations');
+export const MIGRATIONS_DIR = join(import.meta.dirname, '../migrations');
 
 export interface RunnerDatabase {
   readonly host: string;

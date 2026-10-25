@@ -8,7 +8,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { PostgresClientLike } from '@ecoma-io/identity-auth-infrastructure';
 
 import { PostgresAdapter } from './adapter';
-import { startAuthDatabase, type AuthDatabase } from '../../tests/integration/harness.ts';
+import { startAuthDatabase, type AuthDatabase } from '../../integration-specs/harness.ts';
 
 /**
  * Spec cho PostgresAdapter (`src/oidc/adapter.ts`) — phần test không được phủ bởi
