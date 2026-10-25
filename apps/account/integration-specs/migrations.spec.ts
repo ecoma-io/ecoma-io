@@ -17,8 +17,11 @@ const EXPECTED_TABLES = [
   'email_addresses',
   'internal_nonces',
   'login_handoffs',
+  'notification_preferences',
   'otp_challenges',
   'security_events',
+  'user_preferences',
+  'user_profiles',
   'users',
 ];
 

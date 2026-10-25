@@ -350,16 +350,19 @@ export async function startAccountDatabase(): Promise<AccountDatabase> {
       // `TRUNCATE` của `db-account`, không đụng DDL, grant hay extension.
       //
       // Thứ tự liệt kê không quan trọng trong MỘT câu TRUNCATE (PostgreSQL khoá
-      // tất cả bảng của câu), nhưng `email_addresses` PHẢI có mặt: nó giữ FK tới
-      // `users`, và TRUNCATE `users` mà bỏ qua bảng con là lỗi
-      // "cannot truncate a table referenced in a foreign key constraint" — bỏ sót
-      // một bảng mới ở đây làm MỌI suite dùng `truncateData` đỏ cùng một lỗi.
+      // tất cả bảng của câu), nhưng `email_addresses` và ba bảng data domain
+      // PHẢI có mặt: chúng giữ FK tới `users`, và TRUNCATE `users` mà bỏ qua
+      // bảng con là lỗi "cannot truncate a table referenced in a foreign key
+      // constraint" — bỏ sót một bảng mới ở đây làm MỌI suite dùng
+      // `truncateData` đỏ cùng một lỗi.
       const client = await connect();
       try {
         await client.query(
           `TRUNCATE account.login_handoffs, account.security_events,
                   account.account_outbox_events, account.account_sessions, account.users,
-                  account.email_addresses, account.otp_challenges`,
+                  account.email_addresses, account.otp_challenges,
+                  account.user_profiles, account.user_preferences,
+                  account.notification_preferences`,
         );
       } finally {
         await client.end();

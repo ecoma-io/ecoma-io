@@ -209,11 +209,19 @@ describe('users and the tombstone', () => {
       //   chỉ giữ **hash** (không lưu địa chỉ thô), còn `email_addresses` giữ cả
       //   hai: hash để tra cứu, dạng chuẩn hoá để chủ tài khoản xem được địa chỉ
       //   của mình.
+      // - `user_profiles.display_name|avatar_url` và
+      //   `user_preferences.locale|timezone`: data domain v1 (`0008`) — tên
+      //   hiển thị, avatar và preference là dữ liệu định nghĩa của nhóm (2),
+      //   theo docs §3.2/§3.3. Bảng tombstone `users` không đổi.
       const namedExceptions = new Set([
         'security_events.ip',
         'email_addresses.address_normalized',
         'email_addresses.address_hash',
         'otp_challenges.address_hash',
+        'user_profiles.display_name',
+        'user_profiles.avatar_url',
+        'user_preferences.locale',
+        'user_preferences.timezone',
       ]);
       const unexpected = rows.filter(
         (row) => !namedExceptions.has(`${row.table_name}.${row.column_name}`),
