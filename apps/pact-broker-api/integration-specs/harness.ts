@@ -5,12 +5,12 @@
  * **skip** suite, không được fail — nếu không thì `nx affected -t test` đỏ vì
  * một thứ nó không cài, và người đọc sẽ tưởng schema sai. Vì vậy mọi thứ Docker
  * ở đây đều nằm sau dynamic import và `describe.skipIf` bọc ngoài cùng — cùng
- * luật với `apps/account/tests/integration/harness.ts`.
+ * luật với harness của `apps/account`.
  */
 
 import { readdirSync } from 'node:fs';
 
-import { applyAllMigrations } from '../../db/apply.mts';
+import { applyAllMigrations } from '../db/apply.mts';
 
 /**
  * Image PostgreSQL: 17 là major hiện hành; alpine để pull nhanh trên CI.

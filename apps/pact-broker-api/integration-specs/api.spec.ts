@@ -9,8 +9,8 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { buildApp, closeCachedPool } from '../../src/main';
-import { samplePact } from '../fixtures/pact';
+import { buildApp, closeCachedPool } from '../src/main';
+import { samplePact } from '../tests/fixtures/pact';
 import {
   type PactBrokerDatabase,
   PACT_BROKER_DATABASE,
@@ -57,7 +57,7 @@ describe.skipIf(!dockerAvailable)(`${PACT_BROKER_DATABASE} API end-to-end`, () =
 
     // Bootstrap hai tenant qua repo trực tiếp (đường mà dashboard/bootstrap
     // dùng) rồi tạo machine token cho mỗi tenant.
-    const { PgTenantRepo } = await import('../../src/repo/tenant-repo');
+    const { PgTenantRepo } = await import('../src/repo/tenant-repo');
     const repo = new PgTenantRepo(pool);
     await repo.ensureDefaultTenant('tenant-a', 'sub-a-owner');
     await repo.ensureDefaultTenant('tenant-b', 'sub-b-owner');
@@ -154,7 +154,7 @@ describe.skipIf(!dockerAvailable)(`${PACT_BROKER_DATABASE} API end-to-end`, () =
 
     // Bật dashboard origin rồi kiểm cả happy path lẫn preflight. Config được
     // cache theo isolate nên phải reset trước khi nạp env khác.
-    const { resetCachedConfig } = await import('../../src/main');
+    const { resetCachedConfig } = await import('../src/main');
     resetCachedConfig();
     const envWithDashboard = {
       ...workerEnv,
@@ -233,7 +233,7 @@ describe.skipIf(!dockerAvailable)(`${PACT_BROKER_DATABASE} API end-to-end`, () =
 
     // Revoke token B rồi dùng nó: 401 giống hệt (không tiết lộ "đã từng hợp lệ").
     const pool = await db.createRuntimePool();
-    const { PgTenantRepo } = await import('../../src/repo/tenant-repo');
+    const { PgTenantRepo } = await import('../src/repo/tenant-repo');
     const repo = new PgTenantRepo(pool);
     const tenantB = await repo.getTenantByName('tenant-b');
     const tokens = await repo.listMachineTokens(tenantB?.id ?? '');
@@ -481,8 +481,8 @@ describe.skipIf(!dockerAvailable)(`${PACT_BROKER_DATABASE} API end-to-end`, () =
     // Version tồn tại mà không có pact nào — tạo thẳng qua repo
     // (đường getOrCreateVersion mà record-deployment dùng).
     const pool = await db.createRuntimePool();
-    const { PgVersionRepo } = await import('../../src/repo/version-repo');
-    const { PgTenantRepo } = await import('../../src/repo/tenant-repo');
+    const { PgVersionRepo } = await import('../src/repo/version-repo');
+    const { PgTenantRepo } = await import('../src/repo/tenant-repo');
     const tenantRepo = new PgTenantRepo(pool);
     const tenantId = (await tenantRepo.getTenantByName('tenant-a'))?.id ?? '';
     await new PgVersionRepo(pool).getOrCreateVersion(tenantId, 'orphan-svc', '2.0.0', 'main');
@@ -548,7 +548,7 @@ describe.skipIf(!dockerAvailable)(`${PACT_BROKER_DATABASE} API end-to-end`, () =
 
   it('scope hierarchy: read token cannot publish, write token can read', async () => {
     const pool = await db.createRuntimePool();
-    const { PgTenantRepo } = await import('../../src/repo/tenant-repo');
+    const { PgTenantRepo } = await import('../src/repo/tenant-repo');
     const repo = new PgTenantRepo(pool);
     const tenantA = await repo.getTenantByName('tenant-a');
     const readToken = await repo.createMachineToken(tenantA?.id ?? '', 'sub-a-owner', 'reader', [
