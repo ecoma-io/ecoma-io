@@ -215,6 +215,47 @@ describe('announceSessionVerified', () => {
     });
   });
 
+  it('classifies a 200 with a non-JSON body as invalid_response, not unreachable', async () => {
+    // postSignedJson chia nhánh hai lần trên đường 200: parse JSON hỏng phải
+    // là `non_json_body`, không được rơi cùng nhóm với lỗi network (`unreachable`
+    // — auth không trả lời) lẫn nhóm auth từ chối (`rejected`): route map 502
+    // cho lý do đầu, 502 khác cho thứ hai, và một HTML error page của proxy
+    // giữa là "auth trả rác" chứ không phải "auth chết".
+    const binding = {
+      fetch: async () => new Response('<html>gateway error</html>', { status: 200 }),
+    };
+    const result = await announceSessionVerified({
+      binding,
+      signingKey: SECRET,
+      request: BASE_REQUEST,
+      nowMs: NOW_MS,
+    });
+    expect(result).toEqual({
+      ok: false,
+      reason: 'invalid_response',
+      detail: 'non_json_body',
+    });
+  });
+
+  it('classifies an empty 200 body the same way (invalid_response, non_json_body)', async () => {
+    // Response 200 với body rỗng (204-style do proxy dựng lại) đi qua nhánh
+    // parse-JSON: `response.json()` ném trên chuỗi rỗng, cùng `non_json_body`.
+    const binding = {
+      fetch: async () => new Response('', { status: 200 }),
+    };
+    const result = await announceSessionVerified({
+      binding,
+      signingKey: SECRET,
+      request: BASE_REQUEST,
+      nowMs: NOW_MS,
+    });
+    expect(result).toEqual({
+      ok: false,
+      reason: 'invalid_response',
+      detail: 'non_json_body',
+    });
+  });
+
   it('rejects a 200 with a relative continue_url (contract is absolute)', async () => {
     const body = { outcome: 'granted', continue_url: '/login/continue' };
     const binding = {
