@@ -1,15 +1,14 @@
 /**
  * Testcontainers + PostgreSQL thật cho integration test của `db-backoffice`.
  *
- * ⚠️ Docker **không** phải phụ thuộc cứng. Một CI runner không có Docker phải
- * **skip** suite, không được fail — nếu không thì `nx affected -t test` đỏ vì
- * một thứ nó không cài, và người đọc sẽ tưởng schema sai. Vì vậy mọi thứ Docker
- * ở đây đều nằm sau dynamic import và `describe.skipIf` bọc ngoài cùng. Cùng
- * luật với `apps/account/tests/integration/harness.ts` — pattern tham chiếu.
+ * ⚠️ Docker **là** phụ thuộc cứng của suite này: thiếu Docker thì suite phải ĐỎ,
+ * không được skip - một lần chạy skip với exit 0 che mất việc một suite bắt buộc
+ * chưa hề chạy (06-testing.md §6). Mọi thứ Docker ở đây nằm sau dynamic import,
+ * và quyết định fail được đưa ra qua {@link probeDocker}: probe thất bại là NÉM
+ * từ `globalSetup` trước khi worker nào kịp báo xanh giả. Cùng luật với
+ * `apps/auth/integration-specs/harness.ts` và `apps/account/integration-specs/harness.ts`
+ * — pattern tham chiếu.
  */
-
-import { readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
 
 import { applyAllMigrations } from '../db/apply.mts';
 import { BACKOFFICE_DATABASE } from '../db/migrate.mts';
@@ -90,29 +89,30 @@ const DOCKER_PROBE_ENV = 'ECOMA_BACKOFFICE_DOCKER_PROBE';
  * vẫn có thể trả 0 (chỉ thiếu socket), và probe đó sẽ cho một describe
  * "N skipped" rồi đỏ ở `beforeAll`.
  *
- * Khi probe thất bại:
- * - In một cảnh báo tiếng Anh (một lần mỗi lần chạy) nêu rõ bao nhiêu suite sẽ
- *   bị skip — skip im lặng với exit 0 mới là thứ che mất test.
- * - Nếu `ECOMA_REQUIRE_DOCKER=1` (CI đặt biến này) thì **ném lỗi** thay vì
- *   trả `false`.
+ * ⚠️ Probe thất bại là **ném lỗi**, không trả `false`: suite bắt buộc Docker
+ * phải đỏ khi Docker không có — skip với exit 0 không phải kết quả chấp nhận
+ * được (06-testing.md §6). Lỗi nổi từ `globalSetup` làm toàn bộ lần chạy đỏ
+ * trước khi worker nào kịp báo xanh giả.
  */
-export function probeDocker(): Promise<boolean> {
+export function probeDocker(): Promise<void> {
   const flag = process.env[DOCKER_PROBE_ENV];
   if (flag === 'available') {
-    return Promise.resolve(true);
+    return Promise.resolve();
   }
   if (flag === 'unavailable') {
-    return Promise.resolve(false);
+    throw new Error(
+      'Docker is unavailable: PostgreSQL integration suites require a running Docker daemon; refusing to skip.',
+    );
   }
-  // Fallback khi được gọi ngoài pipeline vitest có `globalSetup`: probe tại
-  // chỗ và vẫn đăng ký kết quả cho caller sau.
+  // Fallback khi được gọi ngoài pipeline vitest có `globalSetup` (chạy tay,
+  // vitest khác config): probe tại chỗ và cache trên globalThis cho caller sau.
   const cache = globalThis as DockerProbeCache;
   cache.ecomaBackofficeDockerProbe ??= runDockerProbe();
   return cache.ecomaBackofficeDockerProbe;
 }
 
 interface DockerProbeCache {
-  ecomaBackofficeDockerProbe?: Promise<boolean>;
+  ecomaBackofficeDockerProbe?: Promise<void>;
 }
 
 /**
@@ -153,17 +153,14 @@ async function startPostgresContainer(
   throw lastError;
 }
 
-async function runDockerProbe(): Promise<boolean> {
+async function runDockerProbe(): Promise<void> {
   let container: { stop(): Promise<unknown> } | undefined;
   let available = false;
   try {
     container = await startPostgresContainer((c) => c.withExposedPorts(POSTGRES_PORT));
     available = true;
-  } catch (error) {
+  } catch {
     available = false;
-    if (process.env['ECOMA_REQUIRE_DOCKER'] === '1') {
-      throw error;
-    }
   } finally {
     // `.catch(() => {})` chứ không phải block rỗng: `stop()` là cleanup và có
     // thể tự nó ném, nuốt lỗi ở đây để lỗi **thật** của probe không bị che.
@@ -171,35 +168,11 @@ async function runDockerProbe(): Promise<boolean> {
   }
 
   process.env[DOCKER_PROBE_ENV] = available ? 'available' : 'unavailable';
-  if (available) {
-    return true;
-  }
-
-  const suiteCount = countProbeGuardedSuites();
-  // Cảnh báo tiếng Anh vì nó là output của tooling trên CI, không phải prose
-  // trong code (xem AGENTS.md — console output giữ tiếng Anh).
-  console.warn(
-    `Docker is unavailable: the ${suiteCount} integration suite(s) guarded by probeDocker will be SKIPPED and this run still exits 0. ` +
-      'Set ECOMA_REQUIRE_DOCKER=1 to turn the skipped suites into a hard failure.',
-  );
-  if (process.env['ECOMA_REQUIRE_DOCKER'] === '1') {
+  if (!available) {
     throw new Error(
-      'ECOMA_REQUIRE_DOCKER=1 but the Docker probe failed; refusing to skip the integration suites.',
+      'Docker is unavailable: PostgreSQL integration suites require a running Docker daemon; refusing to skip.',
     );
   }
-  return false;
-}
-
-/**
- * Đếm số file spec trong `integration-specs` gọi `probeDocker` — con số cảnh
- * báo phải khớp thực tế, và đếm từ nguồn thay vì hard-code.
- */
-function countProbeGuardedSuites(): number {
-  return readdirSync(import.meta.dirname)
-    .filter((entry) => entry.endsWith('.spec.ts'))
-    .filter((entry) =>
-      readFileSync(resolve(import.meta.dirname, entry), 'utf8').includes('probeDocker'),
-    ).length;
 }
 
 /**

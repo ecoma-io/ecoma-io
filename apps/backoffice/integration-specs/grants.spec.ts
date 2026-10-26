@@ -10,9 +10,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { listMigrations } from '../db/migrate.mts';
-import { type BackofficeDatabase, probeDocker, startBackofficeDatabase } from './harness.ts';
-
-const dockerAvailable = await probeDocker();
+import { type BackofficeDatabase, startBackofficeDatabase } from './harness.ts';
 
 const RUNTIME = 'ecoma_backoffice_runtime';
 
@@ -90,7 +88,7 @@ function executableSql(sql: string): string {
     .join('\n');
 }
 
-describe.skipIf(!dockerAvailable)('roles and grants on db-backoffice', () => {
+describe('roles and grants on db-backoffice', () => {
   let db: BackofficeDatabase;
 
   beforeAll(async () => {

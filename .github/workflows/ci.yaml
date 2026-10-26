@@ -106,10 +106,16 @@ jobs:
           key: cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}-
 
+      # `test` (colocated unit/component) và `test-integration` (suite app-owned
+      # integration) cùng chạy ở đây và cùng bị gate bởi `affected`: tách include
+      # của config vitest (target `test` không còn nhặt `integration-specs/`)
+      # mà không thêm target này vào CI là suite integration rời khỏi pipeline
+      # trong im lặng. PostgreSQL thật của suite đến từ testcontainers - runner
+      # chỉ cần có Docker (xem comment job ở trên).
       - name: Unit test
         uses: ./.github/actions/run-nx-target
         with:
-          targets: test
+          targets: test test-integration
           affected: ${{ !inputs.force }}
 
   build:

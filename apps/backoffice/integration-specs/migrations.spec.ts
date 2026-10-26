@@ -1,22 +1,15 @@
 /**
  * Apply migration lên PostgreSQL thật và đo trạng thái sau đó.
  *
- * Không dùng `describe` cấp module rồi `beforeAll` bên trong: phải `await` được
- * `probeDocker()` ở tầng module để `describe.skipIf` biết quyết định, và một
- * probe hỏng không được làm đỏ cả file.
+ * ⚠️ Suite bắt buộc Docker: probe hỏng thì `globalSetup` ném và toàn bộ lần chạy
+ * đỏ (fail-loud, 06-testing.md §6) - skip với exit 0 không phải kết quả chấp
+ * nhận được.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { BACKOFFICE_DATABASE } from '../db/migrate.mts';
-import {
-  type BackofficeDatabase,
-  applyMigrations,
-  probeDocker,
-  startBackofficeDatabase,
-} from './harness.ts';
-
-const dockerAvailable = await probeDocker();
+import { type BackofficeDatabase, applyMigrations, startBackofficeDatabase } from './harness.ts';
 
 const EXPECTED_TABLES = [
   'authorization_audit',
@@ -49,7 +42,7 @@ async function tableNames(db: BackofficeDatabase): Promise<string[]> {
   }
 }
 
-describe.skipIf(!dockerAvailable)('db-backoffice migrations on a real PostgreSQL', () => {
+describe('db-backoffice migrations on a real PostgreSQL', () => {
   let db: BackofficeDatabase;
 
   beforeAll(async () => {

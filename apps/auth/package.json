@@ -147,6 +147,16 @@
           "command": "npx tsc --noEmit -p tsconfig.db.json"
         }
       },
+      "test-integration": {
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "build"
+        ],
+        "options": {
+          "cwd": "apps/auth",
+          "command": "npx vitest run -c vitest.integration.config.mts integration-specs"
+        }
+      },
       "serve": {
         "continuous": true,
         "executor": "nx:run-commands",

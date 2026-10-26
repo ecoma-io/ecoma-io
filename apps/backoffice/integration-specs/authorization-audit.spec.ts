@@ -11,11 +11,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Client } from 'pg';
 
-import type { BackofficeDatabase } from './harness';
-import { probeDocker, startBackofficeDatabase } from './harness';
+import { type BackofficeDatabase, startBackofficeDatabase } from './harness';
 import { recordDecision } from '../server/authorization-audit';
-
-const dockerAvailable = await probeDocker();
 
 const ACTOR = 'sub_' + 'a'.repeat(32);
 const TARGET = 'sub_' + 'c'.repeat(32);
@@ -26,7 +23,7 @@ const DENIED_DECISION = {
   riskClass: 'normal',
 } as const;
 
-describe.skipIf(!dockerAvailable)('authorization audit through the runtime role', () => {
+describe('authorization audit through the runtime role', () => {
   let db: BackofficeDatabase;
   let runtime: Client;
 

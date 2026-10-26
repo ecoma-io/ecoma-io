@@ -1,9 +1,9 @@
 /**
  * Apply migration lên PostgreSQL thật và đo trạng thái sau đó.
  *
- * Không dùng `describe` cấp module rồi `beforeAll` bên trong: phải `await` được
- * `probeDocker()` ở tầng module để `describe.skipIf` biết quyết định, và một
- * probe hỏng không được làm đỏ cả file.
+ * ⚠️ Suite bắt buộc Docker: probe hỏng thì `globalSetup` ném và toàn bộ lần chạy
+ * đỏ (fail-loud, 06-testing.md §6) - skip với exit 0 không phải kết quả chấp
+ * nhận được.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

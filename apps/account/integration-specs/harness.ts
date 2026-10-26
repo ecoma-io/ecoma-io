@@ -1,10 +1,12 @@
 /**
  * Testcontainers + PostgreSQL thật cho integration test của `db-account`.
  *
- * ⚠️ Docker **không** phải phụ thuộc cứng. Một CI runner không có Docker phải
- * **skip** suite, không được fail — nếu không thì `nx affected -t test` đỏ vì
- * một thứ nó không cài, và người đọc sẽ tưởng schema sai. Vì vậy mọi thứ Docker ở
- * đây đều nằm sau dynamic import và `describe.skipIf` bọc ngoài cùng.
+ * ⚠️ Docker **là** phụ thuộc cứng của suite này: thiếu Docker thì suite phải ĐỎ,
+ * không được skip - một lần chạy skip với exit 0 che mất việc một suite bắt buộc
+ * chưa hề chạy (06-testing.md §6). Mọi thứ Docker ở đây nằm sau dynamic import,
+ * và quyết định fail được đưa ra qua {@link probeDocker}: probe thất bại là NÉM
+ * từ `globalSetup` trước khi worker nào kịp báo xanh giả. Cùng luật với
+ * `apps/auth/integration-specs/harness.ts` — pattern tham chiếu.
  */
 
 import { createHash } from 'node:crypto';
@@ -99,11 +101,10 @@ const DOCKER_PROBE_ENV = 'ECOMA_ACCOUNT_DOCKER_PROBE';
  * nguy hiểm nhất: một suite báo skip vì hạ tầng, không phải vì hành vi.
  *
  * Khi probe thất bại:
- * - In một cảnh báo tiếng Anh (một lần mỗi lần chạy) nêu rõ bao nhiêu suite sẽ
- *   bị skip — skip im lặng với exit 0 mới là thứ che mất test.
- * - Nếu `ECOMA_REQUIRE_DOCKER=1` (CI đặt biến này) thì **ném lỗi** thay vì
- *   trả `false`: runner REQUIRE Docker thì vắng Docker là sự cố, không phải
- *   lý do để bỏ qua một nửa suite.
+ * - **Ném lỗi** làm toàn bộ lần chạy đỏ ngay lập tức: Docker là phụ thuộc cứng
+ *   của suite PostgreSQL, vắng Docker là sự cố hạ tầng — suite phải ĐỎ, không
+ *   được skip với exit 0 (skip im lặng chính là thứ che mất test).
+ *   docs/overview/06-testing.md §6 chốt chính sách fail-loud này.
  */
 export function probeDocker(): Promise<void> {
   const flag = process.env[DOCKER_PROBE_ENV];

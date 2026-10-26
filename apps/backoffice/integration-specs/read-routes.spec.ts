@@ -25,9 +25,9 @@
  *    thiếu/invalid credential là 401 — middleware authn của PR J2 flip từ 503;
  *    route giữ `503` cho binding `DB_BACKOFFICE` vắng hay DB không trả lời).
  *
- * ⚠️ Docker **không** phải phụ thuộc cứng: không có Docker thì suite skip
- * (như `harness.ts` chốt) — nhưng `ECOMA_REQUIRE_DOCKER=1` biến skip thành
- * lỗi thật.
+ * ⚠️ Docker là phụ thuộc cứng: probe Docker ở `harness.ts` (qua `globalSetup`)
+ * ném lỗi khi vắng Docker, làm **toàn bộ** lần chạy đỏ thay vì skip — chính
+ * sách fail-loud của 06-testing.md §6.
  */
 
 import { createApp, createRouter, defineEventHandler, toWebHandler } from 'h3';
@@ -39,14 +39,7 @@ import staffRoute from '../server/api/staff.get';
 import rolesRoute from '../server/api/roles.get';
 import permissionsRoute from '../server/api/permissions.get';
 import { PRINCIPAL_CONTEXT_KEY } from '../server/principal';
-import {
-  BACKOFFICE_DATABASE,
-  type BackofficeDatabase,
-  probeDocker,
-  startBackofficeDatabase,
-} from './harness';
-
-const dockerAvailable = await probeDocker();
+import { BACKOFFICE_DATABASE, type BackofficeDatabase, startBackofficeDatabase } from './harness';
 
 /**
  * Account ID hợp lệ theo `isBackofficeAccountId`: prefix `sub_` + 32 ký tự
@@ -107,7 +100,7 @@ async function get(
   };
 }
 
-describe.skipIf(!dockerAvailable)('read routes /api/staff, /api/roles, /api/permissions', () => {
+describe('read routes /api/staff, /api/roles, /api/permissions', () => {
   let db: BackofficeDatabase;
 
   /**

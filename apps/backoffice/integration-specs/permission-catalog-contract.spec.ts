@@ -20,8 +20,9 @@
  * một bảng `backoffice.permissions` mà `requirePermission` ngầm dựa vào, đọc
  * bằng **runtime role** — đúng credential Worker dùng.
  *
- * ⚠️ Docker **không** phải phụ thuộc cứng: không có Docker thì suite skip
- * (như `harness.ts` chốt) — `ECOMA_REQUIRE_DOCKER=1` biến skip thành lỗi thật.
+ * ⚠️ Docker là phụ thuộc cứng: probe Docker ở `harness.ts` (qua `globalSetup`)
+ * ném lỗi khi vắng Docker, làm **toàn bộ** lần chạy đỏ thay vì skip — chính
+ * sách fail-loud của 06-testing.md §6.
  */
 
 import { join, resolve } from 'node:path';
@@ -29,9 +30,7 @@ import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { readServerCallSites } from './permission-call-sites';
-import { type BackofficeDatabase, probeDocker, startBackofficeDatabase } from './harness';
-
-const dockerAvailable = await probeDocker();
+import { type BackofficeDatabase, startBackofficeDatabase } from './harness';
 
 /**
  * Gốc project (`apps/backoffice`) — dùng để định vị cây `server/` và làm
@@ -44,85 +43,82 @@ const dockerAvailable = await probeDocker();
 const PROJECT_ROOT = resolve(import.meta.dirname, '..');
 const SERVER_DIR = join(PROJECT_ROOT, 'server');
 
-describe.skipIf(!dockerAvailable)(
-  'permission call sites resolve to an active row in the sealed catalog',
-  () => {
-    let db: BackofficeDatabase;
+describe('permission call sites resolve to an active row in the sealed catalog', () => {
+  let db: BackofficeDatabase;
 
-    beforeAll(async () => {
-      db = await startBackofficeDatabase();
-    }, 180_000);
+  beforeAll(async () => {
+    db = await startBackofficeDatabase();
+  }, 180_000);
 
-    afterAll(async () => {
-      await db?.stop();
-    });
+  afterAll(async () => {
+    await db?.stop();
+  });
 
-    it('resolves every permission literal used by an enforcement call site', async () => {
-      const callSites = readServerCallSites(SERVER_DIR, PROJECT_ROOT);
+  it('resolves every permission literal used by an enforcement call site', async () => {
+    const callSites = readServerCallSites(SERVER_DIR, PROJECT_ROOT);
 
-      // Canary: máy quét phải **tìm thấy** call-site. Nếu máy quét hỏng (regex
-      // sai, đường dẫn sai), danh sách rỗng ⇒ mọi assert bên dưới xanh vì
-      // "không có gì để kiểm". Canary biến trường hợp đó thành đỏ.
-      expect(callSites.length).toBeGreaterThan(0);
+    // Canary: máy quét phải **tìm thấy** call-site. Nếu máy quét hỏng (regex
+    // sai, đường dẫn sai), danh sách rỗng ⇒ mọi assert bên dưới xanh vì
+    // "không có gì để kiểm". Canary biến trường hợp đó thành đỏ.
+    expect(callSites.length).toBeGreaterThan(0);
 
-      const runtime = await db.asRuntime();
-      try {
-        const { rows } = await runtime.query<{ id: string; status: string }>(
-          `SELECT id, status FROM backoffice.permissions`,
-        );
-        const catalog = new Map(rows.map((row) => [row.id, row.status]));
+    const runtime = await db.asRuntime();
+    try {
+      const { rows } = await runtime.query<{ id: string; status: string }>(
+        `SELECT id, status FROM backoffice.permissions`,
+      );
+      const catalog = new Map(rows.map((row) => [row.id, row.status]));
 
-        const offending = callSites
-          .filter((site) => catalog.get(site.permission) !== 'active')
-          .map((site) => ({
-            file: site.file,
-            entryPoint: site.entryPoint,
-            permission: site.permission,
-            // `undefined` = không có row trong catalog; `'retired'` = có row
-            // nhưng đã retire (terminal, không được dùng cho enforcement).
-            catalogStatus: catalog.get(site.permission) ?? 'missing',
-          }));
+      const offending = callSites
+        .filter((site) => catalog.get(site.permission) !== 'active')
+        .map((site) => ({
+          file: site.file,
+          entryPoint: site.entryPoint,
+          permission: site.permission,
+          // `undefined` = không có row trong catalog; `'retired'` = có row
+          // nhưng đã retire (terminal, không được dùng cho enforcement).
+          catalogStatus: catalog.get(site.permission) ?? 'missing',
+        }));
 
-        expect(offending).toEqual([]);
-      } finally {
-        await runtime.end();
+      expect(offending).toEqual([]);
+    } finally {
+      await runtime.end();
+    }
+  });
+
+  it('finds the three read permissions the current routes declare', async () => {
+    // Canary thứ hai: **danh sách id** tìm thấy phải khớp đúng ba route read
+    // hiện tại. Nếu ai đó đổi tên route hoặc thêm route mới mà máy quét
+    // không bắt, canary này đỏ — thay vì test xanh vì quét thiếu.
+    const callSites = readServerCallSites(SERVER_DIR, PROJECT_ROOT);
+    const permissions = callSites
+      .map((site) => site.permission)
+      .toSorted((a, b) => a.localeCompare(b, 'en'));
+
+    expect(permissions).toEqual(['permission.read', 'role.read', 'staff.read']);
+  });
+
+  it('does not accept an id that is not in the catalog', async () => {
+    // Mutation evidence của chính test này: một id không có trong catalog
+    // (ví dụ `staff.read.v2`, hoặc id copy từ fixture prototype
+    // `delivery.redrive`) phải **không** resolve được.
+    //
+    // Test này không phụ thuộc code production nào — nó chứng minh rằng
+    // điều kiện lọc của contract test có tác dụng, nên khi ai đó nới lỏng
+    // nó (bỏ filter `status = 'active'`, hoặc đổi sang so khớp `undefined`)
+    // thì test đỏ.
+    const runtime = await db.asRuntime();
+    try {
+      const { rows } = await runtime.query<{ id: string; status: string }>(
+        `SELECT id, status FROM backoffice.permissions`,
+      );
+      const active = new Set(rows.filter((row) => row.status === 'active').map((row) => row.id));
+
+      for (const notInCatalog of ['staff.read.v2', 'delivery.redrive', 'staff:read']) {
+        expect(active.has(notInCatalog)).toBe(false);
       }
-    });
-
-    it('finds the three read permissions the current routes declare', async () => {
-      // Canary thứ hai: **danh sách id** tìm thấy phải khớp đúng ba route read
-      // hiện tại. Nếu ai đó đổi tên route hoặc thêm route mới mà máy quét
-      // không bắt, canary này đỏ — thay vì test xanh vì quét thiếu.
-      const callSites = readServerCallSites(SERVER_DIR, PROJECT_ROOT);
-      const permissions = callSites
-        .map((site) => site.permission)
-        .toSorted((a, b) => a.localeCompare(b, 'en'));
-
-      expect(permissions).toEqual(['permission.read', 'role.read', 'staff.read']);
-    });
-
-    it('does not accept an id that is not in the catalog', async () => {
-      // Mutation evidence của chính test này: một id không có trong catalog
-      // (ví dụ `staff.read.v2`, hoặc id copy từ fixture prototype
-      // `delivery.redrive`) phải **không** resolve được.
-      //
-      // Test này không phụ thuộc code production nào — nó chứng minh rằng
-      // điều kiện lọc của contract test có tác dụng, nên khi ai đó nới lỏng
-      // nó (bỏ filter `status = 'active'`, hoặc đổi sang so khớp `undefined`)
-      // thì test đỏ.
-      const runtime = await db.asRuntime();
-      try {
-        const { rows } = await runtime.query<{ id: string; status: string }>(
-          `SELECT id, status FROM backoffice.permissions`,
-        );
-        const active = new Set(rows.filter((row) => row.status === 'active').map((row) => row.id));
-
-        for (const notInCatalog of ['staff.read.v2', 'delivery.redrive', 'staff:read']) {
-          expect(active.has(notInCatalog)).toBe(false);
-        }
-      } finally {
-        await runtime.end();
-      }
-    });
-  },
-);
+    } finally {
+      await runtime.end();
+    }
+  });
+});

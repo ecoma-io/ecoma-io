@@ -38,14 +38,7 @@ import {
   insertSession,
   sessionDeadlines,
 } from '../server/auth/session-store';
-import {
-  BACKOFFICE_DATABASE,
-  type BackofficeDatabase,
-  probeDocker,
-  startBackofficeDatabase,
-} from './harness';
-
-const dockerAvailable = await probeDocker();
+import { BACKOFFICE_DATABASE, type BackofficeDatabase, startBackofficeDatabase } from './harness';
 
 const AUDIENCE = 'https://api.test.ecoma.io/backoffice';
 const CLIENT_ID = 'backoffice-test';
@@ -176,7 +169,7 @@ async function probe(
   };
 }
 
-describe.skipIf(!dockerAvailable)('authn middleware boundary and classification', () => {
+describe('authn middleware boundary and classification', () => {
   let db: BackofficeDatabase;
 
   function runtimeConnectionString(): string {
