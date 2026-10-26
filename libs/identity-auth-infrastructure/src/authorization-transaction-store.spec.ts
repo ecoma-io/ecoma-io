@@ -5,7 +5,11 @@ import postgres from 'postgres';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { bytesToBase64Url } from '@ecoma-io/identity-auth-domain';
+
 import {
+  advanceTransactionWithHandle,
+  consumeHandleY,
   insertAuthorizationCode,
   insertTransaction,
   findTransactionByHandleX,
@@ -534,6 +538,197 @@ describe('authorization-transaction-store — on real PostgreSQL', () => {
         // Đích đến của winner phụ thuộc race — hợp đồng chỉ là ĐÚNG MỘT thắng.
         expect(results.filter(Boolean)).toHaveLength(1);
         expect(results.filter((r) => r === false)).toHaveLength(1);
+      } finally {
+        await cleanup(migrator, [BASE_TX_ID]);
+        await runtime.end({ timeout: 1 });
+        await migrator.end({ timeout: 1 });
+      }
+    });
+
+    it('advanceTransactionWithHandle — TWO simultaneous CAS advances from the same state, exactly ONE wins', async () => {
+      // ⚠️ Race của advance CHƯA được phủ (chỉ transitionTransaction có race
+      //     test): hai advance cùng from-state phải cho đúng MỘT winner. Đây
+      //     là CAS của consent decide — hai decide đồng thời mà cùng ghi là
+      //     hai quyết định cho một transaction.
+      const { runtime, migrator } = await setup();
+      try {
+        await seedClient(migrator, 'client-tx-store-test');
+        await insertTransaction(runtime as never, newTxRecord());
+
+        const results = await Promise.all([
+          advanceTransactionWithHandle(runtime as never, {
+            transactionId: BASE_TX_ID,
+            from: 'pending_browser',
+            to: 'denied',
+            handleHash: HASH_X_ALT,
+            eventId: 'evt-adv-a',
+            payloadHash: 'payload-adv-a-000000000000000000000000000',
+            outcome: 'failure',
+            now: new Date(),
+          }),
+          advanceTransactionWithHandle(runtime as never, {
+            transactionId: BASE_TX_ID,
+            from: 'pending_browser',
+            to: 'denied',
+            handleHash: 'ZZkVq2oFfTAgy1WcdbeNkanIsw6CwJh0jAcs8CtGYWw',
+            eventId: 'evt-adv-b',
+            payloadHash: 'payload-adv-b-000000000000000000000000000',
+            outcome: 'failure',
+            now: new Date(),
+          }),
+        ]);
+
+        expect(results.filter(Boolean)).toHaveLength(1);
+        expect(results.filter((r) => r === false)).toHaveLength(1);
+
+        // State đã advance đúng MỘT lần, và Z (đích `denied`) được ghi bởi
+        // winner — handle_hash_z của loser KHÔNG ghi đè lên winner. Cột
+        // `bytea` về tay driver là Buffer; so bằng chính codec base64url
+        // của domain (codec duy nhất, không encode thứ hai trong test).
+        const found = await findTransactionByHandleX(runtime as never, {
+          handleXHash: HASH_X,
+        });
+        expect(found?.state).toBe('denied');
+        const zRows = await migrator<{ z: Uint8Array | null }[]>`
+          SELECT handle_hash_z AS z
+            FROM auth.authorization_transactions WHERE transaction_id = ${BASE_TX_ID}
+        `;
+        const z = zRows[0]?.z;
+        expect(
+          z === null
+            ? null
+            : bytesToBase64Url(new Uint8Array(z.buffer, z.byteOffset, z.byteLength)),
+        ).toMatch(/^(XX|YY|ZZ)kVq2oFfTAgy1WcdbeNkanIsw6CwJh0jAcs8CtGYWw$/u);
+      } finally {
+        await cleanup(migrator, [BASE_TX_ID]);
+        await runtime.end({ timeout: 1 });
+        await migrator.end({ timeout: 1 });
+      }
+    });
+
+    it('advanceTransactionWithHandle — the consent destination writes handle_hash_y and leaves handle_hash_z untouched', async () => {
+      // ⚠️ Nhánh CASE của hàm: `$3 = true` ghi Y, KHÔNG đụng Z. CHECK
+      //     `handle_y_state_check` buộc `awaiting_consent` phải có Y chưa
+      //     consume — sai nhánh (ghi Z khi sang awaiting_consent) là CHECK nổ
+      //     ngay, nhưng nhánh ngược (đích denied lại ghi Y) thì schema KHÔNG
+      //     chặn — phải ghim bằng test.
+      const { runtime, migrator } = await setup();
+      try {
+        await seedClient(migrator, 'client-tx-store-test');
+        await insertTransaction(runtime as never, newTxRecord());
+
+        const won = await advanceTransactionWithHandle(runtime as never, {
+          transactionId: BASE_TX_ID,
+          from: 'pending_browser',
+          to: 'awaiting_consent',
+          handleHash: HASH_X_ALT,
+          eventId: 'evt-adv-consent',
+          payloadHash: 'payload-adv-consent-00000000000000000000000',
+          outcome: 'success',
+          now: new Date(),
+        });
+        expect(won).toBe(true);
+
+        const found = await findTransactionByHandleX(runtime as never, {
+          handleXHash: HASH_X,
+        });
+        expect(found?.state).toBe('awaiting_consent');
+        // Cột `bytea` đọc về là Buffer — so bằng codec base64url của domain
+        // thay vì `encode(..., 'base64url')` (PostgreSQL không có encoding đó).
+        const handleRows = await migrator<{ y: Uint8Array | null; z: Uint8Array | null }[]>`
+          SELECT handle_hash_y AS y, handle_hash_z AS z
+            FROM auth.authorization_transactions WHERE transaction_id = ${BASE_TX_ID}
+        `;
+        const y = handleRows[0]?.y;
+        expect(
+          y === null
+            ? null
+            : bytesToBase64Url(new Uint8Array(y.buffer, y.byteOffset, y.byteLength)),
+        ).toBe(HASH_X_ALT);
+        expect(handleRows[0]?.z).toBeNull();
+      } finally {
+        await cleanup(migrator, [BASE_TX_ID]);
+        await runtime.end({ timeout: 1 });
+        await migrator.end({ timeout: 1 });
+      }
+    });
+
+    it('consumeHandleY — TWO same-owner transactions race, exactly ONE consumes', async () => {
+      // ⚠️ CAS 2 race: hai decide đồng thời cùng owner (đúng ASR + sub) phải
+      //     cho đúng MỘT consume. internal-handlers.spec đã phủ thắng tuần tự
+      //     và thua sai-ASR; concurrency của chính CAS này chưa được ghim —
+      //     thiếu nó thì một refactor phá `handle_y_consumed_at IS NULL` vẫn
+      //     xanh trên mọi test hiện có.
+      //
+      // ⚠️ Trình tự seed là advance ĐI RA khỏi `awaiting_consent` TRƯỚC rồi
+      //     mới consume Y — cùng thứ tự mà consent decide thật dùng trong MỘT
+      //     tx: CHECK `handle_y_state_check` chỉ buộc Y hiện diện khi đang
+      //     `awaiting_consent`, nên consume Y khi state còn `awaiting_consent`
+      //     là hình thức bị CHECK chặn. Consume theo owner sau advance vẫn là
+      //     CAS thật: hai tx cùng owner đua nhau ăn `handle_y_consumed_at`.
+      const { runtime, migrator } = await setup();
+      try {
+        await seedClient(migrator, 'client-tx-store-test');
+        await insertTransaction(runtime as never, newTxRecord());
+
+        const handleYHash = HASH_X_ALT;
+        // (1) Bind danh tính — consumeHandleY CAS theo `account_session_ref =
+        //     $2 AND sub = $3`, nên seed hai cột này đúng owner.
+        await runtime.unsafe(
+          `UPDATE auth.authorization_transactions
+              SET sub = $2, acr = 'urn:ecoma:acr:email-otp', authn_at = now(),
+                  account_session_ref = $3
+            WHERE transaction_id = $1`,
+          [BASE_TX_ID, 'sub-consume-y-owner', 'asr-consume-y-owner'],
+        );
+        // (2) Advance pending_browser → awaiting_consent kèm Y (CHECK buộc Y),
+        //     rồi advance tiếp sang ready_to_complete kèm Z — đúng hai bước
+        //     state machine của một flow thật; Y vẫn chưa consume.
+        await advanceTransactionWithHandle(runtime as never, {
+          transactionId: BASE_TX_ID,
+          from: 'pending_browser',
+          to: 'awaiting_consent',
+          handleHash: handleYHash,
+          eventId: 'evt-cy-setup',
+          payloadHash: 'payload-cy-setup-0000000000000000000000000',
+          outcome: 'success',
+          now: new Date(),
+        });
+        await advanceTransactionWithHandle(runtime as never, {
+          transactionId: BASE_TX_ID,
+          from: 'awaiting_consent',
+          to: 'ready_to_complete',
+          handleHash: 'ZZkVq2oFfTAgy1WcdbeNkanIsw6CwJh0jAcs8CtGYWw',
+          eventId: 'evt-cy-setup-2',
+          payloadHash: 'payload-cy-setup2-000000000000000000000000',
+          outcome: 'success',
+          now: new Date(),
+        });
+
+        const consumeOnce = (nonce: string) =>
+          runtime.begin(async (tx) =>
+            consumeHandleY(tx as never, {
+              handleYHash,
+              accountSessionRef: 'asr-consume-y-owner',
+              sub: 'sub-consume-y-owner',
+              decision: 'approve',
+              eventId: `evt-cy-${nonce}`,
+              payloadHash: `payload-cy-${nonce}-000000000000000000000000000`,
+              now: new Date(),
+            }),
+          );
+
+        const results = await Promise.all([consumeOnce('a'), consumeOnce('b')]);
+        const winners = results.filter((r) => r !== undefined);
+
+        expect(winners).toHaveLength(1);
+        // Loser không ghi gì — consumed_at chỉ có đúng MỘT mốc, và state
+        // advance KHÔNG nằm trong consumeHandleY nên vẫn nguyên `awaiting_consent`.
+        const rows = await migrator<{ consumed: string | null }[]>`
+          SELECT handle_y_consumed_at::text AS consumed
+            FROM auth.authorization_transactions WHERE transaction_id = ${BASE_TX_ID}
+        `;
+        expect(rows[0]?.consumed).not.toBeNull();
       } finally {
         await cleanup(migrator, [BASE_TX_ID]);
         await runtime.end({ timeout: 1 });
