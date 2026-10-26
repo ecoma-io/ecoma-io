@@ -6,7 +6,9 @@
     "pg": "^8.23.1"
   },
   "devDependencies": {
-    "@types/pg": "^8.23.1"
+    "@testcontainers/postgresql": "12.2.1",
+    "@types/pg": "^8.23.1",
+    "testcontainers": "12.2.1"
   },
   "//": "Không dependency workspace lib nào: logic prune là một hàm riêng của app này (src/prune.ts), và driver `pg` là một dependency runtime duy nhất. Job không chia code với serving path của auth/account — chia code là chia ranh giới app→app mà tag Nx cấm.",
   "nx": {
@@ -16,6 +18,13 @@
       "runtime:edge"
     ],
     "targets": {
+      "test-integration": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "apps/auth-nonce-prune-job",
+          "command": "npx vitest run -c vitest.integration.config.mts tests/integrations"
+        }
+      },
       "build": {
         "executor": "@nx/esbuild:esbuild",
         "outputs": [
