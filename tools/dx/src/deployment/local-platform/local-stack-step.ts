@@ -42,6 +42,7 @@ import {
   type LocalDeployContext,
 } from './pulumi-context.js';
 import {
+  generateAppSecret,
   generateBase64Key32,
   generateEs256SigningKeyPem,
   generateHexKey64,
@@ -127,11 +128,16 @@ export function localStackSecrets(
       // nhận tường minh).
       ['namespace:signingKeyPem', inputs.signingKeyPem],
       ['namespace:signingKeyId', 'local-identity-1'],
-      ['namespace:handleKey', generatePostgresPassword()],
+      // `handleKey` là khoá HMAC-SHA-256 của domain lib (importKey bắt ĐÚNG 32
+      // byte) và `cookieKeys` là keygrip key của oidc-provider — cả hai là
+      // secret ứng dụng, dùng `generateAppSecret` (32 byte) thay vì mật khẩu
+      // 24 byte của database (#284): sai hình là mọi request /authorize chết
+      // `K_auth phai dai 32 byte` ngay lúc mint đầu tiên.
+      ['namespace:handleKey', generateAppSecret()],
       ['namespace:internalSecret', inputs.identityInternalSecret],
       ['namespace:issuer', `https://auth.${inputs.rootHost}`],
       ['namespace:audience', `https://api.${inputs.rootHost}`],
-      ['namespace:cookieKeys', generatePostgresPassword()],
+      ['namespace:cookieKeys', generateAppSecret()],
     ] as const;
   }
   if (project === 'backoffice-deploy') {

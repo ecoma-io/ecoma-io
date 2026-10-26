@@ -229,6 +229,20 @@ describe('root .dockerignore: required build inputs are included', () => {
     expect(isExcluded('libs/backoffice-domain/src/index.ts')).toBe(false);
   });
 
+  it('backoffice colocated specs never enter the context — they import the excluded tests/ helpers', () => {
+    // #277 colocated specs dưới `app/**`; `nuxt build` typecheck (loại trừ
+    // specs không được set) chết TS2307 nếu specs vào context mà helper
+    // `tests/` thì bị loại (`../tests/nuxt-globals`, `../../tests/harness`,
+    // `../../tests/fake-adapter`, `../../tests/nuxt-app-state`).
+    expect(isExcluded('apps/backoffice/app/app-locale.spec.ts')).toBe(true);
+    expect(isExcluded('apps/backoffice/app/composables/use-async-state.spec.ts')).toBe(true);
+    expect(isExcluded('apps/backoffice/app/pages/pages-data-states.spec.ts')).toBe(true);
+    // Spec e2e/integration-specs/server không tham chiếu helper `tests/` —
+    // chúng có thể vào context; assertion này ghim rằng dòng mới KHÔNG dập
+    // cả subtree `app/`.
+    expect(isExcluded('apps/backoffice/app/app.vue')).toBe(false);
+  });
+
   it('account app and identity libs enter the context', () => {
     expect(isExcluded('apps/account/package.json')).toBe(false);
     expect(isExcluded('apps/account/.npmrc')).toBe(false);

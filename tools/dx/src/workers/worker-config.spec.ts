@@ -400,6 +400,23 @@ describe('generateWorkerConfig', () => {
     expect(result.config.dev).toEqual({ port: allocateWorkerPort(ns, 'ecoma-transactional-mail') });
   });
 
+  it('keeps committed dev keys other than port (e.g. upstream_protocol for secure cookies)', () => {
+    // `dev.upstream_protocol: "https"` (#285) là nguồn của scheme mà workerd
+    // thấy (`MF-Original-URL`) — glue của auth ghi `x-forwarded-proto` từ đó
+    // và oidc-provider suy `secure` cookie. Generated config GHI ĐÈ `port`
+    // nhưng PHẢI giữ nguyên các key `dev` committed còn lại.
+    const dir = makeWorktreeFixture('dev-upstream-protocol');
+    const configPath = writeCommittedConfig(dir, {
+      dev: { port: 4203, upstream_protocol: 'https' },
+    });
+    const result = generateWorkerConfig({ worktreeRoot: dir, committedConfigPath: configPath });
+    const ns = worktreeNamespace(dir);
+    expect(result.config.dev).toEqual({
+      port: allocateWorkerPort(ns, 'ecoma-transactional-mail'),
+      upstream_protocol: 'https',
+    });
+  });
+
   it('never leaks remote: true into the generated config', () => {
     const dir = makeWorktreeFixture('no-remote-out');
     const configPath = writeCommittedConfig(dir);

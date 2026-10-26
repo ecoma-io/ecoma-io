@@ -127,6 +127,10 @@ apps/backoffice/tests
 apps/backoffice/vitest.config.mts
 apps/backoffice/tsconfig.db.json
 apps/backoffice/tsconfig.spec.json
+# Spec colocated của backoffice (sau #277) import helper `tests/` bị loại phía
+# trên — cùng lý do với `apps/account/app/**/*.spec.ts` ngay dưới đây: vào
+# context là `nuxt build` chết TS2307 lúc typecheck.
+apps/backoffice/app/**/*.spec.ts
 apps/account/tests
 apps/account/vitest.config.mts
 apps/account/tsconfig.db.json

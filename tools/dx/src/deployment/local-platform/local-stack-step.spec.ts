@@ -185,6 +185,17 @@ describe('runLocalStackStep up — unit project path', () => {
     // issuer/audience suy từ ROOT_HOST của .env.
     const issuerSet = authSets.find(([, args]) => args[2] === 'namespace:issuer');
     expect(issuerSet?.[4]).toEqual({ input: 'https://auth.fbi.com:40011' });
+    // Hai secret ứng dụng của auth là hình 32 byte base64url — contract
+    // `importKey` của domain lib bắt ĐÚNG 32 byte cho AUTH_HANDLE_KEY và
+    // cookieKeys là keygrip key của oidc-provider (#284).
+    const handleSet = authSets.find(([, args]) => args[2] === 'namespace:handleKey');
+    const cookieKeysSet = authSets.find(([, args]) => args[2] === 'namespace:cookieKeys');
+    expect(Buffer.from(String(handleSet?.[4]?.['input'] ?? ''), 'base64url').byteLength).toBe(32);
+    expect(Buffer.from(String(cookieKeysSet?.[4]?.['input'] ?? ''), 'base64url').byteLength).toBe(
+      32,
+    );
+    // Hai giá trị sinh ĐỘC LẬP — trùng nhau là hai ngữ cảnh dùng chung khoá.
+    expect(handleSet?.[4]?.['input']).not.toBe(cookieKeysSet?.[4]?.['input']);
   });
 
   it('auth up FAILS when the account secret is unreadable (dependsOn violated → no silent half-wired stack)', async () => {
@@ -474,6 +485,26 @@ describe('localStackSecrets — per-stack secret contract', () => {
     expect(token?.length).toBeGreaterThanOrEqual(32);
   });
 
+  it('auth-deploy application secrets decode to exactly 32 bytes (handleKey + cookieKeys)', () => {
+    // `handleKey` đi vào `importKey` của identity-auth-domain — hàm bắt ĐÚNG
+    // 32 byte (HMAC-SHA-256); `cookieKeys` là keygrip key của oidc-provider.
+    // Cả hai là secret ứng dụng (#284) — mật khẩu 24 byte của database từng
+    // làm mọi lane mới chết `K_auth phai dai 32 byte` ở request đầu tiên.
+    const auth = localStackSecrets('auth-deploy', base);
+    for (const key of ['namespace:handleKey', 'namespace:cookieKeys']) {
+      const value = auth.find(([k]) => k === key)?.[1];
+      expect(value).toMatch(/^[A-Za-z0-9_-]+$/u);
+      expect(Buffer.from(value ?? '', 'base64url').byteLength).toBe(32);
+    }
+    // Hai khoá sinh ĐỘC LẬP — trùng nhau là hai ngữ cảnh dùng chung khoá.
+    expect(auth.find(([k]) => k === 'namespace:handleKey')?.[1]).not.toBe(
+      auth.find(([k]) => k === 'namespace:cookieKeys')?.[1],
+    );
+    // Mật khẩu role vẫn là đường database (không đụng contract 32 byte): chỉ
+    // ghi giữ đúng hành vi, generator giữ 24 byte cho credential.
+    expect(auth.find(([k]) => k === 'namespace:runtimePassword')?.[1]).toMatch(/^[A-Za-z0-9_-]+$/u);
+  });
+
   it('platform has NO per-stack secrets (its password lives in the postgres:password path)', () => {
     expect(localStackSecrets('platform-deploy', base)).toEqual([]);
     expect(localStackSecrets('home-deploy', base)).toEqual([]);
@@ -489,6 +520,9 @@ describe('resolveIdentityInternalSecret — persistence contract', () => {
     const b = resolveIdentityInternalSecret('account-deploy', ctx, env);
     expect(a).toMatch(/^[A-Za-z0-9_-]+$/u);
     expect(a?.length).toBeGreaterThanOrEqual(32);
+    // Generator là 32 byte chuẩn HMAC-SHA-256 (#284) — ngưỡng ký tự 32 của
+    // `config-validation.ts` thông qua tự nhiên nhưng byte mới là contract.
+    expect(Buffer.from(a ?? '', 'base64url').byteLength).toBe(32);
     expect(a).not.toBe(b); // sinh ngẫu nhiên mỗi lần — account persist giá trị của nó
   });
 

@@ -67,5 +67,17 @@
   },
   "dev": {
     "port": 4203,
+    // Local lane: worker nhận request qua proxy nội bộ (Traefik chấm dứt HTTPS
+    // rồi forward plain HTTP vào WIC). `upstream_protocol: "https"` nói wrangler
+    // dev coi protocol "thật" của request là HTTPS: URL nội bộ mà workerd thấy
+    // (`MF-Original-URL`, scheme suy từ `dev.origin.secure` của wrangler) nhận
+    // scheme `https://`, và glue (`withForwardedProto` trong `src/oidc/
+    // runtime.ts`) ghi `x-forwarded-proto: https` từ URL scheme đó cho oidc-
+    // provider (đã bật `proxy`). Thiếu key này scheme là `http` (default =
+    // `local_protocol`), `cookies.secure: true` của provider ném "Cannot send
+    // secure cookie over unencrypted connection" — 500 ở MỌI route set cookie
+    // của `/auth` (#285). Production Workers nhận HTTPS native nên không đụng
+    // key `dev` này (chỉ wrangler dev đọc).
+    "upstream_protocol": "https",
   },
 }
