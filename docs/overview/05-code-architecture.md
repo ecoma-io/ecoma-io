@@ -23,7 +23,7 @@
 apps/
   <runtime-project>              # Worker / web / composition root của một deploy unit runtime
     tests/
-      integrations/ contracts/ databases/   # purpose subdirs, chi tiết → 06-testing.md
+      integrations/ contracts/ databases/ browser/   # purpose subdirs, chi tiết → 06-testing.md
 
 deploys/
   platform-deploy                # tầng platform hạ tầng mà mọi deployment project khác phụ thuộc

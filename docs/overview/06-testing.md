@@ -115,9 +115,10 @@ Phân biệt ba khái niệm Nx hay bị lẫn:
 
 - **Mặc định:** mỗi suite tự mang harness của mình (container, D1 proxy, …) và tự dọn sau khi chạy. Resource ephemeral trong
   CI phải được thu hồi — quy tắc vệ sinh phía thực thi thuộc `02-delivery.md` §4.
-- **Suite phụ thuộc Docker đi theo probe pattern fail-loud:** probe Docker **một lần mỗi lần chạy** (vitest `globalSetup`).
-  Không có Docker thì suite **skip với exit 0**, trừ khi `ECOMA_REQUIRE_DOCKER=1` biến skip thành failure. Hệ quả cần biết:
-  "xanh" trong môi trường degraded có thể nghĩa là "đã skip" — CI có thể đặt biến này để fail closed.
+- **Suite phụ thuộc Docker probe Docker một lần mỗi lần chạy** (vitest `globalSetup`) thay vì để từng spec file tự probe.
+  **Docker thiếu là failure, không phải skip:** một suite bắt buộc Docker **đỏ** khi probe thất bại — kết quả xanh không bao
+  giờ được che việc một suite bắt buộc đã không chạy. Bỏ qua probe chỉ tồn tại như opt-in tường minh cho phiên local
+  (`ECOMA_REQUIRE_DOCKER`), không bao giờ bật ở CI, và một lần chạy đã skip **không** tính là qua gate bắt buộc nào.
 - **Database test không vượt ranh giới database ownership** (`01` §9 invariant 5, 7, 25): harness thuộc sở hữu của suite hoặc
   project cần nó — mỗi project tự dựng harness của mình (PostgreSQL qua testcontainers, D1 qua wrangler `getPlatformProxy`).
   **Không** có shared test-support library: import chéo deploy unit bị cấm bởi module-boundary rules (`05` §7), nên hai
@@ -137,6 +138,22 @@ Mục này là **chỉ mục của enforcement kiến trúc**, không phải yê
 
 Minimum bar **scale theo blast radius**: một hàm thuần không state cần ít hơn một worker sở hữu migration — càng gần
 authoritative state và cross-service contract, bằng chứng test càng không được thiếu.
+
+Bốn dòng trên là **sàn theo trách nhiệm kiến trúc**. Ngoài sàn đó, một category test được thêm khi **hành vi và hậu quả hỏng
+hóc của nó** đáp ứng tiêu chí — không phải vì technology có mặt trong project:
+
+| Category              | Khi nào warranted                                                                                                                                                           | Ownership (§2)                                |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| Browser/UI regression | App **user-facing** và lỗi render/navigate/permission trên UI là lỗi người dùng nhìn thấy được (readonly boundary, role gating, luồng chính); không áp cho API/Worker thuần | App-owned `tests/browser/`                    |
+| System E2E            | Journey **liên nhiều deploy unit** mà mỗi contract test riêng không chứng minh được end-to-end (vd đăng nhập xuyên account ↔ auth); hệ thống phải đang chạy thật            | `system-tests/e2e/`, mỗi suite một Nx project |
+| Smoke                 | Kiểm **hệ thống đã deploy** còn sống và đúng bề mặt công khai, rẻ và nhanh, chạy sau deploy (thay cho "deploy xong là xong")                                                | `system-tests/smoke/`                         |
+| Performance           | Có **SLO đo được** (latency, throughput) hoặc rủi ro contention/hot-spot trên tài nguyên chia sẻ; không có con số SLO thì chưa có performance test                          | `system-tests/performance/`                   |
+| Resilience            | Yêu cầu **phục hồi** có thể diễn đạt được: failover, retry qua crash, DLQ, resource limit — và hậu quả vi phạm là mất dữ liệu/tiền/downtime                                 | `system-tests/resilience/`                    |
+
+Không project nào cần đầy đủ cả các category; scaffolding rỗng là anti-pattern (§9). Quyết định "không cần" cũng phải nói được
+bằng đúng tiêu chí này (vd Worker không UI → không browser test; không SLO → chưa performance test), và ownership không đổi theo
+category: colocated vẫn colocated, app-owned vẫn `apps/<app>/tests/`, system-level vẫn `system-tests/` với setup/support của
+từng suite.
 
 ## 8. CI quality gates
 
