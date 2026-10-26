@@ -20,6 +20,7 @@
  * gọi nhiều endpoint vẫn hoạt động.
  */
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
+import { vi } from 'vitest';
 import { defineComponent, h, nextTick, type Component } from 'vue';
 
 import { setRuntimeConfig } from './nuxt-app-state';
