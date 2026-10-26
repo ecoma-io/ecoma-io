@@ -1,6 +1,18 @@
-import { useNuxtApp, type NuxtApp } from '#app';
+import { useNuxtApp, useRuntimeConfig, type NuxtApp } from '#app';
 import type { AccountAdapter } from '../account-data/types';
 import { createServerAccountAdapter } from '../account-data/real-adapter';
+import { createMockAccountAdapter } from '../account-data/mock-adapter';
+import { ACCOUNT_DATA_MODE_MOCK, resolveAccountDataMode } from '../account-data/data-mode';
+
+/**
+ * Static import của mock adapter có chủ đích, không phải `import()` động:
+ * `resolveAccountDataMode` fail-closed nghĩa là mode `mock` **không thể tồn
+ * tại trong artifact** — nhánh mock chỉ chạy dưới `nuxt dev`, nên static import
+ * không đổi bundle production. Thêm cơ chế dynamic import vào đây là phức tạp
+ * hoá một quyết định mà fail-closed đã xử lý, chưa kể `import()` trong
+ * composable biến đường dựng adapter thành async boundary cần xử lý
+ * pending/hydrate cho cả hai phía SSR/client.
+ */
 
 /** App Nuxt đã mang adapter, gắn thêm vào nó. */
 type AccountNuxtApp = NuxtApp & {
@@ -11,10 +23,15 @@ type AccountNuxtApp = NuxtApp & {
  * Điểm chọn implementation adapter — **nơi duy nhất** quyết định UI nói chuyện
  * với nguồn dữ liệu nào.
  *
- * Trả **server adapter** (`real-adapter.ts`): các luồng auth đã nối với BFF
- * thật (`/api/auth/*`, `/api/consent/*`); phần dữ liệu tài khoản còn lại vẫn
- * mô phỏng bên trong nó, và `isPreview` vẫn `true` để banner "preview data"
- * phản ánh đúng phần chưa nối.
+ * Chế độ đến từ `useRuntimeConfig().public.accountDataMode` qua
+ * `resolveAccountDataMode` (fail-closed): `mock` chỉ khi chuỗi cấu hình đúng
+ * `'mock'` **và** đang chạy `nuxt dev`; mọi tổ hợp khác — gồm cả `mock` đặt
+ * trong artifact, nếu lọt qua — là server adapter thật.
+ *
+ * Server adapter (`real-adapter.ts`): các luồng auth đã nối với BFF thật
+ * (`/api/auth/*`, `/api/consent/*`); phần dữ liệu tài khoản còn lại vẫn mô phỏng
+ * bên trong nó ở cả hai mode cho tới PR4, và `isPreview` được dẫn xuất từ mode +
+ * domain coverage thay vì hardcode — xem {@link createAccountAdapter}.
  *
  * ⚠️ Giữ mock ở đây nghĩa là dự phòng khác cho test harness: `tests/harness.ts`
  * gắn adapter test riêng vào `nuxtApp.$accountAdapter` trước khi mount, nên
@@ -37,6 +54,33 @@ type AccountNuxtApp = NuxtApp & {
  */
 export function useAccountAdapter(): AccountAdapter {
   const nuxtApp = useNuxtApp() as AccountNuxtApp;
-  nuxtApp.$accountAdapter ??= createServerAccountAdapter();
+
+  // `useRuntimeConfig()` nằm trong `createAccountAdapter`, chỉ được gọi từ vế
+  // phải của `??=`: nó chỉ chạy ở lần tạo adapter, còn nhánh cache (mọi
+  // call-site sau) không phụ thuộc runtime config.
+  nuxtApp.$accountAdapter ??= createAccountAdapter();
+
   return nuxtApp.$accountAdapter;
+}
+
+/**
+ * Dựng adapter theo mode đã phân giải. Tách khỏi {@link useAccountAdapter} để
+ * `useRuntimeConfig()` chỉ chạy ở lần tạo adapter duy nhất.
+ */
+function createAccountAdapter(): AccountAdapter {
+  const dataMode = resolveAccountDataMode(
+    useRuntimeConfig().public.accountDataMode,
+    import.meta.dev,
+  );
+  const isMock = dataMode === ACCOUNT_DATA_MODE_MOCK;
+
+  // Độ phủ đường thật của data domain. PR4 wire từng domain: chuyển hằng này
+  // (thành phủ theo từng domain) khi từng đường BFF thật có mặt. `isPreview`
+  // dẫn xuất từ mode + coverage — mode mock hoặc domain chưa có đường thật ⇒
+  // banner đúng sự thật; domain cuối cùng hết mock ⇒ banner tự tắt, không đụng UI.
+  const dataDomainHasRealPath = false;
+
+  return isMock
+    ? createMockAccountAdapter()
+    : createServerAccountAdapter({}, isMock || !dataDomainHasRealPath);
 }

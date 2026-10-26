@@ -83,19 +83,30 @@ const OTP_TTL_UI_SECONDS = 600;
  * ⚠️ **Cùng một `MockAdapterOptions`** với `createMockAccountAdapter` — các
  * test/UI preview dựng mock tùy chỉnh được, real adapter chỉ thay các luồng
  * đã nối bên trên lớp đó.
+ *
+ * @param options Tuỳ chỉnh của lớp mock bên dưới (test/UI preview).
+ * @param preview `isPreview` **dẫn xuất** — do điểm chọn adapter truyền từ mode
+ *                + domain coverage, không phải cờ hardcode. Ở mode `real` hôm
+ *                nay mọi domain dữ liệu vẫn mock bên trong nên cờ là `true`;
+ *                PR4 wire từng domain sẽ chuyển slice đó sang đường thật và cờ
+ *                tự đúng theo — banner tắt đúng khi domain cuối cùng hết mock,
+ *                không cần đụng UI.
  */
-export function createServerAccountAdapter(options: MockAdapterOptions = {}): AccountAdapter {
+export function createServerAccountAdapter(
+  options: MockAdapterOptions = {},
+  preview = true,
+): AccountAdapter {
   const mock = createMockAccountAdapter(options);
 
   return {
     ...mock,
 
     /**
-     * ⚠️ `isPreview` vẫn `true`: phần dữ liệu tài khoản của adapter này vẫn là
-     * mock. Khi BFF cho nhóm đó xuất hiện, cờ chuyển false ở đây (một dòng)
-     * và banner tự tắt — cùng cơ chế mà mock đang dùng.
+     * Dẫn xuất từ mode + domain coverage (tham số {@link preview}) — xem JSDoc
+     * của factory. Không hardcode ở đây: hardcode làm banner nói dối ngay khi
+     * một domain đầu tiên chuyển sang đường thật.
      */
-    isPreview: true,
+    isPreview: preview,
 
     /**
      * Luồng challenge làm một request thật; response luôn `204` bất kể kết quả

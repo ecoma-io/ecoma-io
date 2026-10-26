@@ -32,6 +32,7 @@
 import { assertKid, MAX_SKEW_SECONDS, MIN_SKEW_SECONDS } from '@ecoma-io/identity-contracts';
 
 import { MIN_OTP_HMAC_SECRET_LENGTH } from '../lib/otp';
+import { DATA_MODE_MOCK_IN_ARTIFACT_REASON, resolveServerDataMode } from './data-mode-server';
 
 /** Độ dài tối thiểu của internal HMAC secret, tính bằng ký tự. */
 const MIN_INTERNAL_HMAC_SECRET_LENGTH = 32;
@@ -61,6 +62,21 @@ export interface AccountRuntimeConfig {
    * cấu hình lộ ở lần gọi thật, không phải lý do mở thêm một đường public.
    */
   authServiceUrl?: unknown;
+  /**
+   * Phần `public` của runtime config — hiện tại chỉ có seam chế độ dữ liệu
+   * `accountDataMode` (env `NITRO_PUBLIC_ACCOUNT_DATA_MODE`). Chỉ được đặt
+   * `mock` dưới `nuxt dev`; artifact resolve ra `mock` là lỗi cấu hình —
+   * {@link validateAccountConfig} chặn (throw) thay vì nuốt về `real`.
+   */
+  public?: {
+    accountDataMode?: unknown;
+  };
+  /**
+   * Cờ `nuxt dev` của runtime đang chạy (`import.meta.dev` phía Nitro). Tham số
+   * tách riêng — config object không tự nói được môi trường, và validator thuần
+   * không tự suy môi trường.
+   */
+  isDev?: boolean;
 }
 
 /**
@@ -86,6 +102,18 @@ export function validateAccountConfig(config: AccountRuntimeConfig): void {
     // trong log của platform, và độ dài secret là thông tin hữu ích cho attacker.
     throw new Error(
       `NUXT_INTERNAL_HMAC_SECRET phải dài ít nhất ${MIN_INTERNAL_HMAC_SECRET_LENGTH} ký tự.`,
+    );
+  }
+
+  // Seam `DATA_MODE` — lớp boot gate của fail-closed: artifact có yêu cầu mock
+  // là cấu hình sai phải **chặn** (throw ⇒ mọi request 503 qua plugin config,
+  // và `/ready` 503), không được nuốt về `real` trong im lặng. Dưới dev, `mock`
+  // là giá trị hợp lệ — gate no-op. Lý do đầy đủ ở `data-mode-server.ts`.
+  const serverMode = resolveServerDataMode(config.public?.accountDataMode, config.isDev ?? false);
+  if (serverMode.kind === 'real' && serverMode.mockInArtifact) {
+    throw new Error(
+      'NITRO_PUBLIC_ACCOUNT_DATA_MODE=mock is blocked: a built artifact never runs mock ' +
+        `(reason ${DATA_MODE_MOCK_IN_ARTIFACT_REASON}). Only nuxt dev may use mock.`,
     );
   }
 
@@ -304,7 +332,10 @@ export function lazyConfigValidator(
     if (validated) {
       return;
     }
-    validateAccountConfig(readConfig(event));
+    const config = readConfig(event);
+    // Cờ dev đi cùng config đọc từ event — trên Nitro server, `import.meta.dev`
+    // được thay tĩnh lúc build theo `nitro.options.dev` của runtime đang chạy.
+    validateAccountConfig({ ...config, isDev: import.meta.dev });
     validated = true;
   };
 }

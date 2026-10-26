@@ -118,6 +118,54 @@ describe('validateAccountConfig', () => {
   });
 });
 
+/**
+ * Seam `DATA_MODE` ở lớp boot gate — artifact có yêu cầu mock phải **chặn**,
+ * không được nuốt về `real` trong im lặng. Dưới dev, `mock` là giá trị hợp lệ.
+ * Giá trị mode nằm dưới `public` của runtime config — đúng hình dạng config
+ * thật, không phải trường phẳng riêng cho validator.
+ */
+describe('validateAccountConfig — account data mode', () => {
+  it('accepts an unset data mode in an artifact', () => {
+    expect(() =>
+      validateAccountConfig(validConfig({ public: { accountDataMode: undefined }, isDev: false })),
+    ).not.toThrow();
+    expect(() =>
+      validateAccountConfig(validConfig({ public: { accountDataMode: '' }, isDev: false })),
+    ).not.toThrow();
+    expect(() => validateAccountConfig(validConfig({ isDev: false }))).not.toThrow();
+  });
+
+  it('blocks an explicit mock request in an artifact', () => {
+    expect(() =>
+      validateAccountConfig(validConfig({ public: { accountDataMode: 'mock' }, isDev: false })),
+    ).toThrow(/data_mode_mock_in_artifact/u);
+  });
+
+  it('treats a near-miss set value as fail-closed real, not as a mock request', () => {
+    // Chuỗi gần đúng không bao giờ resolve ra mock ở bất kỳ môi trường nào —
+    // resolver rơi về `real` (fail closed); gate chỉ chặn yêu cầu mock tường
+    // minh trong artifact, không chặn giá trị vô nghĩa.
+    expect(() =>
+      validateAccountConfig(validConfig({ public: { accountDataMode: 'Mock' }, isDev: false })),
+    ).not.toThrow();
+  });
+
+  it('accepts mock under dev', () => {
+    expect(() =>
+      validateAccountConfig(validConfig({ public: { accountDataMode: 'mock' }, isDev: true })),
+    ).not.toThrow();
+  });
+
+  it('accepts real in both runtimes', () => {
+    expect(() =>
+      validateAccountConfig(validConfig({ public: { accountDataMode: 'real' }, isDev: false })),
+    ).not.toThrow();
+    expect(() =>
+      validateAccountConfig(validConfig({ public: { accountDataMode: 'real' }, isDev: true })),
+    ).not.toThrow();
+  });
+});
+
 describe('validateAccountConfig — OTP HMAC secret', () => {
   it('rejects a missing OTP secret', () => {
     expect(() => validateAccountConfig({ internalHmacSecret: VALID_SECRET })).toThrow(
