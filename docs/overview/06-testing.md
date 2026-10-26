@@ -94,6 +94,11 @@ Ba tên dưới đây là **canonical contract** — thêm suite mới phải g�
 Thực thi: `nx run-many -t system-test` chạy mọi system-test project; `nx affected -t system-test` chỉ chọn đúng các suite bị
 ảnh hưởng khi project graph phản ánh đúng dependency thật của chúng.
 
+Tên target ngoài ba tên trên không phải tầng phân loại. Cụ thể: `@nx/playwright/plugin` sinh target `e2e` trên project có
+`playwright.config.ts` — đó chỉ là **tên target do plugin suy ra**; một suite Playwright chạy UI của một app đơn lẻ vẫn là
+browser regression app-owned (§2, §3) và phải gắn vào `test-integration`. Việc `nx affected -t e2e` chọn đúng project theo
+graph không thay đổi tầng của test nó chạy.
+
 Phân biệt ba khái niệm Nx hay bị lẫn:
 
 - **Project dependency** — cạnh trên project graph, suy từ import (JS/TS) hoặc `implicitDependencies`; là input của
@@ -116,9 +121,9 @@ Phân biệt ba khái niệm Nx hay bị lẫn:
 - **Mặc định:** mỗi suite tự mang harness của mình (container, D1 proxy, …) và tự dọn sau khi chạy. Resource ephemeral trong
   CI phải được thu hồi — quy tắc vệ sinh phía thực thi thuộc `02-delivery.md` §4.
 - **Suite phụ thuộc Docker probe Docker một lần mỗi lần chạy** (vitest `globalSetup`) thay vì để từng spec file tự probe.
-  **Docker thiếu là failure, không phải skip:** một suite bắt buộc Docker **đỏ** khi probe thất bại — kết quả xanh không bao
-  giờ được che việc một suite bắt buộc đã không chạy. Bỏ qua probe chỉ tồn tại như opt-in tường minh cho phiên local
-  (`ECOMA_REQUIRE_DOCKER`), không bao giờ bật ở CI, và một lần chạy đã skip **không** tính là qua gate bắt buộc nào.
+  **Một suite bắt buộc Docker phải đỏ khi Docker không có — skip không phải kết quả chấp nhận được:** kết quả xanh không bao
+  giờ được che việc một suite bắt buộc đã không chạy. Biến `ECOMA_REQUIRE_DOCKER=1` biến một lần chạy bị skip thành failure
+  (fail closed); một lần chạy đã skip — kể cả chạy local không có Docker — **không** tính là qua gate bắt buộc nào.
 - **Database test không vượt ranh giới database ownership** (`01` §9 invariant 5, 7, 25): harness thuộc sở hữu của suite hoặc
   project cần nó — mỗi project tự dựng harness của mình (PostgreSQL qua testcontainers, D1 qua wrangler `getPlatformProxy`).
   **Không** có shared test-support library: import chéo deploy unit bị cấm bởi module-boundary rules (`05` §7), nên hai
@@ -140,9 +145,9 @@ Minimum bar **scale theo blast radius**: một hàm thuần không state cần �
 authoritative state và cross-service contract, bằng chứng test càng không được thiếu.
 
 Bốn dòng trên là **sàn theo trách nhiệm kiến trúc**. Ngoài sàn đó, một category test được thêm khi **hành vi và hậu quả hỏng
-hóc của nó** đáp ứng tiêu chí — không phải vì technology có mặt trong project:
+hóc của nó** đáp ứng tiêu chí — không phải vì công nghệ có mặt trong project:
 
-| Category              | Khi nào warranted                                                                                                                                                           | Ownership (§2)                                |
+| Category              | Khi nào đáng thêm                                                                                                                                                           | Ownership (§2)                                |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
 | Browser/UI regression | App **user-facing** và lỗi render/navigate/permission trên UI là lỗi người dùng nhìn thấy được (readonly boundary, role gating, luồng chính); không áp cho API/Worker thuần | App-owned `tests/browser/`                    |
 | System E2E            | Journey **liên nhiều deploy unit** mà mỗi contract test riêng không chứng minh được end-to-end (vd đăng nhập xuyên account ↔ auth); hệ thống phải đang chạy thật            | `system-tests/e2e/`, mỗi suite một Nx project |
