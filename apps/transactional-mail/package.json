@@ -15,6 +15,16 @@
       "runtime:edge"
     ],
     "targets": {
+      "test-integration": {
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "build"
+        ],
+        "options": {
+          "cwd": "apps/transactional-mail",
+          "command": "npx vitest run -c vitest.integration.config.mts tests/integrations"
+        }
+      },
       "build": {
         "executor": "@nx/esbuild:esbuild",
         "outputs": [
