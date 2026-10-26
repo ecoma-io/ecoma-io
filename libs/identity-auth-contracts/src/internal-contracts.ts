@@ -6,8 +6,8 @@
  *
  *  1. các **re-export**, gồm một **alias tên cũ** (`AccountStatus`) để call
  *     site hiện có tiếp tục biên dịch, trỏ thẳng về type canonical; và
- *  2. các khai báo **chỉ thuộc shim**: năm type `Consent*` và hàm `allowsIssuance`, chưa
- *     có bản canonical.
+ *  2. các khai báo **chỉ thuộc shim**: năm type `Consent*`, nhóm type
+ *     `ConnectedApplication*` và hàm `allowsIssuance`, chưa có bản canonical.
  *
  * Danh sách khai báo cục bộ ở mục 2 là một allowlist và được canh bởi
  * `internal-contracts.spec.ts`; thêm một khai báo cục bộ mới làm test đỏ cho tới khi
@@ -90,6 +90,55 @@ export interface ConsentDecideRequest {
 export interface ConsentDecideResponse {
   outcome: 'approved' | 'denied';
   continue_url: string;
+}
+
+/**
+ * Payload `POST /internal/connected-applications` — liệt kê grant hiện hành
+ * của một subject (FR-009 Connected applications; hướng `account → auth`).
+ *
+ * ⚠️ **Không có token, không có handle nào ở đây**: caller là `account` sau khi
+ * đã xác minh session của user (envelope HMAC mang theo subject). `sub` là
+ * trường duy nhất quyết định phạm vi dữ liệu — trả grant của sub khác là lỗi
+ * ownership, không phải lỗi shape.
+ */
+export interface ConnectedApplicationsRequest {
+  sub: string;
+}
+
+/**
+ * Một grant hiện hành trong response danh sách.
+ *
+ * ⚠️ **`id` là `oauth_grants.id` dạng công khai của contract này** — account
+ * không tự sinh định danh, và revoke của account echo đúng id này về. Auth là
+ * bên tra cứu id → grant; account không suy ra gì từ hình dạng của nó.
+ */
+export interface ConnectedApplicationGrant {
+  id: string;
+  client_id: string;
+  client_name: string;
+  granted_at: number;
+  scopes: string[];
+}
+
+export interface ConnectedApplicationsResponse {
+  applications: ConnectedApplicationGrant[];
+}
+
+/**
+ * Payload `POST /internal/connected-applications/revoke` — thu hồi quyền của
+ * một app cho subject (Connected applications của account, FR-017a/§6.4).
+ *
+ * ⚠️ `sub` bắt buộc bên cạnh `grant_id`: route của auth chỉ thu hồi grant
+ * thuộc về subject này — một `grant_id` của người khác là `404`, không bao giờ
+ * là một thu hồi thành công.
+ */
+export interface ConnectedApplicationRevokeRequest {
+  sub: string;
+  grant_id: string;
+}
+
+export interface ConnectedApplicationRevokeResponse {
+  outcome: 'revoked';
 }
 
 /**

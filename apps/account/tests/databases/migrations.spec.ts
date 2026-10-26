@@ -23,6 +23,7 @@ const EXPECTED_TABLES = [
   'login_handoffs',
   'notification_preferences',
   'otp_challenges',
+  'privacy_requests',
   'security_events',
   'user_preferences',
   'user_profiles',

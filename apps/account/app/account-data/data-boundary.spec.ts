@@ -106,16 +106,18 @@ describe('data mode import boundary', () => {
   it('wires configuration through to the real adapter the deployment declares', async () => {
     // Nối cấu hình với hành vi: giá trị `real` (đáy fail-closed) đi qua đúng
     // hàm phân giải của app và cho ra adapter server thật. `isPreview` là cờ
-    // **dẫn xuất** — mode real + data domain vẫn mock bên trong (PR4 mới wire)
-    // ⇒ cờ đúng sự thật là `true`: banner phải nói thật rằng phần dữ liệu chưa
-    // nối. Khi PR4 wire đủ domain, biểu thức dưới chuyển thành `false` (một
-    // dòng, cùng chỗ), và banner tự tắt — không đụng UI.
+    // **dẫn xuất** — mode real + data domain đã có đường BFF thật (PR4 wire)
+    // ⇒ cờ đúng sự thật là `false`: banner preview tự tắt, không đụng UI. Nếu
+    // sau này thêm domain mới chưa có đường thật, quay lại đổi dòng dưới.
     const resolved = resolveAccountDataMode('real', false);
-    const dataDomainHasRealPath = false;
+    const dataDomainHasRealPath = true;
     const adapter = createServerAccountAdapter({}, resolved === 'mock' || !dataDomainHasRealPath);
 
     expect(resolved).toBe('real');
-    expect(adapter.isPreview).toBe(true);
-    await expect(adapter.getProfile()).resolves.toBeDefined();
+    expect(adapter.isPreview).toBe(false);
+    // Bằng chứng hành vi đây là adapter thật chứ không phải mock: method đọc
+    // giờ đi đường fetch thật — trong môi trường test không có server, fetch
+    // ném trước cả khi có response (mock thì resolve fixture ngay lập tức).
+    await expect(adapter.getProfile()).rejects.toThrow('Failed to parse URL');
   });
 });

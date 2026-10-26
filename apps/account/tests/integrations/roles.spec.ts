@@ -54,6 +54,21 @@ const NONCE_TABLES = ['internal_nonces'];
 const NONCE_PRIVILEGES = ['DELETE', 'INSERT', 'SELECT'];
 
 /**
+ * Bảng yêu cầu data subject (`0010_privacy_requests.sql`): `SELECT`/`INSERT`/
+ * `UPDATE` nhưng **không** `DELETE`.
+ *
+ * Hình dạng grant thứ tư — gương chiếu của nonce nhưng theo chiều ngược (nonce
+ * thiếu `UPDATE`, bảng này thiếu `DELETE`): hàng privacy request thuộc nhóm (3)
+ * của §7.1 — bằng chứng "đã nhận yêu cầu" phải sống sót qua tombstone, nên
+ * vòng đời xử lý chỉ đổi `status` (UPDATE), không bao giờ xoá hàng. `UPDATE`
+ * có sẵn từ 0010 để vòng đời orchestration (FR-013a) không phải mở rộng grant.
+ */
+const PRIVACY_REQUEST_TABLES = ['privacy_requests'];
+
+/** Grant kỳ vọng của `privacy_requests` — đủ DML trừ DELETE (nhóm 3). */
+const PRIVACY_REQUEST_PRIVILEGES = ['INSERT', 'SELECT', 'UPDATE'];
+
+/**
  * Bỏ comment `--` ra khỏi SQL trước khi quét nội dung.
  *
  * Cần thiết vì các file migration **có** giải thích bằng chính tên thứ mà
@@ -183,16 +198,20 @@ describe('roles and grants on db-account', () => {
       const USERS_PRIVILEGES = ['INSERT', 'SELECT', 'UPDATE'];
       const dml = ['DELETE', 'INSERT', 'SELECT', 'UPDATE'];
       const expected = Object.fromEntries(
-        [...DML_TABLES, ...INSERT_ONLY_TABLES, ...NONCE_TABLES].map((table) => [
-          table,
-          table === 'security_events'
-            ? ['INSERT', 'SELECT']
-            : table === 'internal_nonces'
-              ? NONCE_PRIVILEGES
-              : table === 'users'
-                ? USERS_PRIVILEGES
-                : dml,
-        ]),
+        [...DML_TABLES, ...INSERT_ONLY_TABLES, ...NONCE_TABLES, ...PRIVACY_REQUEST_TABLES].map(
+          (table) => [
+            table,
+            table === 'security_events'
+              ? ['INSERT', 'SELECT']
+              : table === 'internal_nonces'
+                ? NONCE_PRIVILEGES
+                : table === 'users'
+                  ? USERS_PRIVILEGES
+                  : table === 'privacy_requests'
+                    ? PRIVACY_REQUEST_PRIVILEGES
+                    : dml,
+          ],
+        ),
       );
 
       // So sánh theo từng bảng **và** theo tập bảng: một bảng lạ xuất hiện trong
@@ -204,6 +223,9 @@ describe('roles and grants on db-account', () => {
       // so khớp ở trên đã bắt điều đó, nhưng một assertion đặt tên giữ tài sản
       // này sống lâu hơn mọi lần refactor danh sách privileges.
       expect(actual['users']).not.toContain('DELETE');
+      // Cùng lập luận cho `privacy_requests`: thiếu DELETE là thuộc tính nhóm (3)
+      // — bằng chứng request phải sống qua tombstone (FR-013).
+      expect(actual['privacy_requests']).not.toContain('DELETE');
     } finally {
       await client.end();
     }

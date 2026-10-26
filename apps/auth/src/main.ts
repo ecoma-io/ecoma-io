@@ -31,6 +31,10 @@ import { dispatchToNode, getRuntime } from './oidc/runtime';
 import { handleAuthorize, handleAuthorizeConfirm } from './browser-handlers';
 import { runSessionVerified } from './session-verified-handler';
 import { runConsentContext, runConsentDecide } from './consent-handler';
+import {
+  runConnectedApplicationRevoke,
+  runConnectedApplicationsList,
+} from './connected-applications-handler';
 
 const app = new Hono();
 
@@ -437,6 +441,8 @@ async function readBodyLimited(
 const INTERNAL_VERIFIED_ROUTE = '/internal/session/verified';
 const INTERNAL_CONSENT_CONTEXT_ROUTE = '/internal/consent/context';
 const INTERNAL_CONSENT_DECIDE_ROUTE = '/internal/consent/decide';
+const INTERNAL_CONNECTED_APPLICATIONS_ROUTE = '/internal/connected-applications';
+const INTERNAL_CONNECTED_APPLICATION_REVOKE_ROUTE = '/internal/connected-applications/revoke';
 
 /**
  * Ghi MỘT dòng log cho một lần từ chối internal.
@@ -656,6 +662,73 @@ app.post(INTERNAL_CONSENT_DECIDE_ROUTE, async (c) => {
       postgresClient: runtime.postgresClient,
       payload,
       handleKey: verified.config.handleKey,
+      now: new Date(),
+    });
+    return c.json(result.body, result.status);
+  } catch (error) {
+    if (isInfrastructureError(error)) {
+      return c.json({ error: 'service_unavailable' }, 503, {
+        'Retry-After': INTERNAL_DB_UNAVAILABLE_RETRY_AFTER_SECONDS,
+      });
+    }
+    throw error;
+  }
+});
+
+/**
+ * `POST /internal/connected-applications` — danh sách grant hiện hành của
+ * một subject (FR-009 Connected applications, hướng `account → auth`).
+ */
+app.post(INTERNAL_CONNECTED_APPLICATIONS_ROUTE, async (c) => {
+  const verified = await verifyInternalEnvelope(c, INTERNAL_CONNECTED_APPLICATIONS_ROUTE);
+  if (!verified.ok) {
+    return verified.errorResponse;
+  }
+
+  try {
+    const runtime = await getRuntime(c.env as AuthEnv);
+    let payload: unknown;
+    try {
+      payload = JSON.parse(new TextDecoder().decode(verified.raw)) as unknown;
+    } catch {
+      return c.json({ error: 'invalid_payload' }, 400);
+    }
+    const result = await runConnectedApplicationsList({
+      postgresClient: runtime.postgresClient,
+      payload,
+    });
+    return c.json(result.body, result.status);
+  } catch (error) {
+    if (isInfrastructureError(error)) {
+      return c.json({ error: 'service_unavailable' }, 503, {
+        'Retry-After': INTERNAL_DB_UNAVAILABLE_RETRY_AFTER_SECONDS,
+      });
+    }
+    throw error;
+  }
+});
+
+/**
+ * `POST /internal/connected-applications/revoke` — thu hồi một grant: CAS +
+ * control plane + audit trong MỘT transaction db-auth.
+ */
+app.post(INTERNAL_CONNECTED_APPLICATION_REVOKE_ROUTE, async (c) => {
+  const verified = await verifyInternalEnvelope(c, INTERNAL_CONNECTED_APPLICATION_REVOKE_ROUTE);
+  if (!verified.ok) {
+    return verified.errorResponse;
+  }
+
+  try {
+    const runtime = await getRuntime(c.env as AuthEnv);
+    let payload: unknown;
+    try {
+      payload = JSON.parse(new TextDecoder().decode(verified.raw)) as unknown;
+    } catch {
+      return c.json({ error: 'invalid_payload' }, 400);
+    }
+    const result = await runConnectedApplicationRevoke({
+      postgresClient: runtime.postgresClient,
+      payload,
       now: new Date(),
     });
     return c.json(result.body, result.status);

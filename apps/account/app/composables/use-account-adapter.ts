@@ -74,11 +74,13 @@ function createAccountAdapter(): AccountAdapter {
   );
   const isMock = dataMode === ACCOUNT_DATA_MODE_MOCK;
 
-  // Độ phủ đường thật của data domain. PR4 wire từng domain: chuyển hằng này
-  // (thành phủ theo từng domain) khi từng đường BFF thật có mặt. `isPreview`
-  // dẫn xuất từ mode + coverage — mode mock hoặc domain chưa có đường thật ⇒
-  // banner đúng sự thật; domain cuối cùng hết mock ⇒ banner tự tắt, không đụng UI.
-  const dataDomainHasRealPath = false;
+  // Độ phủ đường thật của data domain — PR4 đã nối mọi domain dữ liệu vào BFF
+  // thật (profile, emails, sessions, applications, preferences, notifications,
+  // privacy requests). Các luồng credentials (passkeys/TOTP/recovery) vẫn mock
+  // bên trong real adapter nhưng không thuộc data-domain banner. `isPreview`
+  // dẫn xuất từ mode + coverage — mode mock ⇒ banner bật; mode real ⇒ banner
+  // tắt, không đụng UI.
+  const dataDomainHasRealPath = true;
 
   return isMock
     ? createMockAccountAdapter()

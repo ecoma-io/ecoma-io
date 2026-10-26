@@ -40,6 +40,11 @@ import * as shim from './internal-contracts';
  * thuộc về đây chứ không thuộc về bản canonical.
  */
 const LOCAL_DECLARATIONS_ALLOWED = [
+  'ConnectedApplicationGrant',
+  'ConnectedApplicationRevokeRequest',
+  'ConnectedApplicationRevokeResponse',
+  'ConnectedApplicationsRequest',
+  'ConnectedApplicationsResponse',
   'ConsentContextRequest',
   'ConsentContextResponse',
   'ConsentDecideRequest',

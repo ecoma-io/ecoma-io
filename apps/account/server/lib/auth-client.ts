@@ -37,6 +37,10 @@ import {
   type SessionVerifiedResponse,
 } from '@ecoma-io/identity-contracts';
 import type {
+  ConnectedApplicationRevokeRequest,
+  ConnectedApplicationRevokeResponse,
+  ConnectedApplicationsRequest,
+  ConnectedApplicationsResponse,
   ConsentContextRequest,
   ConsentContextResponse,
   ConsentDecideRequest,
@@ -391,4 +395,123 @@ export async function submitConsentDecision(params: {
   return isConsentDecideResponse(result.value)
     ? { ok: true, value: result.value }
     : { ok: false, reason: 'invalid_response', detail: 'consent_decide_shape' };
+}
+
+/** 200 của `/internal/connected-applications` — kiểm shape từng grant. */
+function isConnectedApplicationsResponse(value: unknown): value is ConnectedApplicationsResponse {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const applications = (value as { applications?: unknown }).applications;
+  if (!Array.isArray(applications)) {
+    return false;
+  }
+  return applications.every((entry) => {
+    if (typeof entry !== 'object' || entry === null) {
+      return false;
+    }
+    const candidate = entry as {
+      id?: unknown;
+      client_id?: unknown;
+      client_name?: unknown;
+      granted_at?: unknown;
+      scopes?: unknown;
+    };
+    if (typeof candidate.id !== 'string' || candidate.id === '') {
+      return false;
+    }
+    if (typeof candidate.client_id !== 'string' || candidate.client_id === '') {
+      return false;
+    }
+    if (typeof candidate.client_name !== 'string' || candidate.client_name === '') {
+      return false;
+    }
+    if (typeof candidate.granted_at !== 'number' || !Number.isFinite(candidate.granted_at)) {
+      return false;
+    }
+    return Array.isArray(candidate.scopes) && candidate.scopes.every((v) => typeof v === 'string');
+  });
+}
+
+/** 200 của `/internal/connected-applications/revoke` — outcome bắt buộc. */
+function isConnectedApplicationRevokeResponse(
+  value: unknown,
+): value is ConnectedApplicationRevokeResponse {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  return (value as { outcome?: unknown }).outcome === 'revoked';
+}
+
+/**
+ * `POST /internal/connected-applications` — danh sách ứng dụng đã kết nối của
+ * subject (FR-009). `sub` luôn là `session.sub` của caller — route gọi không
+ * bao giờ chuyển `sub` từ bất kỳ nguồn client nào (SR-009).
+ */
+export async function fetchConnectedApplications(params: {
+  binding: AuthServiceBinding | null;
+  signingKey: string;
+  /** `kid` gắn trên envelope đi ra — `undefined` khi transition chưa bật `kid`. */
+  signingKid?: string;
+  request: ConnectedApplicationsRequest;
+  nowMs: number;
+}): Promise<AuthCallResult<ConnectedApplicationsResponse>> {
+  if (params.binding === null) {
+    return { ok: false, reason: 'binding_missing' };
+  }
+  const result = await postSignedJson<unknown>({
+    binding: params.binding,
+    signingKey: params.signingKey,
+    signingKid: params.signingKid,
+    path: '/internal/connected-applications',
+    payload: params.request,
+    nowMs: params.nowMs,
+  });
+  if (!result.ok) {
+    return result;
+  }
+  return isConnectedApplicationsResponse(result.value)
+    ? { ok: true, value: result.value }
+    : {
+        ok: false,
+        reason: 'invalid_response',
+        detail: 'connected_applications_shape',
+      };
+}
+
+/**
+ * `POST /internal/connected-applications/revoke` — thu hồi quyền của một app.
+ * 404 (`invalid_grant`: grant đã hết hiệu lực hoặc không thuộc subject) là
+ * **kết quả nghiệp vụ hợp lệ**, không phải lỗi transport — caller quyết định
+ * cách map lên contract UI.
+ */
+export async function revokeConnectedApplication(params: {
+  binding: AuthServiceBinding | null;
+  signingKey: string;
+  /** `kid` gắn trên envelope đi ra — `undefined` khi transition chưa bật `kid`. */
+  signingKid?: string;
+  request: ConnectedApplicationRevokeRequest;
+  nowMs: number;
+}): Promise<AuthCallResult<ConnectedApplicationRevokeResponse>> {
+  if (params.binding === null) {
+    return { ok: false, reason: 'binding_missing' };
+  }
+  const result = await postSignedJson<unknown>({
+    binding: params.binding,
+    signingKey: params.signingKey,
+    signingKid: params.signingKid,
+    path: '/internal/connected-applications/revoke',
+    payload: params.request,
+    nowMs: params.nowMs,
+  });
+  if (!result.ok) {
+    return result;
+  }
+  return isConnectedApplicationRevokeResponse(result.value)
+    ? { ok: true, value: result.value }
+    : {
+        ok: false,
+        reason: 'invalid_response',
+        detail: 'connected_application_revoke_shape',
+      };
 }

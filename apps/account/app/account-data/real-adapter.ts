@@ -37,8 +37,29 @@
  *(document.cookie). Adapter KHÔNG viết cookies, KHÔNG viết storage.
  */
 
-import type { AccountAdapter, ConsentContext, LoginChallenge, Result } from './types';
+import type {
+  AccountAdapter,
+  AccountEmail,
+  AccountPreferences,
+  AccountProfile,
+  AccountSession,
+  ConnectedApplication,
+  ConsentContext,
+  LoginChallenge,
+  NotificationPreferences,
+  PrivacyRequest,
+  PrivacyRequestKind,
+  Result,
+} from './types';
+import { isAccountLocale } from '../i18n/locale-registry';
 import { createMockAccountAdapter, type MockAdapterOptions } from './mock-adapter';
+
+/**
+ * Nhãn hiển thị cho phiên khi server không có dữ liệu client (v1 của
+ * `account_sessions` không lưu user-agent/device — xem PR body). Chuỗi trung
+ * tính, không bịa dữ liệu: UI vẫn render được hàng mà không nói dối về thiết bị.
+ */
+const SESSION_DEVICE_PLACEHOLDER = 'Unknown device';
 
 /** Cookie CSRF do verify cấp; browser JS đọc được (không HttpOnly). */
 const CSRF_COOKIE_NAME = '__Host-account-csrf';
@@ -61,17 +82,60 @@ function readCsrfToken(): string | undefined {
 
 /** POST JSON với CSRF double-submit nếu có token. */
 async function postJson(path: string, body: unknown): Promise<Response> {
+  return sendJson('POST', path, body);
+}
+
+/** PATCH JSON với cùng double-submit. */
+async function patchJson(path: string, body: unknown): Promise<Response> {
+  return sendJson('PATCH', path, body);
+}
+
+/** DELETE (body rỗng) với cùng double-submit. */
+async function deleteJson(path: string): Promise<Response> {
+  return sendJson('DELETE', path, undefined);
+}
+
+/**
+ * Gửi JSON với CSRF double-submit nếu có token.
+ *
+ * ⚠️ GET KHÔNG đi qua đây: route đọc không nhận CSRF check ở server (double-
+ * submit chỉ là защиты mutation), và fetch GET mặc định đủ.
+ */
+async function sendJson(
+  method: 'POST' | 'PATCH' | 'DELETE',
+  path: string,
+  body: unknown,
+): Promise<Response> {
   const csrf = readCsrfToken();
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (csrf !== undefined) {
     headers[CSRF_HEADER_NAME] = csrf;
   }
   return fetch(path, {
-    method: 'POST',
+    method,
     headers,
-    body: JSON.stringify(body),
+    body: body === undefined ? undefined : JSON.stringify(body),
     credentials: 'same-origin',
   });
+}
+
+/** GET JSON — mọi route đọc của BFF trả JSON hoặc ném 401/5xx. */
+async function getJson(path: string): Promise<Response> {
+  return fetch(path, { credentials: 'same-origin' });
+}
+
+/**
+ * Lỗi transport chung của mọi phương thức dữ liệu — message nói đúng mức
+ * contract của adapter: method + đường + status. Không nêu detail nào của body
+ * lỗi (route lỗi của BFF là một dòng chung chung; adapter không diễn giải thêm).
+ */
+function requestFailed(operation: string, status: number): string {
+  return `${operation} failed with ${status}`;
+}
+
+/** Đọc JSON body của một response, `undefined` khi body không phải JSON. */
+async function readJsonBody(response: Response): Promise<unknown> {
+  return response.json().catch(() => undefined);
 }
 
 /** TTL của OTP đo từ phía server (OTP_TTL_SECONDS = 600); UI chỉ hiển thị. */
@@ -287,6 +351,480 @@ export function createServerAccountAdapter(
         value: {
           continueUrl:
             typeof candidate.continueUrl === 'string' ? candidate.continueUrl : undefined,
+        },
+      };
+    },
+
+    /**
+     * Đọc profile thật (`GET /api/profile`). `profile: null` → profile rỗng
+     * ("chưa nhập lần nào" là trạng thái hợp lệ, không phải lỗi); 401 → ném
+     * (UI phải đưa về luồng login; cùng hợp đồng với mọi method đọc).
+     */
+    getProfile: async (): Promise<AccountProfile> => {
+      const response = await getJson('/api/profile');
+      if (!response.ok) {
+        throw new Error(requestFailed('profile read', response.status));
+      }
+      const body = (await readJsonBody(response)) as {
+        profile?: { displayName?: unknown; avatarUrl?: unknown } | null;
+      };
+      const profile = body.profile;
+      // `avatarUrl: null` của server ↔ `undefined` của hợp đồng UI ("không có").
+      return {
+        displayName: typeof profile?.displayName === 'string' ? profile.displayName : '',
+        avatarUrl: typeof profile?.avatarUrl === 'string' ? profile.avatarUrl : undefined,
+      };
+    },
+
+    /**
+     * Ghi profile thật (`PATCH /api/profile`, partial). Trả `Result` — 400 sai
+     * hình dạng là lỗi nghiệp vụ caller tự sửa được, không phải exception.
+     */
+    updateProfile: async (input): Promise<Result<AccountProfile>> => {
+      const response = await patchJson('/api/profile', {
+        displayName: input.displayName,
+        ...(input.avatarUrl === undefined ? {} : { avatarUrl: input.avatarUrl }),
+      });
+      if (!response.ok) {
+        return { ok: false, reason: requestFailed('profile update', response.status) };
+      }
+      const body = (await readJsonBody(response)) as {
+        profile?: { displayName?: unknown; avatarUrl?: unknown } | null;
+      };
+      return {
+        ok: true,
+        value: {
+          displayName:
+            typeof body.profile?.displayName === 'string' ? body.profile.displayName : '',
+          avatarUrl:
+            typeof body.profile?.avatarUrl === 'string' ? body.profile.avatarUrl : undefined,
+        },
+      };
+    },
+
+    /** Danh sách email thật (`GET /api/emails`) — địa chỉ đã mask ở server. */
+    listEmails: async (): Promise<readonly AccountEmail[]> => {
+      const response = await getJson('/api/emails');
+      if (!response.ok) {
+        throw new Error(requestFailed('email list', response.status));
+      }
+      const body = (await readJsonBody(response)) as { emails?: unknown };
+      if (!Array.isArray(body.emails)) {
+        throw new Error(requestFailed('email list', response.status));
+      }
+      // `AccountEmailView` của server có `isSignIn` (không phải
+      // `isSignInAddress`) và một trạng thái `revoked` mà hợp đồng UI không có
+      // — map tường minh ở đây; hàng `revoked` bị lọc khỏi hiển thị (trạng
+      // thái đó không có nghĩa hiển thị trong hợp đồng UI hiện tại).
+      const mapped: AccountEmail[] = [];
+      for (const entry of body.emails) {
+        if (typeof entry !== 'object' || entry === null) {
+          continue;
+        }
+        const row = entry as {
+          id?: unknown;
+          address?: unknown;
+          status?: unknown;
+          isSignIn?: unknown;
+        };
+        if (
+          typeof row.id !== 'string' ||
+          typeof row.address !== 'string' ||
+          (row.status !== 'pending' && row.status !== 'verified')
+        ) {
+          continue;
+        }
+        mapped.push({
+          id: row.id,
+          address: row.address,
+          status: row.status,
+          isSignInAddress: row.isSignIn === true,
+        });
+      }
+      return mapped;
+    },
+
+    /** Thêm email (`POST /api/emails`) — anti-enumeration: mọi nhánh là 200. */
+    addEmail: async (address): Promise<Result<AccountEmail>> => {
+      const response = await postJson('/api/emails', { email: address });
+      if (!response.ok) {
+        return { ok: false, reason: requestFailed('email add', response.status) };
+      }
+      const body = (await readJsonBody(response)) as { email?: unknown };
+      const row =
+        typeof body.email === 'object' && body.email !== null
+          ? (body.email as {
+              id?: unknown;
+              address?: unknown;
+              status?: unknown;
+              isSignIn?: unknown;
+            })
+          : undefined;
+      if (
+        row === undefined ||
+        typeof row.id !== 'string' ||
+        typeof row.address !== 'string' ||
+        (row.status !== 'pending' && row.status !== 'verified')
+      ) {
+        // Nhánh im lặng của route (`email: null`) — suppressed/đã tồn tại/đã
+        // owned. UI hiện "đã thêm, chờ verify" như mọi nhánh khác: không có
+        // hàng thật để render, dựng hàng placeholder pending.
+        return {
+          ok: true,
+          value: { id: '', address, status: 'pending', isSignInAddress: false },
+        };
+      }
+      return {
+        ok: true,
+        value: {
+          id: row.id,
+          address: row.address,
+          status: row.status,
+          isSignInAddress: row.isSignIn === true,
+        },
+      };
+    },
+
+    /** Cấp lại mã verify (`POST /api/emails/:id/resend`) — im lặng 200 mọi nhánh. */
+    resendVerification: async (id): Promise<Result<void>> => {
+      const response = await postJson(`/api/emails/${encodeURIComponent(id)}/resend`, {});
+      if (!response.ok) {
+        return { ok: false, reason: requestFailed('email resend', response.status) };
+      }
+      return { ok: true, value: undefined };
+    },
+
+    /**
+     * Gỡ email (`DELETE /api/emails/:id`). 400 `last_verified_email` là lỗi
+     * nghiệp vụ UI cần hiện đúng lý do (không cho gỡ địa chỉ đăng nhập cuối);
+     * mọi 400 khác là sai hình dạng id — không xảy ra với id lấy từ list.
+     */
+    removeEmail: async (id): Promise<Result<void>> => {
+      const response = await deleteJson(`/api/emails/${encodeURIComponent(id)}`);
+      if (response.status === 400) {
+        const detail = (await readJsonBody(response)) as { statusMessage?: unknown } | undefined;
+        if (detail?.statusMessage === 'last_verified_email') {
+          return { ok: false, reason: 'last sign-in address' };
+        }
+      }
+      if (!response.ok) {
+        return { ok: false, reason: requestFailed('email remove', response.status) };
+      }
+      return { ok: true, value: undefined };
+    },
+
+    /**
+     * Danh sách phiên thật (`GET /api/sessions`) — `id` là digest công khai.
+     *
+     * ⚠️ **v1 placeholder (quyết định ghi trong PR body)**: hợp đồng UI yêu cầu
+     * `device`/`signedInAt`, nhưng schema `account_sessions` của BFF không lưu
+     * user-agent hay thời điểm đăng nhập — các giá trị đó không tồn tại ở
+     * server. Adapter điền nhãn trung tính và suy `signedInAt` từ `createdAt`
+     * (thời điểm gần đúng nhất DB biết), không bịa dữ liệu ngoài phản hồi.
+     */
+    listSessions: async (): Promise<readonly AccountSession[]> => {
+      const response = await getJson('/api/sessions');
+      if (!response.ok) {
+        throw new Error(requestFailed('session list', response.status));
+      }
+      const body = (await readJsonBody(response)) as { sessions?: unknown };
+      if (!Array.isArray(body.sessions)) {
+        throw new Error(requestFailed('session list', response.status));
+      }
+      const mapped: AccountSession[] = [];
+      for (const entry of body.sessions) {
+        if (typeof entry !== 'object' || entry === null) {
+          continue;
+        }
+        const row = entry as {
+          id?: unknown;
+          createdAt?: unknown;
+          lastSeenAt?: unknown;
+          expiresAt?: unknown;
+          isCurrent?: unknown;
+        };
+        if (
+          typeof row.id !== 'string' ||
+          typeof row.createdAt !== 'string' ||
+          typeof row.lastSeenAt !== 'string' ||
+          typeof row.expiresAt !== 'string'
+        ) {
+          continue;
+        }
+        mapped.push({
+          id: row.id,
+          device: SESSION_DEVICE_PLACEHOLDER,
+          location: undefined,
+          lastSeenAt: row.lastSeenAt,
+          signedInAt: row.createdAt,
+          expiresAt: row.expiresAt,
+          isCurrent: row.isCurrent === true,
+        });
+      }
+      return mapped;
+    },
+
+    /**
+     * Thu hồi phiên (`DELETE /api/sessions/:id`). 404 — phiên không còn sống
+     * (đã revoked/hết hạn) — là idempotent success: trạng thái cuối client
+     * muốn đã đạt, cùng tinh thần với revokeApplication.
+     */
+    revokeSession: async (id): Promise<Result<void>> => {
+      const response = await deleteJson(`/api/sessions/${encodeURIComponent(id)}`);
+      if (response.status === 404) {
+        return { ok: true, value: undefined };
+      }
+      if (!response.ok) {
+        return { ok: false, reason: requestFailed('session revoke', response.status) };
+      }
+      return { ok: true, value: undefined };
+    },
+
+    /**
+     * Ứng dụng đã kết nối (`GET /api/applications`) — qua contract với auth.
+     * `highRisk` không có trong contract v1 của danh sách grant (rủi ro là
+     * bề mặt của CONSENT, không phải của grant đã cấp) — luôn `false`, UI chỉ
+     * render khi cờ nói vậy. `grantedAt` ISO từ epoch ms của contract.
+     */
+    listApplications: async (): Promise<readonly ConnectedApplication[]> => {
+      const response = await getJson('/api/applications');
+      if (!response.ok) {
+        throw new Error(requestFailed('application list', response.status));
+      }
+      const body = (await readJsonBody(response)) as { applications?: unknown };
+      if (!Array.isArray(body.applications)) {
+        throw new Error(requestFailed('application list', response.status));
+      }
+      const mapped: ConnectedApplication[] = [];
+      for (const entry of body.applications) {
+        if (typeof entry !== 'object' || entry === null) {
+          continue;
+        }
+        const row = entry as {
+          id?: unknown;
+          clientName?: unknown;
+          grantedAt?: unknown;
+          scopes?: unknown;
+        };
+        if (
+          typeof row.id !== 'string' ||
+          typeof row.clientName !== 'string' ||
+          typeof row.grantedAt !== 'string' ||
+          !Array.isArray(row.scopes) ||
+          !row.scopes.every((scope) => typeof scope === 'string')
+        ) {
+          continue;
+        }
+        mapped.push({
+          id: row.id,
+          clientName: row.clientName,
+          grantedAt: row.grantedAt,
+          scopes: row.scopes,
+          highRisk: false,
+        });
+      }
+      return mapped;
+    },
+
+    /** Thu hồi ứng dụng (`DELETE /api/applications/:id`) — proxy qua auth. */
+    revokeApplication: async (id): Promise<Result<void>> => {
+      const response = await deleteJson(`/api/applications/${encodeURIComponent(id)}`);
+      if (response.status === 404) {
+        // Đã revoked hoặc không còn — trạng thái cuối client muốn đã đạt.
+        return { ok: true, value: undefined };
+      }
+      if (!response.ok) {
+        return { ok: false, reason: requestFailed('application revoke', response.status) };
+      }
+      return { ok: true, value: undefined };
+    },
+
+    /**
+     * Preference thật (`GET /api/preferences`). `preferences: null` → trạng
+     * thái "chưa cấu hình": hợp đồng UI (`locale: undefined`,
+     * `invalidLocale: undefined`) là đúng — UI hiện form chọn locale. Server
+     * chỉ trả locale trong allowlist (PATCH chặn trước), nhưng GUI vẫn kiểm qua
+     * `isAccountLocale`: một giá trị lạ đọc ra là contract error phải nhìn thấy
+     * được qua `invalidLocale` (FR-008a), không phải fallback im lặng.
+     */
+    getPreferences: async (): Promise<AccountPreferences> => {
+      const response = await getJson('/api/preferences');
+      if (!response.ok) {
+        throw new Error(requestFailed('preferences read', response.status));
+      }
+      const body = (await readJsonBody(response)) as { preferences?: unknown };
+      const row =
+        typeof body.preferences === 'object' && body.preferences !== null
+          ? (body.preferences as { locale?: unknown; timezone?: unknown; colorMode?: unknown })
+          : undefined;
+      if (row === undefined) {
+        return {
+          locale: undefined,
+          invalidLocale: undefined,
+          timezone: 'Asia/Ho_Chi_Minh',
+          colorMode: 'system',
+        };
+      }
+      const locale = typeof row.locale === 'string' ? row.locale : undefined;
+      const timezone = typeof row.timezone === 'string' ? row.timezone : 'Asia/Ho_Chi_Minh';
+      const colorMode =
+        row.colorMode === 'light' || row.colorMode === 'dark' ? row.colorMode : 'system';
+      if (locale === undefined || !isAccountLocale(locale)) {
+        return { locale: undefined, invalidLocale: locale, timezone, colorMode };
+      }
+      return { locale, invalidLocale: undefined, timezone, colorMode };
+    },
+
+    /** Partial update preference (`PATCH /api/preferences`). */
+    updatePreferences: async (patch): Promise<Result<AccountPreferences>> => {
+      const response = await patchJson('/api/preferences', patch);
+      if (!response.ok) {
+        return { ok: false, reason: requestFailed('preferences update', response.status) };
+      }
+      // Route trả hàng sau ghi — parse bằng cùng luật đọc ở trên.
+      const body = (await readJsonBody(response)) as { preferences?: unknown };
+      const row =
+        typeof body.preferences === 'object' && body.preferences !== null
+          ? (body.preferences as { locale?: unknown; timezone?: unknown; colorMode?: unknown })
+          : undefined;
+      const locale = typeof row?.locale === 'string' ? row.locale : undefined;
+      const timezone = typeof row?.timezone === 'string' ? row.timezone : 'Asia/Ho_Chi_Minh';
+      const colorMode =
+        row?.colorMode === 'light' || row?.colorMode === 'dark' ? row.colorMode : 'system';
+      return {
+        ok: true,
+        value:
+          locale === undefined || !isAccountLocale(locale)
+            ? { locale: undefined, invalidLocale: locale, timezone, colorMode }
+            : { locale, invalidLocale: undefined, timezone, colorMode },
+      };
+    },
+
+    /** Ý định nhận thông báo (`GET /api/notifications`). */
+    getNotificationPreferences: async (): Promise<NotificationPreferences> => {
+      const response = await getJson('/api/notifications');
+      if (!response.ok) {
+        throw new Error(requestFailed('notification preferences read', response.status));
+      }
+      const body = (await readJsonBody(response)) as { notifications?: unknown };
+      const row = body.notifications as
+        | {
+            serviceEmail?: unknown;
+            productUpdates?: unknown;
+            marketing?: unknown;
+          }
+        | undefined;
+      return {
+        serviceEmail: row?.serviceEmail === true,
+        productUpdates: row?.productUpdates === true,
+        marketing: row?.marketing === true,
+      };
+    },
+
+    /** Ghi ý định nhận thông báo (`PATCH /api/notifications`, partial). */
+    updateNotificationPreferences: async (patch): Promise<Result<NotificationPreferences>> => {
+      const response = await patchJson('/api/notifications', patch);
+      if (!response.ok) {
+        return {
+          ok: false,
+          reason: requestFailed('notification preferences update', response.status),
+        };
+      }
+      // Route trả `{ ok: true }` — state sau ghi là hợp nhất patch lên giá trị
+      // đã biết gần nhất; UI reload từ GET ngay sau đó (trang hiện tại làm vậy).
+      const response2 = await getJson('/api/notifications');
+      if (!response2.ok) {
+        throw new Error(requestFailed('notification preferences read', response2.status));
+      }
+      const body = (await readJsonBody(response2)) as { notifications?: unknown };
+      const row = body.notifications as
+        | { serviceEmail?: unknown; productUpdates?: unknown; marketing?: unknown }
+        | undefined;
+      return {
+        ok: true,
+        value: {
+          serviceEmail: row?.serviceEmail === true,
+          productUpdates: row?.productUpdates === true,
+          marketing: row?.marketing === true,
+        },
+      };
+    },
+
+    /**
+     * Danh sách privacy request (`GET /api/privacy-requests`). `id` không có
+     * trong response v1 (PK là cặp subject+kind, route không cấp id) — UI
+     * không dùng id của privacy request vào operation nào; `id: ''` giữ đúng
+     * shape của hợp đồng UI.
+     */
+    listPrivacyRequests: async (): Promise<readonly PrivacyRequest[]> => {
+      const response = await getJson('/api/privacy-requests');
+      if (!response.ok) {
+        throw new Error(requestFailed('privacy request list', response.status));
+      }
+      const body = (await readJsonBody(response)) as { requests?: unknown };
+      if (!Array.isArray(body.requests)) {
+        throw new Error(requestFailed('privacy request list', response.status));
+      }
+      const mapped: PrivacyRequest[] = [];
+      for (const entry of body.requests) {
+        if (typeof entry !== 'object' || entry === null) {
+          continue;
+        }
+        const row = entry as {
+          kind?: unknown;
+          status?: unknown;
+          submittedAt?: unknown;
+          dueAt?: unknown;
+        };
+        if (
+          typeof row.kind !== 'string' ||
+          typeof row.status !== 'string' ||
+          typeof row.submittedAt !== 'string' ||
+          typeof row.dueAt !== 'string'
+        ) {
+          continue;
+        }
+        mapped.push({
+          id: '',
+          kind: row.kind as PrivacyRequestKind,
+          submittedAt: row.submittedAt,
+          dueAt: row.dueAt,
+          status: row.status as PrivacyRequest['status'],
+        });
+      }
+      return mapped;
+    },
+
+    /** Nộp privacy request (`POST /api/privacy-requests`). */
+    submitPrivacyRequest: async (kind): Promise<Result<PrivacyRequest>> => {
+      const response = await postJson('/api/privacy-requests', { kind });
+      if (response.status === 429) {
+        return { ok: false, reason: 'too many requests' };
+      }
+      if (!response.ok) {
+        return { ok: false, reason: requestFailed('privacy request submit', response.status) };
+      }
+      const body = (await readJsonBody(response)) as { request?: unknown };
+      const row = body.request as
+        | { kind?: unknown; status?: unknown; submittedAt?: unknown; dueAt?: unknown }
+        | undefined;
+      if (
+        row === undefined ||
+        typeof row.kind !== 'string' ||
+        typeof row.status !== 'string' ||
+        typeof row.submittedAt !== 'string' ||
+        typeof row.dueAt !== 'string'
+      ) {
+        return { ok: false, reason: requestFailed('privacy request submit', response.status) };
+      }
+      return {
+        ok: true,
+        value: {
+          id: '',
+          kind: row.kind as PrivacyRequestKind,
+          submittedAt: row.submittedAt,
+          dueAt: row.dueAt,
+          status: row.status as PrivacyRequest['status'],
         },
       };
     },

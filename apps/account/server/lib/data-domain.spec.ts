@@ -16,14 +16,26 @@ import {
   countVerifiedEmails,
   DATA_EVENT_TYPES,
   findVerifiedEmailOwner,
+  insertPrivacyRequest,
   isValidTimeZone,
+  listNotificationPreferences,
+  listPrivacyRequests,
   LOCALE_ALLOWLIST,
   maskEmail,
+  NOTIFICATION_CHANNEL_ALLOWLIST,
   parsePreferencesPatch,
+  PRIVACY_DEADLINE_DAYS,
+  PRIVACY_KIND_ALLOWLIST,
+  PRIVACY_REQUEST_MAX_PER_WINDOW,
+  PRIVACY_REQUEST_WINDOW_SECONDS,
+  PRIVACY_STATUS_ALLOWLIST,
   publicSessionId,
   revokeEmailGuarded,
+  SERVICE_EMAIL_CHANNEL,
   toEmailView,
+  toPrivacyRequestView,
   toSessionView,
+  upsertNotificationPreference,
 } from './data-domain';
 
 // -------------------------------------------------------------------------------------------
@@ -83,7 +95,14 @@ describe('data-domain policy constants', () => {
       'data_email_revoked',
       'data_session_revoked',
       'data_current_session_revoked',
+      'data_notification_preferences_updated',
+      'data_privacy_requested',
+      'data_application_revoked',
     ]);
+    // Trần của policy privacy — khoá v1 như tài liệu hoá trong PR body.
+    expect(PRIVACY_REQUEST_MAX_PER_WINDOW).toBe(3);
+    expect(PRIVACY_REQUEST_WINDOW_SECONDS).toBe(3_600);
+    expect(PRIVACY_DEADLINE_DAYS).toBe(30);
   });
 });
 
@@ -336,5 +355,142 @@ describe('persistence helpers use parameterized queries against schema-qualified
     expect(outcome).toBe('already_revoked');
     // BEGIN + SELECT-all-lock + COMMIT — idempotent, không UPDATE, không audit.
     expect(pool.calls).toHaveLength(3);
+  });
+});
+
+// -------------------------------------------------------------------------------------------
+// Notification preferences (0008) — map v1: mọi toggle UI điều khiển kênh `email`
+// -------------------------------------------------------------------------------------------
+
+describe('notification preference persistence', () => {
+  it('locks the channel allowlist and the v1 service channel', () => {
+    expect(NOTIFICATION_CHANNEL_ALLOWLIST).toEqual(['email', 'push']);
+    expect(SERVICE_EMAIL_CHANNEL).toBe('email');
+  });
+
+  it('listNotificationPreferences reads every channel row of the subject', async () => {
+    const pool = fakePool([[{ channel: 'email', enabled: true }]]);
+    const rows = await listNotificationPreferences(pool as never, 'sub-1');
+    expect(rows).toEqual([{ channel: 'email', enabled: true }]);
+    expect(pool.calls[0]?.values).toEqual(['sub-1']);
+    expect(pool.calls[0]?.sql).toContain('account.notification_preferences');
+  });
+
+  it('upsertNotificationPreference writes one channel row with enabled', async () => {
+    const pool = fakePool([]);
+    await upsertNotificationPreference(pool as never, {
+      userSub: 'sub-1',
+      channel: 'email',
+      enabled: true,
+    });
+    expect(pool.calls).toHaveLength(1);
+    expect(pool.calls[0]?.values).toEqual(['sub-1', 'email', true]);
+    expect(pool.calls[0]?.sql).toContain('ON CONFLICT (user_sub, channel)');
+  });
+});
+
+// -------------------------------------------------------------------------------------------
+// Privacy requests (0010) — deadline một lần lúc tạo, idempotent theo PK, trần cửa sổ
+// -------------------------------------------------------------------------------------------
+
+describe('privacy request persistence', () => {
+  it('locks the kind and status allowlists for v1', () => {
+    expect(PRIVACY_KIND_ALLOWLIST).toEqual(['export', 'correct', 'delete', 'restrict', 'object']);
+    expect(PRIVACY_STATUS_ALLOWLIST).toEqual(['pending', 'in-progress', 'completed', 'rejected']);
+  });
+
+  it('listPrivacyRequests reads rows of the subject newest first', async () => {
+    const pool = fakePool([
+      [
+        {
+          kind: 'export',
+          status: 'pending',
+          created_at: new Date('2026-01-02T00:00:00Z'),
+          deadline_at: new Date('2026-02-01T00:00:00Z'),
+        },
+      ],
+    ]);
+    const rows = await listPrivacyRequests(pool as never, 'sub-1');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.kind).toBe('export');
+    expect(pool.calls[0]?.values).toEqual(['sub-1']);
+    expect(pool.calls[0]?.sql).toContain('ORDER BY created_at DESC');
+  });
+
+  it('insertPrivacyRequest creates a pending row with a 30-day deadline', async () => {
+    const row = {
+      kind: 'export',
+      status: 'pending',
+      created_at: new Date('2026-01-02T00:00:00Z'),
+      deadline_at: new Date('2026-02-01T00:00:00Z'),
+    };
+    // Response 1: đếm cửa sổ (count 0); response 2: INSERT RETURNING hàng mới.
+    const pool = fakePool([[{ count: 0 }], [row]]);
+    const outcome = await insertPrivacyRequest(pool as never, {
+      userSub: 'sub-1',
+      kind: 'export',
+      maxPerWindow: PRIVACY_REQUEST_MAX_PER_WINDOW,
+      windowSeconds: PRIVACY_REQUEST_WINDOW_SECONDS,
+      deadlineDays: PRIVACY_DEADLINE_DAYS,
+    });
+    expect(outcome).toEqual({ kind: 'created', row });
+    // INSERT dùng now() của DB cho deadline — không có mốc thời gian phía app.
+    expect(pool.calls[1]?.sql).toContain('make_interval(days =>');
+    expect(pool.calls[1]?.values).toEqual(['sub-1', 'export', 30]);
+  });
+
+  it('insertPrivacyRequest returns the existing row on a duplicate (idempotent)', async () => {
+    // INSERT không RETURNING (bị index mở chặn) → SELECT hàng đang mở hiện có.
+    const existing = {
+      kind: 'export',
+      status: 'pending',
+      created_at: new Date('2026-01-02T00:00:00Z'),
+      deadline_at: new Date('2026-02-01T00:00:00Z'),
+    };
+    // Response 1: đếm cửa sổ; 2: INSERT rỗng (bị index chặn); 3: SELECT hàng cũ.
+    const pool = fakePool([[{ count: 0 }], [], [existing]]);
+    const outcome = await insertPrivacyRequest(pool as never, {
+      userSub: 'sub-1',
+      kind: 'export',
+      maxPerWindow: PRIVACY_REQUEST_MAX_PER_WINDOW,
+      windowSeconds: PRIVACY_REQUEST_WINDOW_SECONDS,
+      deadlineDays: PRIVACY_DEADLINE_DAYS,
+    });
+    expect(outcome).toEqual({ kind: 'duplicate', row: existing });
+    expect(pool.calls).toHaveLength(3);
+    // Conflict target phải khớp chính xác vế WHERE của partial unique index.
+    expect(pool.calls[1]?.sql).toContain(
+      "ON CONFLICT (subject_sub, kind) WHERE status IN ('pending', 'in-progress')",
+    );
+    expect(pool.calls[2]?.sql).toContain("status IN ('pending', 'in-progress')");
+  });
+
+  it('insertPrivacyRequest reports ceiling when the window is full', async () => {
+    // Cửa sổ đầy (count >= 3) — không INSERT nào chạy.
+    const pool = fakePool([[{ count: PRIVACY_REQUEST_MAX_PER_WINDOW }]]);
+    const outcome = await insertPrivacyRequest(pool as never, {
+      userSub: 'sub-1',
+      kind: 'delete',
+      maxPerWindow: PRIVACY_REQUEST_MAX_PER_WINDOW,
+      windowSeconds: PRIVACY_REQUEST_WINDOW_SECONDS,
+      deadlineDays: PRIVACY_DEADLINE_DAYS,
+    });
+    expect(outcome).toEqual({ kind: 'ceiling' });
+    expect(pool.calls).toHaveLength(1);
+  });
+
+  it('toPrivacyRequestView exposes ISO timestamps without DB column names', () => {
+    const view = toPrivacyRequestView({
+      kind: 'export',
+      status: 'pending',
+      created_at: new Date('2026-01-02T03:04:05.678Z'),
+      deadline_at: new Date('2026-02-01T03:04:05.678Z'),
+    });
+    expect(view).toEqual({
+      kind: 'export',
+      status: 'pending',
+      submittedAt: '2026-01-02T03:04:05.678Z',
+      dueAt: '2026-02-01T03:04:05.678Z',
+    });
   });
 });

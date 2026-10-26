@@ -270,6 +270,115 @@ export async function checkRevocationAtIssuance(
 }
 
 /* ------------------------------------------------------------------------- */
+/* Connected applications — list + revoke của contract account → auth         */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Hàng danh sách ứng dụng đã kết nối — join `oauth_clients` lấy `client_name`.
+ *
+ * ⚠️ `client_name` là dữ liệu ĐĂNG KÝ của client (0001), không phải dữ liệu
+ * grant; tách cột để response của contract không bắt account query thêm bảng
+ * nào. Chỉ grant `active` được trả: `revoked` không còn là "đã kết nối".
+ */
+interface ConnectedAppRow {
+  id: string;
+  client_id: string;
+  client_name: string;
+  granted_at: Date;
+  scopes: string[];
+}
+
+/**
+ * Liệt kê mọi grant `active` của một sub, kèm tên client đăng ký.
+ *
+ * ⚠️ Chỉ MỘT câu SELECT với tham số hoá — `sub` đi qua bind parameter, không
+ * bao giờ chạm chuỗi SQL. Danh sách KHÔNG chứa secret, hash hay redirect_uri:
+ * contract này phục vụ trang "ứng dụng đã kết nối", không phải đăng ký client.
+ */
+export async function listConnectedApplications(
+  client: PostgresClientLike,
+  params: { readonly sub: string },
+): Promise<
+  readonly {
+    id: string;
+    clientId: string;
+    clientName: string;
+    grantedAt: Date;
+    scopes: readonly string[];
+  }[]
+> {
+  const rows = await client.unsafe<ConnectedAppRow>(
+    `SELECT g.id, g.client_id, c.client_name, g.granted_at,
+            coalesce(array_agg(s.scope ORDER BY s.scope) FILTER (WHERE s.scope IS NOT NULL), '{}') AS scopes
+       FROM auth.oauth_grants g
+       JOIN auth.oauth_clients c ON c.client_id = g.client_id
+       LEFT JOIN auth.client_grant_scopes s ON s.grant_id = g.id
+      WHERE g.sub = $1 AND g.status = 'active'
+      GROUP BY g.id, g.client_id, c.client_name, g.granted_at
+      ORDER BY g.granted_at DESC`,
+    [params.sub],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    clientId: row.client_id,
+    clientName: row.client_name,
+    grantedAt: row.granted_at,
+    scopes: row.scopes,
+  }));
+}
+
+/**
+ * Thu hồi MỘT grant `active` của `(sub, grant_id)` — CAS, trả id khi thắng.
+ *
+ * ⚠️ CAS `WHERE status = 'active'`: một grant đã revoked không bị ghi đè mốc
+ * `revoked_at` của lần đầu, và một id của người khác khớp 0 hàng (404 phía
+ * handler, không xác nhận tồn tại). `status` `revoked` là vĩnh viễn (0003).
+ * Row `token_revocations` level `client` + audit được caller ghi trong CÙNG
+ * transaction — hàm này chỉ là câu CAS.
+ */
+export async function revokeGrantActive(
+  tx: Queryable,
+  params: { readonly sub: string; readonly grantId: string; readonly now: Date },
+): Promise<{ id: string; clientId: string } | undefined> {
+  const rows = await tx.unsafe<{ id: string; client_id: string }>(
+    `UPDATE auth.oauth_grants
+        SET status = 'revoked',
+            revoked_at = $3
+      WHERE id = $2::uuid AND sub = $1 AND status = 'active'
+      RETURNING id, client_id`,
+    [params.sub, params.grantId, params.now],
+  );
+  const row = rows[0];
+  return row === undefined ? undefined : { id: row.id, clientId: row.client_id };
+}
+
+/**
+ * Ghi MỘT hàng `token_revocations` level `client` — control plane thu hồi duy
+ * nhất (FR-17a/§6.4).
+ *
+ * ⚠️ Shape CHECK của 0006 (`client_level_shape`) buộc `subject_ref` + `client_id`
+ * cùng có mặt — caller truyền từ grant đã thu hồi, không từ request. `source`
+ * `'auth'`: auth tự thực hiện thu hồi theo lệnh qua contract đã ký của account;
+ * `'account_event'` dành cho event outbox, không phải đường này.
+ */
+export async function insertClientRevocation(
+  tx: Queryable,
+  params: {
+    readonly subjectRef: string;
+    readonly clientId: string;
+    readonly grantId: string;
+    readonly now: Date;
+  },
+): Promise<void> {
+  await tx.unsafe(
+    `INSERT INTO auth.token_revocations
+       (level, subject_ref, client_id, grant_id, reason, source, revoked_at)
+     VALUES ('client', $1, $2, $3::uuid, 'connected_application_revoked', 'auth', $4)`,
+    [params.subjectRef, params.clientId, params.grantId, params.now],
+  );
+}
+
+/* ------------------------------------------------------------------------- */
 /* Audit — SR-010: append-only `authorization_audit_events`                   */
 /* ------------------------------------------------------------------------- */
 
