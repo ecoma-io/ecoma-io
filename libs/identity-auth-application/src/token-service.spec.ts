@@ -67,6 +67,39 @@ describe('createRefreshToken — opaque, only the hash is stored', () => {
     const token = await createRefreshToken({ familyId: 'fam-abc' });
     expect(token.familyId).toBe('fam-abc');
   });
+
+  it('an injected crypto source drives the plaintext — deterministic bytes, hash of the exact plaintext', async () => {
+    // ⚠️ Seam `crypto` của hàm: plaintext là base64url của ĐÚNG 32 byte nguồn
+    //     tiêm vào, không phải ngẫu nhiên thứ hai. Kiểm bằng nguồn cố định:
+    //     bytes lặp 0..31 ⇒ plaintext tính được trước; `hash` phải là
+    //     SHA-256-base64url của chính plaintext đó (có thể tính độc lập bằng
+    //     WebCrypto) — chứng minh hàm băm bám bản rõ đã phát, không phải một
+    //     bản rõ nội bộ nào khác.
+    const bytes = new Uint8Array(32);
+    for (let i = 0; i < bytes.length; i++) {
+      bytes[i] = i;
+    }
+    const deterministic: Crypto = {
+      getRandomValues<T extends ArrayBufferView>(target: T): T {
+        new Uint8Array(target.buffer as ArrayBuffer, target.byteOffset, target.byteLength).set(
+          bytes.subarray(0, target.byteLength),
+        );
+        return target;
+      },
+    } as unknown as Crypto;
+
+    const token = await createRefreshToken({ familyId: 'fam-det', crypto: deterministic });
+
+    const expectedPlaintext = Buffer.from(bytes).toString('base64url');
+    expect(token.plaintext).toBe(expectedPlaintext);
+
+    const digest = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(expectedPlaintext),
+    );
+    const expectedHash = Buffer.from(digest).toString('base64url');
+    expect(token.hash).toBe(expectedHash);
+  });
 });
 
 describe('buildJwks — publishes only the public key', () => {
@@ -122,6 +155,47 @@ describe('issueAccessToken — signs with ES256, full claim set', () => {
     expect(payload.sub).toBe('account-1');
     expect(payload['client_id']).toBe('client-1');
     expect(protectedHeader.alg).toBe(JWT_SIGNING_ALG);
+  });
+
+  it('the full claim set round-trips: scope, transaction_id, nbf, iat and exp survive signing verbatim', async () => {
+    // ⚠️ Test trên chỉ assert `sub`/`client_id`. Resource server dựa vào các
+    //     claim còn lại để ủy quyền (scope) và truy vết (transaction_id); lệch
+    //     một claim khi ký là sai lệch im lặng. Ghim đủ: `setIssuedAt`/
+    //     `setNotBefore`/`setExpirationTime` phải đặt ĐÚNG giá trị caller
+    //     truyền, không phải `now()` của lúc ký — một token ký lúc T với
+    //     `iat` caller truyền từ T-5s phải giữ nguyên T-5s.
+    const signingKey = await makeSigningKey();
+    const iat = Math.floor(Date.now() / 1000) - 5;
+    const ttl = 120;
+
+    const token = await issueAccessToken({
+      signingKey,
+      claims: {
+        sub: 'account-2',
+        aud: 'https://api.ecoma.io',
+        iss: 'https://auth.ecoma.io',
+        iat,
+        nbf: iat,
+        exp: iat + ttl,
+        client_id: 'client-2',
+        scope: 'openid profile email',
+        transaction_id: 'a'.repeat(43),
+      },
+    });
+
+    const publicKey = await importJWK(await signingKey.publicJwk(), JWT_SIGNING_ALG);
+    const { payload } = await jwtVerify(token, publicKey, {
+      issuer: 'https://auth.ecoma.io',
+      audience: 'https://api.ecoma.io',
+    });
+
+    expect(payload.aud).toBe('https://api.ecoma.io');
+    expect(payload.iss).toBe('https://auth.ecoma.io');
+    expect(payload.iat).toBe(iat);
+    expect(payload.nbf).toBe(iat);
+    expect(payload.exp).toBe(iat + ttl);
+    expect(payload['scope']).toBe('openid profile email');
+    expect(payload['transaction_id']).toBe('a'.repeat(43));
   });
 
   it('the header carries `kid` so key rotation picks the right JWKS key', async () => {
