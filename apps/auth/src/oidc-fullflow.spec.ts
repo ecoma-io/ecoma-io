@@ -52,7 +52,7 @@ import { createPostgresClient } from '@ecoma-io/identity-auth-infrastructure';
 
 import { PROVIDER_ROUTES } from './oidc/provider';
 import { loadAuthConfig, type AuthEnv } from './config';
-import { startAuthDatabase, type AuthDatabase } from '../integration-specs/harness.ts';
+import { startAuthDatabase, type AuthDatabase } from '../tests/integrations/harness.ts';
 
 /* ------------------------------------------------------------------ */
 /* PostgreSQL harness — cùng luật với internal-handlers.spec.ts        */

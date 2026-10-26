@@ -1,6 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
-  "//": "Composite để `nx typecheck` (`tsc --build --emitDeclarationOnly`) build được solution project này: TS5069 đòi `declaration`/`composite` cho emitDeclarationOnly. `lib` nâng lên `es2023` (base đặt `es2022`) vì `unicorn/no-array-sort` cấm `Array#sort` còn `toSorted` chỉ có trong es2023. `allowImportingTsExtensions` cho harness/spec import nhau bằng phần mở rộng thật (`.ts`) và kéo `db/*.mts` qua import — cùng hệ quả với `tsconfig.db.json`. `rootDir` là chính project (spec nhánh `tests/`, `integration-specs/` và `src/`), outDir tách khỏi app để .d.ts không đè nhau.",
+  "//": "Composite để `nx typecheck` (`tsc --build --emitDeclarationOnly`) build được solution project này: TS5069 đòi `declaration`/`composite` cho emitDeclarationOnly. `lib` nâng lên `es2023` (base đặt `es2022`) vì `unicorn/no-array-sort` cấm `Array#sort` còn `toSorted` chỉ có trong es2023. `allowImportingTsExtensions` cho harness/spec import nhau bằng phần mở rộng thật (`.ts`) và kéo `db/*.mts` qua import — cùng hệ quả với `tsconfig.db.json`. `rootDir` là chính project (spec nhánh `tests/` và `src/`), outDir tách khỏi app để .d.ts không đè nhau.",
   "compilerOptions": {
     "composite": true,
     "declaration": true,
@@ -22,7 +22,11 @@
     "tests/**/*.test.ts",
     "tests/**/*.spec.ts",
     "tests/**/*.ts",
-    "integration-specs/**/*.ts",
+    // Spec integration import source runtime bằng đường dẫn tương đối
+    // (`../src/main`, `../src/repo/*`) — file nguồn phải nằm trong file list
+    // (composite + files cứng) hoặc tsc TS6307/TS2307.
+    "src/main.ts",
+    "src/repo/**/*.ts",
     "db/**/*.mts"
   ],
   "references": [

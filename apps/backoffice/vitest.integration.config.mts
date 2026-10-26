@@ -1,14 +1,15 @@
 import { defineConfig } from 'vitest/config';
 
 /**
- * Config của target `test-integration` — suite app-owned dưới `integration-specs/`
- * (06-testing.md §4: `test-integration` = toàn bộ app-owned suite).
+ * Config của target `test-integration` — suite app-owned dưới `tests/` phân loại
+ * theo thư mục mục đích (`tests/integrations/`, `tests/databases/`; 06-testing.md
+ * §2, §4: `test-integration` = toàn bộ app-owned suite).
  *
  * ⚠️ Cần file config RIÊNG thay vì dùng lại `vitest.config.mts` kèm path filter:
- * `vitest run <filter>` chỉ chọn được file mà `include` khớp, nên gỡ
- * `integration-specs` khỏi include của config unit mà vẫn gọi
- * `vitest run integration-specs` là 0 test với exit 0 - hỏng im lặng. Tách config
- * còn giúp suite tự sở hữu configuration của chính nó (06-testing.md §1.3).
+ * `vitest run <filter>` chỉ chọn được file mà `include` khớp, nên gỡ suite
+ * app-owned khỏi include của config unit mà vẫn gọi kèm path filter là 0 test
+ * với exit 0 - hỏng im lặng. Tách config còn giúp suite tự sở hữu configuration
+ * của chính nó (06-testing.md §1.3).
  *
  * ⚠️ Khác config unit: environment `node` (suite tự dựng app h3, không mount
  * component nên không cần jsdom), không `setupFiles` (bridge Nuxt của `tests/`
@@ -23,7 +24,10 @@ export default defineConfig(() => ({
     watch: false,
     globals: true,
     environment: 'node',
-    include: ['integration-specs/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    include: [
+      'tests/integrations/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}',
+      'tests/databases/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}',
+    ],
     // Không có spec nào khớp include là LỖI, không phải pass: "không test nào
     // chạy" phải đỏ để việc đổi đường dẫn suite không làm target chạy rỗng.
     passWithNoTests: false,
@@ -35,7 +39,7 @@ export default defineConfig(() => ({
     // nguyên một core, không phải một phần sáu mười sáu.
     fileParallelism: false,
     reporters: ['default'],
-    globalSetup: ['./integration-specs/docker-probe.global-setup.ts'],
+    globalSetup: ['./tests/integrations/docker-probe.global-setup.ts'],
     coverage: {
       reportsDirectory: './test-output/vitest/coverage',
       provider: 'v8' as const,

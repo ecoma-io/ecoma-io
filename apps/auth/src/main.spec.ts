@@ -317,7 +317,7 @@ describe('GET /ready', () => {
   });
   // ⚠️ Nhánh 200 ĐẦY ĐỦ trên hạ tầng thật (DB thật trả dòng
   // `auth.oauth_clients` + account thật qua shim) thuộc Integration — nó cần
-  // một `auth.oauth_clients` thật (testcontainers, `integration-specs/`).
+  // một `auth.oauth_clients` thật (testcontainers, `tests/integrations/`).
   // Probe đi qua `createPostgresClient` — cùng pool shape của replay guard,
   // đã được phủ bởi lib suite — nên unit này phủ mọi nhánh fail của route và
   // nhánh 200 với stub ở tầng driver.

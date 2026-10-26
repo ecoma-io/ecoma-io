@@ -336,7 +336,7 @@ export function findInvalidTargetRefs(
  * `nx:run-commands` chạy `command` trong `cwd` của target khi có, còn lại
  * trong project root — KHÔNG phải repo root. Vì vậy ref tương đối được kiểm
  * theo hai vế: repo root (ref kiểu `tools/...` là phổ biến nhất) và project
- * root (`tests/integration` của chính project). Ref tuyệt đối (`/...`) thì
+ * root (`tests/databases` của chính project). Ref tuyệt đối (`/...`) thì
  * `join(base, ref)` đã tự trả về ref, đúng ngữ nghĩa path tuyệt đối.
  *
  * Tên project (vd `@ecoma-io/account`) không trùng tên thư mục

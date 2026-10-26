@@ -181,7 +181,7 @@ export default defineEventHandler(async (event): Promise<HandoffResponse> => {
   // một transaction của auth. Route này KHÔNG nhận `event_id` từ body (browser
   // không được cấp quyền chọn key idempotency); nếu bỏ điều đó cho một caller
   // mới, retry sẽ mở lại transaction đã xong đúng như cảnh báo ở header. Test
-  // neo: `tests/integration/bff-routes-e2e.spec.ts` — "retry sau thành công trả
+  // neo: `tests/integrations/bff-routes-e2e.spec.ts` — "retry sau thành công trả
   // `already_processed` thay vì mở lại".
   const pushRequest: SessionVerifiedRequest = {
     handle: body.handle,

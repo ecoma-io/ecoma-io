@@ -21,7 +21,7 @@ import { writeLog } from '../utils/logger';
  * lib — nên test này chỉ kiểm những gì thuộc **app**: hợp đồng của callback `claimNonce`
  * mà app cấp cho lib, và cách middleware hành xử khi DB chết. Đường đi end-to-end
  * (h3 app thật + `signRequest` thật + PostgreSQL thật) nằm ở
- * `tests/integration/internal-auth-e2e.spec.ts` — ở đó chứ không ở đây vì unit test
+ * `tests/integrations/internal-auth-e2e.spec.ts` — ở đó chứ không ở đây vì unit test
  * không có container, và vì chính sự vắng mặt của đường end-to-end đã từng
  * làm lọt hai lỗi critical (pool bị `end()` trước khi `claimNonce` chạy; `event.path`
  * bị ghép query lần thứ hai).

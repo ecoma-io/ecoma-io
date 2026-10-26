@@ -1,7 +1,7 @@
 /**
  * `auth.internal_nonces` — kho nonce bền của `auth`, trên PostgreSQL THẬT.
  *
- * Đây là mặt còn lại của bản sao ở `apps/account/tests/integration/internal-nonces.spec.ts`,
+ * Đây là mặt còn lại của bản sao ở `apps/account/tests/integrations/internal-nonces.spec.ts`,
  * và lý do tồn tại của cả hai kho là **mỗi service sở hữu database của mình**: một
  * nonce đã chiếm ở `db-account` KHÔNG bảo vệ được request đến `auth`, và ngược lại.
  * Nonce là duy nhất theo **từng service nhận**.
@@ -40,11 +40,7 @@ import {
   type Queryable,
 } from './postgres';
 
-import {
-  MIGRATIONS_DIR,
-  startAuthDatabase,
-  type AuthDatabase,
-} from '../tests/integration/harness.ts';
+import { MIGRATIONS_DIR, startAuthDatabase, type AuthDatabase } from './auth-test-harness.ts';
 
 /** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
 let db: AuthDatabase;
@@ -184,7 +180,7 @@ function skewAndBuffer(): { skew: number; buffer: number } {
   // ⚠️ Đọc file nguồn của lib contracts chứ không import: `libs/identity-auth-infrastructure`
   // không có cạnh phụ thuộc tới `libs/identity-contracts`, và thêm cạnh đó chỉ để
   // test lấy hai con số là một thay đổi kiến trúc, không phải một test. Cùng cách
-  // mà `apps/account/tests/integration/internal-nonces.spec.ts` cross-check bản lặp
+  // mà `apps/account/tests/integrations/internal-nonces.spec.ts` cross-check bản lặp
   // lại của hằng này.
   const source = readFileSync(
     join(MIGRATIONS_DIR, '../../../libs/internal-auth-contracts/src/internal-auth.ts'),

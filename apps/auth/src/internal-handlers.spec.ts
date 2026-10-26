@@ -16,7 +16,7 @@ import type { Provider } from 'oidc-provider';
 import { createAuthorizationStore } from './authorization-store';
 import { runSessionVerified } from './session-verified-handler';
 import { runConsentContext, runConsentDecide } from './consent-handler';
-import { startAuthDatabase, type AuthDatabase } from '../integration-specs/harness.ts';
+import { startAuthDatabase, type AuthDatabase } from '../tests/integrations/harness.ts';
 
 // `consumeHandleY` gọi TRỰC TIẾP cho test ASR-khác của issue #57 — như một
 // caller tương lai có thể làm (bỏ qua kiểm app-layer), để assert rằng bind SQL

@@ -184,7 +184,7 @@ function logInternalRejection(
  * decoded path == signed bytes. ⚠️ Đây là hành vi của **major 1** của h3; một major
  * sau có thể tách query khỏi `path` và khi đó đường này hỏng im lặng theo hướng
  * fail-closed (`bad_signature` trên mọi request có query). Guard cho sự thay đổi đó
- * là test end-to-end `tests/integration/internal-auth-e2e.spec.ts` — nó ký bằng
+ * là test end-to-end `tests/integrations/internal-auth-e2e.spec.ts` — nó ký bằng
  * `signRequest` thật và đi qua h3 app thật, nên sẽ đỏ ngay khi h3 đổi hành vi.
  */
 
