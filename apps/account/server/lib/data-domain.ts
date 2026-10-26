@@ -713,6 +713,240 @@ export async function toSessionView(
 }
 
 // -------------------------------------------------------------------------------------------
+// Persistence — `notification_preferences` (0008) — ý định nhận thông báo
+// -------------------------------------------------------------------------------------------
+
+/**
+ * Kênh delivery mà DB định nghĩa (CHECK của 0008) — taxonomy **kênh**, không
+ * phải phân loại nội dung của UI. UI giữ ba toggle nội dung
+ * (serviceEmail | productUpdates | marketing); map v1 (quyết định ghi trong PR
+ * body): toàn bộ ba toggle đều là **email** — `push` chưa có sản phẩm viết vào
+ * nó, và một toggle UI điều khiển đúng một hàng intent.
+ */
+export const NOTIFICATION_CHANNEL_ALLOWLIST: readonly string[] = ['email', 'push'];
+
+/** Kênh mà mọi toggle UI của v1 map vào. */
+export const SERVICE_EMAIL_CHANNEL = 'email';
+
+/** Hàng notification preference như PostgreSQL trả về. */
+export interface NotificationPreferenceRow {
+  readonly channel: string;
+  readonly enabled: boolean;
+}
+
+/**
+ * Đọc mọi intent kênh của một sub.
+ *
+ * ⚠️ **Không default ở đường đọc** — cùng lập luận `selectPreferences`: bảng
+ * trung tính với chính sách opt-in/opt-out (comment 0008), một hàng không tồn
+ * tại phải trả "chưa có hàng" thay vì default hoá im lặng. UI v1 hiển thị
+ * trạng thái mặc định của riêng nó (object `NotificationPreferences` với mọi
+ * toggle `true` cho email) và PATCH lần đầu ghi hàng thật.
+ */
+export async function listNotificationPreferences(
+  pool: import('pg').Pool,
+  userSub: string,
+): Promise<readonly NotificationPreferenceRow[]> {
+  const result = await pool.query<NotificationPreferenceRow>(
+    `SELECT channel, enabled
+       FROM account.notification_preferences
+      WHERE user_sub = $1
+      ORDER BY channel`,
+    [userSub],
+  );
+  return result.rows;
+}
+
+/**
+ * Ghi intent của MỘT kênh — upsert theo PK (user_sub, channel).
+ *
+ * ⚠️ Mỗi toggle UI là MỘT request PATCH với một kênh (map v1: cả ba toggle đều
+ * `email`): không có PATCH hàng loạt nào để hai toggle song song ghi đè nhau
+ * ngoài cùng một cột — mỗi hàng độc lập. `updated_at` do `now()` của DB đặt.
+ */
+export async function upsertNotificationPreference(
+  pool: import('pg').Pool,
+  params: {
+    readonly userSub: string;
+    readonly channel: string;
+    readonly enabled: boolean;
+  },
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO account.notification_preferences (user_sub, channel, enabled)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (user_sub, channel) DO UPDATE
+       SET enabled = EXCLUDED.enabled,
+           updated_at = now()`,
+    [params.userSub, params.channel, params.enabled],
+  );
+}
+
+// -------------------------------------------------------------------------------------------
+// Persistence — `privacy_requests` (0010) — yêu cầu data subject v1
+// -------------------------------------------------------------------------------------------
+
+/** Loại yêu cầu — allowlist đóng khớp CHECK `privacy_requests_kind_check` (0010). */
+export const PRIVACY_KIND_ALLOWLIST: readonly string[] = [
+  'export',
+  'correct',
+  'delete',
+  'restrict',
+  'object',
+];
+
+/** Trạng thái trả cho UI — khớp CHECK `privacy_requests_status_check` (0010). */
+export const PRIVACY_STATUS_ALLOWLIST: readonly string[] = [
+  'pending',
+  'in-progress',
+  'completed',
+  'rejected',
+];
+
+/**
+ * Số ngày deadline của v1 (FR-014) — quyết định v1 khi chưa có kết luận pháp
+ * lý (bảng quyết định mở §7.1); forward-fix khi pháp lý chốt con số khác.
+ */
+export const PRIVACY_DEADLINE_DAYS = 30;
+
+/** Trần số request một sub tạo trong cửa sổ — cùng triết lý trần pending email. */
+export const PRIVACY_REQUEST_MAX_PER_WINDOW = 3;
+
+/** Cửa sổ đếm của {@link PRIVACY_REQUEST_MAX_PER_WINDOW} (giây). */
+export const PRIVACY_REQUEST_WINDOW_SECONDS = 3_600;
+
+/** Hàng privacy request như PostgreSQL trả về — đầu vào của {@link toPrivacyRequestView}. */
+export interface PrivacyRequestRow {
+  readonly kind: string;
+  readonly status: string;
+  readonly created_at: Date;
+  readonly deadline_at: Date;
+}
+
+/**
+ * Danh sách privacy request của một sub, mới nhất trước — truy vấn duy nhất
+ * của GET /api/privacy-requests (index `privacy_requests_subject_created_idx`).
+ */
+export async function listPrivacyRequests(
+  pool: import('pg').Pool,
+  userSub: string,
+): Promise<readonly PrivacyRequestRow[]> {
+  const result = await pool.query<PrivacyRequestRow>(
+    `SELECT kind, status, created_at, deadline_at
+       FROM account.privacy_requests
+      WHERE subject_sub = $1
+      ORDER BY created_at DESC`,
+    [userSub],
+  );
+  return result.rows;
+}
+
+/**
+ * Đếm request một sub tạo trong cửa sổ trượt — đầu vào của trần tạo
+ * {@link PRIVACY_REQUEST_MAX_PER_WINDOW}. Đếm từ durable state, không bảng
+ * rate-limit riêng (cùng luật `countRecentPendingEmails`).
+ */
+export async function countRecentPrivacyRequests(
+  pool: import('pg').Pool,
+  userSub: string,
+  sinceSeconds: number,
+): Promise<number> {
+  const result = await pool.query<{ count: number }>(
+    `SELECT count(*)::int AS count
+       FROM account.privacy_requests
+      WHERE subject_sub = $1 AND created_at > now() - make_interval(secs => $2)`,
+    [userSub, sinceSeconds],
+  );
+  return result.rows[0]?.count ?? 0;
+}
+
+/**
+ * Kết quả tạo privacy request — phân biệt ba nhánh để route quyết định status:
+ * `created`, `duplicate` (request mở cùng loại đã tồn tại — PK composite chặn,
+ * idempotent trả hàng hiện có), `ceiling` (trần cửa sổ).
+ */
+export type PrivacyRequestOutcome =
+  | { readonly kind: 'created'; readonly row: PrivacyRequestRow }
+  | { readonly kind: 'duplicate'; readonly row: PrivacyRequestRow }
+  | { readonly kind: 'ceiling' };
+
+/**
+ * Tạo privacy request `pending` với deadline một lần lúc tạo (FR-014).
+ *
+ * ⚠️ **Deadline theo `now()` của DB, không phải đồng hồ app** — một mốc pháp
+ * lý phải từ nguồn thời gian duy nhất của dữ liệu; `deadline_at` KHÔNG BAO
+ * GIỜ được UPDATE sau tạo (không có đường ghi nào chạm nó — comment 0010).
+ *
+ * ⚠️ Nhánh `duplicate`: PK (subject_sub, kind) chặn request mở thứ hai cùng
+ * loại. Trả hàng hiện có để response của route là idempotent (`200` cùng
+ * hình dạng như tạo mới) — caller của UI đã có confirm dialog, nộp đôi là
+ * hành vi retry lành tính, và một hàng `pending` trùng là dữ liệu rác.
+ */
+export async function insertPrivacyRequest(
+  pool: import('pg').Pool,
+  params: {
+    readonly userSub: string;
+    readonly kind: string;
+    readonly maxPerWindow: number;
+    readonly windowSeconds: number;
+    readonly deadlineDays: number;
+  },
+): Promise<PrivacyRequestOutcome> {
+  const recent = await countRecentPrivacyRequests(pool, params.userSub, params.windowSeconds);
+  if (recent >= params.maxPerWindow) {
+    return { kind: 'ceiling' };
+  }
+
+  // Arbiter là partial unique index `privacy_requests_open_unique_idx` của
+  // 0010 — chỉ chặn hàng đang mở. `ON CONFLICT` phải khai báo ĐỦ vế `WHERE`
+  // của index (Postgres yêu cầu khớp chính xác, không khớp ⇒ lỗi 42P10).
+  const result = await pool.query<PrivacyRequestRow>(
+    `INSERT INTO account.privacy_requests (subject_sub, kind, status, deadline_at)
+     VALUES ($1, $2, 'pending', now() + make_interval(days => $3))
+     ON CONFLICT (subject_sub, kind) WHERE status IN ('pending', 'in-progress')
+     DO NOTHING
+     RETURNING kind, status, created_at, deadline_at`,
+    [params.userSub, params.kind, params.deadlineDays],
+  );
+  const created = result.rows[0];
+  if (created !== undefined) {
+    return { kind: 'created', row: created };
+  }
+  // INSERT bị chặn bởi index mở — request đang mở cùng loại đã tồn tại; trả nó.
+  const existing = await pool.query<PrivacyRequestRow>(
+    `SELECT kind, status, created_at, deadline_at
+       FROM account.privacy_requests
+      WHERE subject_sub = $1 AND kind = $2
+        AND status IN ('pending', 'in-progress')`,
+    [params.userSub, params.kind],
+  );
+  const row = existing.rows[0];
+  if (row === undefined) {
+    // Không tới được: ON CONFLICT DO NOTHING chỉ bỏ qua khi hàng trùng tồn tại.
+    throw new Error('privacy_requests: conflict without existing row');
+  }
+  return { kind: 'duplicate', row };
+}
+
+/**
+ * Chuyển hàng DB thành view cho response JSON — mốc thời gian qua ISO string;
+ * `kind`/`status` đã qua allowlist phía caller nên giữ nguyên mã.
+ */
+export function toPrivacyRequestView(row: PrivacyRequestRow): {
+  kind: string;
+  status: string;
+  submittedAt: string;
+  dueAt: string;
+} {
+  return {
+    kind: row.kind,
+    status: row.status,
+    submittedAt: row.created_at.toISOString(),
+    dueAt: row.deadline_at.toISOString(),
+  };
+}
+
+// -------------------------------------------------------------------------------------------
 // Audit — `security_events`
 // -------------------------------------------------------------------------------------------
 
@@ -738,6 +972,12 @@ export const DATA_EVENT_TYPES = {
   sessionRevoked: 'data_session_revoked',
   /** Thu hồi session hiện tại (tự logout từ trang sessions). */
   currentSessionRevoked: 'data_current_session_revoked',
+  /** Cập nhật notification preferences (ít nhất một kênh đổi). */
+  notificationPreferencesUpdated: 'data_notification_preferences_updated',
+  /** Nộp privacy request thành công. */
+  privacyRequested: 'data_privacy_requested',
+  /** Thu hồi quyền của một connected application (qua contract với auth). */
+  applicationRevoked: 'data_application_revoked',
 } as const;
 
 /** Kiểu event của data domain — union của các giá trị ở trên. */

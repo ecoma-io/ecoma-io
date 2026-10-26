@@ -23,7 +23,9 @@ import {
   AUTH_SERVICE_BINDING_NAME,
   authServiceBinding,
   AUTH_TIMEOUT_MS,
+  fetchConnectedApplications,
   fetchConsentContext,
+  revokeConnectedApplication,
   submitConsentDecision,
 } from './auth-client';
 
@@ -431,6 +433,185 @@ describe('submitConsentDecision', () => {
       ok: false,
       reason: 'invalid_response',
       detail: 'consent_decide_shape',
+    });
+  });
+});
+
+describe('fetchConnectedApplications', () => {
+  const validBody = {
+    applications: [
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        client_id: 'client-abc',
+        client_name: 'Ecoma Docs',
+        granted_at: 1_700_000_000_000,
+        scopes: ['profile:read'],
+      },
+    ],
+  };
+
+  it('maps a valid 200 to the contract response with every grant checked', async () => {
+    const binding = {
+      fetch: async () => new Response(JSON.stringify(validBody), { status: 200 }),
+    };
+    const result = await fetchConnectedApplications({
+      binding,
+      signingKey: SECRET,
+      request: { sub: 'sub_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+      nowMs: NOW_MS,
+    });
+    expect(result).toEqual({ ok: true, value: validBody });
+  });
+
+  it('returns binding_missing without fetch when the config has no binding', async () => {
+    const { requests } = stubBinding(() => new Response('{}'));
+    const result = await fetchConnectedApplications({
+      binding: null,
+      signingKey: SECRET,
+      request: { sub: 'sub_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+      nowMs: NOW_MS,
+    });
+    expect(result).toEqual({ ok: false, reason: 'binding_missing' });
+    expect(requests).toHaveLength(0);
+  });
+
+  it('signs the envelope for the connected-applications path', async () => {
+    let capturedRequest: Request | undefined;
+    const binding = {
+      fetch: async (input: Request) => {
+        capturedRequest = input;
+        return new Response(JSON.stringify({ applications: [] }), { status: 200 });
+      },
+    };
+    const result = await fetchConnectedApplications({
+      binding,
+      signingKey: SECRET,
+      request: { sub: 'sub_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+      nowMs: NOW_MS,
+    });
+    expect(result).toEqual({ ok: true, value: { applications: [] } });
+    expect(new URL(capturedRequest?.url ?? 'https://x/').pathname).toBe(
+      '/internal/connected-applications',
+    );
+  });
+
+  it('classifies 4xx and 503 like every other internal call', async () => {
+    for (const [status, expected] of [
+      [400, 'rejected'],
+      [404, 'rejected'],
+      [503, 'auth_unavailable'],
+    ] as const) {
+      const binding = { fetch: async () => new Response('{}', { status }) };
+      const result = await fetchConnectedApplications({
+        binding,
+        signingKey: SECRET,
+        request: { sub: 'sub_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+        nowMs: NOW_MS,
+      });
+      expect(result).toEqual({ ok: false, reason: expected, detail: String(status) });
+    }
+  });
+
+  it('rejects a 200 whose grant entries miss required fields (fail-closed)', async () => {
+    const bodies = [
+      { applications: 'not-an-array' },
+      { applications: [{ id: 'only-id' }] },
+      {
+        applications: [
+          {
+            id: 'g1',
+            client_id: 'c1',
+            client_name: 'n',
+            granted_at: 'not-a-number',
+            scopes: [],
+          },
+        ],
+      },
+      {
+        applications: [
+          { id: 'g1', client_id: 'c1', client_name: 'n', granted_at: 1, scopes: [42] },
+        ],
+      },
+      {},
+    ] as const;
+    for (const body of bodies) {
+      const binding = {
+        fetch: async () => new Response(JSON.stringify(body), { status: 200 }),
+      };
+      const result = await fetchConnectedApplications({
+        binding,
+        signingKey: SECRET,
+        request: { sub: 'sub_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+        nowMs: NOW_MS,
+      });
+      expect(result).toEqual({
+        ok: false,
+        reason: 'invalid_response',
+        detail: 'connected_applications_shape',
+      });
+    }
+  });
+});
+
+describe('revokeConnectedApplication', () => {
+  it('maps a valid 200 revoked outcome as success', async () => {
+    const binding = {
+      fetch: async () => new Response(JSON.stringify({ outcome: 'revoked' }), { status: 200 }),
+    };
+    const result = await revokeConnectedApplication({
+      binding,
+      signingKey: SECRET,
+      request: {
+        sub: 'sub_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        grant_id: '11111111-1111-4111-8111-111111111111',
+      },
+      nowMs: NOW_MS,
+    });
+    expect(result).toEqual({ ok: true, value: { outcome: 'revoked' } });
+  });
+
+  it('returns binding_missing without fetch when the config has no binding', async () => {
+    const result = await revokeConnectedApplication({
+      binding: null,
+      signingKey: SECRET,
+      request: {
+        sub: 'sub_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        grant_id: '11111111-1111-4111-8111-111111111111',
+      },
+      nowMs: NOW_MS,
+    });
+    expect(result).toEqual({ ok: false, reason: 'binding_missing' });
+  });
+
+  it('surfaces 404 invalid_grant as a rejected business result (caller maps idempotency)', async () => {
+    const binding = { fetch: async () => new Response('{}', { status: 404 }) };
+    const result = await revokeConnectedApplication({
+      binding,
+      signingKey: SECRET,
+      request: {
+        sub: 'sub_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        grant_id: '11111111-1111-4111-8111-111111111111',
+      },
+      nowMs: NOW_MS,
+    });
+    expect(result).toEqual({ ok: false, reason: 'rejected', detail: '404' });
+  });
+
+  it('rejects a 200 without the revoked outcome', async () => {
+    const binding = { fetch: async () => new Response('{"outcome":"nope"}', { status: 200 }) };
+    const result = await revokeConnectedApplication({
+      binding,
+      signingKey: SECRET,
+      request: {
+        sub: 'sub_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        grant_id: '11111111-1111-4111-8111-111111111111',
+      },
+      nowMs: NOW_MS,
+    });
+    expect(result).toEqual({
+      ok: false,
+      reason: 'invalid_response',
+      detail: 'connected_application_revoke_shape',
     });
   });
 });
