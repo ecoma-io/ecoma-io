@@ -839,6 +839,10 @@ Mỗi khẳng định trên đều có test đối kháng: `resource-bindings.sp
 
 ## 10. Test execution
 
+Bảng dưới đây là **chính sách thực thi theo kiến trúc đích** (`06-testing.md` là nguồn canonical về taxonomy và target
+contract); trạng thái hiện thực của từng target trong cây code được xác minh tại thời điểm đọc bằng `pnpm nx show project
+<name> --json`, không được suy ra từ bảng này.
+
 | Tầng                          | Công cụ                                                                                                                                        | Chạy ở                                                                       |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | Unit/domain                   | Vitest                                                                                                                                         | PR                                                                           |
@@ -855,7 +859,7 @@ Mỗi khẳng định trên đều có test đối kháng: `resource-bindings.sp
 | Restore test PostgreSQL       | Restore backup vào instance tạm trên host riêng                                                                                                | Định kỳ (`03` §3.4)                                                          |
 | Nx remote cache compatibility | GET/PUT cache artifact, auth, immutable entry / 409, local → CI cache hit                                                                      | PR ([`services/cache/03-operations.md`](../services/cache/03-operations.md)) |
 
-Ba loại kiểm trên browser phải không bị lẫn: **browser regression** là UI của một app duy nhất — suite app-owned (không colocated) thuộc `apps/<app>/tests/`, chạy qua target `test-integration` (phân loại theo `06-testing.md`); **system E2E** là kiểm liên dịch vụ qua runtime/service boundary, ở `system-tests/e2e/` với Nx target `system-test` (phân loại và taxonomy → `06-testing.md`); còn **manual UI preview** là serve-mode data policy khi chạy app bằng tay, không phải test — chính sách → `05-code-architecture.md` §5.
+Ba loại kiểm trên browser phải không bị lẫn: **browser regression** là UI của một app duy nhất — suite app-owned (không colocated) thuộc `apps/<app>/tests/`, chạy qua target `test-integration` (phân loại theo `06-testing.md`); **system E2E** là kiểm liên dịch vụ qua runtime/service boundary, ở `system-tests/e2e/` với Nx target `system-test` (phân loại và taxonomy → `06-testing.md`); còn **manual UI preview** là serve-mode data policy khi chạy app bằng tay, không phải test — chính sách → `05-code-architecture.md` §5. Tên target `e2e` do `@nx/playwright/plugin` sinh ra là tên target, không phải tầng phân loại — quy tắc phân loại → `06-testing.md` §4.
 
 Testing architecture (taxonomy test, vị trí unit/contract/E2E test, target contract của từng tầng) → `06-testing.md`.
 
