@@ -12,7 +12,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  appendSecurityEvent,
   COLOR_MODE_ALLOWLIST,
+  countRecentPendingEmails,
   countVerifiedEmails,
   DATA_EVENT_TYPES,
   findVerifiedEmailOwner,
@@ -24,6 +26,8 @@ import {
   maskEmail,
   NOTIFICATION_CHANNEL_ALLOWLIST,
   parsePreferencesPatch,
+  PENDING_EMAIL_MAX_PER_WINDOW,
+  PENDING_EMAIL_WINDOW_SECONDS,
   PRIVACY_DEADLINE_DAYS,
   PRIVACY_KIND_ALLOWLIST,
   PRIVACY_REQUEST_MAX_PER_WINDOW,
@@ -355,6 +359,82 @@ describe('persistence helpers use parameterized queries against schema-qualified
     expect(outcome).toBe('already_revoked');
     // BEGIN + SELECT-all-lock + COMMIT — idempotent, không UPDATE, không audit.
     expect(pool.calls).toHaveLength(3);
+  });
+
+  it('countRecentPendingEmails counts only pending rows inside a sliding window', async () => {
+    const pool = fakePool([[{ count: 3 }]]);
+    const n = await countRecentPendingEmails(pool as never, 'sub-1', PENDING_EMAIL_WINDOW_SECONDS);
+    expect(n).toBe(3);
+    const call = pool.calls[0];
+    if (!call) {
+      throw new Error('expected one query');
+    }
+    // Hai điều kiện của trần: đúng sub, chỉ hàng `pending`; cửa sổ trượt là
+    // `now() - make_interval` của DB — đồng hồ duy nhất là của PostgreSQL.
+    expect(call.sql).toContain('account.email_addresses');
+    expect(call.sql).toContain("status = 'pending'");
+    expect(call.sql).toContain('make_interval(secs =>');
+    expect(call.values).toEqual(['sub-1', PENDING_EMAIL_WINDOW_SECONDS]);
+  });
+
+  it('locks the pending email ceiling policy constants', () => {
+    // Trần v1 của POST /api/emails (cùng triết lý đếm-durable-state): một giá
+    // trị lớn hơn hay cửa sổ ngắn hơn đều là nới lỏng policy im lặng — khoá cả
+    // hai để thay đổi phải đi qua chính test này.
+    expect(PENDING_EMAIL_MAX_PER_WINDOW).toBe(5);
+    expect(PENDING_EMAIL_WINDOW_SECONDS).toBe(3_600);
+  });
+});
+
+describe('appendSecurityEvent never throws onto the serving path', () => {
+  it('writes one parameterized audit row and returns true on success', async () => {
+    const pool = fakePool([[]]);
+    const ok = await appendSecurityEvent(pool as never, {
+      subjectSub: 'sub-1',
+      type: DATA_EVENT_TYPES.profileUpdated,
+      metadata: { field_count: 2 },
+    });
+    expect(ok).toBe(true);
+    const call = pool.calls[0];
+    if (!call) {
+      throw new Error('expected one query');
+    }
+    expect(call.sql).toContain('account.security_events');
+    // Cột `outcome` ghi cứng `'success'` trong VALUES — một event luôn mô tả
+    // một sự kiện đã xảy ra (route audit sau khi state change thành công).
+    expect(call.sql).toContain("'success'");
+    // Metadata đi xuống dạng JSON.stringify — một giá trị duy nhất, đúng loại
+    // cột `jsonb` của 0002; không nối chuỗi vào SQL bao giờ.
+    expect(call.values).toEqual(['sub-1', 'data_profile_updated', '{"field_count":2}']);
+  });
+
+  it('defaults omitted metadata to an empty object (never undefined into a column)', async () => {
+    const pool = fakePool([[]]);
+    const ok = await appendSecurityEvent(pool as never, {
+      subjectSub: 'sub-1',
+      type: DATA_EVENT_TYPES.emailVerified,
+    });
+    expect(ok).toBe(true);
+    const call = pool.calls[0];
+    if (!call) {
+      throw new Error('expected one query');
+    }
+    expect(call.values?.[2]).toBe('{}');
+  });
+
+  it('returns false instead of throwing when the audit insert fails', async () => {
+    // NFR-004: audit không nằm trên serving path — pool ném là pool hỏng, hàm
+    // phải nuốt và báo `false` để route tự log, không biến PATCH thành 500.
+    const failingPool = fakePool([]);
+    failingPool.query = async () => {
+      throw new Error('connection refused');
+    };
+    await expect(
+      appendSecurityEvent(failingPool as never, {
+        subjectSub: 'sub-1',
+        type: DATA_EVENT_TYPES.sessionRevoked,
+      }),
+    ).resolves.toBe(false);
   });
 });
 
