@@ -80,7 +80,11 @@ export default defineConfig(() => ({
     // tên trần (`useRoute`, `useHead`, `onMounted`) lúc `setup()`, và global phải
     // có mặt trước lần render đầu.
     setupFiles: ['./tests/setup.ts'],
-    include: ['{src,tests,server}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    // ⚠️ `app` nằm trong include từ khi spec colocated đầu tiên của `app/`
+    // xuất hiện (`app/pages/pacts.spec.ts` — 06-testing.md §2: spec colocated
+    // nằm cạnh subject trong owning project). `src`/`server`/`tests` giữ nguyên
+    // theo contract của PR-A/#299.
+    include: ['{src,app,tests,server}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     reporters: ['default'],
     coverage: {
       reportsDirectory: './test-output/vitest/coverage',
