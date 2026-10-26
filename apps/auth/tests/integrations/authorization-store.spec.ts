@@ -2,6 +2,8 @@ import postgres from 'postgres';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import type { PostgresClientLike } from '@ecoma-io/identity-auth-infrastructure';
+
 import {
   checkRevocationAtIssuance,
   findActiveGrant,
@@ -70,6 +72,17 @@ function connectMigrator(): postgres.Sql {
 
 async function setup(): Promise<{ runtime: postgres.Sql; migrator: postgres.Sql }> {
   return { runtime: connectRuntime(), migrator: connectMigrator() };
+}
+
+/**
+ * Cast pool thật sang `PostgresClientLike` — brand `[NONCE_CLAIM_TARGET]` là
+ * brand danh nghĩa không có giá trị runtime (postgres.js không trang bị nó),
+ * cùng hình dạng cast `as unknown as PostgresClientLike` mà mọi suite PG khác
+ * của app dùng. Một helper duy nhất để các điểm gọi trong test còn đọc được
+ * hàm nào đang nhận pool nào.
+ */
+function clientOf(sql: postgres.Sql): PostgresClientLike {
+  return sql as unknown as PostgresClientLike;
 }
 
 /* ------------------------------------------------------------------ */
@@ -185,7 +198,7 @@ async function seedDecisionForGrant(
 ): Promise<string> {
   const txId = newTxId(`gr-${tag}`);
   await seedTransaction(runtime, { transactionId: txId, clientId: CLIENT_ID, sub });
-  const decisionId = await insertConsentDecision(runtime, {
+  const decisionId = await insertConsentDecision(clientOf(runtime), {
     sub,
     clientId: CLIENT_ID,
     redirectUri: 'https://app.example.com/cb',
@@ -289,7 +302,7 @@ describe('authorization-store — against a real PostgreSQL', () => {
         await seedRedirectUri(migrator, CLIENT_ID, 'https://app.example.com/cb-mid');
         await setAllowedScopes(migrator, CLIENT_ID, ['openid', 'profile']);
 
-        const client = await findRegisteredClient(runtime, CLIENT_ID);
+        const client = await findRegisteredClient(clientOf(runtime), CLIENT_ID);
 
         expect(client).toBeDefined();
         expect(client?.client_id).toBe(CLIENT_ID);
@@ -317,7 +330,7 @@ describe('authorization-store — against a real PostgreSQL', () => {
       try {
         await seedClient(migrator, CLIENT_ID);
 
-        const client = await findRegisteredClient(runtime, CLIENT_ID);
+        const client = await findRegisteredClient(clientOf(runtime), CLIENT_ID);
 
         expect(client).toBeDefined();
         expect([...(client?.redirect_uris ?? ['sentinel'])]).toEqual([]);
@@ -338,7 +351,7 @@ describe('authorization-store — against a real PostgreSQL', () => {
         await setClientStatus(migrator, CLIENT_ID, 'disabled');
         await seedRedirectUri(migrator, CLIENT_ID, 'https://app.example.com/cb');
 
-        const client = await findRegisteredClient(runtime, CLIENT_ID);
+        const client = await findRegisteredClient(clientOf(runtime), CLIENT_ID);
 
         expect(client).toBeUndefined();
       } finally {
@@ -351,7 +364,7 @@ describe('authorization-store — against a real PostgreSQL', () => {
     it('an unknown client id — undefined', async () => {
       const { runtime, migrator } = await setup();
       try {
-        const client = await findRegisteredClient(runtime, 'client-never-registered');
+        const client = await findRegisteredClient(clientOf(runtime), 'client-never-registered');
         expect(client).toBeUndefined();
       } finally {
         await runtime.end({ timeout: 1 });
@@ -374,7 +387,7 @@ describe('authorization-store — against a real PostgreSQL', () => {
             FROM unnest(ARRAY['profile', 'openid']::text[]) AS scope
         `;
 
-        const grant = await findActiveGrant(runtime, { sub, clientId: CLIENT_ID });
+        const grant = await findActiveGrant(clientOf(runtime), { sub, clientId: CLIENT_ID });
 
         expect(grant).toBeDefined();
         expect(grant?.id).toBe(grantId);
@@ -384,7 +397,10 @@ describe('authorization-store — against a real PostgreSQL', () => {
         // Scopes được sort bởi `ORDER BY` của query — thứ tự chèn là ngược.
         expect([...(grant?.scopes ?? [])]).toEqual(['openid', 'profile']);
         // Một grant KHÔNG lọt qua cho client khác — phạm vi cặp là hợp đồng.
-        const otherClient = await findActiveGrant(runtime, { sub, clientId: CLIENT_ID_ALT });
+        const otherClient = await findActiveGrant(clientOf(runtime), {
+          sub,
+          clientId: CLIENT_ID_ALT,
+        });
         expect(otherClient).toBeUndefined();
       } finally {
         await cleanup(migrator);
@@ -405,10 +421,12 @@ describe('authorization-store — against a real PostgreSQL', () => {
         const firstId = await seedGrantRow(migrator, { sub, clientId: CLIENT_ID });
         await revokeGrant(runtime, firstId, 'test-revoke-then-regrant');
 
-        expect(await findActiveGrant(runtime, { sub, clientId: CLIENT_ID })).toBeUndefined();
+        expect(
+          await findActiveGrant(clientOf(runtime), { sub, clientId: CLIENT_ID }),
+        ).toBeUndefined();
 
         const secondId = await seedGrantRow(migrator, { sub, clientId: CLIENT_ID });
-        const grant = await findActiveGrant(runtime, { sub, clientId: CLIENT_ID });
+        const grant = await findActiveGrant(clientOf(runtime), { sub, clientId: CLIENT_ID });
         expect(grant?.id).toBe(secondId);
         expect(grant?.isActive).toBe(true);
       } finally {
@@ -480,12 +498,12 @@ describe('authorization-store — against a real PostgreSQL', () => {
           [sub],
         );
 
-        expect(await checkRevocationAtIssuance(runtime, { sub, clientId: CLIENT_ID })).toBe(
-          'revoked',
-        );
-        expect(await checkRevocationAtIssuance(runtime, { sub, clientId: CLIENT_ID_ALT })).toBe(
-          'revoked',
-        );
+        expect(
+          await checkRevocationAtIssuance(clientOf(runtime), { sub, clientId: CLIENT_ID }),
+        ).toBe('revoked');
+        expect(
+          await checkRevocationAtIssuance(clientOf(runtime), { sub, clientId: CLIENT_ID_ALT }),
+        ).toBe('revoked');
       } finally {
         await cleanup(migrator);
         await runtime.end({ timeout: 1 });
@@ -506,17 +524,20 @@ describe('authorization-store — against a real PostgreSQL', () => {
           [sub, CLIENT_ID],
         );
 
-        expect(await checkRevocationAtIssuance(runtime, { sub, clientId: CLIENT_ID })).toBe(
-          'revoked',
-        );
+        expect(
+          await checkRevocationAtIssuance(clientOf(runtime), { sub, clientId: CLIENT_ID }),
+        ).toBe('revoked');
         // Cặp lân cận KHÔNG bị ô nhiễm — giới hạn phạm vi là điều kiện sống còn
         // của mức lồng nhau (cùng bất biến mà internal-handlers đã ghim qua
         // handler; ở đây là hợp đồng của chính hàm đọc).
-        expect(await checkRevocationAtIssuance(runtime, { sub, clientId: CLIENT_ID_ALT })).toBe(
-          'not_revoked',
-        );
         expect(
-          await checkRevocationAtIssuance(runtime, { sub: otherSub, clientId: CLIENT_ID }),
+          await checkRevocationAtIssuance(clientOf(runtime), { sub, clientId: CLIENT_ID_ALT }),
+        ).toBe('not_revoked');
+        expect(
+          await checkRevocationAtIssuance(clientOf(runtime), {
+            sub: otherSub,
+            clientId: CLIENT_ID,
+          }),
         ).toBe('not_revoked');
       } finally {
         await cleanup(migrator);
@@ -542,16 +563,24 @@ describe('authorization-store — against a real PostgreSQL', () => {
         );
 
         expect(
-          await checkRevocationAtIssuance(runtime, { sub, clientId: CLIENT_ID, grantId: grantB }),
+          await checkRevocationAtIssuance(clientOf(runtime), {
+            sub,
+            clientId: CLIENT_ID,
+            grantId: grantB,
+          }),
         ).toBe('revoked');
         expect(
-          await checkRevocationAtIssuance(runtime, { sub, clientId: CLIENT_ID, grantId: grantA }),
+          await checkRevocationAtIssuance(clientOf(runtime), {
+            sub,
+            clientId: CLIENT_ID,
+            grantId: grantA,
+          }),
         ).toBe('not_revoked');
         // Không truyền grantId — nhánh `$3::uuid IS NOT NULL` khoá mức token
         // lại hoàn toàn: kiểm subject/client vẫn chạy nhưng không dính hàng nào.
-        expect(await checkRevocationAtIssuance(runtime, { sub, clientId: CLIENT_ID })).toBe(
-          'not_revoked',
-        );
+        expect(
+          await checkRevocationAtIssuance(clientOf(runtime), { sub, clientId: CLIENT_ID }),
+        ).toBe('not_revoked');
       } finally {
         await cleanup(migrator);
         await runtime.end({ timeout: 1 });
@@ -573,9 +602,9 @@ describe('authorization-store — against a real PostgreSQL', () => {
           [sub, CLIENT_ID],
         );
 
-        expect(await checkRevocationAtIssuance(runtime, { sub, clientId: CLIENT_ID })).toBe(
-          'not_revoked',
-        );
+        expect(
+          await checkRevocationAtIssuance(clientOf(runtime), { sub, clientId: CLIENT_ID }),
+        ).toBe('not_revoked');
       } finally {
         await cleanup(migrator);
         await runtime.end({ timeout: 1 });
@@ -595,16 +624,16 @@ describe('authorization-store — against a real PostgreSQL', () => {
         const sub = newSub('gs');
         const decisionId = await seedDecisionForGrant(runtime, migrator, sub, 'gs');
 
-        const grantId = await insertGrant(runtime, {
+        const grantId = await insertGrant(clientOf(runtime), {
           sub,
           clientId: CLIENT_ID,
           scopes: ['openid', 'profile'],
           consentDecisionId: decisionId,
           now: new Date(),
         });
-        await insertGrantScopes(runtime, { grantId, scopes: ['openid', 'profile'] });
-        await insertGrantScopes(runtime, { grantId, scopes: ['openid', 'profile'] });
-        await insertGrantScopes(runtime, { grantId, scopes: ['openid'] });
+        await insertGrantScopes(clientOf(runtime), { grantId, scopes: ['openid', 'profile'] });
+        await insertGrantScopes(clientOf(runtime), { grantId, scopes: ['openid', 'profile'] });
+        await insertGrantScopes(clientOf(runtime), { grantId, scopes: ['openid'] });
 
         const rows = await migrator<{ scope: string }[]>`
           SELECT scope FROM auth.client_grant_scopes
@@ -626,7 +655,7 @@ describe('authorization-store — against a real PostgreSQL', () => {
         await seedClient(migrator, CLIENT_ID);
         const sub = newSub('gs-empty');
         const decisionId = await seedDecisionForGrant(runtime, migrator, sub, 'gs-empty');
-        const grantId = await insertGrant(runtime, {
+        const grantId = await insertGrant(clientOf(runtime), {
           sub,
           clientId: CLIENT_ID,
           scopes: [],
@@ -634,7 +663,9 @@ describe('authorization-store — against a real PostgreSQL', () => {
           now: new Date(),
         });
 
-        await expect(insertGrantScopes(runtime, { grantId, scopes: [] })).resolves.toBeUndefined();
+        await expect(
+          insertGrantScopes(clientOf(runtime), { grantId, scopes: [] }),
+        ).resolves.toBeUndefined();
 
         const rows = await migrator<{ count: string }[]>`
           SELECT count(*)::text AS count FROM auth.client_grant_scopes WHERE grant_id = ${grantId}
@@ -661,7 +692,7 @@ describe('authorization-store — against a real PostgreSQL', () => {
 
         const earlier = new Date(Date.now() - 5_000);
         const later = new Date(Date.now());
-        const denyId = await insertConsentDecision(runtime, {
+        const denyId = await insertConsentDecision(clientOf(runtime), {
           sub: newSub('dec'),
           clientId: CLIENT_ID,
           redirectUri: 'https://app.example.com/cb',
@@ -670,7 +701,7 @@ describe('authorization-store — against a real PostgreSQL', () => {
           authorizationTransactionId: txId,
           now: earlier,
         });
-        await insertConsentDecision(runtime, {
+        await insertConsentDecision(clientOf(runtime), {
           sub: newSub('dec'),
           clientId: CLIENT_ID,
           redirectUri: 'https://app.example.com/cb',
@@ -681,7 +712,9 @@ describe('authorization-store — against a real PostgreSQL', () => {
         });
 
         expect(
-          await findCommittedConsentDecision(runtime, { authorizationTransactionId: txId }),
+          await findCommittedConsentDecision(clientOf(runtime), {
+            authorizationTransactionId: txId,
+          }),
         ).toBe('deny');
         expect(denyId).toBeDefined();
       } finally {
@@ -694,7 +727,7 @@ describe('authorization-store — against a real PostgreSQL', () => {
     it('a transaction with no decision — undefined', async () => {
       const { runtime, migrator } = await setup();
       try {
-        const decision = await findCommittedConsentDecision(runtime, {
+        const decision = await findCommittedConsentDecision(clientOf(runtime), {
           authorizationTransactionId: newTxId('none'),
         });
         expect(decision).toBeUndefined();
@@ -713,7 +746,7 @@ describe('authorization-store — against a real PostgreSQL', () => {
       const { runtime, migrator } = await setup();
       try {
         await expect(
-          insertAuditEvent(runtime, {
+          insertAuditEvent(clientOf(runtime), {
             eventType: 'event_type_that_does_not_exist',
             clientId: CLIENT_ID,
           }),
@@ -733,7 +766,7 @@ describe('authorization-store — against a real PostgreSQL', () => {
       //     truyền vào.
       const { runtime, migrator } = await setup();
       try {
-        await insertAuditEvent(runtime, {
+        await insertAuditEvent(clientOf(runtime), {
           eventType: 'client_authenticated',
           clientId: CLIENT_ID,
           details: { method: 'private_key_jwt' },
