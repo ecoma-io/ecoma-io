@@ -176,6 +176,24 @@ export default defineNuxtConfig({
     cloudflare: {
       env: {},
     },
+    // Seam chế độ dữ liệu của data domain — đọc ở phía app qua
+    // `runtimeConfig.public`, cùng nguồn với payload mà client hydrate, nên SSR
+    // và client không thể lệch nhau. Khai ở đây (không phải `nitro.config.ts`)
+    // vì cùng lý do với `public` của backoffice.
+    //
+    // Giá trị runtime đến từ `NITRO_PUBLIC_ACCOUNT_DATA_MODE` (Nitro `applyEnv`
+    // phủ lên giá trị build-time dưới đây). Hai giá trị hợp lệ là `mock` và
+    // `real` — tập giá trị chỉ được khai ở `app/account-data/data-mode.ts`.
+    //
+    // ⚠️ Default là chuỗi rỗng = "chưa cấu hình", KHÔNG phải một giá trị mode:
+    // chính resolver (`resolveAccountDataMode`) quyết định theo môi trường —
+    // `nuxt dev` ⇒ `mock`, artifact đã build ⇒ `real`. Một default tĩnh `mock`
+    // ở đây sẽ chảy vào artifact (vi phạm fail-closed), còn default tĩnh `real`
+    // thì giết luôn mock ở dev. Rỗng là giá trị duy nhất trung tính với cả hai
+    // môi trường — cùng quy ước với các key private phía trên.
+    public: {
+      accountDataMode: '',
+    },
   },
 
   nitro: {

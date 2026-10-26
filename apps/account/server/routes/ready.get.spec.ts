@@ -71,4 +71,27 @@ describe('GET /ready', () => {
       expect.objectContaining({ event: 'ready.failed', status: 503, reason: 'binding_missing' }),
     );
   });
+
+  it('fails closed with the stable data mode reason when an artifact is configured for mock', async () => {
+    // Gate DATA_MODE ở lớp readiness: artifact bị cấu hình `mock` là cấu hình
+    // sai phải chặn — `/ready` 503 với reason ổn định, không nuốt về `real`
+    // trong im lặng. Stub trả public.accountDataMode = 'mock'; `import.meta.dev`
+    // của runner test là `undefined` — cùng nhánh artifact với production,
+    // vì Nitro thay tĩnh cờ này theo `nitro.options.dev` lúc build thật.
+    vi.stubGlobal('useRuntimeConfig', (event?: unknown): Record<string, unknown> => {
+      capturedRuntimeConfigArg = event;
+      return { public: { accountDataMode: 'mock' } };
+    });
+
+    const response = await handler(new Request('http://localhost/ready'));
+
+    expect(response.status).toBe(503);
+    expect(mockedWriteLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'ready.failed',
+        status: 503,
+        reason: 'data_mode_mock_in_artifact',
+      }),
+    );
+  });
 });

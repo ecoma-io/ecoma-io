@@ -32,6 +32,10 @@ import { createError, defineEventHandler } from 'h3';
 
 import { accountHyperdrive } from '../utils/bindings';
 import { createPool, selectAccountStatus } from '../utils/db';
+import {
+  DATA_MODE_MOCK_IN_ARTIFACT_REASON,
+  resolveServerDataMode,
+} from '../utils/data-mode-server';
 import { writeLog } from '../utils/logger';
 
 /**
@@ -65,7 +69,26 @@ export default defineEventHandler(async (event) => {
   // `useRuntimeConfig(event)` — truyền `event` như middleware và route status: trên
   // Workers, binding của request đến từ env của Worker và Nitro nối nó vào runtime
   // config theo event; bỏ `event` là đọc một config không gắn với request hiện tại.
-  const hyperdrive = accountHyperdrive(useRuntimeConfig(event));
+  const runtimeConfig = useRuntimeConfig(event);
+  const hyperdrive = accountHyperdrive(runtimeConfig);
+
+  // Gate DATA_MODE — lớp readiness của fail-closed: artifact bị cấu hình `mock`
+  // là không phục vụ được request nào với nguồn dữ liệu người đặt biến mong muốn
+  // (mock), nên báo "không sẵn sàng" chứ không chạy thật dưới danh mock. Cùng
+  // cấu trúc với nhánh `binding_missing`: log reason ổn định, response không
+  // lộ chi tiết. Dưới `nuxt dev` mode mock là hợp lệ — nhánh không chạy.
+  const serverMode = resolveServerDataMode(
+    (runtimeConfig.public as Record<string, unknown> | undefined)?.accountDataMode,
+    import.meta.dev,
+  );
+  if (serverMode.kind === 'real' && serverMode.mockInArtifact) {
+    writeLog({
+      event: 'ready.failed',
+      status: 503,
+      reason: DATA_MODE_MOCK_IN_ARTIFACT_REASON,
+    });
+    throw createError({ statusCode: 503, statusMessage: 'Service Unavailable' });
+  }
 
   if (!hyperdrive) {
     // Thiếu binding ⇒ fail closed, giống hệt DB chết: app không phục vụ được request
