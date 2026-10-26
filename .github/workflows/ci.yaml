@@ -108,7 +108,7 @@ jobs:
 
       # `test` (colocated unit/component) và `test-integration` (suite app-owned
       # integration) cùng chạy ở đây và cùng bị gate bởi `affected`: tách include
-      # của config vitest (target `test` không còn nhặt `integration-specs/`)
+      # của config vitest (target `test` không còn nhặt suite app-owned)
       # mà không thêm target này vào CI là suite integration rời khỏi pipeline
       # trong im lặng. PostgreSQL thật của suite đến từ testcontainers - runner
       # chỉ cần có Docker (xem comment job ở trên).

@@ -524,11 +524,17 @@ describe('findInvalidTargetRefs', () => {
   });
 
   it('resolves relative refs against the project root too', () => {
-    // Hình thật của workspace: account chạy `npx vitest run integration-specs`
+    // Hình thật của workspace: account chạy
+    // `npx vitest run -c vitest.integration.config.mts tests/integrations tests/databases`
     // với cwd=apps/account — ref giải hệ theo project root, không phải repo
     // root, nên phải xanh.
     const violations = findInvalidTargetRefs(
-      new Map([['@ecoma-io/account', ['npx vitest run integration-specs']]]),
+      new Map([
+        [
+          '@ecoma-io/account',
+          ['npx vitest run -c vitest.integration.config.mts tests/integrations tests/databases'],
+        ],
+      ]),
     );
     expect(violations).toEqual([]);
   });

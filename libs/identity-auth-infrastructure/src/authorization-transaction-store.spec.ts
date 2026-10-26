@@ -11,11 +11,7 @@ import {
   findTransactionByHandleX,
   transitionTransaction,
 } from './authorization-transaction-store';
-import {
-  MIGRATIONS_DIR,
-  startAuthDatabase,
-  type AuthDatabase,
-} from '../tests/integration/harness.ts';
+import { MIGRATIONS_DIR, startAuthDatabase, type AuthDatabase } from './auth-test-harness.ts';
 
 /**
  * Hợp đồng persistence của `authorization_transactions` trên PostgreSQL THẬT.

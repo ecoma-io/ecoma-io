@@ -3,7 +3,7 @@ import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { redeemAuthorizationCode } from './authorization-code-cas';
-import { startAuthDatabase, type AuthDatabase } from '../tests/integration/harness.ts';
+import { startAuthDatabase, type AuthDatabase } from './auth-test-harness.ts';
 
 /**
  * CAS của authorization code trên PostgreSQL THẬT.

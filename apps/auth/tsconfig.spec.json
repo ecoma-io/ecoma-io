@@ -9,7 +9,7 @@
     "types": ["vitest/globals", "vitest/importMeta", "vite/client", "node", "vitest"],
     "module": "esnext",
     "moduleResolution": "bundler",
-    // Spec import harness bằng phần mở rộng thật (`../integration-specs/harness.ts`):
+    // Spec import harness bằng phần mở rộng thật (`../tests/integrations/harness.ts`):
     // Vitest cần nó khi chạy, và đây là điều kiện để `import.meta.dirname` được type
     // đúng — cùng cách `tsconfig.db.json` của `apps/account` đã ghi lại.
     "allowImportingTsExtensions": true
@@ -24,7 +24,7 @@
     // TS6307. `db/**` không thuộc `tsconfig.app.json` (edge runtime), nên thêm
     // ở đây thay vì mở include của app.
     "db/**/*.mts",
-    "integration-specs/**/*.ts",
+    "tests/**/*.ts",
     "src/**/*.test.ts",
     "src/**/*.spec.ts",
     "src/**/*.test.tsx",

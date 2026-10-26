@@ -1,7 +1,7 @@
 /// <reference types='vitest' />
 import { existsSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { defineConfig } from 'vite';
+import { defineConfig, defaultExclude } from 'vitest/config';
 import vue from '@vitejs/plugin-vue';
 
 /**
@@ -82,10 +82,14 @@ export default defineConfig(() => ({
     // Nuxt dựng app trong `app/` (srcDir của Nuxt 4), không dùng `src/`; spec
     // colocated cạnh code subject (`app/`, `server/`). `tests/` giữ lại cho phần
     // support chung (harness, bridge) và những spec có subject ở chính `tests/`.
-    // ⚠️ Suite integration nằm ở `integration-specs/` và chạy qua target
-    // `test-integration` với config riêng (`vitest.integration.config.mts`) —
-    // nhét nó vào include ở đây là chạy suite đó hai lần (06-testing.md §4).
+    // ⚠️ Suite integration nằm ở `tests/integrations/` + `tests/databases/` và
+    // chạy qua target `test-integration` với config riêng
+    // (`vitest.integration.config.mts`). Include bên dưới phủ `tests/**` (spec
+    // colocated với support nằm ở `tests/`), nên phải exclude đúng hai thư mục
+    // mục đích đó — nếu không, mọi suite integration chạy HAI lần (cả `test`
+    // lẫn `test-integration`) (06-testing.md §4).
     include: ['{src,tests,app,server}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    exclude: [...defaultExclude, 'tests/integrations/**', 'tests/databases/**'],
     reporters: ['default'],
     coverage: {
       reportsDirectory: './test-output/vitest/coverage',

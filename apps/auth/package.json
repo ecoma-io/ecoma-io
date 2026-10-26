@@ -154,7 +154,7 @@
         ],
         "options": {
           "cwd": "apps/auth",
-          "command": "npx vitest run -c vitest.integration.config.mts integration-specs"
+          "command": "npx vitest run -c vitest.integration.config.mts tests/integrations tests/databases"
         }
       },
       "serve": {

@@ -3,7 +3,7 @@
  * allowlist, validator hình dạng, mask, publicSessionId, view builders.
  *
  * Mọi hàm persistence (SELECT/UPDATE/INSERT thật) được integration test trên
- * PostgreSQL thật (`integration-specs/`); ở đây neo những hợp đồng mà một sai
+ * PostgreSQL thật (`tests/integrations/`); ở đây neo những hợp đồng mà một sai
  * sót không thấy được bằng đọc code: locale/color_mode reject-không-fallback,
  * `sub` trong body bị bỏ qua, timezone từ chối theo IANA thật, mask không lộ
  * local-part, định danh phiên không bao giờ là `session_ref`.

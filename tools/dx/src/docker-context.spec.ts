@@ -237,7 +237,7 @@ describe('root .dockerignore: required build inputs are included', () => {
     expect(isExcluded('apps/backoffice/app/app-locale.spec.ts')).toBe(true);
     expect(isExcluded('apps/backoffice/app/composables/use-async-state.spec.ts')).toBe(true);
     expect(isExcluded('apps/backoffice/app/pages/pages-data-states.spec.ts')).toBe(true);
-    // Spec e2e/integration-specs/server không tham chiếu helper `tests/` —
+    // Spec e2e/app-owned suite/server không tham chiếu helper `tests/` —
     // chúng có thể vào context; assertion này ghim rằng dòng mới KHÔNG dập
     // cả subtree `app/`.
     expect(isExcluded('apps/backoffice/app/app.vue')).toBe(false);

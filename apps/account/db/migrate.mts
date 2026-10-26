@@ -46,7 +46,7 @@ export const MIGRATION_LOCK_KEY = 4_827_163n;
  * `DEFAULT_SKEW_SECONDS` trong `libs/identity-contracts/src/internal-auth.ts`.
  *
  * ⚠️ Số được **lặp lại** ở đây chứ không import từ lib, và đó là điểm cần nói rõ:
- * `apps/account/tests/integration/` chạy bằng `vitest.config.mts` của app, mà
+ * `apps/account/tests/databases/` chạy bằng `vitest.config.mts` của app, mà
  * config đó không khai báo alias `@ecoma-io/*` — nên import lib ở đây sẽ hỏng
  * trước khi test kịp chạy. Lặp lại hằng là thứ lỗi nhất có thể, và
  * `internal-nonces.spec.ts` assert hai bên bằng nhau nên lệch sẽ đỏ ngay.

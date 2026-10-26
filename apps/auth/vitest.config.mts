@@ -4,9 +4,9 @@ import { defineConfig } from 'vitest/config';
  * Config của target `test` — chỉ spec colocated với subject (06-testing.md §4:
  * `test` = colocated unit/component của project sở hữu).
  *
- * ⚠️ Suite integration nằm ở `integration-specs/` và chạy qua target
- * `test-integration` với config riêng (`vitest.integration.config.mts`). Nhét
- * `integration-specs` vào include ở đây là chạy suite đó HAI lần (cả `test` lẫn
+ * ⚠️ Suite integration nằm ở `tests/integrations/` + `tests/databases/` và chạy
+ * qua target `test-integration` với config riêng (`vitest.integration.config.mts`).
+ * Nhét suite app-owned vào include ở đây là chạy suite đó HAI lần (cả `test` lẫn
  * `test-integration`) hoặc - với app không có `test-integration` - chạy nó ở
  * target sai.
  */
