@@ -9,9 +9,9 @@
  * và huỷ: tốn vài giây và là nguồn flake không cần thiết.
  *
  * Kết quả được đăng ký qua `process.env` (worker kế thừa khi fork) trong
- * {@link probeDocker}; khi probe thất bại, harness in cảnh báo tiếng Anh (nêu
- * đúng số suite sẽ skip) và — nếu `ECOMA_REQUIRE_DOCKER=1` — ném lỗi làm
- * **toàn bộ** lần chạy đỏ, thay vì bỏ qua nửa suite với exit 0.
+ * {@link probeDocker}; khi probe thất bại, harness ném lỗi làm **toàn bộ** lần
+ * chạy đỏ — Docker là phụ thuộc cứng, suite phải ĐỎ thay vì bỏ qua nửa suite
+ * với exit 0 (06-testing.md §6).
  */
 
 import { probeDocker } from './harness.ts';

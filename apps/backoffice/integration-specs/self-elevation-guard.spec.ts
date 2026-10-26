@@ -17,14 +17,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import {
-  type BackofficeDatabase,
-  applyMigrations,
-  probeDocker,
-  startBackofficeDatabase,
-} from './harness.ts';
-
-const dockerAvailable = await probeDocker();
+import { type BackofficeDatabase, applyMigrations, startBackofficeDatabase } from './harness.ts';
 
 /**
  * Account ID hợp lệ theo định dạng `libs/backoffice-domain` (`sub_` + 32 ký tự
@@ -41,7 +34,7 @@ const SUBJECT = sub('c');
 /** Runtime role — tầng app dùng đúng credential này. */
 const RUNTIME = 'ecoma_backoffice_runtime';
 
-describe.skipIf(!dockerAvailable)('self-elevation guard on db-backoffice (0004)', () => {
+describe('self-elevation guard on db-backoffice (0004)', () => {
   let db: BackofficeDatabase;
 
   beforeAll(async () => {

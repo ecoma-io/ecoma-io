@@ -1,9 +1,9 @@
 /**
  * Apply migration lên PostgreSQL thật và đo trạng thái sau đó.
  *
- * Không dùng `describe` cấp module rồi `beforeAll` bên trong: phải `await` được
- * `probeDocker()` ở tầng module để `describe.skipIf` biết quyết định, và một
- * probe hỏng không được làm đỏ cả file.
+ * ⚠️ Suite bắt buộc Docker: probe hỏng thì `globalSetup` ném và toàn bộ lần chạy
+ * đỏ (fail-loud, 06-testing.md §6) - skip với exit 0 không phải kết quả chấp
+ * nhận được.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -12,11 +12,8 @@ import { applyAllMigrations } from '../db/apply.mts';
 import {
   type PactBrokerDatabase,
   PACT_BROKER_DATABASE,
-  probeDocker,
   startPactBrokerDatabase,
 } from './harness.ts';
-
-const dockerAvailable = await probeDocker();
 
 /** 14 bảng của migration `0001` — thêm bảng ở migration mới là thêm ở đây. */
 const EXPECTED_TABLES = [
@@ -49,7 +46,7 @@ async function tableNames(db: PactBrokerDatabase): Promise<string[]> {
   }
 }
 
-describe.skipIf(!dockerAvailable)(`${PACT_BROKER_DATABASE} migrations on a real PostgreSQL`, () => {
+describe(`${PACT_BROKER_DATABASE} migrations on a real PostgreSQL`, () => {
   let db: PactBrokerDatabase;
 
   beforeAll(async () => {

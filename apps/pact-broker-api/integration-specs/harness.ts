@@ -1,14 +1,14 @@
 /**
  * Testcontainers + PostgreSQL thật cho integration test của `pact-broker-api`.
  *
- * ⚠️ Docker **không** phải phụ thuộc cứng. Một CI runner không có Docker phải
- * **skip** suite, không được fail — nếu không thì `nx affected -t test` đỏ vì
- * một thứ nó không cài, và người đọc sẽ tưởng schema sai. Vì vậy mọi thứ Docker
- * ở đây đều nằm sau dynamic import và `describe.skipIf` bọc ngoài cùng — cùng
- * luật với harness của `apps/account`.
+ * ⚠️ Docker **là** phụ thuộc cứng của suite này: thiếu Docker thì suite phải ĐỎ,
+ * không được skip - một lần chạy skip với exit 0 che mất việc một suite bắt buộc
+ * chưa hề chạy (06-testing.md §6). Mọi thứ Docker ở đây nằm sau dynamic import,
+ * và quyết định fail được đưa ra qua {@link probeDocker}: probe thất bại là NÉM
+ * từ `globalSetup` trước khi worker nào kịp báo xanh giả. Cùng luật với
+ * `apps/auth/integration-specs/harness.ts` và `apps/account/integration-specs/harness.ts`
+ * — pattern tham chiếu.
  */
-
-import { readdirSync } from 'node:fs';
 
 import { applyAllMigrations } from '../db/apply.mts';
 
@@ -76,16 +76,20 @@ const DOCKER_PROBE_ENV = 'ECOMA_PACT_BROKER_DOCKER_PROBE';
  * PostgreSQL mà test sẽ dùng (một runner thiếu Docker socket vẫn có thể làm
  * `docker info` thoát 0 — probe đó loại được đúng nguy hiểm này).
  *
- * `PACT_BROKER_REQUIRE_DOCKER=1` hoặc `ECOMA_REQUIRE_DOCKER=1` biến skip
- * thành hard failure (CI đặt `ECOMA_REQUIRE_DOCKER=1`).
+ * ⚠️ Probe thất bại là **ném lỗi**, không trả `false`: suite bắt buộc Docker
+ * phải đỏ khi Docker không có — skip với exit 0 không phải kết quả chấp nhận
+ * được (06-testing.md §6). Lỗi nổi từ `globalSetup` làm toàn bộ lần chạy đỏ
+ * trước khi worker nào kịp báo xanh giả.
  */
-export function probeDocker(): Promise<boolean> {
+export function probeDocker(): Promise<void> {
   const flag = process.env[DOCKER_PROBE_ENV];
   if (flag === 'available') {
-    return Promise.resolve(true);
+    return Promise.resolve();
   }
   if (flag === 'unavailable') {
-    return Promise.resolve(false);
+    throw new Error(
+      'Docker is unavailable: PostgreSQL integration suites require a running Docker daemon; refusing to skip.',
+    );
   }
   // Fallback khi chạy ngoài pipeline có globalSetup: probe tại chỗ.
   const cache = globalThis as DockerProbeCache;
@@ -94,10 +98,10 @@ export function probeDocker(): Promise<boolean> {
 }
 
 interface DockerProbeCache {
-  ecomaPactBrokerDockerProbe?: Promise<boolean>;
+  ecomaPactBrokerDockerProbe?: Promise<void>;
 }
 
-async function runDockerProbe(): Promise<boolean> {
+async function runDockerProbe(): Promise<void> {
   let container: { stop(): Promise<unknown> } | undefined;
   let available = false;
   try {
@@ -116,30 +120,11 @@ async function runDockerProbe(): Promise<boolean> {
   }
 
   process.env[DOCKER_PROBE_ENV] = available ? 'available' : 'unavailable';
-  if (available) {
-    return true;
-  }
-
-  const suiteCount = countProbeGuardedSuites();
-  // Output của tooling trên CI → tiếng Anh (AGENTS.md).
-  console.warn(
-    `Docker is unavailable: the ${suiteCount} integration suite(s) guarded by probeDocker will be SKIPPED and this run still exits 0. ` +
-      'Set PACT_BROKER_REQUIRE_DOCKER=1 or ECOMA_REQUIRE_DOCKER=1 to turn the skipped suites into a hard failure.',
-  );
-  const requireDocker =
-    process.env['PACT_BROKER_REQUIRE_DOCKER'] === '1' ||
-    process.env['ECOMA_REQUIRE_DOCKER'] === '1';
-  if (requireDocker) {
+  if (!available) {
     throw new Error(
-      'Docker is required (PACT_BROKER_REQUIRE_DOCKER=1 or ECOMA_REQUIRE_DOCKER=1) but the Docker probe failed; refusing to skip the integration suites.',
+      'Docker is unavailable: PostgreSQL integration suites require a running Docker daemon; refusing to skip.',
     );
   }
-  return false;
-}
-
-/** Đếm spec gọi `probeDocker` để cảnh báo nêu đúng số suite sẽ skip. */
-function countProbeGuardedSuites(): number {
-  return readdirSync(import.meta.dirname).filter((entry) => entry.endsWith('.spec.ts')).length;
 }
 
 /**

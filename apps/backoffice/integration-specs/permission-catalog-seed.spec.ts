@@ -19,20 +19,14 @@
  * so sánh element-by-element, không phải so số lượng) và kiểm tra cả đường
  * tự phục hồi: xoá một row seed rồi `applyMigrations()` ⇒ row đó phải quay lại.
  *
- * ⚠️ Docker **không** phải phụ thuộc cứng: không có Docker thì suite skip
- * (như `harness.ts` chốt) — `ECOMA_REQUIRE_DOCKER=1` biến skip thành lỗi thật.
+ * ⚠️ Docker là phụ thuộc cứng: probe Docker ở `harness.ts` (qua `globalSetup`)
+ * ném lỗi khi vắng Docker, làm **toàn bộ** lần chạy đỏ thay vì skip — chính
+ * sách fail-loud của 06-testing.md §6.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import {
-  type BackofficeDatabase,
-  applyMigrations,
-  probeDocker,
-  startBackofficeDatabase,
-} from './harness';
-
-const dockerAvailable = await probeDocker();
+import { type BackofficeDatabase, applyMigrations, startBackofficeDatabase } from './harness';
 
 const EXPECTED_SEEDED = [
   { id: 'permission.read', domain: 'permission', action: 'read', status: 'active' },
@@ -61,7 +55,7 @@ async function readCatalog(db: BackofficeDatabase): Promise<CatalogRow[]> {
   }
 }
 
-describe.skipIf(!dockerAvailable)('permission catalog seed (0003) on a real PostgreSQL', () => {
+describe('permission catalog seed (0003) on a real PostgreSQL', () => {
   let db: BackofficeDatabase;
 
   beforeAll(async () => {

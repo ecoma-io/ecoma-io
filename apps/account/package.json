@@ -51,7 +51,7 @@
         ],
         "options": {
           "cwd": "apps/account",
-          "command": "npx vitest run integration-specs"
+          "command": "npx vitest run -c vitest.integration.config.mts integration-specs"
         }
       },
       "typecheck-db": {

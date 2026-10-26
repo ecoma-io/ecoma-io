@@ -11,14 +11,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { buildApp, closeCachedPool } from '../src/main';
 import { samplePact } from '../tests/fixtures/pact';
-import {
-  type PactBrokerDatabase,
-  PACT_BROKER_DATABASE,
-  probeDocker,
-  startPactBrokerDatabase,
-} from './harness';
-
-const dockerAvailable = await probeDocker();
+import { type PactBrokerDatabase, PACT_BROKER_DATABASE, startPactBrokerDatabase } from './harness';
 
 /** Host URL mà `app.request` cần để Hono parse path/query đúng. */
 const BASE = 'https://broker.test';
@@ -35,7 +28,7 @@ const stripRequestId = (b: unknown): unknown => {
   return rest;
 };
 
-describe.skipIf(!dockerAvailable)(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
+describe(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
   let db: PactBrokerDatabase;
   let app: ReturnType<typeof buildApp>;
   let workerEnv: Record<string, unknown>;

@@ -108,15 +108,10 @@ export default defineConfig(() => ({
     // `useAsyncState()` gọi tên trần (`useRoute`, `useHead`, `onMounted`) lúc `setup()`,
     // và global phải có mặt trước lần render đầu.
     setupFiles: ['./tests/setup.ts'],
-    // Probe Docker một lần mỗi lần chạy (trước khi worker khởi động); xem
-    // `integration-specs/docker-probe.global-setup.ts`. Không có đó thì mỗi spec
-    // file integration tự probe — mỗi probe là một container PostgreSQL thật.
-    // `jsdom` + `setupFiles` ở trên chạy như cũ: `globalSetup` chỉ chạy một lần
-    // ở main process, không đụng môi trường test của unit test.
-    globalSetup: ['./integration-specs/docker-probe.global-setup.ts'],
-    include: [
-      '{src,app,tests,server,integration-specs}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}',
-    ],
+    // ⚠️ Suite integration nằm ở `integration-specs/` và chạy qua target
+    // `test-integration` với config riêng (`vitest.integration.config.mts`) —
+    // nhét nó vào include ở đây là chạy suite đó hai lần (06-testing.md §4).
+    include: ['{src,app,tests,server}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     reporters: ['default'],
     coverage: {
       reportsDirectory: './test-output/vitest/coverage',

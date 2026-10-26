@@ -13,8 +13,10 @@
  * trước khi bất kỳ DDL nào được apply.
  *
  * ⚠️ Test này **không** cần Docker: nó gọi `listMigrations` trên một thư mục
- * tạm, không chạm database. Nên nó không nằm sau `probeDocker` — một suite
- * skip vì hạ tầng thiếu không nên là suite im lặng không kiểm gì.
+ * tạm, không chạm database. Nó vẫn nằm trong `integration-specs/` và chạy dưới
+ * `test-integration` (di chuyển vị trí là việc của PR resplit theo #298), nên
+ * lần chạy của nó vẫn trả phí một probe Docker từ `globalSetup` —probe hỏng là
+ * toàn bộ lần chạy đỏ, đúng chính sách fail-loud dù suite này không đụng DB.
  */
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';

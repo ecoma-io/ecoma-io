@@ -223,6 +223,8 @@ afterAll(async () => {
 });
 
 describe('OIDC Discovery — the advertised authorization_endpoint is the entrypoint that works', () => {
+  // Timeout 60s thay vì mặc định 5s: test này là một flow OIDC đầy đủ qua
+  // provider thật + PostgreSQL thật — 5s là deadline sai cho hình thái test này.
   it('drives the authorization flow through the endpoint taken from the discovery document', async () => {
     // ── Dựng: khoá ES256 thật + client thật + provider thật ──────────────
     const { privateKey } = await generateKeyPair('ES256', { extractable: true });
@@ -370,7 +372,7 @@ describe('OIDC Discovery — the advertised authorization_endpoint is the entryp
          WHERE kind = 'Interaction' AND payload->'params'->>'ecoma_x' = ${handleX}
       `;
     expect(interactionRows).toHaveLength(1);
-  });
+  }, 60_000);
 
   it('the RFC 8414 document advertises the same entrypoint as the OIDC one', async () => {
     // ⚠️ Hai well-known dùng CHUNG một document (`discoveryDocument`), nên
