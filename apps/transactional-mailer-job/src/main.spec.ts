@@ -278,6 +278,44 @@ describe('queue handler: command → lookup → provider → persist → report 
     }
   });
 
+  it('defers nothing past its returned promise: a throwing waitUntil is never called and D1 is visible immediately', async () => {
+    // Invariant 12 (`docs/overview/01-architecture.md`): không correctness write nào được
+    // đẩy qua `ctx.waitUntil()` — WK3: `waitUntil` chỉ kéo dài 30s sau response và bị cancel
+    // không retry, nên một write ở đó là write có thể mất. Handler hiện tại `void ctx`;
+    // ExecutionContext bẫy dưới ném thay vì ghi nhận, nên nếu ai thêm lại một `waitUntil`
+    // (dù cho alert hay cho correctness) thì test đỏ ngay, và nếu chỉ chạy đúng thì mọi
+    // write phải nằm trong promise trả về — job row bên dưới đọc được ngay sau `await`.
+    const delivery: StubDelivery = {
+      deliveryId: 'dlv-invariant12',
+      messageId: 'msg-invariant12',
+      status: 'queued',
+      dispatchGeneration: 1,
+    };
+    const stub = stubBinding(new Map([[delivery.deliveryId, delivery]]));
+    const trapCtx = {
+      waitUntil: (_promise: Promise<unknown>): void => {
+        throw new Error('waitUntil called on the queue path - invariant 12 violation');
+      },
+    };
+
+    const message = fakeMessage(
+      'qm-invariant12-1',
+      JSON.stringify({ version: 1, delivery_id: delivery.deliveryId }),
+    );
+    await workerMj.queue(
+      { queue: undefined, messages: [message] },
+      makeMjEnv(db, stub) as never,
+      trapCtx as never,
+    );
+
+    expect(message.acked()).toBe(true);
+    // correctness write của pipeline (persist sent + report inline) đã thấy ngay sau khi
+    // promise trả về — không phải thứ gì đó đang treo ở ExecutionContext.
+    const job = await repo.loadJobByDeliveryId(delivery.deliveryId);
+    expect(job?.status).toBe('sent');
+    expect(job?.outcomeReportState).toBe('reported');
+  });
+
   it('acks a valid command, persists sent with the fake provider id, and reports outcome inline', async () => {
     const delivery: StubDelivery = {
       deliveryId: 'dlv-happy',
@@ -612,6 +650,54 @@ describe('scheduled handler: report sweep closes a pending report', () => {
     );
     const rows = await db.prepare<{ n: number }>('SELECT COUNT(*) AS n FROM mail_jobs').all();
     expect(rows.results?.[0]?.n).toBe(0);
+  });
+
+  // Invariant 12 — scheduled cũng khai `ctx` nhưng chỉ để `void ctx`: mọi việc của sweep
+  // (report pending cho control plane) là correctness write và phải nằm trong promise trả
+  // về. Bẫy `waitUntil` ném giữ pin đó: một lời gọi duy nhất là đỏ.
+  it('scheduled handler completes all sweeps inside its returned promise with a throwing waitUntil untouched', async () => {
+    const delivery: StubDelivery = {
+      deliveryId: 'dlv-invariant12-cron',
+      messageId: 'msg-invariant12-cron',
+      status: 'queued',
+      dispatchGeneration: 1,
+    };
+    const stub = stubBinding(new Map([[delivery.deliveryId, delivery]]));
+
+    // Seed một job terminal + report pending: report sweep là correctness write thật của
+    // cron — nếu nó bị đẩy qua `waitUntil` thì bẫy ném, nếu nằm trong promise thì row
+    // dưới đã `reported` ngay sau `await`.
+    const message = fakeMessage(
+      'qm-invariant12-cron',
+      JSON.stringify({ version: 1, delivery_id: delivery.deliveryId }),
+    );
+    await workerMj.queue(
+      { queue: undefined, messages: [message] },
+      makeMjEnv(db, stub) as never,
+      executionContext,
+    );
+    expect((await repo.loadJobByDeliveryId(delivery.deliveryId))?.status).toBe('sent');
+    await db
+      .prepare(
+        `UPDATE mail_jobs SET outcome_report_state = 'pending', report_attempts = 0, ` +
+          `report_lease_owner = NULL, report_lease_expires_at = NULL WHERE delivery_id = ?`,
+      )
+      .bind(delivery.deliveryId)
+      .run();
+
+    const trapCtx = {
+      waitUntil: (_promise: Promise<unknown>): void => {
+        throw new Error('waitUntil called on the scheduled path - invariant 12 violation');
+      },
+    };
+    await workerMj.scheduled(
+      { cron: '*/5 * * * *' },
+      makeMjEnv(db, stub) as never,
+      trapCtx as never,
+    );
+
+    const job = await repo.loadJobByDeliveryId(delivery.deliveryId);
+    expect(job?.outcomeReportState).toBe('reported');
   });
 });
 

@@ -218,6 +218,15 @@ describe('worker entrypoint contract', () => {
     expect(Object.keys(defaultWorker).toSorted()).toEqual(['fetch', 'queue']);
     expect('scheduled' in defaultWorker).toBe(false);
   });
+
+  // Invariant 12 (`docs/overview/01-architecture.md`): không correctness write nào được
+  // đẩy qua `ctx.waitUntil()`. Nửa cấu trúc của pin: `handleQueueBatch` nhận đúng hai tham
+  // số bắt buộc (env, batch) — không có tham số thứ ba thì handler không có đường nào gọi
+  // `waitUntil`. Nửa hành vi (adapter `queue.fetch` bỏ ctx) được ghim ở suite
+  // `handleQueueBatch` dưới bằng một ExecutionContext bẫy.
+  it('pins handleQueueBatch to exactly (env, batch), leaving no execution context to defer writes through', () => {
+    expect(handleQueueBatch.length).toBe(2);
+  });
 });
 
 describe('handleFetch route boundary', () => {
@@ -488,6 +497,34 @@ describe('handleQueueBatch', () => {
       .bind('del_nosecret')
       .first<{ readonly outcome: string }>();
     expect(attempt?.outcome).toBe('contract_violation');
+  });
+
+  // Invariant 12 — nửa hành vi của pin: adapter `queue.fetch` của platform nhận
+  // `(batch, env, ctx)` nhưng **đọc đúng hai** phần tử đầu; `handleQueueBatch` cũng không có
+  // tham số ctx (ghim cấu trúc ở suite `worker entrypoint contract`). Nếu ai thêm lại một
+  // correctness write qua `ctx.waitUntil()` ở đường này, ExecutionContext bẫy ở đây sẽ làm
+  // test đỏ ngay — đúng luồng platform thật, không phải đường unit riêng.
+  it('defers nothing past its returned promise, and never touches a waitUntil the platform hands it', async () => {
+    // ExecutionContext bẫy: một correctness write được đẩy qua `waitUntil` là mất bền vững
+    // (04-platform-facts WK3), nên ở đây `waitUntil` **ném** thay vì chỉ ghi nhận — một lời
+    // gọi duy nhất đủ làm cả pipeline chết chứ không nuốt lặng.
+    const trapCtx = {
+      waitUntil: (_promise: Promise<unknown>): void => {
+        throw new Error('waitUntil called on the queue path - invariant 12 violation');
+      },
+    };
+
+    const msg = message(envelopeFor('del_invariant12'));
+    await queue.fetch({ messages: [msg] }, baseEnv(), trapCtx);
+
+    expect(msg.actions).toEqual(['ack']);
+    // Sau khi promise trả về, correctness writes phải đã thấy được trên D1 ngay — không
+    // phải "đang chờ ở waitUntil".
+    const row = await harness.db
+      .prepare(`SELECT processed FROM push_jobs WHERE delivery_id = ?`)
+      .bind('del_invariant12')
+      .first<{ readonly processed: number }>();
+    expect(row?.processed).toBe(1);
   });
 
   it('acks a redelivery of an already-processed delivery without claiming or sending', async () => {
