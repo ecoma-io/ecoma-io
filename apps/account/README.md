@@ -43,12 +43,12 @@ Dev server dùng `wrangler.jsonc` cho binding. Vì `db-account` **chưa được
 Tất cả qua `runtimeConfig` của Nuxt, tức convention `NUXT_*`. Không có chỗ nào trong
 code tự đọc `process.env` cho config.
 
-| Biến                              | Bắt buộc | Mặc định                           | Ý nghĩa                                                                                                                                                   |
-| --------------------------------- | -------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NUXT_INTERNAL_HMAC_SECRET`       | **có**   | không có                           | Secret HMAC cho internal contract. Tối thiểu 32 ký tự.                                                                                                    |
-| `NUXT_INTERNAL_AUTH_SKEW_SECONDS` | không    | `300` (trong `identity-contracts`) | Cửa sổ skew của envelope HMAC, tính bằng giây.                                                                                                            |
-| `NUXT_OTP_HMAC_SECRET`            | **có**   | không có                           | Secret HMAC cho digest mã OTP (`otp_challenges.code_digest`). Tối thiểu 32 ký tự.                                                                         |
-| `NUXT_MAIL_SERVICE_URL`           | không    | rỗng                               | Origin http(s) của `transactional-mail` cho gửi mail OTP. Rỗng = chưa cấu hình mail: luồng OTP fail-closed ở request (503), còn lại app chạy bình thường. |
+| Biến                              | Bắt buộc | Mặc định                                | Ý nghĩa                                                                                                                                                   |
+| --------------------------------- | -------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NUXT_INTERNAL_HMAC_SECRET`       | **có**   | không có                                | Secret HMAC cho internal contract. Tối thiểu 32 ký tự.                                                                                                    |
+| `NUXT_INTERNAL_AUTH_SKEW_SECONDS` | không    | `300` (trong `internal-auth-contracts`) | Cửa sổ skew của envelope HMAC, tính bằng giây.                                                                                                            |
+| `NUXT_OTP_HMAC_SECRET`            | **có**   | không có                                | Secret HMAC cho digest mã OTP (`otp_challenges.code_digest`). Tối thiểu 32 ký tự.                                                                         |
+| `NUXT_MAIL_SERVICE_URL`           | không    | rỗng                                    | Origin http(s) của `transactional-mail` cho gửi mail OTP. Rỗng = chưa cấu hình mail: luồng OTP fail-closed ở request (503), còn lại app chạy bình thường. |
 
 ⚠️ Worker **không khởi động được** nếu thiếu secret hoặc secret quá ngắn
 (`server/plugins/config.ts` kiểm lúc boot và `throw`). Cố tình: internal HMAC với

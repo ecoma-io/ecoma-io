@@ -179,7 +179,7 @@ rules:
       # 32 byte đó không chứa bit nào của khóa, nên không thể đảo ngược về secret —
       # đó chính là tính chất khiến HMAC dùng được cho signature và token.
       #
-      # Không có sanitizer này, `signCanonical()` (identity-contracts) bị flag vì
+      # Không có sanitizer này, `signCanonical()` (internal-auth-contracts) bị flag vì
       # taint đi `secret` → `importKey` → `sign` → `return signature`: đó là false
       # positive, và FP đúng như vậy là kiểu khiến rule dần biến thành tiếng ồn
       # rồi bị bỏ qua. `crypto.subtle.digest` được miễn tương tự: SHA-256 không
@@ -227,7 +227,7 @@ rules:
 
       # Hàm KÝ request nội bộ canonical: ranh giới một chiều ở chiều ngược lại so với
       # `crypto.subtle.sign`. `signRequest({secret, ...})` trả timestamp, nonce và
-      # `v1=<HMAC-SHA-256 hex>` (`libs/identity-contracts`) — không trường nào mang
+      # `v1=<HMAC-SHA-256 hex>` (`libs/internal-auth-contracts`) — không trường nào mang
       # lại secret: chữ ký là keyed hash, không đảo ngược được về khóa. Hình dạng
       # `new Headers(...)` KHÔNG được `pattern-not` `return $CALLEE({..., ...})` ở
       # nhánh sink loại (New khác Call), nên nó rơi vào nhánh `return $VALUE` — dù đây

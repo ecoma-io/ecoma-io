@@ -259,7 +259,7 @@ Worker MUST authenticate chính nó khi gọi private interface của `transacti
 
 - Mọi request tới private interface MUST được ký theo canonical contract; thiếu/sai → control plane trả `401` và worker coi là thất bại, **không** retry mù.
 - Worker MUST NOT coi Service Binding, `X-ECOMA-PRINCIPAL`, hay header tự khai nào là authentication.
-- Worker MUST NOT định nghĩa một protocol cạnh tranh. Kể từ khi PR #197 merge, `main` **chính là** bản canonical — `@ecoma-io/identity-contracts` và `@ecoma-io/identity-auth-contracts` là cùng một bản cài đặt; worker ký qua một trong hai đường import đó, đúng `PROTOCOL_ID` và length-prefix **byte UTF-8** (`transactional-mail/01-architecture.md` §7.4).
+- Worker MUST NOT định nghĩa một protocol cạnh tranh. Kể từ khi PR #197 merge, `main` **chính là** bản canonical — `@ecoma-io/internal-auth-contracts` là bản cài đặt duy nhất; worker ký qua đường import đó, đúng `PROTOCOL_ID` và length-prefix **byte UTF-8** (`transactional-mail/01-architecture.md` §7.4).
 - Credential ký là secret **riêng của worker**, tách khỏi provider credential và tách khỏi khoá HMAC quarantine record (`03-operations.md` §3.1).
 - **Release-blocked** cho tới khi receiver implement xong registry + kho nonce + middleware **và worker có code ký theo contract** (`transactional-mail/01-architecture.md` §7.4) — contract đã merge **không** tự động qua gate này; khi đó MUST đối chiếu khớp các hằng ở `transactional-mail/01-architecture.md` §7.4 trước khi release.
 

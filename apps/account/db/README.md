@@ -116,9 +116,9 @@ nguyên ACL. Đó chính là lý do nó nằm ở provisioning chứ không nằ
 
 ## Chặn chéo — lớp enforce thật của ranh giới database
 
-⚠️ **Tag Nx không chặn được ranh giới database.** Hai app hiện đang dùng chung một
-`scope:identity`; khi tách bounded context, mỗi app sẽ có scope riêng — nhưng dù một
-scope chung hay hai scope riêng, tag chỉ mã hoá graph và **không** chặn được
+⚠️ **Tag Nx không chặn được ranh giới database.** `apps/account` và `apps/auth` là hai
+scope Nx riêng (`scope:account` và `scope:auth` từ khi tách bounded context) — nhưng dù
+một scope chung hay hai scope riêng, tag chỉ mã hoá graph và **không** chặn được
 `apps/account` khai báo binding trỏ `db-auth`. Ranh giới đó là **credential**, không phải tag.
 
 **Phải REVOKE cả `PUBLIC`, không chỉ role.** PostgreSQL cấp `CONNECT` cho `PUBLIC`

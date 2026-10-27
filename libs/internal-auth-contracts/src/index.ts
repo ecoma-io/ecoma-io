@@ -13,8 +13,8 @@
  * — receiver tự suy consumer từ credential đã khớp trong registry của nó. Bất kỳ khái niệm
  * thuộc một bounded context nào lọt vào đây là vi phạm taxonomy `scope:platform`
  * (`docs/overview/05-code-architecture.md`), và `pnpm dx arch-check` chặn consumer
- * `scope:messaging` phụ thuộc contracts của `scope:identity` — đường đi hợp lệ duy nhất
- * cho giao thức này là package platform.
+ * `scope:messaging` phụ thuộc contracts của `scope:account`/`scope:auth` — đường đi
+ * hợp lệ duy nhất cho giao thức này là package platform.
  */
 
 export {

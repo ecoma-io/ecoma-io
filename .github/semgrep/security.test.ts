@@ -248,7 +248,7 @@ export function fpPlainObject() {
 }
 
 // Ranh giới sanitizer: HMAC là phép băm có khóa nên kết quả KHÔNG phải secret.
-// `signCanonical()` trong identity-contracts là hình dạng thật của nhánh này:
+// `signCanonical()` trong internal-auth-contracts là hình dạng thật của nhánh này:
 // secret đi qua `crypto.subtle.sign` rồi chữ ký hex được trả ra. Không có
 // sanitizer thì rule flag đúng cái dòng đó — false positive, và FP kiểu này
 // là thứ khiến rule dần biến thành tiếng ồn rồi bị bỏ qua.
@@ -370,7 +370,7 @@ export async function signInternalForAccountClient(path: string): Promise<Respon
 
 // Ghim `crypto.subtle.digest`: SHA-256 KHÔNG có khóa nên đầu vào không suy ra
 // được từ digest — trả digest ra ngoài không làm lộ `secret`. `hashBody()` trong
-// identity-contracts là hình dạng thật của nhánh này.
+// internal-auth-contracts là hình dạng thật của nhánh này.
 // ok: security-sensitive-value-in-http-response
 export async function hashSecret(): Promise<ArrayBuffer> {
   return crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret));

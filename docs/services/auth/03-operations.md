@@ -93,7 +93,7 @@ Thứ tự provisioning: infrastructure (database + ba role + `REVOKE` chéo) �
 
 ### 3.3 Envelope nội bộ — secret, kho nonce và mã lỗi
 
-Vận hành của envelope HMAC dùng chung với `account`. Giao thức, canonical form và taxonomy lỗi có **một** nguồn sự thật: [`01-architecture.md`](./01-architecture.md) §5.1.8; cài đặt ở `libs/identity-contracts` (`internal-auth.ts`). Mục này chỉ nói phần vận hành.
+Vận hành của envelope HMAC dùng chung với `account`. Giao thức, canonical form và taxonomy lỗi có **một** nguồn sự thật: [`01-architecture.md`](./01-architecture.md) §5.1.8; cài đặt ở `libs/internal-auth-contracts` (`internal-auth.ts`). Mục này chỉ nói phần vận hành.
 
 #### Secret
 
@@ -103,7 +103,7 @@ Vận hành của envelope HMAC dùng chung với `account`. Giao thức, canoni
 | `account`       | Worker Secret `NUXT_INTERNAL_HMAC_SECRET` (Nuxt đổi tên sang convention `NUXT_*`; `nuxt.config.ts` map lại thành `internalHmacSecret`)                                                                                                                      |
 | Skew (tuỳ chọn) | `AUTH_INTERNAL_SKEW_SECONDS` (và `NUXT_INTERNAL_AUTH_SKEW_SECONDS` phía `account`), **chuỗi chữ số thập phân** (số nguyên giây **dương**, `MIN_SKEW_SECONDS` = 1, tối đa `MAX_SKEW_SECONDS` = 3600); bỏ trống thì dùng `DEFAULT_SKEW_SECONDS` (300) của lib |
 
-⚠️ **Skew phải thoả cả hai biên, và hai biên sống ở lib chứ không ở từng service.** `MIN_SKEW_SECONDS` = 1 vì cửa sổ `0` không phải "chặt nhất" mà là hỏng: `now` phía nhận và `timestamp` phía gọi là hai lần đọc đồng hồ khác nhau nên hiệu gần như luôn ≥ 1, tức cửa sổ `0` từ chối gần như mọi envelope hợp lệ. `MAX_SKEW_SECONDS` = 3600 vì skew kéo TTL của nonce theo (`timestamp + skew + buffer`), nên một giá trị gõ sai (`86400`) làm phình bảng `auth.internal_nonces` theo đúng cửa sổ đó. Cả hai service **từ chối giá trị ngoài biên lúc khởi động** (fail lúc boot, không im lặng chạy với mặc định), và cả hai đọc **cùng** hai hằng của `libs/identity-contracts` — trần cục bộ ở một service là chỗ hai phía lệch nhau.
+⚠️ **Skew phải thoả cả hai biên, và hai biên sống ở lib chứ không ở từng service.** `MIN_SKEW_SECONDS` = 1 vì cửa sổ `0` không phải "chặt nhất" mà là hỏng: `now` phía nhận và `timestamp` phía gọi là hai lần đọc đồng hồ khác nhau nên hiệu gần như luôn ≥ 1, tức cửa sổ `0` từ chối gần như mọi envelope hợp lệ. `MAX_SKEW_SECONDS` = 3600 vì skew kéo TTL của nonce theo (`timestamp + skew + buffer`), nên một giá trị gõ sai (`86400`) làm phình bảng `auth.internal_nonces` theo đúng cửa sổ đó. Cả hai service **từ chối giá trị ngoài biên lúc khởi động** (fail lúc boot, không im lặng chạy với mặc định), và cả hai đọc **cùng** hai hằng của `libs/internal-auth-contracts` — trần cục bộ ở một service là chỗ hai phía lệch nhau.
 
 ⚠️ **Hai Worker phải giữ CÙNG một giá trị.** Đây là secret đối xứng, không phải cặp khoá công khai/bí mật: `auth` ký bằng nó thì `account` verify được bằng đúng nó, và ngược lại. Lệch một bên là **mọi** request nội bộ `401` — hỏng đóng, không hỏng mở.
 
@@ -119,7 +119,7 @@ Vận hành của envelope HMAC dùng chung với `account`. Giao thức, canoni
 
 ⚠️ **Slot "previous" là slot "không dùng để ký", không phải slot "khoá cũ".** Trong lúc nạp trước (bước 2 của runbook) nó chứa khoá **mới**; trong lúc overlap (bước 3) nó chứa khoá **cũ**. Không có slot riêng cho "khoá mới chỉ để verify" — một Worker chỉ có **hai** entry registry, và entry `current` **chính là** secret đang ký (`apps/auth/src/config.ts`, `apps/account/server/middleware/internal-auth.ts`).
 
-⚠️ **`kid` là chuỗi 8–16 hex chữ thường** (`/^[0-9a-f]{8,16}$/u` — hằng giao thức ở `libs/identity-contracts`, cả hai service đọc **cùng** một hằng đó). Cả hai Worker **từ chối lúc khởi động** khi `kid` sai hình dạng, khi cặp previous thiếu một nửa, khi `kid` hiện hành trùng `kid` cũ, và khi hai secret trùng **giá trị** (hai `kid` chia một secret làm mất ý nghĩa của selector). Thông báo lỗi **không bao giờ chứa giá trị** `kid` hay secret.
+⚠️ **`kid` là chuỗi 8–16 hex chữ thường** (`/^[0-9a-f]{8,16}$/u` — hằng giao thức ở `libs/internal-auth-contracts`, cả hai service đọc **cùng** một hằng đó). Cả hai Worker **từ chối lúc khởi động** khi `kid` sai hình dạng, khi cặp previous thiếu một nửa, khi `kid` hiện hành trùng `kid` cũ, và khi hai secret trùng **giá trị** (hai `kid` chia một secret làm mất ý nghĩa của selector). Thông báo lỗi **không bao giờ chứa giá trị** `kid` hay secret.
 
 **Runbook — xoay secret không gián đoạn** (giả định `kid` đã bật ở cả hai Worker; xem bước 0):
 

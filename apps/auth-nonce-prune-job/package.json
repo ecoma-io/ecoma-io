@@ -14,7 +14,7 @@
   "nx": {
     "tags": [
       "type:composition",
-      "scope:identity",
+      "scope:auth",
       "runtime:edge"
     ],
     "targets": {

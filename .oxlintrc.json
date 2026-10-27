@@ -324,7 +324,7 @@
               "type:tooling"
             ]
           },
-          // Scope: bounded context (identity, backoffice, llm, ...) được phụ thuộc
+          // Scope: bounded context (account, auth, backoffice, llm, ...) được phụ thuộc
           // trực tiếp hai TẦNG NỀN (shared, platform) — toàn bộ implementation của
           // tầng nền được phép dùng, đúng vai trò foundation layer trong §6.3 docs —
           // và `type:contracts` của scope bất kỳ. Giữa các scope NGANG HÀNG,
@@ -343,9 +343,18 @@
             ]
           },
           {
-            "sourceTag": "scope:identity",
+            "sourceTag": "scope:account",
             "onlyDependOnLibsWithTags": [
-              "scope:identity",
+              "scope:account",
+              "scope:shared",
+              "scope:platform",
+              "type:contracts"
+            ]
+          },
+          {
+            "sourceTag": "scope:auth",
+            "onlyDependOnLibsWithTags": [
+              "scope:auth",
               "scope:shared",
               "scope:platform",
               "type:contracts"

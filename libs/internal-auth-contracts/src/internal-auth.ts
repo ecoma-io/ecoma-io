@@ -17,7 +17,8 @@ export const PROTOCOL_ID = 'ecoma-internal-v1';
  * `transactional-mail`, `transactional-mailer-job`. Giao thức chỉ là cơ chế xác thực
  * request-to-request: nó **không** mang khái niệm của một bounded context nào (không
  * principal, không user, không permission — receiver tự suy consumer từ credential),
- * nên nó thuộc tầng nền `scope:platform`, không thuộc `scope:identity`. Đặt nhầm chỗ
+ * nên nó thuộc tầng nền `scope:platform`, không thuộc `scope:account` hay
+ * `scope:auth`. Đặt nhầm chỗ
  * biến một platform service thành consumer của contracts BC khác — đúng hướng phụ thuộc
  * ngược mà `docs/overview/05-code-architecture.md` cấm.
  *
@@ -37,8 +38,8 @@ export const PROTOCOL_ID = 'ecoma-internal-v1';
  *
  * ⚠️ **File này là nguồn sự thật duy nhất của giao thức.** Trước đây `auth` và
  * `account` ship hai envelope không tương thích (hai đường import của
- * `libs/identity-contracts` và `libs/identity-auth-contracts` trước khi hợp nhất) trùng
- * tên header nhưng
+ * `libs/identity-contracts` và `libs/identity-auth-contracts` — hai lib đã xoá khi hợp
+ * nhất, issue #324) trùng tên header nhưng
  * lệch nhau ở chữ hoa/thường của method, đơn vị của length prefix, đơn vị của timestamp
  * và định dạng nonce — và `auth` hoàn toàn không có kho nonce bền, nên
  * `/internal/session/verified` của nó phát lại được trong cửa sổ skew. Hai bên chỉ test
@@ -372,8 +373,8 @@ const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}
  * `nonce text PRIMARY KEY` to ngoài ý muốn trong kho nonce. Header bị platform giới hạn nên
  * đây không phải lỗ hổng, nhưng không có lý do gì để nhận một nonce dài hơn UUID rất nhiều.
  *
- * Trần này khớp bản `auth` cũ (`libs/identity-auth-contracts` trước khi hợp nhất) để việc hợp
- * nhất không **nới** một ràng buộc đã có.
+ * Trần này khớp bản `auth` cũ (`libs/identity-auth-contracts` trước khi hợp nhất — lib đã
+ * xoá ở issue #324) để việc hợp nhất không **nới** một ràng buộc đã có.
  */
 export const MAX_NONCE_CHARS = 128;
 

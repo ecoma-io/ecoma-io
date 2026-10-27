@@ -173,7 +173,7 @@ Cơ chế nền: `POST /internal/session/verified` là **contract đồng bộ c
 
 #### 5.1.1 Contract `POST /internal/session/verified`
 
-Consumer `account`, provider `auth`, hướng `account → auth` (bảng contract ở §5.1.7). Request body: `{ handle, sub, acr, authn_at, account_session_ref, event_id }` — không mang `client_id`, `redirect_uri`, `scope`, `state`, `nonce`, PKCE challenge. Trường `acr` là ACR URN (`urn:ecoma:acr:*`, mô hình trong [`../account/01-architecture.md`](../account/01-architecture.md) §10); contract cấm theo cấu trúc sáu trường protocol (`FORBIDDEN_SESSION_VERIFIED_FIELDS`, `libs/identity-contracts/src/session-verified.ts`).
+Consumer `account`, provider `auth`, hướng `account → auth` (bảng contract ở §5.1.7). Request body: `{ handle, sub, acr, authn_at, account_session_ref, event_id }` — không mang `client_id`, `redirect_uri`, `scope`, `state`, `nonce`, PKCE challenge. Trường `acr` là ACR URN (`urn:ecoma:acr:*`, mô hình trong [`../account/01-architecture.md`](../account/01-architecture.md) §10); contract cấm theo cấu trúc sáu trường protocol (`FORBIDDEN_SESSION_VERIFIED_FIELDS`, `libs/auth-contracts/src/session-verified.ts`).
 
 ⚠️ **Điều kiện tiên quyết bắt buộc: transaction phải `browser_confirmed`.** Request mang handle chưa qua bước `/authorize/confirm` bị từ chối (`invalid_request` + audit) **trước khi** bất kỳ trường nào khác được đọc — kể cả trước khi tra idempotency record. Đây là chốt chặn duy nhất chống việc attacker chiếm X và đẩy kết quả xác thực bằng session của chính hắn.
 
@@ -550,7 +550,7 @@ Consumer `Browser`, provider `auth`. Đây là endpoint **public** của `auth`,
 
 ### 5.1.8 Envelope nội bộ — một giao thức canonical, chống replay bền vững
 
-Cả bốn contract ở §5.1.7 dùng **một** envelope HMAC duy nhất, và giao thức đó có **một** bản cài đặt: `libs/internal-auth-contracts` (`internal-auth.ts`, `scope:platform` — protocol nền tảng dùng chung giữa các BC, không thuộc riêng `auth` hay `account`), tag `type:contracts` + `runtime:universal` nên import được từ cả `auth` (Workers) lẫn `account` (Nitro). `libs/identity-contracts` và `libs/identity-auth-contracts` **re-export** từ đó, không giữ bản thứ hai. Hai bên test với chính mình thì một bất tương thích không bao giờ đỏ — nên việc chỉ có một bản là điều kiện của tính đúng, không phải chuyện gọn gàng.
+Cả bốn contract ở §5.1.7 dùng **một** envelope HMAC duy nhất, và giao thức đó có **một** bản cài đặt: `libs/internal-auth-contracts` (`internal-auth.ts`, `scope:platform` — protocol nền tảng dùng chung giữa các BC, không thuộc riêng `auth` hay `account`), tag `type:contracts` + `runtime:universal` nên import được từ cả `auth` (Workers) lẫn `account` (Nitro). `libs/account-contracts` và `libs/auth-contracts` **re-export** từ đó, không giữ bản thứ hai. Hai bên test với chính mình thì một bất tương thích không bao giờ đỏ — nên việc chỉ có một bản là điều kiện của tính đúng, không phải chuyện gọn gàng.
 
 #### Định dạng trên đường truyền
 
@@ -593,7 +593,7 @@ Có **hai** chữ "v1" trong envelope này và chúng trả lời hai câu hỏi
 
 #### `kid` — chỉ dẫn chọn khoá, KHÔNG phải trường đã ký
 
-Header `x-ecoma-internal-kid` mang `kid` của khoá đã ký: chuỗi **8–16 hex chữ thường** (`/^[0-9a-f]{8,16}$/u` — hằng giao thức ở `libs/identity-contracts`, mọi service đọc **cùng** một hằng đó). Header này là **tuỳ chọn**: không có nó thì envelope dùng secret hiện hành, đúng như trước khi có `kid`.
+Header `x-ecoma-internal-kid` mang `kid` của khoá đã ký: chuỗi **8–16 hex chữ thường** (`/^[0-9a-f]{8,16}$/u` — hằng giao thức ở `libs/internal-auth-contracts`, mọi service đọc **cùng** một hằng đó). Header này là **tuỳ chọn**: không có nó thì envelope dùng secret hiện hành, đúng như trước khi có `kid`.
 
 ⚠️ **`kid` KHÔNG nằm trong chuỗi canonical, và đây là điều kiện để nó không phải một thay đổi giao thức.** Chữ ký của envelope có `kid` và envelope không `kid` là **giống nhau từng byte** khi dùng cùng secret. Đổi lại, thêm `kid` không phá vector ký cũ, không đòi bump `PROTOCOL_ID`, và không cần dual-accept — hai bên ở hai phiên bản khác nhau vẫn giao tiếp được, chỉ khác ở chỗ envelope có mang `kid` hay không.
 

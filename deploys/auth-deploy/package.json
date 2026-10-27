@@ -13,7 +13,7 @@
     ],
     "tags": [
       "type:deployment",
-      "scope:identity",
+      "scope:auth",
       "runtime:native"
     ],
     "targets": {

@@ -2,7 +2,7 @@
 --
 -- Nguồn: docs/services/transactional-mail/01-architecture.md §7.4;
 --        docs/services/auth/01-architecture.md §5.1.8;
---        libs/identity-contracts/src/internal-auth.ts (`claimNonce`, `assertNonceExpirySeconds`).
+--        libs/internal-auth-contracts/src/internal-auth.ts (`claimNonce`, `assertNonceExpirySeconds`).
 --
 -- ⚠️ Đây là bản D1 của `auth.internal_nonces`
 -- (`apps/auth/migrations/0010_internal_nonces.sql`) và `account.internal_nonces`
