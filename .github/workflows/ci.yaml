@@ -57,12 +57,66 @@ jobs:
     name: unit-test
     runs-on: ubuntu-26.04
     timeout-minutes: 30
-    # PostgreSQL thật cho các suite integration của `apps/account`,
+    # Target `test` chỉ chạy spec colocated unit/component (contract
+    # `docs/overview/06-testing.md` §4); suite app-owned integration chạy ở job
+    # `integration-test` bên dưới. Tách job để hai tầng test chạy song song trên
+    # hai runner thay vì nối tiếp trong cùng một job.
+    steps:
+      - name: Start runner resource monitoring
+        uses: Garbee/runner-resource-usage@5d478275bca9b56badaca884f6e3858085e2ca18 # main HEAD (upstream chưa có tag)
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup Node.js and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+      # Rust toolchain chỉ cài khi workspace có Cargo project — mọi PR JS thuần
+      # không trả phí cài đặt. Version compiler đọc từ `rust-toolchain.toml` ở
+      # workspace root (single source of truth cho cả local và CI, cùng nguồn
+      # với cache key Cargo); rustup directory override giữ local/CI cùng
+      # toolchain.
+      - name: Detect Cargo projects
+        id: cargo-projects
+        run: |
+          if find . -name 'Cargo.toml' -not -path '*/node_modules/*' -not -path './.nx/*' | grep -q .; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "toolchain=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+      - name: Setup Rust toolchain
+        if: steps.cargo-projects.outputs.present == 'true'
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: ${{ steps.cargo-projects.outputs.toolchain }}
+          components: clippy, rustfmt
+      - name: Cache Cargo
+        if: steps.cargo-projects.outputs.present == 'true'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}-
+      - name: Unit test
+        uses: ./.github/actions/run-nx-target
+        with:
+          targets: test
+          affected: ${{ !inputs.force }}
+
+  integration-test:
+    name: integration-test
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    # PostgreSQL thật cho các suite `test-integration` của `apps/account`,
     # `identity-auth-infrastructure` và `apps/auth` đến từ **testcontainers**:
     # mỗi spec file tự dựng một container `postgres:17-alpine`, provision hai role
     # đúng runbook `apps/auth/migrations/README.md` (migrator có DDL, runtime chỉ
     # DML) và apply migration bằng credential migrator thật. Không có service
-    # container hay biến `AUTH_TEST_PG_*` nào ở đây nữa — runner chỉ cần có Docker.
+    # container hay biến `AUTH_TEST_PG_*` nào ở đây — runner chỉ cần có Docker.
     # Password trong harness là của database nhúng ném đi sau mỗi run, không phải
     # credential của môi trường thật; các migration không đọc secret nào.
     steps:
@@ -105,19 +159,11 @@ jobs:
             target
           key: cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}-
-
-      # `test` (colocated unit/component) và `test-integration` (suite app-owned
-      # integration) cùng chạy ở đây và cùng bị gate bởi `affected`: tách include
-      # của config vitest (target `test` không còn nhặt suite app-owned)
-      # mà không thêm target này vào CI là suite integration rời khỏi pipeline
-      # trong im lặng. PostgreSQL thật của suite đến từ testcontainers - runner
-      # chỉ cần có Docker (xem comment job ở trên).
-      - name: Unit test
+      - name: Integration test
         uses: ./.github/actions/run-nx-target
         with:
-          targets: test test-integration
+          targets: test-integration
           affected: ${{ !inputs.force }}
-
   build:
     name: build
     runs-on: ubuntu-26.04
@@ -187,7 +233,7 @@ jobs:
 
   ci-gate:
     name: ci-gate
-    needs: [verify, unit-test, build, e2e]
+    needs: [verify, unit-test, integration-test, build, e2e]
     if: always()
     runs-on: ubuntu-26.04
     timeout-minutes: 5
