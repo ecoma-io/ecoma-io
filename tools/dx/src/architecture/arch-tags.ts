@@ -408,7 +408,8 @@ export const DEPLOYMENT_DIR = 'deploys';
  * tag trên mỗi node của graph thật nên nói được "contract của scope NÀO".
  *
  * Ghi chú lịch sử: trước đây messaging (transactional-mail) import
- * `identity-auth-contracts` của scope identity để dùng protocol HMAC nội bộ —
+ * `identity-auth-contracts` của scope identity (lib đã xoá ở issue #324) để dùng
+ * protocol HMAC nội bộ —
  * protocol đó là tài sản nền tảng, đã được tách về `internal-auth-contracts`
  * (`scope:platform`), và messaging được siết về `{ self, platform }`.
  */

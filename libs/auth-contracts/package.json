@@ -1,5 +1,5 @@
 {
-  "name": "@ecoma-io/identity-contracts",
+  "name": "@ecoma-io/auth-contracts",
   "version": "0.0.1",
   "private": true,
   "type": "module",

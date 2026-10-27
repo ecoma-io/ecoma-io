@@ -1,5 +1,5 @@
 {
-  "name": "@ecoma-io/identity-auth-contracts",
+  "name": "@ecoma-io/account-contracts",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -12,14 +12,13 @@
     }
   },
   "dependencies": {
-    "@ecoma-io/identity-contracts": "workspace:*",
     "@ecoma-io/internal-auth-contracts": "workspace:*"
   },
   "nx": {
     "tags": [
       "type:contracts",
       "scope:identity",
-      "runtime:edge"
+      "runtime:universal"
     ]
   }
 }

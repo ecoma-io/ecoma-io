@@ -39,7 +39,7 @@ import {
   createNonce,
   signRequest,
   verifyRequest,
-} from '@ecoma-io/identity-auth-contracts';
+} from '@ecoma-io/auth-contracts';
 import { createPostgresClient } from '@ecoma-io/identity-auth-infrastructure';
 import { startAuthDatabase, type AuthDatabase } from '../tests/integrations/harness.ts';
 

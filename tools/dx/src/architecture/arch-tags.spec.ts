@@ -536,9 +536,11 @@ async function directEdgeViolations(sourceTags: string[], targetTags: string[]):
 describe('validateContractEdgeOwnership', () => {
   it('blocks a messaging dependency on another business context contracts', () => {
     // Hình regression thật: transactional-mail từng import identity-auth-contracts
-    // (scope:identity) để dùng protocol HMAC nội bộ — chéo BC qua wildcard
+    // (scope:identity; lib đã xoá ở issue #324) để dùng protocol HMAC nội bộ — chéo BC
+    // qua wildcard
     // `type:contracts` của allowlist lint (OR-match theo tag, không nhìn scope
-    // của target). Edge này phải bị bắt ở mức graph.
+    // của target). Edge này phải bị bắt ở mức graph. Tên project trong fixture chỉ là
+    // định danh tổng hợp — không cần khớp một project thật trên đĩa.
     const state: ArchWorkspaceState = {
       projects: new Map([
         [messagingApp(['identity-auth-contracts']).name, messagingApp(['identity-auth-contracts'])],
@@ -736,6 +738,8 @@ describe('validateDeploymentGraph', () => {
   it('does not report a cycle for edges that leave the deployment subgraph', () => {
     // Edge deployment → contracts không tạo được chu trình với node deployment
     // khác; lọc hai đầu không được xoá lỗi thật cũng không được sinh báo giả.
+    // `identity-contracts` là tên tổng hợp của fixture, không phải project thật
+    // (project thật đã tách thành account-contracts/auth-contracts ở issue #324).
     const contracts = node('identity-contracts', [
       'scope:identity',
       'type:contracts',
@@ -915,7 +919,8 @@ describe('allowlists sync with .oxlintrc.json', () => {
    * `messaging` KHÔNG còn thuộc nhóm mặc định: nó có chính sách contract-edge
    * riêng (chỉ self + platform — xem `validateContractEdgeOwnership` và constraint
    * `scope:messaging` đã bỏ wildcard `type:contracts`), sau khi transactional-mail
-   * từng import `identity-auth-contracts` chéo BC qua chính wildcard đó.
+   * từng import `identity-auth-contracts` (lib đã xoá ở issue #324) chéo BC qua
+   * chính wildcard đó.
    */
   const defaultPolicyContexts = KNOWN_SCOPES.filter(
     (s) => !['shared', 'platform', 'local', 'public', 'messaging'].includes(s),

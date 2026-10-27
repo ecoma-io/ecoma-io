@@ -400,15 +400,18 @@ importers:
 
   apps/account:
     dependencies:
-      '@ecoma-io/identity-auth-contracts':
+      '@ecoma-io/account-contracts':
         specifier: workspace:*
-        version: link:../../libs/identity-auth-contracts
-      '@ecoma-io/identity-contracts':
+        version: link:../../libs/account-contracts
+      '@ecoma-io/auth-contracts':
         specifier: workspace:*
-        version: link:../../libs/identity-contracts
+        version: link:../../libs/auth-contracts
       '@ecoma-io/identity-domain':
         specifier: workspace:*
         version: link:../../libs/identity-domain
+      '@ecoma-io/internal-auth-contracts':
+        specifier: workspace:*
+        version: link:../../libs/internal-auth-contracts
       '@ecoma-io/transactional-mail-contracts':
         specifier: workspace:*
         version: link:../../libs/transactional-mail-contracts
@@ -431,21 +434,21 @@ importers:
 
   apps/auth:
     dependencies:
+      '@ecoma-io/account-contracts':
+        specifier: workspace:*
+        version: link:../../libs/account-contracts
+      '@ecoma-io/auth-contracts':
+        specifier: workspace:*
+        version: link:../../libs/auth-contracts
       '@ecoma-io/identity-auth-application':
         specifier: workspace:*
         version: link:../../libs/identity-auth-application
-      '@ecoma-io/identity-auth-contracts':
-        specifier: workspace:*
-        version: link:../../libs/identity-auth-contracts
       '@ecoma-io/identity-auth-domain':
         specifier: workspace:*
         version: link:../../libs/identity-auth-domain
       '@ecoma-io/identity-auth-infrastructure':
         specifier: workspace:*
         version: link:../../libs/identity-auth-infrastructure
-      '@ecoma-io/identity-contracts':
-        specifier: workspace:*
-        version: link:../../libs/identity-contracts
       oidc-provider:
         specifier: 9.13.0
         version: 9.13.0(supports-color@10.2.2)
@@ -654,6 +657,18 @@ importers:
 
   deploys/web-push-notification-job-deploy: {}
 
+  libs/account-contracts:
+    dependencies:
+      '@ecoma-io/internal-auth-contracts':
+        specifier: workspace:*
+        version: link:../internal-auth-contracts
+
+  libs/auth-contracts:
+    dependencies:
+      '@ecoma-io/internal-auth-contracts':
+        specifier: workspace:*
+        version: link:../internal-auth-contracts
+
   libs/backoffice-application:
     dependencies:
       '@ecoma-io/backoffice-domain':
@@ -690,24 +705,21 @@ importers:
 
   libs/identity-auth-application:
     dependencies:
-      '@ecoma-io/identity-auth-contracts':
+      '@ecoma-io/account-contracts':
         specifier: workspace:*
-        version: link:../identity-auth-contracts
+        version: link:../account-contracts
+      '@ecoma-io/auth-contracts':
+        specifier: workspace:*
+        version: link:../auth-contracts
       '@ecoma-io/identity-auth-domain':
         specifier: workspace:*
         version: link:../identity-auth-domain
 
-  libs/identity-auth-contracts:
-    dependencies:
-      '@ecoma-io/identity-contracts':
-        specifier: workspace:*
-        version: link:../identity-contracts
-      '@ecoma-io/internal-auth-contracts':
-        specifier: workspace:*
-        version: link:../internal-auth-contracts
-
   libs/identity-auth-domain:
     dependencies:
+      '@ecoma-io/account-contracts':
+        specifier: workspace:*
+        version: link:../account-contracts
       jose:
         specifier: ^6.2.12
         version: 6.2.12
@@ -720,9 +732,9 @@ importers:
       '@ecoma-io/identity-auth-domain':
         specifier: workspace:*
         version: link:../identity-auth-domain
-      '@ecoma-io/identity-contracts':
+      '@ecoma-io/internal-auth-contracts':
         specifier: workspace:*
-        version: link:../identity-contracts
+        version: link:../internal-auth-contracts
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
@@ -733,12 +745,6 @@ importers:
       testcontainers:
         specifier: 12.2.1
         version: 12.2.1(supports-color@10.2.2)
-
-  libs/identity-contracts:
-    dependencies:
-      '@ecoma-io/internal-auth-contracts':
-        specifier: workspace:*
-        version: link:../internal-auth-contracts
 
   libs/identity-domain: {}
 

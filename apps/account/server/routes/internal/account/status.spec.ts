@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { validateAccountStatusResponse } from '@ecoma-io/identity-contracts';
+import { validateAccountStatusResponse } from '@ecoma-io/account-contracts';
 
 import { toContractStatus } from './status.get';
 

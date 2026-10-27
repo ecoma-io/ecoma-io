@@ -7,7 +7,7 @@ import {
   INTERNAL_KID_HEADER,
   signRequest,
   type VerifyRequestInput,
-} from '@ecoma-io/identity-contracts';
+} from '@ecoma-io/internal-auth-contracts';
 
 import internalAuthMiddleware, { makeNonceGuard } from './internal-auth';
 import { withRequestPool } from '../utils/db';
@@ -16,7 +16,7 @@ import { writeLog } from '../utils/logger';
 /**
  * Test middleware internal-auth ở hai điểm nó có thể sai âm thầm.
  *
- * ⚠️ Phần lớn logic xác thực nằm trong `verifyRequest` của `@ecoma-io/identity-contracts`
+ * ⚠️ Phần lớn logic xác thực nằm trong `verifyRequest` của `@ecoma-io/internal-auth-contracts`
  * và **đã** có test ở lib đó. Viết lại nó ở đây là sao chép logic có thể trôi lệch với
  * lib — nên test này chỉ kiểm những gì thuộc **app**: hợp đồng của callback `claimNonce`
  * mà app cấp cho lib, và cách middleware hành xử khi DB chết. Đường đi end-to-end
@@ -80,7 +80,7 @@ describe('makeNonceGuard', () => {
 
   it('matches the widened claimNonce signature of the contract library', async () => {
     // `verifyRequest` gọi `claimNonce(nonce, timestampSeconds)` với timestamp đã qua
-    // kiểm skew (hợp đồng mở rộng trong `libs/identity-contracts`). Gán guard vào
+    // kiểm skew (hợp đồng mở rộng trong `libs/internal-auth-contracts`). Gán guard vào
     // kiểu của lib và gọi với hai tham số: sai kiểu trả về hay sai kiểu tham số
     // (ví dụ `nonce: number`) đỏ lúc typecheck. ⚠️ TypeScript cho phép hàm **ít**
     // tham số gán vào kiểu **nhiều** tham số, nên việc thiếu tham số thứ hai không
@@ -207,7 +207,7 @@ describe('internal-auth middleware when the pool fails', () => {
  *
  * ⚠️ Đây là phần **thuộc app** của hợp đồng `kid`: registry `kid` → secret và cách
  * fail-closed khi `kid` lạ. Phần thuộc lib (hình dạng `kid`, thứ tự kiểm, việc `kid`
- * không nằm trong canonical string) đã có test ở `@ecoma-io/identity-contracts`.
+ * không nằm trong canonical string) đã có test ở `@ecoma-io/internal-auth-contracts`.
  *
  * ⚠️ `withRequestPool` bị mock ở suite này nên **không có DB thật** — `claimNonce`
  * không chạy, và `recordNonce` được giữ bản thật. Cái cần kiểm ở đây là quyết định

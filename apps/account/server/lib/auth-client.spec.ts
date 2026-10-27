@@ -5,7 +5,7 @@
  * Binding được stub bằng một object `fetch` đúng chữ ký — cùng cách `apps/auth`
  * test phía `AccountClient`: Service Binding là biên transport, biên đáng tin
  * duy nhất là HTTP fetch. Chữ ký được kiểm bằng `verifyRequest` **thật** của
- * `@ecoma-io/identity-contracts` với cùng secret — một test chỉ kiểm "có ba
+ * `@ecoma-io/auth-contracts` với cùng secret — một test chỉ kiểm "có ba
  * header nào đó" là không chứng minh được gì.
  */
 
@@ -16,7 +16,7 @@ import {
   DEFAULT_SKEW_SECONDS,
   signRequest,
   verifyRequest,
-} from '@ecoma-io/identity-contracts';
+} from '@ecoma-io/internal-auth-contracts';
 
 import {
   announceSessionVerified,

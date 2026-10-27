@@ -1,11 +1,9 @@
-import {
-  allowsIssuance,
-  type AccountStatus,
-  type ConsentDecision,
-} from '@ecoma-io/identity-auth-contracts';
+import type { AccountStatusResponseValue } from '@ecoma-io/account-contracts';
+import type { ConsentDecision } from '@ecoma-io/auth-contracts';
 import {
   HANDLE_DOMAINS,
   OAuthProtocolError,
+  allowsIssuance,
   assertBrowserConfirmed,
   assertRegisteredRedirectUri,
   assertUsableClient,
@@ -179,7 +177,7 @@ export interface AccountClient {
    * ⚠️ Control point fail-closed. Implementation PHẢI ném khi không gọi được
    * Account — không được trả một giá trị "không rõ" rồi để tầng này tự suy diễn.
    */
-  checkStatus(params: { accountId: string }): Promise<AccountStatus>;
+  checkStatus(params: { accountId: string }): Promise<AccountStatusResponseValue>;
 }
 
 /** Kết quả bắt đầu một giao dịch uỷ quyền. */
@@ -415,7 +413,7 @@ export async function completeAuthorization(params: {
   // `try/catch` biến lỗi đó thành "coi như khoẻ".
   const status = await account.checkStatus({ accountId });
 
-  // ⚠️ Dùng `allowsIssuance` từ contracts, KHÔNG tự so `=== 'active'` ở đây:
+  // ⚠️ Dùng `allowsIssuance` từ domain, KHÔNG tự so `=== 'active'` ở đây:
   // một bản sao của danh sách trắng là một chỗ để hai bên lệch nhau, và lệch
   // theo hướng rộng hơn nghĩa là phát token cho account đáng lẽ bị chặn.
   if (!allowsIssuance(status)) {

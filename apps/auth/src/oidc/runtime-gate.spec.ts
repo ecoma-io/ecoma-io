@@ -104,7 +104,7 @@ const BASE_ENV: Omit<AuthEnv, 'ACCOUNT_SERVICE'> = {
 /**
  * Service binding giả: status do test quyết định; `AccountClient` bên dưới là
  * THẬT — nó ký HMAC từng request và validate response bằng hợp đồng
- * `@ecoma-io/identity-contracts` (`isAccountStatusResponseValue`). Binding là
+ * `@ecoma-io/account-contracts` (`isAccountStatusResponseValue`). Binding là
  * chỗ thay thế duy nhất: cổng thật của isolate vào Account service.
  */
 function envWithStatus(status: string): AuthEnv {

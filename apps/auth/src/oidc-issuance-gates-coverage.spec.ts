@@ -27,7 +27,8 @@ import postgres from 'postgres';
 import { generateKeyPair, exportPKCS8 } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { allowsIssuance, createNonce, signRequest } from '@ecoma-io/identity-auth-contracts';
+import { createNonce, signRequest } from '@ecoma-io/auth-contracts';
+import { allowsIssuance } from '@ecoma-io/identity-auth-domain';
 import {
   createPostgresClient,
   type PostgresClientLike,

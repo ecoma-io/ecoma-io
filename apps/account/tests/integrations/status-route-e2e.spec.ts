@@ -18,7 +18,7 @@
  * - Middleware internal-auth **thật**, không phải một bản `authorized: true`: nếu thay nó
  *   bằng mock thì mọi case dưới đây xanh kể cả khi chữ ký không bao giờ được kiểm — tức
  *   suite mất đúng thứ nó cần chứng minh (task §5(B)).
- * - `signRequest` canonical thật từ `@ecoma-io/identity-contracts`, cùng hàm `auth` dùng.
+ * - `signRequest` canonical thật từ `@ecoma-io/internal-auth-contracts`, cùng hàm `auth` dùng.
  * - `db-account` thật (testcontainers) với credential runtime thật, nên `selectAccountStatus`
  *   và `recordNonce` chạy trên schema thật.
  *
@@ -37,11 +37,8 @@
 import { createApp, createRouter, toWebHandler, type WebHandler } from 'h3';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  createNonce,
-  signRequest,
-  validateAccountStatusResponse,
-} from '@ecoma-io/identity-contracts';
+import { validateAccountStatusResponse } from '@ecoma-io/account-contracts';
+import { createNonce, signRequest } from '@ecoma-io/internal-auth-contracts';
 
 import internalAuthMiddleware from '../../server/middleware/internal-auth';
 import statusRoute from '../../server/routes/internal/account/status.get';

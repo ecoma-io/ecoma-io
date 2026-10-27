@@ -1,5 +1,5 @@
 /**
- * Khai báo global tối thiểu cho hai API WHATWG mà `@ecoma-io/identity-contracts`
+ * Khai báo global tối thiểu cho hai API WHATWG mà `@ecoma-io/internal-auth-contracts`
  * thực dùng: WebCrypto (`crypto.subtle`, `crypto.randomUUID`) và `TextEncoder`.
  *
  * ⚠️ **Vì sao không dùng `@cloudflare/workers-types`:** lib mang tag

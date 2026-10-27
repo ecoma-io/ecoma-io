@@ -23,7 +23,7 @@
 
 import { createError, defineEventHandler, readValidatedBody, setResponseHeader } from 'h3';
 
-import type { ConsentDecision, ConsentDecideRequest } from '@ecoma-io/identity-auth-contracts';
+import type { ConsentDecision, ConsentDecideRequest } from '@ecoma-io/auth-contracts';
 
 import { authServiceBinding, submitConsentDecision } from '../../lib/auth-client';
 import { requireAuthedSession } from '../../lib/bff-session';

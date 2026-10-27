@@ -1,7 +1,7 @@
 import { exportPKCS8, generateKeyPair, importJWK, jwtVerify } from 'jose';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AccountStatus } from '@ecoma-io/identity-auth-contracts';
+import type { AccountStatusResponseValue } from '@ecoma-io/account-contracts';
 import { SigningKeyProvider, hashHandle } from '@ecoma-io/identity-auth-domain';
 
 import {
@@ -432,7 +432,7 @@ describe('completeAuthorization — fail-closed', () => {
     // ⚠️ Thu tu nay co nghia: kiem tra binding phai chay TRUOC moi thu khac,
     // vi neu handle bi trao thi moi field khac cua hang deu khong dang tin.
     const store = makeStore();
-    const checkStatus = vi.fn<() => Promise<AccountStatus>>();
+    const checkStatus = vi.fn<() => Promise<AccountStatusResponseValue>>();
     await expect(
       completeAuthorization({
         store,

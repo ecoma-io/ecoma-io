@@ -2,7 +2,7 @@ import { exportPKCS8, generateKeyPair } from 'jose';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { AuthConfigurationError, SigningKeyProvider } from '@ecoma-io/identity-auth-domain';
-import { DEFAULT_SKEW_SECONDS } from '@ecoma-io/identity-auth-contracts';
+import { DEFAULT_SKEW_SECONDS } from '@ecoma-io/auth-contracts';
 
 import { type AuthEnv, loadAuthConfig, resolveInternalSecret } from './config';
 

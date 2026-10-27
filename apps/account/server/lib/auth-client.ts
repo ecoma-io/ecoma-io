@@ -7,7 +7,7 @@
  * ## mirror của `apps/auth/src/account-client.ts`
  *
  * hướng ngược lại: `auth` gọi `account` qua `AccountClient` ở đó. Cả hai cùng
- * dùng `signRequest` của `@ecoma-io/identity-contracts` — cùng một canonical
+ * dùng `signRequest` của `@ecoma-io/auth-contracts` — cùng một canonical
  * string, cùng một bộ header — nên một thay đổi của protocol bẻ cả hai bên cùng
  * lúc, đúng ý của "một hợp đồng, một lib".
  *
@@ -33,19 +33,17 @@
 import {
   createNonce,
   signRequest,
+  type ConnectedApplicationRevokeRequest,
+  type ConnectedApplicationRevokeResponse,
+  type ConnectedApplicationsRequest,
+  type ConnectedApplicationsResponse,
+  type ConsentContextRequest,
+  type ConsentContextResponse,
+  type ConsentDecideRequest,
+  type ConsentDecideResponse,
   type SessionVerifiedRequest,
   type SessionVerifiedResponse,
-} from '@ecoma-io/identity-contracts';
-import type {
-  ConnectedApplicationRevokeRequest,
-  ConnectedApplicationRevokeResponse,
-  ConnectedApplicationsRequest,
-  ConnectedApplicationsResponse,
-  ConsentContextRequest,
-  ConsentContextResponse,
-  ConsentDecideRequest,
-  ConsentDecideResponse,
-} from '@ecoma-io/identity-auth-contracts';
+} from '@ecoma-io/auth-contracts';
 
 /**
  * Tên binding Worker `auth` chấp nhận theo `wrangler.jsonc` (Workstream E sẽ
@@ -114,7 +112,7 @@ export function authServiceBinding(runtimeConfig: unknown): AuthServiceBinding |
 /**
  * Tạo chuẩn hoá một lỗi back-channel: signature từ method + path (kèm query)
  * + timestamp + nonce + body hash theo canonical contract
- * (`@ecoma-io/identity-contracts`).
+ * (`@ecoma-io/auth-contracts`).
  *
  * Trả về cả headers lẫn body để hai thứ không thể lệch nhau (ký byte nào, gửi
  * byte ấy) — cùng lập luận `signInternalRequest` ở `apps/auth` phía

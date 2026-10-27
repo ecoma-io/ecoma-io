@@ -355,7 +355,8 @@ describe('createNonce', () => {
 describe('hashBody — a non-byte body is refused, not silently hashed as empty', () => {
   it('throws when a string is passed where bytes are required', async () => {
     // ⚠️ Ca này ghim một lỗi thật đã xảy ra: một spec truyền `body: '{"handle":"Y"}'` trực
-    // tiếp. Ở TypeScript đó là lỗi kiểu, nhưng spec của `identity-auth-contracts` không nằm
+    // tiếp. Ở TypeScript đó là lỗi kiểu, nhưng spec của một facade identity-contracts cũ
+    // không nằm
     // trong tsconfig nào nên nó lọt; lúc chạy `new Uint8Array('<chuỗi>')` cho ra mảng RỖNG,
     // nên hai phía cùng băm thân rỗng và ca interop xanh mà không kiểm gì. Ném là fail-closed:
     // không có chữ ký nào được sinh ra trên một thân khác với thân được truyền vào.
@@ -915,8 +916,8 @@ describe('NONCE_TTL_BUFFER_SECONDS — protocol constant, not a knob', () => {
     // đọc nguồn — hai lần nhập luôn khớp còn hai bản chép tay thì không.
     //
     // ⚠️ Đường dẫn neo theo **gốc workspace**, không theo cwd. `readFileSync` giải đường
-    // dẫn tương đối theo cwd, mà `nx run identity-contracts:test` đặt cwd ở
-    // `libs/identity-contracts` trong khi chạy tay từ gốc repo lại xanh — đúng kiểu lỗi
+    // dẫn tương đối theo cwd, mà `nx run <project>:test` đặt cwd ở thư mục project
+    // trong khi chạy tay từ gốc repo lại xanh — đúng kiểu lỗi
     // chỉ đỏ trên CI. `import.meta.dirname` cũng không dùng được ở đây:
     // `tsconfig.spec.json` của project này là `module: nodenext` và `package.json` không
     // khai `"type": "module"`, nên file bị coi là CommonJS và TS báo TS1470.
@@ -977,9 +978,10 @@ describe('INTERNAL_BODY_LIMIT_BYTES — one shared bound for both sides', () => 
     for (const relative of files) {
       const src = readFileSync(join(root, relative), 'utf8');
       expect(src).toContain('INTERNAL_BODY_LIMIT_BYTES');
-      // `auth` import qua facade `@ecoma-io/identity-auth-contracts`, `account` import
-      // thẳng từ lib canonical — cả hai đều là đường tới **một** hằng số.
-      expect(src).toMatch(/@ecoma-io\/identity-(?:auth-)?contracts/u);
+      // Cả `auth` lẫn `account` import thẳng từ lib canonical (`@ecoma-io/auth-contracts`
+      // và `@ecoma-io/internal-auth-contracts` — không còn facade identity nào sau issue
+      // #324) — cả hai đều là đường tới **một** hằng số.
+      expect(src).toMatch(/@ecoma-io\/(?:auth|internal-auth)-contracts/u);
       // Không có literal 64 KiB nào sống lại trong file: nếu có, nó là bản sao thứ hai.
       expect(src).not.toMatch(/64\s*\*\s*1024/u);
     }

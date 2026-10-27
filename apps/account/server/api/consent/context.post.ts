@@ -25,7 +25,7 @@
 
 import { createError, defineEventHandler, readValidatedBody, setResponseHeader } from 'h3';
 
-import type { ConsentContextRequest } from '@ecoma-io/identity-auth-contracts';
+import type { ConsentContextRequest } from '@ecoma-io/auth-contracts';
 
 import { fetchConsentContext, authServiceBinding } from '../../lib/auth-client';
 import { requireAuthedSession } from '../../lib/bff-session';

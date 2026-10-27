@@ -672,7 +672,8 @@ describe('E — other contracts: invalid input, routes, and runtime boundaries',
     // canonical string hoặc tự định dạng chữ ký — chính là giao thức thứ hai.
     expect(source).not.toMatch(/crypto\.subtle/u);
     // Import qua package platform-neutral canonical, không qua barrel re-export của
-    // identity BC — ranh giới BC của issue #203.
+    // identity BC — ranh giới BC của issue #203. (Hai package identity-contracts cũ
+    // đã bị xoá ở issue #324; regex giữ lại để chặn tái phạm với tên bất kỳ.)
     expect(source).toMatch(/from '@ecoma-io\/internal-auth-contracts'/u);
     expect(source).not.toMatch(
       /from '@ecoma-io\/identity-auth-contracts'|from '@ecoma-io\/identity-contracts'/u,

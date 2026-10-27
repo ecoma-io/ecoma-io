@@ -19,7 +19,7 @@
  * không envelope là `401` thống nhất, tức **mọi** mail OTP sẽ chết im lặng nếu
  * adapter gửi không ký.
  *
- * ⚠️ **Ký bằng `signRequest` của `@ecoma-io/identity-contracts`** — lib canonical
+ * ⚠️ **Ký bằng `signRequest` của `@ecoma-io/internal-auth-contracts`** — lib canonical
  * duy nhất, cùng một bản cài đặt mà receiver verify. Tự viết lại HMAC ở đây là
  * tạo một bản envelope thứ hai, lệch nhau ở chữ hoa/thường của method hay đơn vị
  * length-prefix (đúng lệch ship hai envelope khác nhau mà JSDoc của lib nhắc tới)
@@ -47,7 +47,7 @@
  * request đúng contract và xử lý lỗi transport/fail-closed.
  */
 
-import { signRequest } from '@ecoma-io/identity-contracts';
+import { signRequest } from '@ecoma-io/internal-auth-contracts';
 import {
   validatePostMessagesRequest,
   isPostMessagesResponse,

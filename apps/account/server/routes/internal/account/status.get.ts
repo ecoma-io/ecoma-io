@@ -34,7 +34,7 @@ import {
   accountStatusResponse,
   validateAccountStatusResponse,
   type AccountStatusResponseValue,
-} from '@ecoma-io/identity-contracts';
+} from '@ecoma-io/account-contracts';
 import { isAccountStatus, isSubject } from '@ecoma-io/identity-domain';
 
 import { accountHyperdrive } from '../../../utils/bindings';

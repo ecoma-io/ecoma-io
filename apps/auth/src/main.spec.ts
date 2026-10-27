@@ -1,7 +1,7 @@
 import { exportPKCS8, generateKeyPair } from 'jose';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { signRequest } from '@ecoma-io/identity-auth-contracts';
+import { signRequest } from '@ecoma-io/auth-contracts';
 // Namespace import để `vi.spyOn` thay thế `createPostgresClient` theo từng ca
 // (stub tầng driver của readiness probe — xem các ca `account_unreachable` và
 // nhánh 200 trong `describe('GET /ready')`).

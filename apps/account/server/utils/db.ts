@@ -29,7 +29,7 @@
  * còn **code của app** không được import trực tiếp.
  */
 import type { Hyperdrive } from '@cloudflare/workers-types';
-import { assertNonceExpirySeconds } from '@ecoma-io/identity-contracts';
+import { assertNonceExpirySeconds } from '@ecoma-io/internal-auth-contracts';
 import { Pool, type PoolClient, type QueryResultRow } from 'pg';
 
 import { writeLog } from './logger';

@@ -2,9 +2,9 @@ import postgres from 'postgres';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { AccountStatusResponseValue } from '@ecoma-io/identity-contracts';
-import { allowsIssuance } from '@ecoma-io/identity-auth-contracts';
+import type { AccountStatusResponseValue } from '@ecoma-io/account-contracts';
 import {
+  allowsIssuance,
   base64UrlToBytes,
   deriveHandle,
   hashHandle,

@@ -30,7 +30,7 @@ import { join } from 'node:path';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { MAX_NONCE_EXPIRY_EPOCH_SECONDS } from '@ecoma-io/identity-contracts';
+import { MAX_NONCE_EXPIRY_EPOCH_SECONDS } from '@ecoma-io/internal-auth-contracts';
 
 import {
   createPostgresClient,
@@ -177,9 +177,11 @@ async function countNonces(client: ReturnType<typeof createPostgresClient>): Pro
 
 /** `expires_at` theo công thức của protocol: `timestamp + skew + buffer`. */
 function skewAndBuffer(): { skew: number; buffer: number } {
-  // ⚠️ Đọc file nguồn của lib contracts chứ không import: `libs/identity-auth-infrastructure`
-  // không có cạnh phụ thuộc tới `libs/identity-contracts`, và thêm cạnh đó chỉ để
-  // test lấy hai con số là một thay đổi kiến trúc, không phải một test. Cùng cách
+  // ⚠️ Đọc file nguồn của lib contracts chứ không chỉ tin vào bản import được:
+  // lib này đã phụ thuộc `libs/internal-auth-contracts`, nhưng phần của spec cần
+  // **đúng cặp giá trị** mà migration lặp lại (skew + buffer), trong khi import trực
+  // tiếp của file chỉ lấy `MAX_NONCE_EXPIRY_EPOCH_SECONDS` — đọc nguồn cho phép
+  // cross-check đúng hai hằng đó mà không thêm cạnh nào. Cùng cách
   // mà `apps/account/tests/integrations/internal-nonces.spec.ts` cross-check bản lặp
   // lại của hằng này.
   const source = readFileSync(

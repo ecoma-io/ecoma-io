@@ -23,7 +23,7 @@
 
 import { createError, defineEventHandler, setResponseHeader } from 'h3';
 
-import type { ConnectedApplicationGrant } from '@ecoma-io/identity-auth-contracts';
+import type { ConnectedApplicationGrant } from '@ecoma-io/auth-contracts';
 
 import { fetchConnectedApplications, authServiceBinding } from '../../lib/auth-client';
 import { requireAuthedSession } from '../../lib/bff-session';

@@ -90,7 +90,7 @@ describe('internal_nonces', () => {
   });
 
   it('agrees with the nonce TTL buffer the serving tier declares', async () => {
-    // `NONCE_TTL_BUFFER_SECONDS` của lib (`libs/identity-contracts`) là hằng giao thức
+    // `NONCE_TTL_BUFFER_SECONDS` của lib (`libs/internal-auth-contracts`) là hằng giao thức
     // duy nhất; middleware import thẳng nó. `INTERNAL_NONCE_BUFFER_SECONDS` trong
     // `db/migrate.mts` vẫn là một bản lặp lại vì runner là script Node đọc `node:fs` và
     // không thể import lib (kéo `node:fs` vào bundle Worker). Hai nơi đều được kiểm

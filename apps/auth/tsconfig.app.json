@@ -32,16 +32,16 @@
   ],
   "references": [
     {
-      "path": "../../libs/identity-contracts/tsconfig.lib.json"
+      "path": "../../libs/account-contracts/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/auth-contracts/tsconfig.lib.json"
     },
     {
       "path": "../../libs/identity-auth-infrastructure/tsconfig.lib.json"
     },
     {
       "path": "../../libs/identity-auth-domain"
-    },
-    {
-      "path": "../../libs/identity-auth-contracts"
     },
     {
       "path": "../../libs/identity-auth-application"

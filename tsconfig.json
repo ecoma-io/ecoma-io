@@ -7,9 +7,6 @@
       "path": "./libs/identity-auth-application"
     },
     {
-      "path": "./libs/identity-auth-contracts"
-    },
-    {
       "path": "./libs/identity-auth-domain"
     },
     {

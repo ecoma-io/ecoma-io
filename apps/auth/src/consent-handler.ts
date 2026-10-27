@@ -41,10 +41,7 @@
  * `invalid_grant`.
  */
 
-import type {
-  ConsentContextResponse,
-  ConsentDecideResponse,
-} from '@ecoma-io/identity-auth-contracts';
+import type { ConsentContextResponse, ConsentDecideResponse } from '@ecoma-io/auth-contracts';
 import {
   HANDLE_DOMAINS,
   assessRiskLevel,

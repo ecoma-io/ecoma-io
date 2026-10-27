@@ -23,7 +23,7 @@
 
 import { createError, getCookie, getHeader, type H3Event } from 'h3';
 
-import { ACR_URN_VALUES, type AcrUrn } from '@ecoma-io/identity-contracts';
+import { ACR_URN_VALUES, type AcrUrn } from '@ecoma-io/auth-contracts';
 
 import { accountHyperdrive } from '../utils/bindings';
 import { withRequestPool } from '../utils/db';
