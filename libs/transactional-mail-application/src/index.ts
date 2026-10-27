@@ -170,3 +170,6 @@ export {
   type RunNoncePruneConfig,
   runNoncePrune,
 } from './mail-nonce-prune';
+
+/** SR-001 — authorization theo template: verdict default-deny theo allowlist của principal. */
+export { type IsTemplateAuthorizedResult, isTemplateAuthorized } from './is-template-authorized';

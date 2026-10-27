@@ -171,8 +171,9 @@ describe('dependency boundary', () => {
         './internal-nonce-store',
         './mail-rate-limit-store',
         './mail-retention-queries',
-        // Use-case orchestration (FR-001/002/003/005/007) — cùng lib, mọi I/O qua port ở trên.
+        // Use-case orchestration (FR-001/002/003/005/007, SR-001) — cùng lib, mọi I/O qua port ở trên.
         './create-mail-message',
+        './is-template-authorized',
         './jcs',
         './mail-nonce-prune',
         './mail-render',
@@ -258,6 +259,8 @@ describe('dependency boundary', () => {
         'runRetentionCycle',
         // FR-005 — nonce prune
         'runNoncePrune',
+        // SR-001 — is-template-authorized
+        'isTemplateAuthorized',
       ].toSorted(),
     );
   });
