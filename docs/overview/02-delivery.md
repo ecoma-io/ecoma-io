@@ -847,7 +847,7 @@ contract); trạng thái hiện thực của từng target trong cây code đư�
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | Unit/domain                   | Vitest                                                                                                                                         | PR                                                                           |
 | Port conformance              | Miniflare + Testcontainers (PostgreSQL + TimescaleDB)                                                                                          | PR                                                                           |
-| Worker integration            | `vitest-pool-workers`                                                                                                                          | PR                                                                           |
+| Worker integration            | Vitest + wrangler `getPlatformProxy` (D1) / testcontainers (PostgreSQL)                                                                        | PR                                                                           |
 | `llm-api` integration/e2e     | CI runner + mock upstream                                                                                                                      | PR (khi affected)                                                            |
 | API contract (nội bộ)         | Pact                                                                                                                                           | PR                                                                           |
 | Public API                    | OpenAPI + `oasdiff` + SDK conformance                                                                                                          | PR                                                                           |
@@ -862,6 +862,12 @@ contract); trạng thái hiện thực của từng target trong cây code đư�
 Ba loại kiểm trên browser phải không bị lẫn: **browser regression** là UI của một app duy nhất — suite app-owned (không colocated) thuộc `apps/<app>/tests/`, chạy qua target `test-integration` (phân loại theo `06-testing.md`); **system E2E** là kiểm liên dịch vụ qua runtime/service boundary, ở `system-tests/e2e/` với Nx target `system-test` (phân loại và taxonomy → `06-testing.md`); còn **manual UI preview** là serve-mode data policy khi chạy app bằng tay, không phải test — chính sách → `05-code-architecture.md` §5. Tên target `e2e` do `@nx/playwright/plugin` sinh ra là tên target, không phải tầng phân loại — quy tắc phân loại → `06-testing.md` §4.
 
 Testing architecture (taxonomy test, vị trí unit/contract/E2E test, target contract của từng tầng) → `06-testing.md`.
+
+Harness của tầng Worker integration tuân theo quy tắc tự-dựng-harness của `06-testing.md` §6, và là nơi minimum bar
+worker reliability (lease, idempotency, retry, DLQ — `06-testing.md` §7) được kiểm với dependency thật; mô phỏng
+Queue/DLQ (retry cạn vào `dead_letter_queue`) nằm ngoài phạm vi các harness này — nếu cần, đòi một quyết định riêng về
+runner mô phỏng Queue. Thiết kế mail quarantine: drain/redrive là năng lực tương lai; bảng `quarantine` được consumer
+ghi và test đọc, không có đường vận hành drain trong thiết kế hiện tại.
 
 ---
 
