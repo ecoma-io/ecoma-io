@@ -18,6 +18,9 @@
   "references": [
     {
       "path": "../../libs/pact-broker-api-domain/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/pact-broker-api-application/tsconfig.lib.json"
     }
   ]
 }

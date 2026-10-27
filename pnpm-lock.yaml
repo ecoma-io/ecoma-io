@@ -536,6 +536,9 @@ importers:
 
   apps/pact-broker-api:
     dependencies:
+      '@ecoma-io/pact-broker-api-application':
+        specifier: workspace:*
+        version: link:../../libs/pact-broker-api-application
       '@ecoma-io/pact-broker-api-domain':
         specifier: workspace:*
         version: link:../../libs/pact-broker-api-domain
@@ -758,6 +761,12 @@ importers:
         version: 8.23.1
 
   libs/internal-auth-contracts: {}
+
+  libs/pact-broker-api-application:
+    dependencies:
+      '@ecoma-io/pact-broker-api-domain':
+        specifier: workspace:*
+        version: link:../pact-broker-api-domain
 
   libs/pact-broker-api-domain:
     dependencies:

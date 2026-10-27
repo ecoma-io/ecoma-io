@@ -28,7 +28,7 @@ import {
 import { createPool, isConnectionTerminatedError } from './db/client';
 import { PgTokenRepo } from './repo/token-repo';
 import { requireMachineToken } from './auth/token-auth';
-import type { TokenRepo } from './auth/token-auth';
+import type { TokenRepo } from '@ecoma-io/pact-broker-api-application';
 import { indexRoutes } from './routes';
 import { pacticipantRoutes } from './routes/pacticipants';
 import { pactRoutes } from './routes/pacts';

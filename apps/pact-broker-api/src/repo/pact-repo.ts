@@ -17,7 +17,7 @@
  *    constrained chọn từ TOÀN BỘ versions (không chỉ latest) rồi lấy mới
  *    nhất còn khớp per consumer.
  */
-import { sha256Hex } from '../auth/hashing';
+import { sha256Hex } from '@ecoma-io/pact-broker-api-application';
 import type { Pool, PoolClient } from 'pg';
 import { PgVersionRepo, type PacticipantRecord, type VersionRecord } from './version-repo';
 
