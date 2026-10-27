@@ -112,7 +112,7 @@ export function authServiceBinding(runtimeConfig: unknown): AuthServiceBinding |
 }
 
 /**
- * Tạo chuẩn hoá một loi back-channel: signature từ method + path (kèm query)
+ * Tạo chuẩn hoá một lỗi back-channel: signature từ method + path (kèm query)
  * + timestamp + nonce + body hash theo canonical contract
  * (`@ecoma-io/identity-contracts`).
  *
@@ -192,7 +192,7 @@ async function postSignedJson<T>(params: {
   if (response.status === 503) {
     return { ok: false, reason: 'auth_unavailable', detail: '503' };
   }
-  // 4xx bất اعلام: invalid_grant (404), invalid_payload (400), forbidden (401).
+  // 4xx bất định: invalid_grant (404), invalid_payload (400), forbidden (401).
   if (response.status >= 400) {
     return { ok: false, reason: 'rejected', detail: String(response.status) };
   }
@@ -286,12 +286,12 @@ function isConsentDecideResponse(value: unknown): value is ConsentDecideResponse
  * `POST /internal/session/verified` — báo `auth` rằng identity đã xác minh.
  *
  * `event_id` do caller cấp (bất biến: cùng một lần xác minh phải cho cùng
- * `event_id`, để retry sull đường này KHÔNG kích hoạt lại một transaction).
+ * `event_id`, để retry suốt đường này KHÔNG kích hoạt lại một transaction).
  * Contract yêu cầu 6 trường bắt buộc và cấm 7 trường protocol — payload dựng ở
  * đây đúng 6 trường đó, không thêm gì.
  *
  * ⚠️ Caller xử lý `already_processed` như kết quả `ok` (retry nằm qua được) —
- * kiểm shape `SessionVerifiedResponse` ở tầng này giúp caller không cần toờn
+ * kiểm shape `SessionVerifiedResponse` ở tầng này giúp caller không cần tốn công
  * từ đó về sau.
  */
 export async function announceSessionVerified(params: {
@@ -366,7 +366,7 @@ export async function fetchConsentContext(params: {
  * `POST /internal/consent/decide` — xác nhận hoặc từ chối consent.
  *
  * `denied` là kết quả hợp lệ theo protocol — auth chọn URI tới RP với
- * `error=access_denied` bằng cách dùng chính route này. Caller biceiving lỗi
+ * `error=access_denied` bằng cách dùng chính route này. Caller nhận lỗi
  * chỉ được dùng cho body đã fail (rejected, unreachable), KHÔNG dùng cho
  * outcome `denied`.
  */
