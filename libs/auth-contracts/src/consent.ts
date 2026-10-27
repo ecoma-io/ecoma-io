@@ -3,8 +3,8 @@
  * (`docs/services/auth/01-architecture.md` §5.1.7).
  *
  * Trước đây nhóm type này là khai báo cục bộ của shim
- * `@ecoma-io/identity-auth-contracts` (`internal-contracts.ts`), được canh bởi một
- * allowlist test; từ issue #324 chúng có bản canonical riêng tại đây.
+ * `@ecoma-io/identity-auth-contracts` (`internal-contracts.ts`, đã xoá ở issue #324),
+ * được canh bởi một allowlist test; nay chúng có bản canonical riêng tại đây.
  */
 
 /**

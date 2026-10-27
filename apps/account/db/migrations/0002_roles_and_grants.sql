@@ -141,8 +141,8 @@ GRANT SELECT, INSERT ON TABLE account.security_events TO ecoma_account_runtime;
 -- ---------------------------------------------------------------------------
 --
 -- Đây là lớp enforce thật của ranh giới database: `account` chỉ được chạm
--- `db-account`. Cả hai app đều mang `scope:identity` nên tag Nx không phân biệt
--- được chúng; credential mới là thứ chặn được.
+-- `db-account`. Trước issue #324 cả hai app cùng mang `scope:identity` nên tag Nx
+-- không phân biệt được chúng; credential mới là thứ chặn được.
 --
 -- ⚠️⚠️ **Khối này KHÔNG enforce được ranh giới database, và đây là giới hạn thật
 -- của PostgreSQL chứ không phải sơ suất.** `REVOKE CONNECT ON DATABASE db-auth`

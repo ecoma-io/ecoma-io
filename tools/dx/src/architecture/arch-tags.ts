@@ -96,7 +96,8 @@ export const KNOWN_SCOPES: readonly string[] = [
   'public',
   'shared',
   'platform',
-  'identity',
+  'account',
+  'auth',
   'backoffice',
   'llm',
   'pact',
@@ -403,7 +404,7 @@ export const DEPLOYMENT_DIR = 'deploys';
  * ⚠️ Đây là lượt bổ sung cho constraint `onlyDependOnLibsWithTags` của
  * `.oxlintrc.json`, KHÔNG thay thế: constraint lint là OR-match trên tag của
  * target (target chỉ cần MỘT tag khớp là qua), nên `scope:messaging` có
- * `type:contracts` trong allowlist thì target `scope:identity` + `type:contracts`
+ * `type:contracts` trong allowlist thì target `scope:account` + `type:contracts`
  * cũng đi qua — chéo BC đúng điều cấm mà task yêu cầu chặn. Lượt này đọc CẢ HAI
  * tag trên mỗi node của graph thật nên nói được "contract của scope NÀO".
  *
@@ -412,9 +413,25 @@ export const DEPLOYMENT_DIR = 'deploys';
  * protocol HMAC nội bộ —
  * protocol đó là tài sản nền tảng, đã được tách về `internal-auth-contracts`
  * (`scope:platform`), và messaging được siết về `{ self, platform }`.
+ *
+ * `auth` được liệt kê tường minh (mặc dù trục `type:contracts` của constraint
+ * lint đã cho phép chéo scope): cặp `account` ↔ `auth` có contract chéo HAI
+ * CHIỀU thật — `apps/auth` + `libs/auth-{application,domain}` import
+ * `account-contracts` (contract `GET /internal/account/status`), và `apps/account`
+ * import `auth-contracts` (contract `session-verified`/consent). Khai entry ở đây
+ * ghim chính sách đó ở mức graph: một contract lib mới của `auth` rơi vào
+ * consumer nào khác của `account` sẽ bị bắt ở đây thay vì lọt qua wildcard.
+ *
+ * `messaging` nằm trong tập được phép của `account`: account là consumer chính
+ * thức của contract công khai `POST /v1/messages` của transactional-mail (gửi mail
+ * OTP qua `apps/account/server/lib/mail.ts`, ghim dependency direction ở issue
+ * #203) — consumer contracts của messaging là đúng vai trò, khác chiều ngược lại
+ * (messaging chỉ được contract của self + platform).
  */
 export const CONTRACT_EDGE_OWNERSHIP: Readonly<Record<string, readonly string[]>> = {
   messaging: ['messaging', 'platform'],
+  account: ['account', 'auth', 'platform', 'messaging'],
+  auth: ['auth', 'account', 'platform'],
 };
 
 /**

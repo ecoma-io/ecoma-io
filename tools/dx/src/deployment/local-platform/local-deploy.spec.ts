@@ -392,7 +392,7 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
     expect(exit).toBe(0);
 
     // ensureStack (stack init) được gọi cho platform, backoffice, account và
-    // auth — apply GIỮ hành vi khởi tạo, mở rộng cho hai stack identity mới.
+    // auth — apply GIỮ hành vi khởi tạo, mở rộng cho hai stack bounded context mới.
     expect(vi.mocked(ensureStack)).toHaveBeenCalledTimes(4);
     expect(vi.mocked(ensureStack).mock.calls[0][1]).toBe('platform-deploy');
     expect(vi.mocked(ensureStack).mock.calls[1][1]).toBe('backoffice-deploy');
@@ -431,7 +431,7 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
     expect(upCalls[3][1]).toBe('account-deploy');
     expect(upCalls[4][1]).toBe('auth-deploy');
 
-    // Hai stack identity nhận đúng bộ key mật khẩu/secret qua stdin (không argv):
+    // Hai stack bounded context nhận đúng bộ key mật khẩu/secret qua stdin (không argv):
     // account có ownerPassword (nó sở hữu ecoma_owner) + hai secret HMAC của app;
     // auth có secrets Worker của WIC (PR #183). `internalHmacSecret` của account
     // và `internalSecret` của auth phải là CÙNG MỘT giá trị — bất invariant
@@ -522,7 +522,7 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
       // Giá trị đi qua STDIN, không qua argv (exec nhận options ở arg thứ 5).
       expect(options).toEqual({ input: expect.any(String) });
     }
-    // Mỗi stack identity up với platformStackRef trỏ đúng platform stack
+    // Mỗi stack bounded context up với platformStackRef trỏ đúng platform stack
     // (stack name là của worktree test — chỉ cần đúng shape project/stack).
     for (const [index, project] of [
       [3, 'account-deploy'],
@@ -684,7 +684,7 @@ describe('localDestroy — volume removal coping with lost Pulumi stacks', () =>
 });
 
 describe('localDestroy — full coverage: all stacks in reverse dependency order', () => {
-  it('destroys ALL FIVE stacks — auth, account, backoffice, home, platform (no orphan identity stacks)', () => {
+  it('destroys ALL FIVE stacks — auth, account, backoffice, home, platform (no orphan stacks)', () => {
     const wt = tempWorktree();
     mkdirSync(join(wt, '.pulumi-local-state'), { recursive: true });
     process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';

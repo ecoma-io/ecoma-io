@@ -526,7 +526,7 @@ describe('resolveIdentityInternalSecret — persistence contract', () => {
     expect(a).not.toBe(b); // sinh ngẫu nhiên mỗi lần — account persist giá trị của nó
   });
 
-  it('non-identity projects get an empty string (no secret needed)', () => {
+  it('non account/auth projects get an empty string (no secret needed)', () => {
     expect(resolveIdentityInternalSecret('home-deploy', ctx, env)).toBe('');
     expect(resolveIdentityInternalSecret('backoffice-deploy', ctx, env)).toBe('');
     expect(resolveIdentityInternalSecret('platform-deploy', ctx, env)).toBe('');

@@ -25,7 +25,7 @@ Each project carries **exactly one** tag per dimension: `type:*`, `scope:*`, `ru
 
 ⚠️ **`type:contracts` must not import `type:domain`, not even transitively.** A contract is what a provider **publishes** for consumers to depend on, not a layer to travel down the dependency direction. That is why a shared type is re-declared at the contracts layer as a `wire` union instead of importing the domain's union.
 
-⚠️ **The Nx graph does not guard the database boundary.** Both apps currently carry one shared `scope:identity`; the bounded-context split gives `account` and `auth` their own scopes, but until that tag migration lands — and either way — no Nx tag stops an app from declaring a binding that points at the other app's database: tags only encode the graph, not credentials. That boundary is enforced by database grants that do not allow it ([`docs/overview/05-code-architecture.md`](../docs/overview/05-code-architecture.md) §6.3).
+⚠️ **The Nx graph does not guard the database boundary.** The bounded-context split gives `account` and `auth` their own Nx scopes (`scope:account` and `scope:auth`), but no Nx tag stops an app from declaring a binding that points at the other app's database: tags only encode the graph, not credentials. That boundary is enforced by database grants that do not allow it ([`docs/overview/05-code-architecture.md`](../docs/overview/05-code-architecture.md) §6.3).
 
 ## Imports
 
@@ -35,7 +35,7 @@ Each project carries **exactly one** tag per dimension: `type:*`, `scope:*`, `ru
 
 ## Contracts with peer services
 
-⚠️ **Sharing a contract must be a decision with an issue, not a coding-time convenience.** Contracts are owned **by provider**: the account-side contract lib (currently `libs/identity-contracts`, to be renamed with the bounded-context split) owns the account-status contract, and the auth-side libs (`libs/identity-auth-contracts`, same rename pending) own the session-verified/consent contracts. Cross-scope consumers import the platform contract `libs/internal-auth-contracts` (`scope:platform`), which both re-export. Sharing happens only after the contract's boundary is pinned down in documentation. A drift in a canonical string, a header name, the skew window or the replay check fails **silently on both ends** — no compile error catches it.
+⚠️ **Sharing a contract must be a decision with an issue, not a coding-time convenience.** Contracts are owned **by provider**: the account-side contract lib (`libs/account-contracts`, `scope:account`) owns the account-status contract, and the auth-side contract lib (`libs/auth-contracts`, `scope:auth`) owns the session-verified/consent contracts. Cross-scope consumers import the platform contract `libs/internal-auth-contracts` (`scope:platform`), which both re-export. Sharing happens only after the contract's boundary is pinned down in documentation. A drift in a canonical string, a header name, the skew window or the replay check fails **silently on both ends** — no compile error catches it.
 
 ## Language
 

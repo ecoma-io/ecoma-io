@@ -243,7 +243,7 @@ describe('root .dockerignore: required build inputs are included', () => {
     expect(isExcluded('apps/backoffice/app/app.vue')).toBe(false);
   });
 
-  it('account app and identity libs enter the context', () => {
+  it('account app and account libs enter the context', () => {
     expect(isExcluded('apps/account/package.json')).toBe(false);
     expect(isExcluded('apps/account/.npmrc')).toBe(false);
     expect(isExcluded('apps/account/nuxt.config.ts')).toBe(false);

@@ -17,7 +17,7 @@
   "nx": {
     "tags": [
       "type:domain",
-      "scope:identity",
+      "scope:auth",
       "runtime:edge"
     ]
   }

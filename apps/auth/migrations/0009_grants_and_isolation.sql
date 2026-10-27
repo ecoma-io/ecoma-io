@@ -167,8 +167,8 @@ $assert_no_cross_database_reference$;
 --    Vì vậy runbook tách nó ra thành một `psql` session riêng:
 --        README.md §"Vì sao phần chặn chạy ở psql session riêng"
 --
--- ⚠️ Đây là **lớp enforce thật** của ranh giới database, không phải tag Nx: cả `account` và
---    `auth` đều mang `scope:identity`, nên tag không phân biệt được chúng và không chặn được
+-- ⚠️ Đây là **lớp enforce thật** của ranh giới database, không phải tag Nx: trước issue #324
+--    cả `account` và `auth` cùng mang `scope:identity`, nên tag không phân biệt được chúng và không chặn được
 --    `apps/account` khai báo binding trỏ `db-auth` (auth 03-operations.md §3.1).
 -- ---------------------------------------------------------------------------------------------
 

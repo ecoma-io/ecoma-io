@@ -6,7 +6,7 @@
   "nx": {
     "tags": [
       "type:domain",
-      "scope:identity",
+      "scope:account",
       "runtime:universal"
     ]
   }

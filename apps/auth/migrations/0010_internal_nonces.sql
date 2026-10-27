@@ -1,6 +1,6 @@
 -- 0010_internal_nonces.sql — kho nonce bền cho replay guard của `auth`.
 --
--- Phạm vi: bảng mà `verifyRequest` (`libs/identity-contracts/src/internal-auth.ts`) **cần**
+-- Phạm vi: bảng mà `verifyRequest` (`libs/internal-auth-contracts/src/internal-auth.ts`) **cần**
 -- để chống replay ở chiều `account → auth`. Không phải tính năng: thiếu nó thì `claimNonce`
 -- không có nơi ghi và đường nội bộ không có gì để fail closed vào.
 --

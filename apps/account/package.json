@@ -19,7 +19,7 @@
   "nx": {
     "tags": [
       "type:composition",
-      "scope:identity",
+      "scope:account",
       "runtime:edge"
     ],
     "targets": {

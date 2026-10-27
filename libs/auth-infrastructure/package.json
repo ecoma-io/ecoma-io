@@ -25,7 +25,7 @@
   "nx": {
     "tags": [
       "type:infrastructure",
-      "scope:identity",
+      "scope:auth",
       "runtime:edge"
     ]
   }

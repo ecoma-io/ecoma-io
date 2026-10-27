@@ -114,12 +114,12 @@ describe('validateTagSchema', () => {
     ).toEqual([]);
     expect(
       validateTagSchema(
-        node('identity-deploy', ['scope:identity', DEPLOYMENT_TYPE, 'runtime:native']),
+        node('account-deploy', ['scope:account', DEPLOYMENT_TYPE, 'runtime:native']),
       ),
     ).toEqual([]);
 
     const typo = validateTagSchema(
-      node('identity-deploy', ['scope:identity', 'type:deploy', 'runtime:native']),
+      node('account-deploy', ['scope:account', 'type:deploy', 'runtime:native']),
     );
     expect(typo).toHaveLength(1);
     expect(typo[0]).toMatchObject({ kind: 'invalid-value', detail: 'type:deploy' });
@@ -536,15 +536,16 @@ async function directEdgeViolations(sourceTags: string[], targetTags: string[]):
 describe('validateContractEdgeOwnership', () => {
   it('blocks a messaging dependency on another business context contracts', () => {
     // Hình regression thật: transactional-mail từng import identity-auth-contracts
-    // (scope:identity; lib đã xoá ở issue #324) để dùng protocol HMAC nội bộ — chéo BC
+    // (lib đã xoá ở issue #324) để dùng protocol HMAC nội bộ — chéo BC
     // qua wildcard
     // `type:contracts` của allowlist lint (OR-match theo tag, không nhìn scope
     // của target). Edge này phải bị bắt ở mức graph. Tên project trong fixture chỉ là
-    // định danh tổng hợp — không cần khớp một project thật trên đĩa.
+    // định danh tổng hợp — không cần khớp một project thật trên đĩa; scope
+    // `account` đại diện cho scope BC nghiệp vụ khác của messaging.
     const state: ArchWorkspaceState = {
       projects: new Map([
-        [messagingApp(['identity-auth-contracts']).name, messagingApp(['identity-auth-contracts'])],
-        ['identity-auth-contracts', contractsNode('identity-auth-contracts', 'identity')],
+        [messagingApp(['account-contracts']).name, messagingApp(['account-contracts'])],
+        ['account-contracts', contractsNode('account-contracts', 'account')],
       ]),
     };
     const violations = validateContractEdgeOwnership(state.projects);
@@ -553,7 +554,7 @@ describe('validateContractEdgeOwnership', () => {
       project: 'mail-app',
       kind: 'cross-context-contract-edge',
     });
-    expect(violations[0].detail).toContain('scope:identity');
+    expect(violations[0].detail).toContain('scope:account');
   });
 
   it('allows messaging dependencies on its own contracts and platform contracts', () => {
@@ -573,7 +574,7 @@ describe('validateContractEdgeOwnership', () => {
     // deps của messaging vẫn thuộc các lượt khác — lượt này chỉ nói contract-edge.
     const app = node(
       'some-app',
-      ['scope:identity', 'type:composition', 'runtime:edge'],
+      ['scope:account', 'type:composition', 'runtime:edge'],
       ['any-contracts', 'some-shared-lib'],
     );
     const msgWithImplDep = messagingApp(['platform-shared-lib']);
@@ -613,7 +614,7 @@ describe('validateDeploymentGraph', () => {
     // Không phụ thuộc tầng nền = project provision không kế thừa được gì từ
     // platform. Không có dep nào cả vẫn hợp lệ với mọi depConstraint, nên đây là
     // lý do cần một validator riêng chứ không dựa vào `.oxlintrc.json`.
-    const orphan = deployNode('identity-deploy', 'identity');
+    const orphan = deployNode('account-deploy', 'account');
     const platform = deployNode(PLATFORM_DEPLOY_PROJECT, 'platform');
     const violations = validateDeploymentGraph({
       projects: new Map([
@@ -623,7 +624,7 @@ describe('validateDeploymentGraph', () => {
     });
     expect(violations).toHaveLength(1);
     expect(violations[0]).toMatchObject({
-      project: 'identity-deploy',
+      project: 'account-deploy',
       kind: 'missing-platform-dependency',
     });
     expect(violations[0].detail).toContain(PLATFORM_DEPLOY_PROJECT);
@@ -651,7 +652,7 @@ describe('validateDeploymentGraph', () => {
   it('does not require the prerequisite of a non-deployment project', () => {
     // Rule chỉ áp cho `type:deployment`: một `type:infrastructure` adapter không
     // có lý do gì phải phụ thuộc tầng provisioning.
-    const lib = node('identity-cache', ['scope:identity', 'type:infrastructure', 'runtime:edge']);
+    const lib = node('platform-cache', ['scope:platform', 'type:infrastructure', 'runtime:edge']);
     const platform = deployNode(PLATFORM_DEPLOY_PROJECT, 'platform');
     expect(
       validateDeploymentGraph({
@@ -666,27 +667,27 @@ describe('validateDeploymentGraph', () => {
   it('flags a dependency target that is not a project in the workspace', () => {
     // Dangling ref đã bị `buildWorkspaceState` lọc mất khỏi
     // `ArchProjectNode.dependencies` — nên lượt này đọc `rawDependencies`.
-    const app = deployNode('identity-deploy', 'identity', [PLATFORM_DEPLOY_PROJECT]);
+    const app = deployNode('account-deploy', 'account', [PLATFORM_DEPLOY_PROJECT]);
     const platform = deployNode(PLATFORM_DEPLOY_PROJECT, 'platform');
     const violations = validateDeploymentGraph({
       projects: new Map([
         [platform.name, platform],
         [app.name, app],
       ]),
-      rawDependencies: new Map([[app.name, [PLATFORM_DEPLOY_PROJECT, 'identity-deploy-v2']]]),
+      rawDependencies: new Map([[app.name, [PLATFORM_DEPLOY_PROJECT, 'account-deploy-v2']]]),
     });
     expect(violations).toHaveLength(1);
     expect(violations[0]).toMatchObject({
-      project: 'identity-deploy',
+      project: 'account-deploy',
       kind: 'invalid-deploy-dependency',
     });
-    expect(violations[0].detail).toContain('identity-deploy-v2');
+    expect(violations[0].detail).toContain('account-deploy-v2');
   });
 
   it('treats an npm target outside the workspace as a valid dependency', () => {
     // Pulumi program phụ thuộc `@pulumi/*` là chuyện bình thường; target `npm:*`
     // vốn không phải project nên không được báo dangling.
-    const app = deployNode('identity-deploy', 'identity', [PLATFORM_DEPLOY_PROJECT]);
+    const app = deployNode('account-deploy', 'account', [PLATFORM_DEPLOY_PROJECT]);
     const platform = deployNode(PLATFORM_DEPLOY_PROJECT, 'platform');
     const violations = validateDeploymentGraph({
       projects: new Map([
@@ -738,15 +739,15 @@ describe('validateDeploymentGraph', () => {
   it('does not report a cycle for edges that leave the deployment subgraph', () => {
     // Edge deployment → contracts không tạo được chu trình với node deployment
     // khác; lọc hai đầu không được xoá lỗi thật cũng không được sinh báo giả.
-    // `identity-contracts` là tên tổng hợp của fixture, không phải project thật
-    // (project thật đã tách thành account-contracts/auth-contracts ở issue #324).
-    const contracts = node('identity-contracts', [
-      'scope:identity',
+    // `account-contracts` là tên của một project thật, còn node này chỉ là fixture
+    // tổng hợp không có dependency nào — không cần khớp graph thật.
+    const contracts = node('account-contracts', [
+      'scope:account',
       'type:contracts',
       'runtime:universal',
     ]);
-    const platform = deployNode(PLATFORM_DEPLOY_PROJECT, 'platform', ['identity-contracts']);
-    const app = deployNode('identity-deploy', 'identity', [PLATFORM_DEPLOY_PROJECT]);
+    const platform = deployNode(PLATFORM_DEPLOY_PROJECT, 'platform', ['account-contracts']);
+    const app = deployNode('account-deploy', 'account', [PLATFORM_DEPLOY_PROJECT]);
     expect(
       validateDeploymentGraph({
         projects: new Map([
@@ -762,17 +763,17 @@ describe('validateDeploymentGraph', () => {
     // Bất biến vị trí ⇔ tag là HAI CHIỀU. Chỉ kiểm chiều "trong `deploys/` phải
     // mang tag" thì một project `type:deployment` đặt ngoài `deploys/` vẫn lọt,
     // và tầng deployment lan sang project không thuộc nhóm.
-    const misplaced = deployNode('identity-deploy', 'identity', [PLATFORM_DEPLOY_PROJECT]);
+    const misplaced = deployNode('account-deploy', 'account', [PLATFORM_DEPLOY_PROJECT]);
     const platform = deployNode(PLATFORM_DEPLOY_PROJECT, 'platform');
     const violations = validateDeploymentGraph({
       projects: new Map([
         [platform.name, platform],
-        [misplaced.name, { ...misplaced, root: 'libs/identity-deploy' }],
+        [misplaced.name, { ...misplaced, root: 'libs/account-deploy' }],
       ]),
     });
     expect(violations).toHaveLength(1);
     expect(violations[0]).toMatchObject({
-      project: 'identity-deploy',
+      project: 'account-deploy',
       kind: 'misplaced-deployment-project',
     });
     expect(violations[0].detail).toContain(DEPLOYMENT_DIR);
@@ -801,7 +802,7 @@ describe('validateDeploymentGraph', () => {
   });
 
   it('accepts a deployment project that sits in deploys/ with the right tag', () => {
-    expect(validateDeploymentGraph(deployState(['identity-deploy']))).toEqual([]);
+    expect(validateDeploymentGraph(deployState(['account-deploy']))).toEqual([]);
   });
 
   it('rejects a dependency between two deployment units', () => {
@@ -836,7 +837,7 @@ describe('validateDeploymentGraph', () => {
   it('runs the deployment invariants as part of validateArchitecture', () => {
     // arch-check gọi `validateArchitecture`, không gọi `validateDeploymentGraph`
     // riêng — nếu wiring đứt thì test này xanh trong khi CLI vẫn bỏ sót.
-    const orphan = deployNode('identity-deploy', 'identity');
+    const orphan = deployNode('account-deploy', 'account');
     const platform = deployNode(PLATFORM_DEPLOY_PROJECT, 'platform');
     const violations = validateArchitecture({
       projects: new Map([
@@ -850,7 +851,7 @@ describe('validateDeploymentGraph', () => {
   it('exposes the dangling-ref check as its own pure function', () => {
     // Tách riêng vì nó là lượt DUY NHẤT cần edge chưa lọc: unit test gọi trực
     // tiếp hàm này với một tập target tự khai, không cần dựng cả workspace.
-    const app = deployNode('identity-deploy', 'identity');
+    const app = deployNode('account-deploy', 'account');
     const projects = new Map([[app.name, app]]);
     expect(
       findDanglingDeploymentRefs(
@@ -921,6 +922,10 @@ describe('allowlists sync with .oxlintrc.json', () => {
    * `scope:messaging` đã bỏ wildcard `type:contracts`), sau khi transactional-mail
    * từng import `identity-auth-contracts` (lib đã xoá ở issue #324) chéo BC qua
    * chính wildcard đó.
+   *
+   * `account`/`auth` vẫn thuộc nhóm mặc định: constraint lint cho phép chéo scope
+   * qua `type:contracts` đúng như thiết kế — chiều ngược lại (một chiều bị chặn
+   * riêng cho cặp này) là việc của `CONTRACT_EDGE_OWNERSHIP`, không của allowlist.
    */
   const defaultPolicyContexts = KNOWN_SCOPES.filter(
     (s) => !['shared', 'platform', 'local', 'public', 'messaging'].includes(s),
@@ -974,9 +979,9 @@ describe('allowlists sync with .oxlintrc.json', () => {
     expect(
       await edgeAllowed(
         ['scope:messaging', 'type:composition'],
-        ['scope:identity', 'type:contracts'],
+        ['scope:account', 'type:contracts'],
       ),
-      'messaging -> identity contracts must be blocked',
+      'messaging -> account contracts must be blocked',
     ).toBe(false);
     expect(
       await edgeAllowed(
@@ -1001,10 +1006,10 @@ describe('allowlists sync with .oxlintrc.json', () => {
     // `type:composition` notDependOn ["type:tooling"] để tuột app→app qua CẢ
     // constraint scope (identity→cache: allowlist có scope:platform) lẫn combo
     // runtime (allowlist có type:composition).
-    const source = ['scope:identity', 'type:composition', 'runtime:edge'];
+    const source = ['scope:account', 'type:composition', 'runtime:edge'];
     expect(
       await directEdgeViolations(source, ['scope:platform', 'type:composition', 'runtime:edge']),
-      'identity app -> cache app must be blocked',
+      'account app -> cache app must be blocked',
     ).not.toEqual([]);
     expect(
       await directEdgeViolations(
@@ -1152,17 +1157,17 @@ describe('allowlists sync with .oxlintrc.json', () => {
     // Hành vi qua ENGINE THẬT của @nx/eslint-plugin, không đọc chuỗi config:
     // assert "trong .oxlintrc.json có mảt chữ type:composition" sẽ xanh ngay cả
     // khi constraint không hề áp dụng.
-    const source = ['scope:identity', DEPLOYMENT_TYPE, 'runtime:native'];
+    const source = ['scope:account', DEPLOYMENT_TYPE, 'runtime:native'];
     expect(
-      await directEdgeViolations(source, ['scope:identity', 'type:composition', 'runtime:edge']),
+      await directEdgeViolations(source, ['scope:account', 'type:composition', 'runtime:edge']),
       'deploy -> app must be blocked',
     ).not.toEqual([]);
     expect(
-      await directEdgeViolations(source, ['scope:identity', 'type:domain', 'runtime:universal']),
+      await directEdgeViolations(source, ['scope:account', 'type:domain', 'runtime:universal']),
       'deploy -> domain must be blocked',
     ).not.toEqual([]);
     expect(
-      await directEdgeViolations(source, ['scope:identity', 'type:application', 'runtime:edge']),
+      await directEdgeViolations(source, ['scope:account', 'type:application', 'runtime:edge']),
       'deploy -> application must be blocked',
     ).not.toEqual([]);
   });
@@ -1171,10 +1176,10 @@ describe('allowlists sync with .oxlintrc.json', () => {
     // Đảo chiều: nếu một trong các cạnh hợp lệ bị chặn thì constraint trên chỉ
     // "chặn cho có" và không giữ được giá trị thực tế. Target tooling chọn
     // `scope:platform` vì trục scope vẫn áp đồng thời (xem test kế bên).
-    const source = ['scope:identity', DEPLOYMENT_TYPE, 'runtime:native'];
+    const source = ['scope:account', DEPLOYMENT_TYPE, 'runtime:native'];
     for (const target of [
       ['scope:platform', DEPLOYMENT_TYPE, 'runtime:native'],
-      ['scope:identity', 'type:contracts', 'runtime:universal'],
+      ['scope:account', 'type:contracts', 'runtime:universal'],
       ['scope:platform', 'type:infrastructure', 'runtime:edge'],
       ['scope:platform', 'type:tooling', 'runtime:native'],
     ]) {
@@ -1190,9 +1195,9 @@ describe('allowlists sync with .oxlintrc.json', () => {
     // một deploy project mang scope nghiệp vụ vẫn bị constraint `scope:*` của
     // scope đó chi phối. `type:tooling` trong allowlist của `type:deployment`
     // KHÔNG mở được lối tới tooling ở scope khác — đó là chính sách scope có sẵn
-    // (`scope:local` không nằm trong allowlist của `scope:identity`), và
+    // (`scope:local` không nằm trong allowlist của `scope:account`), và
     // constraint deployment không được làm nới nó.
-    const source = ['scope:identity', DEPLOYMENT_TYPE, 'runtime:native'];
+    const source = ['scope:account', DEPLOYMENT_TYPE, 'runtime:native'];
     expect(
       await directEdgeViolations(source, ['scope:local', 'type:tooling', 'runtime:native']),
       'business deploy -> local tooling stays blocked by the scope axis',

@@ -20,7 +20,7 @@
   "nx": {
     "tags": [
       "type:application",
-      "scope:identity",
+      "scope:auth",
       "runtime:edge"
     ]
   }

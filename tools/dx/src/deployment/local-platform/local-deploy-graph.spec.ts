@@ -81,7 +81,7 @@ describe('local lane Nx declarations (source of truth)', () => {
     expect(normalized).toContain('platform-deploy:local-env');
   });
 
-  it('account depends on backoffice; auth depends on account (identity invariant)', () => {
+  it('account depends on backoffice; auth depends on account (bounded-context invariant)', () => {
     const accountDeps = readProjectLaneTargets('account-deploy')['local-up'].dependsOn ?? [];
     const authDeps = readProjectLaneTargets('auth-deploy')['local-up'].dependsOn ?? [];
     expect(dependsOnNames(accountDeps)).toContain('backoffice-deploy:local-up');
@@ -254,7 +254,7 @@ describe('localUpProjectSequence — structural invariants', () => {
     }
   });
 
-  it('account before auth (identity invariant: owner password role + WIC upstream)', () => {
+  it('account before auth (bounded-context invariant: owner password role + WIC upstream)', () => {
     const sequence = localUpProjectSequence();
     expect(sequence.indexOf('account-deploy')).toBeLessThan(sequence.indexOf('auth-deploy'));
   });

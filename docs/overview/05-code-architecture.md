@@ -256,8 +256,8 @@ hai tầng nền — đó là vai trò foundation layer, khác hẳn dependency 
 chỉ được phụ thuộc qua `type:contracts` của provider, không bao giờ import implementation của scope khác.
 
 Scope dùng: `public`, `shared`, `platform`, `account`, `auth`, `backoffice`, `llm`, `payment`, `messaging`, `notifications`,
-`local`. Scope `account`/`auth` là tên đích khi tách bounded context (scope `identity` hiện đang mang cả hai, bị xoá khi
-migration tag hoàn tất). Scope mới thêm vào phải được khai báo trong constraint của `.oxlintrc.json` và `KNOWN_SCOPES` của
+`local`. Scope `account`/`auth` là hai scope của hai bounded context tách biệt — trước issue #324 cả hai cùng nằm trong một
+scope `identity` đã bị xoá. Scope mới thêm vào phải được khai báo trong constraint của `.oxlintrc.json` và `KNOWN_SCOPES` của
 `tools/dx/src/architecture/arch-tags.ts` — hai nguồn này được test ràng buộc đồng bộ hai chiều: scope nào thiếu constraint, constraint
 nào nhắm scope lạ, hay runtime constraint lệch ma trận compatibility đều bị test bắt.
 

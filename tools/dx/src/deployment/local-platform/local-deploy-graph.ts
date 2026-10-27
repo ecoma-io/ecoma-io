@@ -51,7 +51,7 @@ export interface LocalLaneTask {
 /**
  * Project deploy thuộc chuỗi local — thứ tự khai là thứ tự hiển thị mặc định.
  *
- * Wave 2 (#264): năm project cũ (spine identity platform → home → backoffice →
+ * Wave 2 (#264): năm project cũ (spine platform → home → backoffice →
  * account → auth) + bốn unit mới — `pact-broker-api-deploy` và
  * `push-notification-deploy` phụ thuộc platform (network + StackReference),
  * `pact-broker-app-deploy` phụ thuộc pact-api (api token + alias DNS),
