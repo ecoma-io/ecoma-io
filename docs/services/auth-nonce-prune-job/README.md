@@ -2,8 +2,8 @@
 
 `auth-nonce-prune-job` là cron Worker dọn nonce hết hạn cho **hai** kho nonce của
 đường nội bộ: `auth.internal_nonces` (db-auth) và `account.internal_nonces`
-(db-account) — thay GitHub Action `.github/workflows/identity-nonce-prune.yaml`
-(issue #82). Worker thuộc **maintenance plane**: nó không nằm trên serving path
+(db-account) — thay workflow cron GitHub cũ (issue #82). Worker thuộc **maintenance
+plane của `auth`**: nó không nằm trên serving path
 của hai service nào, không expose HTTP, và không sở hữu storage — nó dọn dữ
 liệu trong đúng một bảng của mỗi owner bằng một role tối thiểu của owner đó.
 

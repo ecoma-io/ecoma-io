@@ -15,7 +15,7 @@
 | pacticipants · versions · branches/tags · pacts + content SHA · verifications · matrix/can-i-deploy · environments · deployed/undeployed versions · **tenant + membership + role của broker** · **machine token của broker** | danh tính người dùng (dùng `sub` từ access token của `auth`, tham chiếu opaque) · quyền nghiệp vụ scope khác · deployment thật (broker chỉ ghi nhận, không thực hiện) |
 
 - **Broker là nguồn sự thật** cho tenant membership/role **của riêng broker**: role Owner/Admin/Member/Viewer của một tenant pact broker không suy ra từ role backoffice hay bất kỳ scope nào khác (A21 của `overview/01`).
-- `sub` là tham chiếu opaque, **không FK** sang `db-account`/`db-auth` — cùng quy ước identity: `db-pact-broker` không đọc database nào khác, và không database nào khác đọc nó.
+- `sub` là tham chiếu opaque, **không FK** sang `db-account`/`db-auth` — cùng quy ước tách database: `db-pact-broker` không đọc database nào khác, và không database nào khác đọc nó.
 - Pact CLI và CI pipeline dùng **machine token** riêng; credential này không bao giờ chia sẻ với browser session.
 
 ## 2. Runtime
@@ -47,7 +47,7 @@ pact.tenants ─┬─< pact.tenant_members >─ sub (opaque)
               └─< mọi bảng domain phía dưới (tenant_id NOT NULL)
 ```
 
-- **`tenants`**: `id` (uuid), `name` (unique, regex giống `nameSchema` upstream), `status` (`active|suspended|deleted`), timestamps. Default tenant per identity được provision **lần đầu** theo tên suy từ identity, **idempotent + race-safe** (INSERT ON CONFLICT — xem §4).
+- **`tenants`**: `id` (uuid), `name` (unique, regex giống `nameSchema` upstream), `status` (`active|suspended|deleted`), timestamps. Default tenant per sub được provision **lần đầu** theo tên suy từ sub, **idempotent + race-safe** (INSERT ON CONFLICT — xem §4).
 - **`tenant_members`**: `UNIQUE (tenant_id, sub)`; `role` CHECK IN ('owner','admin','member','viewer'). Composite FK về `tenants` và (khi thêm) unique-sub constraint cho phép DB-level enforce "member thuộc đúng tenant".
 - **`machine_tokens`**: chỉ lưu **hash** SHA-256 của token (`token_hash` PRIMARY KEY); `tenant_id`, `name`, `scopes` (text CSV hoặc jsonb), `created_by_sub`, `revoked_at` (NULL = active). Không có `last_used_at` — ghi nó đòi UPDATE trên mọi request (observability thành serving-path dependency, trái bất biến); usage tracking khi cần thì đọc từ `audit_events` (append-only, off-path). Plaintext hiện **một lần** trong response của lệnh tạo; không đường nào đọc lại. Revoke = set `revoked_at`, hiệu lực **ngay lập tức** (mỗi request tra hash rồi check `revoked_at IS NULL`).
 - Scopes: `read` (viewer trở lên), `write` (member trở lên: publish pact/verification), `admin` (Admin/Owner: environments, webhooks, membership). Token scope ≠ role của người — token là credential cấp sẵn quyền cố định, người tạo phải có role đủ cao.
@@ -70,7 +70,7 @@ Toàn bộ bảng upstream (`pacticipants`, `versions`, `tags`, `pacts`, `verifi
 
 ## 4. Default tenant provisioning (race-safe)
 
-Lần đầu một identity (sub) tương tác (dashboard login hoặc bootstrap endpoint), broker gọi `ensureDefaultTenant(sub)`:
+Lần đầu một account (sub) tương tác (dashboard login hoặc bootstrap endpoint), broker gọi `ensureDefaultTenant(sub)`:
 
 1. `INSERT INTO pact.tenants (name, ...) VALUES ($defaultName, ...) ON CONFLICT (name) DO NOTHING RETURNING id` — `name` suy deterministic từ sub (vd `tenant-<sub-prefix>`), nên retry/concurrency hội tụ cùng một tên.
 2. Nếu `ON CONFLICT` không trả row → SELECT row hiện có; nếu tenant đó `deleted`/`suspended` → fail-closed (không tự hồi sinh).
@@ -116,7 +116,7 @@ Upstream có webhook outbound. Cho đến khi có SSRF protection chứng minh �
 4. `can-i-deploy` unknown ≠ safe (fail-closed tri-state).
 5. Migration từ CI runner với advisory lock; Worker không bao giờ DDL.
 6. Không down-migration; expand → compatible rollout → contract.
-7. Bootstrap/build/test/migrate không phụ thuộc dịch vụ identity đang sống.
+7. Bootstrap/build/test/migrate không phụ thuộc dịch vụ nào đang sống.
 8. Pact CLI compatibility: index HAL công bố compatibility version `2.107.0` và các link `pb:publish-contracts`, `pb:pacticipant-branch-version`, `pb:provider-pacts-for-verification` mà CLI gate theo.
 9. Audit append-only ở DB level.
 10. Không log secret, token, credential.

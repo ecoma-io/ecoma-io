@@ -11,7 +11,7 @@ migration là file SQL thuần.
 | `apply.ts`               | CLI runner, chạy trong CI                                            |
 | `../tests/integrations/` | Test integration trên PostgreSQL thật (testcontainers)               |
 
-## Vì sao không có `db-identity` để migrate
+## Vì sao đây là greenfield provisioning
 
 `db-account` là **greenfield provisioning**, không phải data migration. Trên `main`
 không có schema, không có migration history, không có Hyperdrive binding. Không có
@@ -116,9 +116,10 @@ nguyên ACL. Đó chính là lý do nó nằm ở provisioning chứ không nằ
 
 ## Chặn chéo — lớp enforce thật của ranh giới database
 
-⚠️ **Cả hai app `account` và `auth` đều mang tag `scope:identity`**, nên tag Nx không
-phân biệt được chúng và **không** chặn được `apps/account` khai báo binding trỏ
-`db-auth`. Ranh giới đó là **credential**, không phải tag.
+⚠️ **Tag Nx không chặn được ranh giới database.** Hai app hiện đang dùng chung một
+`scope:identity`; khi tách bounded context, mỗi app sẽ có scope riêng — nhưng dù một
+scope chung hay hai scope riêng, tag chỉ mã hoá graph và **không** chặn được
+`apps/account` khai báo binding trỏ `db-auth`. Ranh giới đó là **credential**, không phải tag.
 
 **Phải REVOKE cả `PUBLIC`, không chỉ role.** PostgreSQL cấp `CONNECT` cho `PUBLIC`
 theo mặc định, và quyền của `PUBLIC` là _quyền mặc định_. `REVOKE CONNECT …

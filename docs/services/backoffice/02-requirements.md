@@ -23,7 +23,7 @@ Quy ước ID: `SR-0xx` yêu cầu bảo mật · `T-xx` mối đe doạ · `AC-
 - Authorization audit và privileged-operation workflow.
 - Cách `backoffice` tiêu thụ Account ID (`sub`) và token đã xác thực từ `account`/`auth`, và những gì nó **không** được tin từ client.
 
-**Ngoài phạm vi:** account identity/credential/MFA (→ `account`), giao thức OAuth 2.0/OIDC (→ `auth`), dữ liệu nghiệp vụ và chính sách authorization của từng resource-owning backend — xem non-goals §6.
+**Ngoài phạm vi:** dữ liệu danh tính và credential/MFA của account (→ `account`), giao thức OAuth 2.0/OIDC (→ `auth`), dữ liệu nghiệp vụ và chính sách authorization của từng resource-owning backend — xem non-goals §6.
 
 ## 3. Security requirements
 
@@ -157,7 +157,7 @@ Cột "Phương pháp" phân biệt kiểm thử tự động (`test`), kiểm t
 
 | Không làm                                                              | Vì sao                                                                                                                                                        | Ai làm thay thế                        |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| Account identity, credential, MFA, passkey, recovery                   | `account` sở hữu canonical account identity                                                                                                                   | `account`                              |
+| Dữ liệu danh tính của account, credential, MFA, passkey, recovery      | `account` sở hữu dữ liệu danh tính canonical của account                                                                                                      | `account`                              |
 | OAuth 2.0/OIDC flows, client/redirect URI, token issuance & revocation | `auth` sở hữu giao thức; `backoffice` chỉ tiêu thụ token                                                                                                      | `auth`                                 |
 | Ánh xạ OAuth scope → application permission                            | **Scope ≠ permission** — `account`/`auth`/`backoffice` đều không làm việc đó (A22)                                                                            | không ai làm — hai khái niệm khác nhau |
 | Enforce authorization **thay** resource-owning backend                 | Mỗi backend enforce trên operation của chính nó (A23)                                                                                                         | resource-owning backend                |

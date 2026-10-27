@@ -37,8 +37,8 @@ time; re-verify values with the commands shown before relying on them:
   something less precise.
 - Titles conventionally carry a Conventional-Commit-style prefix
   `type(scope): summary` (`feat`, `fix`, `chore`, `docs`, `test`, ...). The
-  scope is free-form: an Nx project, a bounded context (`identity`), or an
-  area (`dx`). The one-Nx-project scope restriction and the feat/fix commit
+  scope is free-form: an Nx project, a bounded context (`account`,
+  `auth`), or an area (`dx`). The one-Nx-project scope restriction and the feat/fix commit
   budget are PR/commit rules; do not apply them to Issues.
 - Labels in use: `bug`, `enhancement`, `documentation`, `dependencies`,
   plus GitHub defaults (`duplicate`, `good first issue`, `help wanted`,

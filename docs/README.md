@@ -18,8 +18,8 @@
 
 Bounded context và deploy units của chúng:
 
-- [Account](./services/account/README.md) — deploy unit `account` của context `identity`: UI + BFF + login/consent + credential + browser session, sở hữu `db-account`.
-- [Auth](./services/auth/README.md) — deploy unit `auth` của context `identity`: API-only OAuth 2.0/OIDC authorization server (issuer `https://auth.ecoma.io`), sở hữu `db-auth`.
+- [Account](./services/account/README.md) — bounded context `account` (một deploy unit): UI + BFF + login/consent + credential + browser session, sở hữu `db-account`.
+- [Auth](./services/auth/README.md) — bounded context `auth` (một deploy unit): API-only OAuth 2.0/OIDC authorization server (issuer `https://auth.ecoma.io`), sở hữu `db-auth`.
 - [Backoffice](./services/backoffice/README.md) — bounded context `backoffice` (một deploy unit): staff directory, role/permission catalog và authorization audit cho thao tác đặc quyền; quyết định §10 đã chốt qua [ADR](./services/backoffice/adr/README.md).
 - [Pact Broker](./services/pact-broker/README.md) — bounded context `pact-broker` (hai deploy unit API + dashboard): hợp đồng consumer-driven contract testing (pacts, verifications, can-i-deploy), sở hữu `db-pact-broker`.
 - [Transactional Mail](./services/transactional-mail/README.md) — control plane của bounded context `transactional-mail` (Cloudflare D1).
@@ -31,7 +31,7 @@ Bounded context chưa có thư mục tài liệu riêng (`llm`, `payment`) — t
 
 Không phải bounded context nhưng có tài liệu riêng:
 
-- [Auth Nonce Prune Job](./services/auth-nonce-prune-job/README.md) — cron Worker dọn nonce hết hạn cho hai kho nonce của đường nội bộ (`db-auth`, `db-account`); maintenance plane của `identity`, không sở hữu storage.
+- [Auth Nonce Prune Job](./services/auth-nonce-prune-job/README.md) — cron Worker dọn nonce hết hạn cho hai kho nonce của đường nội bộ (`db-auth`, `db-account`); maintenance plane của `auth`, không sở hữu storage.
 - [Cache](./services/cache/README.md) — self-hosted Nx remote cache; disposable build state, không phải bounded context.
 - [Local Platform](./services/local-platform/README.md) — hạ tầng Docker local dùng chung (network, Traefik, PostgreSQL) mỗi worktree một bộ, và đường deploy local của deploy unit; đặt trong `services/` vì nó phục vụ **mọi** service, không phải vì nó là một — ngoại lệ này được ghi ở [`AGENTS.md`](./AGENTS.md) §3 và ở bảng dưới.
 

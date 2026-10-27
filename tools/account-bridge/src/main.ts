@@ -1,6 +1,6 @@
 /**
  * Shim worker `ecoma-account-bridge` — mặt trước service-binding của container
- * account trên local platform (`docs/services/local-platform/02-identity.md`
+ * account trên local platform (`docs/services/local-platform/02-account-auth.md`
  * §Service bindings).
  *
  * ## Vì sao shim tồn tại
@@ -27,7 +27,7 @@
  * Thiếu biến ⇒ mọi request qua binding nhận `503 upstream_unconfigured` —
  * KHÔNG có default chỉ trỏ loopback hay chuỗi rỗng, vì một default sai là đúng
  * kiểu "chạy được nhưng sai nơi" mà thiết kế cấm. `auth` vẫn boot; `/ready`
- * của auth đỏ qua probe ACCOUNT_SERVICE (`02-identity.md` §Dependency graph —
+ * của auth đỏ qua probe ACCOUNT_SERVICE (`02-account-auth.md` §Dependency graph —
  * bridge fail-closed, readiness đỏ khi account chết).
  */
 

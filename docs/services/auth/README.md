@@ -1,6 +1,6 @@
 # Auth
 
-`auth` là **authorization server OAuth 2.0 / OpenID Connect** của Ecoma: API-only, không UI, issuer `https://auth.ecoma.io`. Bổ sung `account` (UI + BFF) — cùng bounded context `identity`, hai database riêng.
+`auth` là **authorization server OAuth 2.0 / OpenID Connect** của Ecoma: API-only, không UI, issuer `https://auth.ecoma.io`. Bổ sung `account` (UI + BFF) — hai bounded context riêng, hai database riêng.
 
 ```text
 auth.ecoma.io  (API-only: /authorize · /token · discovery · JWKS · revoke)
@@ -10,7 +10,7 @@ auth.ecoma.io  (API-only: /authorize · /token · discovery · JWKS · revoke)
                     └── nhận kết quả xác minh session từ account (push) ──┘
 ```
 
-Ranh giới context tại system level → [`docs/overview/01-architecture.md`](../../overview/01-architecture.md) §2.1 · rule Nx cho `scope:identity` → [`docs/overview/05-code-architecture.md`](../../overview/05-code-architecture.md) §6.3.
+Ranh giới context tại system level → [`docs/overview/01-architecture.md`](../../overview/01-architecture.md) §2.1 · rule Nx theo scope của từng app → [`docs/overview/05-code-architecture.md`](../../overview/05-code-architecture.md) §6.3.
 
 ## Hiện trạng
 

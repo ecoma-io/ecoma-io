@@ -50,7 +50,7 @@
     },
   ],
   // Service binding tới shim worker `ecoma-account-bridge` (local platform,
-  // `02-identity.md` §Service bindings): binding `ACCOUNT_SERVICE` giữ nguyên
+  // `02-account-auth.md` §Service bindings): binding `ACCOUNT_SERVICE` giữ nguyên
   // shape contract thật — code gọi `binding.fetch()` không biết gì về shim.
   // Shim ở production là Worker account thật (cùng shape); ở local nó là worker
   // chuyển tiếp HTTP tới container account. Worker này chưa có identity

@@ -251,25 +251,26 @@ implementation, không contract của scope nghiệp vụ nào — `onlyDependOn
 `scope:platform` được phép phụ thuộc thêm `shared` và `type:contracts` của scope bất kỳ. Chiều ngược lại (`shared` → `platform`)
 bị chặn chủ đích: platform đã phụ thuộc shared, mở chiều ngược là mời dependency cycle giữa hai tầng nền.
 
-Bounded context/product scope (`identity`, `backoffice`, `llm`, `payment`, …) được phụ thuộc **toàn bộ implementation** của
+Bounded context/product scope (`account`, `auth`, `backoffice`, `llm`, `payment`, …) được phụ thuộc **toàn bộ implementation** của
 hai tầng nền — đó là vai trò foundation layer, khác hẳn dependency chéo scope nghiệp vụ: giữa các scope nghiệp vụ ngang hàng,
 chỉ được phụ thuộc qua `type:contracts` của provider, không bao giờ import implementation của scope khác.
 
-Scope hiện dùng: `public`, `shared`, `platform`, `identity`, `backoffice`, `llm`, `payment`, `messaging`, `notifications`,
-`local`. Scope mới thêm vào phải được khai báo trong constraint của `.oxlintrc.json` và `KNOWN_SCOPES` của
+Scope dùng: `public`, `shared`, `platform`, `account`, `auth`, `backoffice`, `llm`, `payment`, `messaging`, `notifications`,
+`local`. Scope `account`/`auth` là tên đích khi tách bounded context (scope `identity` hiện đang mang cả hai, bị xoá khi
+migration tag hoàn tất). Scope mới thêm vào phải được khai báo trong constraint của `.oxlintrc.json` và `KNOWN_SCOPES` của
 `tools/dx/src/architecture/arch-tags.ts` — hai nguồn này được test ràng buộc đồng bộ hai chiều: scope nào thiếu constraint, constraint
 nào nhắm scope lạ, hay runtime constraint lệch ma trận compatibility đều bị test bắt.
 
-**Một scope có thể có nhiều app.** Scope là trục **ownership**, không phải trục deploy unit: `identity` là bounded
-context, còn `account` và `auth` là hai deploy unit độc lập trong đó (`01` §2.1). Cả hai app đều mang
-`type:composition` + `scope:identity` + `runtime:edge` — cùng scope, cùng tag, không có tag riêng cho từng deploy unit.
+**Một scope có thể có nhiều app.** Scope là trục **ownership**, không phải trục deploy unit: `pact-broker` là một bounded
+context với hai deploy unit `pact-broker-api` và `pact-broker-app` (`01` §2.1); cả hai app mang
+`type:composition` + `scope:pact` + `runtime:edge` — cùng scope, cùng tag, không có tag riêng cho từng deploy unit.
 Ranh giới giữa chúng **không** do tag Nx enforce: constraint `type:composition` cấm app import app, và đó là ranh giới
-duy nhất mà tag đảm bảo. Ranh giới protocol/UI giữa `account` và `auth` là quyết định kiến trúc, enforce bằng review và
+duy nhất mà tag đảm bảo. Ranh giới protocol/UI giữa hai app là quyết định kiến trúc, enforce bằng review và
 contract test — không phải bằng tag mới.
 
 ⚠️ **Nx scope ≠ catalog bounded context.** Scope là trục sở hữu **code**; catalog bounded context là trục sở hữu
 **nghiệp vụ và dữ liệu**, canonical ở [`07-domains.md`](./07-domains.md) §3. Hai trục phần lớn trùng tên
-(`identity`, `backoffice`, `llm`, `payment`) nhưng không đồng nhất: `messaging` (transactional-mail) và `notifications`
+(`account`, `auth`, `backoffice`, `llm`, `payment`) nhưng không đồng nhất: `messaging` (transactional-mail) và `notifications`
 (push-notification) là bounded context nghiệp vụ mang scope chia sẻ theo chức năng; `local`, `public`, `shared`,
 `platform` là scope hạ tầng/chia sẻ, không phải bounded context; và `pact-broker` là bounded context mang scope `pact`.
 Danh sách scope trong mục này mô tả cấu trúc code — **không** phải một bản catalog thứ hai của bounded context.
@@ -280,11 +281,13 @@ sở hữu một context nghiệp vụ mới. Hệ quả cần nói rõ: deploym
 scope khác — nó khai báo hạ tầng, không gọi implementation của service. Đây là ranh giới ở tầng **provisioning ownership**,
 tách khỏi ranh giới ở tầng **service dependency** mà contract test bảo vệ.
 
-⚠️ **Khoảng trống enforcement thật, cần biết khi debug:** tag Nx **không** phân biệt được hai app cùng `scope:identity`,
-nên nó cũng **không** chặn được việc một app chạm database của app kia. Việc thêm Hyperdrive binding trỏ sang
-`db-auth` trong `apps/account` đi qua mọi lượt kiểm ở §7. Đó là lý do ranh giới database của identity được enforce
-ở tầng **grant mức database** (`REVOKE CONNECT` chéo) chứ không ở tầng module graph — cấu hình không đủ, phải có
-credential không cho phép (`services/account/03-operations.md` §3.1).
+⚠️ **Khoảng trống enforcement thật, cần biết khi debug:** tag Nx **không** chặn được việc một app chạm database của
+app khác — mọi app mang `type:composition`, và constraint của type đó không đọc database nào. Việc thêm Hyperdrive
+binding trỏ sang `db-auth` trong `apps/account` đi qua mọi lượt kiểm ở §7. Vì `account` và `auth` là hai bounded
+context với hai database owner riêng (`01` §2.1, §4), ranh giới database giữa chúng được enforce ở tầng **grant mức
+database** (`REVOKE CONNECT` chéo, `services/account/03-operations.md` §3.1) chứ không ở tầng module graph — cấu hình
+không đủ, phải có credential không cho phép. Ranh giới chéo scope còn lại được chặn ở tầng tag: constraint
+`type:composition` cấm app import app, và giữa hai scope nghiệp vụ chỉ `type:contracts` của provider được phụ thuộc.
 
 ## 7. Dependency rules
 

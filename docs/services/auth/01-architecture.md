@@ -34,7 +34,7 @@ auth.ecoma.io  (Cloudflare Worker, API-only, Hono)
 
 ## 3. Data model — `db-auth`
 
-Greenfield: **không có** schema hay migration history `db-identity` nào để kế thừa. Dưới đây là **logical specification**, không phải DDL.
+Greenfield: **không có** schema hay migration history chung nào để kế thừa. Dưới đây là **logical specification**, không phải DDL.
 
 Quy ước: mọi cột thời gian UTC; mọi token/handle lưu **hash**, không lưu giá trị dùng được lần hai.
 
@@ -550,7 +550,7 @@ Consumer `Browser`, provider `auth`. Đây là endpoint **public** của `auth`,
 
 ### 5.1.8 Envelope nội bộ — một giao thức canonical, chống replay bền vững
 
-Cả bốn contract ở §5.1.7 dùng **một** envelope HMAC duy nhất, và giao thức đó có **một** bản cài đặt: `libs/internal-auth-contracts` (`internal-auth.ts`, `scope:platform` — protocol nền tảng dùng chung giữa các BC, không thuộc riêng identity), tag `type:contracts` + `runtime:universal` nên import được từ cả `auth` (Workers) lẫn `account` (Nitro). `libs/identity-contracts` và `libs/identity-auth-contracts` **re-export** từ đó, không giữ bản thứ hai. Hai bên test với chính mình thì một bất tương thích không bao giờ đỏ — nên việc chỉ có một bản là điều kiện của tính đúng, không phải chuyện gọn gàng.
+Cả bốn contract ở §5.1.7 dùng **một** envelope HMAC duy nhất, và giao thức đó có **một** bản cài đặt: `libs/internal-auth-contracts` (`internal-auth.ts`, `scope:platform` — protocol nền tảng dùng chung giữa các BC, không thuộc riêng `auth` hay `account`), tag `type:contracts` + `runtime:universal` nên import được từ cả `auth` (Workers) lẫn `account` (Nitro). `libs/identity-contracts` và `libs/identity-auth-contracts` **re-export** từ đó, không giữ bản thứ hai. Hai bên test với chính mình thì một bất tương thích không bao giờ đỏ — nên việc chỉ có một bản là điều kiện của tính đúng, không phải chuyện gọn gàng.
 
 #### Định dạng trên đường truyền
 
@@ -589,7 +589,7 @@ Có **hai** chữ "v1" trong envelope này và chúng trả lời hai câu hỏi
 
 ⚠️ **`v1=` KHÔNG phải số phiên bản của giao thức.** Nó chỉ nói định dạng của giá trị trong header. PR hợp nhất này đổi canonicalization (thêm dòng `PROTOCOL_ID`, đổi length prefix từ UTF-16 sang byte UTF-8) mà **giữ nguyên** `v1=` — nên một envelope của bản cũ vẫn mang header `v1=…` và không có gì trong header cho biết nó không tương thích. Đọc `v1=` thành "envelope phiên bản 1" là suy sai.
 
-⚠️ **Không có dual-accept.** `PROTOCOL_ID` nằm trong chuỗi ký, nên verifier của bản mới **từ chối** envelope do bản cũ ký (`bad_signature`), và tiền tố chữ ký không được dùng để quyết định chấp nhận hay không. Điều kiện triển khai vì vậy là: **hai Worker phải deploy cùng phiên bản giao thức.** Không có cửa sổ nào để một bên chạy bản cũ giao tiếp với bên chạy bản mới; thứ tự deploy không cứu được, chỉ có deploy cùng nhau. `libs/internal-auth-contracts/src/internal-auth.spec.ts` (vị trí canonical mới sau khi tách khỏi identity BC) có test dựng lại **chính xác** canonicalization của bản cũ và khẳng định verifier từ chối nó, cùng một test khẳng định tiền tố chữ ký lạ (`v2=…`) bị từ chối dù payload HMAC hợp lệ.
+⚠️ **Không có dual-accept.** `PROTOCOL_ID` nằm trong chuỗi ký, nên verifier của bản mới **từ chối** envelope do bản cũ ký (`bad_signature`), và tiền tố chữ ký không được dùng để quyết định chấp nhận hay không. Điều kiện triển khai vì vậy là: **hai Worker phải deploy cùng phiên bản giao thức.** Không có cửa sổ nào để một bên chạy bản cũ giao tiếp với bên chạy bản mới; thứ tự deploy không cứu được, chỉ có deploy cùng nhau. `libs/internal-auth-contracts/src/internal-auth.spec.ts` (vị trí canonical, dùng chung `auth` và `account`) có test dựng lại **chính xác** canonicalization của bản cũ và khẳng định verifier từ chối nó, cùng một test khẳng định tiền tố chữ ký lạ (`v2=…`) bị từ chối dù payload HMAC hợp lệ.
 
 #### `kid` — chỉ dẫn chọn khoá, KHÔNG phải trường đã ký
 
@@ -641,7 +641,7 @@ Receiver dùng cơ chế này để **xoay secret không gián đoạn**: giữ 
 
 ⚠️ **Buffer không phải một cửa sổ thứ hai.** Nonce chỉ cần sống tới `timestamp + skew`: sau mốc đó envelope bị từ chối vì `bad_timestamp` và nonce không còn bảo vệ gì. Buffer tồn tại vì prune chạy theo lô chứ không chạy đúng thời điểm hết hạn. **TTL nhỏ hơn skew là hỏng**: prune xoá một nonce còn hiệu lực, và replay trong cửa sổ sẽ thành công.
 
-⚠️ **Prune được lên lịch định kỳ.** `.github/workflows/identity-nonce-prune.yaml` chạy `prune-auth` (auth) và `prune-account` (account) **mỗi ngày** (`cron: '17 3 * * *'`), mỗi job xoá theo lô `BATCH_SIZE=20000` với trần `MAX_BATCHES=50` / `MAX_SECONDS=600`, kiểm `to_regclass` + `has_table_privilege` trước khi xoá, đặt `statement_timeout=60000` / `lock_timeout=30000`, và **fail closed** (chạm trần báo `cap_hit` + exit 1, lỗi transport chỉ retry có hạn). Thời điểm 03:17 UTC tương ứng **10:17 ICT**, không phải 07:17 ICT. Credential dùng là `_migrator_` riêng của mỗi service (không dùng runtime), và Environment + branch policy là lớp bảo vệ thực tế (không dựa vào `if` đơn thuần trong file). Runbook và trường hợp vận hành chi tiết tại [`03-operations.md`](./03-operations.md) §3.3. Bảng phình mà không chạm trần **không** làm tăng khả năng replay nếu được báo đỏ và xử lý kịp: nonce nằm lại vẫn là nonce đã bị chiếm, nên vẫn chặn replay.
+⚠️ **Prune được lên lịch định kỳ.** Workflow cron GitHub cũ chạy `prune-auth` (auth) và `prune-account` (account) **mỗi ngày** (`cron: '17 3 * * *'`), mỗi job xoá theo lô `BATCH_SIZE=20000` với trần `MAX_BATCHES=50` / `MAX_SECONDS=600`, kiểm `to_regclass` + `has_table_privilege` trước khi xoá, đặt `statement_timeout=60000` / `lock_timeout=30000`, và **fail closed** (chạm trần báo `cap_hit` + exit 1, lỗi transport chỉ retry có hạn). Thời điểm 03:17 UTC tương ứng **10:17 ICT**, không phải 07:17 ICT. Credential dùng là `_migrator_` riêng của mỗi service (không dùng runtime), và Environment + branch policy là lớp bảo vệ thực tế (không dựa vào `if` đơn thuần trong file). Runbook và trường hợp vận hành chi tiết tại [`03-operations.md`](./03-operations.md) §3.3. Bảng phình mà không chạm trần **không** làm tăng khả năng replay nếu được báo đỏ và xử lý kịp: nonce nằm lại vẫn là nonce đã bị chiếm, nên vẫn chặn replay.
 
 #### Thân request
 

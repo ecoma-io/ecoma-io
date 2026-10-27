@@ -41,7 +41,7 @@
 
 ### `services/<service>/`
 
-`service` in the path is a **bounded context**, not necessarily one deploy unit. When a context has several deploy units (e.g. `identity` → `account` + `auth`), a shared document directory covers them — service boundary, contract and data ownership still live in `overview/01`, and the catalog of contexts lives in `overview/07`.
+`service` in the path is a **bounded context**. A context and its deploy units are different axes (`overview/07` §1.1): one context may own several deploy units, and a deploy unit does not create a context. Service boundary, contract and data ownership still live in `overview/01`, and the catalog of contexts lives in `overview/07`.
 
 **The one exception — `services/local-platform/`**: shared local Docker infrastructure for every deploy unit (network, Traefik, PostgreSQL), owned by no bounded context. It sits under `services/` because it serves **all** services, not because it is one — see the bounding table in [`README.md`](./README.md).
 

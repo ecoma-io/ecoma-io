@@ -1,8 +1,8 @@
 /**
  * Chương trình Pulumi của `account-deploy` — deploy unit của `apps/account`
- * (identity/account) ở LAN LOCAL deployment.
+ * (bounded context `account`) ở LAN LOCAL deployment.
  *
- * Đủ vòng đời theo `02-identity.md` §Dependency graph: provision `db-account`
+ * Đủ vòng đời theo `02-account-auth.md` §Dependency graph: provision `db-account`
  * + bộ 4 role chuẩn (owner/migrator/runtime/pruner) → migration đường canonical
  * (`apps/account/db/apply.mts`) → image `node-server` → container trên platform
  * network với Traefik router `Host(account.<rootHostname>)` → readiness qua
@@ -31,7 +31,7 @@
  * `fetch`, nên adapter HTTP của chiều account → auth được mount lúc runtime
  * bởi `server/plugins/auth-service-shim.ts`, đọc origin từ biến
  * `NUXT_AUTH_SERVICE_URL` — fetch thẳng worker auth trong WIC qua alias
- * `ecoma-<ns>-auth:4203` (`02-identity.md` §Service bindings, chiều account →
+ * `ecoma-<ns>-auth:4203` (`02-account-auth.md` §Service bindings, chiều account →
  * auth). Bảo mật lớp application là envelope HMAC `ecoma-internal-v1` của
  * `auth-client` — shim không ký thêm gì. Thiếu biến ⇒ không mount ⇒ mọi gọi
  * auth fail-closed `binding_missing` (production Workers dùng binding thật,
@@ -361,7 +361,7 @@ const account = new docker.Container(
       // `/ready` chứ không phải `/health`: readiness phải chứng minh DB probe
       // thật (`selectAccountStatus`) thành công — `/health` không chạm DB nên
       // không đủ làm bằng chứng container phục vụ được request thật
-      // (`02-identity.md` §Runtime contracts).
+      // (`02-account-auth.md` §Runtime contracts).
       tests: [
         'CMD',
         'node',

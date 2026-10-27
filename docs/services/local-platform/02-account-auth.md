@@ -1,6 +1,6 @@
-# Local Platform — Identity Topology
+# Local Platform — Account & Auth Topology
 
-> Quyết định topology của Bounded Context **identity** (deploy unit `account` + `auth`) trên local platform. Ownership hạ tầng chung và invariants platform nằm ở [`01-architecture.md`](./01-architecture.md); docs thiết kế context ở [`services/account/`](../account/01-architecture.md) và [`services/auth/`](../auth/01-architecture.md).
+> Quyết định topology của hai bounded context **Account** (`account`) và **Auth** (`auth`) trên local platform. Ownership hạ tầng chung và invariants platform nằm ở [`01-architecture.md`](./01-architecture.md); docs thiết kế context ở [`services/account/`](../account/01-architecture.md) và [`services/auth/`](../auth/01-architecture.md).
 >
 > Các quyết định dưới đây được chứng minh bằng spike đo được — xem platform facts PF1–PF8 ([`../../overview/04-platform-facts.md`](../../overview/04-platform-facts.md) §2.18) — không phải suy đoán từ tài liệu.
 
