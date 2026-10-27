@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { ACR } from '@ecoma-io/identity-domain';
+import { ACR } from '@ecoma-io/account-domain';
 
 import { LOGIN_HANDOFF_TTL_SECONDS } from './handoff';
 

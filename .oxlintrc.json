@@ -301,7 +301,7 @@
           //
           // `notDependOnLibsWithTags` là lượt TRANSITIVE — deploy project không được chạm domain /
           // application / composition KỂ CẢ QUA TRUNG GIAN. Đó là điểm chính: một Pulumi program
-          // import `@ecoma-io/identity-domain` qua một lib trung gian trông hợp lệ ở lượt direct
+          // import `@ecoma-io/account-domain` qua một lib trung gian trông hợp lệ ở lượt direct
           // nhưng vẫn kéo logic nghiệp vụ vào tầng provision, nơi nó không được test và không
           // thuộc về bất kỳ deploy unit nào. Ba type này VẮNG MẶT khỏi allowlist phía dưới
           // chính vì đã bị cấm transitive: đưa chúng vào `onlyDependOnLibsWithTags` sẽ mâu thuẫn

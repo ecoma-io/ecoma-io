@@ -59,7 +59,7 @@ libs/*
 !libs/account-contracts
 !libs/auth-contracts
 !libs/internal-auth-contracts
-!libs/identity-domain
+!libs/account-domain
 !libs/transactional-mail-contracts
 tools/*
 !tools/dx

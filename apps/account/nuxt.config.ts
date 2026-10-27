@@ -71,7 +71,7 @@ export default defineNuxtConfig({
   // Alias tường minh cho `@ecoma-io/*` — **bắt buộc**, không phải tuỳ chọn.
   //
   // `tsconfig.base.json` có `paths: {}` rỗng và `vite.resolve.tsconfigPaths` chỉ
-  // đọc `paths`, nên cả hai cùng không map gì cho `@ecoma-io/identity-domain` /
+  // đọc `paths`, nên cả hai cùng không map gì cho `@ecoma-io/account-domain` /
   // `@ecoma-io/account-contracts` / `@ecoma-io/auth-contracts`. Hệ quả đã quan
   // sát được: Vite resolve `@ecoma-io/*` **không** được ở runtime, nên import
   // trong `server/` chỉ nổ ở request đầu tiên chạm tới route đó (dev 500,
@@ -85,7 +85,7 @@ export default defineNuxtConfig({
     // `import.meta.url` chứ không phải `node:path`: `.oxlintrc.json` cấm import Node
     // builtin trong `apps/**`, và `nuxt.config.ts` khớp glob đó. `new URL(x,
     // import.meta.url).pathname` cho đường dẫn tuyệt đối mà không cần `resolve`.
-    '@ecoma-io/identity-domain': new URL('../../libs/identity-domain/src/index.ts', import.meta.url)
+    '@ecoma-io/account-domain': new URL('../../libs/account-domain/src/index.ts', import.meta.url)
       .pathname,
     '@ecoma-io/account-contracts': new URL(
       '../../libs/account-contracts/src/index.ts',

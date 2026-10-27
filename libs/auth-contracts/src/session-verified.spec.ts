@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -206,5 +209,47 @@ describe('validateSessionVerifiedRequest — detail never leaks payload values',
     }
     expect(result.detail).not.toContain('attacker.example');
     expect(result.detail).toContain('redirect_uri');
+  });
+});
+
+describe('ACR_URN_VALUES — parity with the domain producer', () => {
+  // ⚠️ Đọc file nguồn của producer (`libs/account-domain/src/acr.ts`) chứ KHÔNG
+  // import: constraint `type:contracts` cấm phụ thuộc `type:domain` (kể cả
+  // transitive), nên so sánh qua import là bất khả thi về mặt kiến trúc — chính
+  // vì thế tên URN được mirror tại đây. Test này đọc nguồn producer (cùng pattern
+  // `readFileSync` của `libs/backoffice-domain/src/account-id.spec.ts`), bóc URN
+  // trong `ACR` của producer và assert hai tập bằng nhau: producer đổi URN mà
+  // không sửa bên contract → test đỏ trước khi sai khác chạm tới wire.
+  const producerSource = readFileSync(
+    resolve(import.meta.dirname, '../../account-domain/src/acr.ts'),
+    'utf8',
+  );
+
+  // Bóc đúng khối `ACR = {...} as const` của producer — các URN khác trong file
+  // (doc comment, regex `isAcrShape`) không được lọt vào tập so sánh. Mảng
+  // `ACR_VALUES` tham chiếu qua tên property, nên URN phải lấy từ khối object.
+  const block = /export const ACR = \{([^}]*)\} as const/u.exec(producerSource);
+  const producerUrns =
+    block?.[1].match(/'urn:ecoma:acr:[^']+'/gu)?.map((quoted) => quoted.slice(1, -1)) ?? [];
+
+  it('equals exactly the ACR set the domain declares', () => {
+    expect(block).not.toBeNull();
+    expect(producerUrns.length).toBeGreaterThan(0);
+    // So tập không so vị trí: thứ tự khai báo không thuộc wire contract — chỉ
+    // thành viên của tập là. So bằng membership thay vì sort:
+    // `unicorn/no-array-sort` cấm `sort()` và tsconfig.base của repo là es2022
+    // nên không có `toSorted()`.
+    expect(producerUrns).toHaveLength(ACR_URN_VALUES.length);
+    for (const urn of ACR_URN_VALUES) {
+      expect(producerUrns).toContain(urn);
+    }
+  });
+
+  it('keeps the same declaration order as the domain source', () => {
+    // `toEqual` trên array là so có thứ tự: cùng thứ tự với `ACR_VALUES`
+    // (email-otp → mfa → phishing-resistant) giữ tài liệu contract và nguồn
+    // domain cùng một trục đọc — lệch thứ tự là dấu hiệu một bên đã được sửa
+    // tay mà bên kia chưa.
+    expect([...ACR_URN_VALUES]).toEqual(producerUrns);
   });
 });

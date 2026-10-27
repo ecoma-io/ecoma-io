@@ -23,7 +23,7 @@
  * UNIQUE, và rotation tạo hàng mới hoàn toàn.
  */
 
-import { ACR } from '@ecoma-io/identity-domain';
+import { ACR } from '@ecoma-io/account-domain';
 
 /** Cookie session của app `account` — `__Host-` buộc Secure + Path=/ + no domain. */
 export const SESSION_COOKIE_NAME = '__Host-account-session';

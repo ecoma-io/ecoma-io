@@ -252,7 +252,7 @@ describe('root .dockerignore: required build inputs are included', () => {
     // Account re-export lib này (dependency qua `package.json` và project
     // reference qua `tsconfig.lib.json`), nên nó cũng là input của image account.
     expect(isExcluded('libs/internal-auth-contracts/src/index.ts')).toBe(false);
-    expect(isExcluded('libs/identity-domain/src/index.ts')).toBe(false);
+    expect(isExcluded('libs/account-domain/src/index.ts')).toBe(false);
     expect(isExcluded('libs/transactional-mail-contracts/src/index.ts')).toBe(false);
   });
 

@@ -6,7 +6,7 @@
  * trên `staff.sub`) và tầng application, không ở lib này.
  *
  * F1 (issue #101): định danh này là reference tới `sub` mà `account` cấp, nên
- * format của nó phải ĐỒNG NHẤT format `Subject` của identity-domain. Ba test
+ * format của nó phải ĐỒNG NHẤT format `Subject` của account-domain. Ba test
  * cùng giữ khớp đó — ghim giá trị, ghim `sub` thật 32 ký tự đi qua guard, và
  * đọc file nguồn producer để hai bên không lệch nhau âm thầm.
  */
@@ -49,15 +49,15 @@ describe('entropy threshold', () => {
     expect(isBackofficeAccountId(`${BACKOFFICE_ACCOUNT_ID_PREFIX}${'a'.repeat(52)}`)).toBe(false);
   });
 
-  it('agrees with the identity producer by reading its source (no cross-scope import)', () => {
-    // ⚠️ Đọc file nguồn của `libs/identity-domain` chứ KHÔNG import: module-
+  it('agrees with the account producer by reading its source (no cross-scope import)', () => {
+    // ⚠️ Đọc file nguồn của `libs/account-domain` chứ KHÔNG import: module-
     // boundary cấm `backoffice-domain` phụ thuộc implementation của identity BC,
     // và thêm cạnh đó chỉ để lấy hai con số là một thay đổi kiến trúc, không phải
     // một test (cùng pattern mà `internal-nonces.spec.ts` cross-check hằng của
     // `internal-auth-contracts` bằng readFileSync). Producer đổi độ dài mà không sửa
     // bên đây → test này đỏ trước khi hai `sub` lệch format ở runtime.
     const producerSource = readFileSync(
-      resolve(import.meta.dirname, '../../identity-domain/src/subject.ts'),
+      resolve(import.meta.dirname, '../../account-domain/src/subject.ts'),
       'utf8',
     );
 

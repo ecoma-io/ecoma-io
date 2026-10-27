@@ -287,7 +287,7 @@ SELECT has_schema_privilege('ecoma_auth_nonce_pruner', 'auth', 'CREATE');     --
 ## Ràng buộc liên service chưa có
 
 - **`authn_level`**: tập giá trị trong CHECK phải khớp `AUTHN_LEVELS` ở
-  `libs/identity-domain/src/authn-level.ts` (nguồn sự thật dùng chung). `db-account` chưa
+  `libs/account-domain/src/authn-level.ts` (nguồn sự thật dùng chung). `db-account` chưa
   được provision (issue #83), nên chưa có ràng buộc toàn vẹn giữa hai bên; nếu `account`
   sau này đổi tập giá trị, CHECK ở file `0002` phải được cập nhật bằng một migration
   forward-fix.

@@ -2,7 +2,7 @@
  * `@ecoma-io/account-contracts` — contract mà service `account` **publish** cho
  * consumer của nó (`auth`).
  *
- * ⚠️ **Project này KHÔNG import `@ecoma-io/identity-domain`.** Constraint `type:contracts`
+ * ⚠️ **Project này KHÔNG import `@ecoma-io/account-domain`.** Constraint `type:contracts`
  * trong `.oxlintrc.json` cấm phụ thuộc `type:domain` (kể cả transitive), và đó là đúng:
  * contract là thứ provider **publish** để consumer phụ thuộc vào, không phải một tầng để
  * đi theo chiều phụ thuộc. Vì vậy mọi giá trị wire (status, trường bị cấm) được khai

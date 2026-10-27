@@ -41,7 +41,7 @@
  * hash, error code.
  *
  * ⚠️ `sub` được phép nguyên vẹn vì nó là **opaque identifier không phải bí mật**
- * (xem `identity-domain/src/subject.ts` — entropy tự nó không phải credential),
+ * (xem `account-domain/src/subject.ts` — entropy tự nó không phải credential),
  * và nó là thứ cho phép nối một dòng log với một account. `session_id` thì **không**
  * — đó là giá trị session thật, nên chỉ dạng đã hash mới được ghi.
  *

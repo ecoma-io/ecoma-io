@@ -146,7 +146,7 @@ describe('self-elevation guard on db-backoffice (0004)', () => {
 
   it('refuses a staff row whose sub has the wrong entropy length', async () => {
     // 31 ký tự — thiếu một ký tự base32 là thiếu 5 bit entropy. Ngưỡng là
-    // của **producer** (`libs/identity-domain/src/subject.ts`), không phải con
+    // của **producer** (`libs/account-domain/src/subject.ts`), không phải con
     // số tự chọn.
     const runtime = await db.connectAsRuntime();
     try {

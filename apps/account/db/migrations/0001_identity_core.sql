@@ -168,8 +168,8 @@ CREATE TABLE IF NOT EXISTS account.account_sessions (
   created_at timestamptz NOT NULL DEFAULT now(),
   expires_at timestamptz NOT NULL,
   revoked_at timestamptz,
-  -- Thang mức phải khớp `AUTHN_LEVELS` (`libs/identity-domain`) và
-  -- `AUTHN_LEVEL_VALUES` (`libs/identity-contracts`): anonymous, password,
+  -- Thang mức phải khớp `AUTHN_LEVELS` (`libs/account-domain`) và
+  -- `AUTHN_LEVEL_VALUES` (`libs/auth-contracts`): anonymous, password,
   -- totp, passkey. Không có 'otp' — ladder dùng `totp`.
   CONSTRAINT account_sessions_authn_level_check CHECK (
     authn_level IS NULL OR authn_level IN ('anonymous', 'password', 'totp', 'passkey')

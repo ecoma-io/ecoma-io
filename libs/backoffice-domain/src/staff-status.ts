@@ -23,7 +23,7 @@
  * membership là thao tác mới có audit, không phải chuyển lại về active im
  * lặng"), không phải một transition trong module này. Không có hàm nào chuyển
  * `terminated` sang trạng thái khác — cùng hình thức với tombstone của
- * `identity-domain/src/account-status.ts`.
+ * `account-domain/src/account-status.ts`.
  */
 
 /** Tập trạng thái hợp lệ, dùng làm nguồn cho union và type guard. */

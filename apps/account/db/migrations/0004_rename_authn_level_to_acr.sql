@@ -57,7 +57,7 @@ $$;
 -- Constraint cũ `account_sessions_authn_level_check` bám theo cột qua rename
 -- (PostgreSQL giữ constraint khi cột đổi tên), nên DROP theo tên constraint.
 --
--- Tập mới là ĐÚNG ba URN của `@ecoma-io/identity-domain` (`ACR_VALUES`) — parity
+-- Tập mới là ĐÚNG ba URN của `@ecoma-io/account-domain` (`ACR_VALUES`) — parity
 -- được canh bằng test.
 --
 -- ⚠️ Không còn `anonymous` trong tập: session chưa xác thực để `acr` NULL (giữ
