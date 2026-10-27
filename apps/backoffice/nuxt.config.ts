@@ -64,6 +64,10 @@ export default defineNuxtConfig({
       .pathname,
     '@ecoma-io/ui-ecoma-logo': new URL('../../libs/ui-ecoma-logo/src/index.ts', import.meta.url)
       .pathname,
+    '@ecoma-io/backoffice-application': new URL(
+      '../../libs/backoffice-application/src/index.ts',
+      import.meta.url,
+    ).pathname,
     '@ecoma-io/backoffice-infrastructure': new URL(
       '../../libs/backoffice-infrastructure/src/index.ts',
       import.meta.url,

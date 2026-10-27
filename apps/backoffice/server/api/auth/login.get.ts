@@ -48,7 +48,7 @@ import {
   insertLoginFlow,
   LOGIN_FLOW_TTL_SECONDS,
   loginFlowCookie,
-} from '../../auth/login-flow';
+} from '@ecoma-io/backoffice-application';
 import { backofficeAuthConfig } from '../../auth/config';
 import { readWorkerEnv } from '../../db';
 

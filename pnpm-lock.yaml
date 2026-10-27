@@ -481,6 +481,9 @@ importers:
 
   apps/backoffice:
     dependencies:
+      '@ecoma-io/backoffice-application':
+        specifier: workspace:*
+        version: link:../../libs/backoffice-application
       '@ecoma-io/backoffice-domain':
         specifier: workspace:*
         version: link:../../libs/backoffice-domain
@@ -651,10 +654,26 @@ importers:
 
   deploys/web-push-notification-job-deploy: {}
 
+  libs/backoffice-application:
+    dependencies:
+      '@ecoma-io/backoffice-domain':
+        specifier: workspace:*
+        version: link:../backoffice-domain
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
+      pg:
+        specifier: ^8.23.1
+        version: 8.23.1
+
   libs/backoffice-domain: {}
 
   libs/backoffice-infrastructure:
     dependencies:
+      '@ecoma-io/backoffice-application':
+        specifier: workspace:*
+        version: link:../backoffice-application
       '@ecoma-io/backoffice-domain':
         specifier: workspace:*
         version: link:../backoffice-domain
