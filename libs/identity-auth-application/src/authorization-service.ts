@@ -413,7 +413,7 @@ export async function completeAuthorization(params: {
   // `try/catch` biến lỗi đó thành "coi như khoẻ".
   const status = await account.checkStatus({ accountId });
 
-  // ⚠️ Dùng `allowsIssuance` từ contracts, KHÔNG tự so `=== 'active'` ở đây:
+  // ⚠️ Dùng `allowsIssuance` từ domain, KHÔNG tự so `=== 'active'` ở đây:
   // một bản sao của danh sách trắng là một chỗ để hai bên lệch nhau, và lệch
   // theo hướng rộng hơn nghĩa là phát token cho account đáng lẽ bị chặn.
   if (!allowsIssuance(status)) {

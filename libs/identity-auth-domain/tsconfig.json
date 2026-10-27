@@ -15,5 +15,14 @@
   },
   "include": ["src/**/*.ts"],
   "exclude": ["out-tsc", "dist", "src/**/*.test.ts", "src/**/*.spec.ts"],
-  "references": []
+  "references": [
+    {
+      "path": "../account-contracts/tsconfig.lib.json"
+    }
+  ],
+  "nx": {
+    "sync": {
+      "ignoredReferences": ["../account-contracts/tsconfig.lib.json"]
+    }
+  }
 }
