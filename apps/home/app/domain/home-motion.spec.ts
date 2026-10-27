@@ -11,10 +11,34 @@ import { useHomeMotion } from './home-motion';
  * Phạm vi: hai guard cốt lõi (reduced-motion và matchMedia thiếu) KHÔNG được
  * để lại bất kỳ inline style nào trên DOM — đây là contract "SSR render đầy
  * đủ, motion chỉ cải tiến": trình duyệt reduce-motion phải thấy trang tĩnh
- * hoàn chỉnh. Đường GSAP thật (timeline chạy) không được assert ở đây: jsdom
- * không có layout engine, autoAlpha/y sẽ render style nhưng không đại diện
- * cho browser thật — assertion đó thuộc về review trực quan trên build thật.
+ * hoàn chỉnh. Đường GSAP thật (timeline chạy) KHÔNG được chờ qua playback:
+ * trong jsdom, ticker GSAP chạy trên rAF mà runner CI starve - lagSmoothing
+ * giới hạn mỗi frame trễ advances 33ms, nên một timeline 0.25s có thể cần
+ * hơn 1000ms wall-time (vượt mặc định `vi.waitFor`) mà không đỏ do logic.
+ * Lúc cần trạng thái "timeline đã render tới t": chờ tín hiệu đồng bộ của
+ * init (lời gọi `gsap.context` - callback của nó chạy trọn vẹn trong cùng
+ * khối đồng bộ), rồi render **đồng bộ** bằng `gsap.updateRoot(time)`.
  */
+
+/** Số giây GSAP-time mà test render tới - đủ để mọi hero tween đã bắt đầu. */
+const RENDER_TIME_SECONDS = 0.5;
+
+/**
+ * Chờ init của composable chạy xong qua tín hiệu ĐỒNG BỘ: `gsap.context`
+ * được gọi ngay sau `await import('gsap')`, và callback bên trong nó (nơi
+ * timeline được tạo) chạy trọn vẹn trong cùng khối đồng bộ - nên khi spy thấy
+ * lời gọi thì timeline chắc chắn đã tồn tại. Không phụ thuộc rAF/ticker.
+ *
+ * Cần `vi.waitFor` (không phải một lần check) vì composable đạt tới lời gọi
+ * đó SAU `await import('gsap')` - một macrotask mà thời lượng không bị chặn
+ * bởi số vòng setTimeout khi runner đầy tải. Waiter này vẫn nhanh: chỉ chờ
+ * microtask/module-loader, không chờ playback.
+ */
+function waitForContextCall(spy: ReturnType<typeof vi.spyOn>): Promise<void> {
+  return vi.waitFor(() => {
+    expect(spy).toHaveBeenCalled();
+  });
+}
 
 function mountWithMotion(): {
   wrapper: ReturnType<typeof mount>;
@@ -228,6 +252,10 @@ describe('useHomeMotion', () => {
 
     const host = document.createElement('div');
     document.body.appendChild(host);
+    // Spy `gsap.context` (bọc nguyên bản): lời gọi nó là tín hiệu init chạy
+    // tới phần tạo timeline - callback của `gsap.context` thực thi trọn vẹn
+    // trong cùng khối đồng bộ, đúng mẫu tín hiệu đồng bộ mà PR #190 dùng.
+    const contextSpy = vi.spyOn(realGsap, 'context');
     const FullHero = defineComponent({
       setup() {
         const root = ref<HTMLElement>();
@@ -250,9 +278,39 @@ describe('useHomeMotion', () => {
     // (autoAlpha -> visibility/opacity, timeline -> transform). Neo này phân
     // biệt với nhánh catch: nếu guard bị gỡ, TypeError rơi vào catch và
     // revert() xóa sạch style -> attribute chỉ còn chuỗi rỗng.
-    await vi.waitFor(() => {
-      expect(heading.attributes('style') ?? '').toMatch(/opacity|visibility|transform/u);
-    });
+    //
+    // Chờ INIT xong bằng tín hiệu xác định, không chờ playback của timeline
+    // (Issue #339, cùng cơ chế flaky với #189 mà PR #190 đã sửa cho test anh
+    // em): style của heading chỉ xuất hiện khi tween bắt đầu (t≈0.25s,
+    // `immediateRender: false`), mà ticker rAF của jsdom bị lagSmoothing kẹp
+    // còn 33ms/frame khi runner CI đầy tải - một `vi.waitFor` mặc định 1000ms
+    // có thể hết giờ trước khi tiến trình GSAP tới 0.25s, đỏ dù logic đúng.
+    // Thay vào đó: chờ lời gọi `gsap.context` (đồng bộ với việc tạo timeline),
+    // rồi render timeline ĐỒNG BỘ qua `gsap.updateRoot(heroStart + 0.5)` - thời
+    // điểm mọi hero tween chắc chắn đã bắt đầu, không phụ thuộc rAF.
+    await waitForContextCall(contextSpy);
+    // Render tới (thời điểm bắt đầu của timeline hero + 0.5s) trong hệ quy
+    // chiếu globalTimeline: `gsap.timeline()` được auto-add vào globalTimeline
+    // tại thời điểm HIỆN TẠI của ticker (không phải 0), nên render tới t tuyệt
+    // đối cố định (0.5s) sẽ TRƯỚC cả khi tween heading bắt đầu (heroStart +
+    // 0.25s) nếu ticker tiến triển trong lúc init. Giá trị heroStart đọc trực
+    // tiếp từ timeline vừa tạo - không đoán, không phụ thuộc tốc độ runner.
+    const heroTimeline = realGsap.globalTimeline.getChildren(false, false, true)[0];
+    expect(
+      heroTimeline,
+      'hero timeline must be registered on the global timeline once gsap.context ran',
+    ).toBeDefined();
+    const heroStart = (heroTimeline as unknown as { startTime: () => number }).startTime();
+    realGsap.updateRoot(heroStart + RENDER_TIME_SECONDS);
+    expect(
+      heading.attributes('style') ?? '',
+      `${
+        'hero heading must carry motion inline style after a synchronous render; ' +
+        'an empty string means the init never ran (import or init swallowed) or ' +
+        'the catch path reverted it - check the IntersectionObserver guard ' +
+        'below, which must turn this assertion red if removed'
+      }`,
+    ).toMatch(/opacity|visibility|transform/u);
     // Guard đúng nghĩa là "phần reveal được bỏ qua" — không có lỗi nào được
     // ghi: nếu guard bị gỡ, `new IntersectionObserver` trên `undefined` ném
     // TypeError, catch chạy và console.error vang lên ở đây.

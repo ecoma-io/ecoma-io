@@ -756,6 +756,19 @@
       // mở rộng cho code app (`apps/account/app/**` vẫn cấm Node builtin).
       "files": ["apps/*/vitest.config.mts", "apps/*/vite.config.mts"],
       "rules": { "no-restricted-imports": "off", "import/no-nodejs-modules": "off" }
+    },
+    {
+      // Build-time Nuxt module đọc artifact build trên đĩa (`apps/home/modules/
+      // static-assets-guard.ts`): hook `nitro:build:public-assets` chạy trong
+      // tiến trình build Node SAU prerender, đếm file trong `.output/public/
+      // assets` - không bao giờ được bundle vào Worker edge, nên cùng tính chất
+      // với `deploy/**`, `*.spec.*` và vitest config phía trên: tooling Node,
+      // không thuộc runtime:edge của app. Block này đứng sau block `apps/**`
+      // nên exemption có hiệu lực; chỉ exemption cho **module build-time này**,
+      // không mở rộng cho code app khác (`apps/home/app/**` vẫn cấm Node
+      // builtin).
+      "files": ["apps/home/modules/static-assets-guard.ts"],
+      "rules": { "no-restricted-imports": "off", "import/no-nodejs-modules": "off" }
     }
   ]
 }

@@ -59,6 +59,12 @@ export default defineNuxtConfig({
     'nuxt-content-assets',
     '@nuxt/content',
     './modules/prerendered-content-manifest',
+    // Rào chắn fail-loud cho `.output/public/assets` (hook Nuxt
+    // `nitro:build:public-assets`): một build mà `nuxt-content-assets` nuốt
+    // lỗi load content config vẫn prerender đủ HTML nhưng mất trắng thư mục
+    // assets - trước khi có hook này, lỗi đó chỉ lộ ở static-output test sau
+    // khi build đã "xanh", với cảnh báo gốc bị Nx ẩn. Chi tiết trong module.
+    './modules/static-assets-guard',
   ],
   css: ['~/assets/css/styles.css'],
 
