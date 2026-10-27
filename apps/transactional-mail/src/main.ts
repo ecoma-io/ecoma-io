@@ -11,6 +11,7 @@ import {
 import {
   MAIL_DEFAULT_LOCALE,
   createMailMessage,
+  isTemplateAuthorized,
   publishOutboxBatch,
   runNoncePrune,
   runOutboxReconciler,
@@ -298,18 +299,19 @@ app.post('/v1/messages', async (c) => {
     return c.json(errorBody('invalid_request', validated.message), 400);
   }
 
-  // Bước 3b — AUTHORIZE THEO TEMPLATE (SR-001 authorization table): principal chỉ được
-  // tạo message với logical template đã approve cho chính nó. Sau bước validate shape (để
-  // có `template` đã validate) và **trước** mọi persistence lẫn idempotency lookup: một
-  // principal bị revoke template không được tiếp tục nhận `200` replay của request cũ —
-  // authorization là điều kiện của từng request, không phải chỉ của lần tạo đầu. Payload
-  // **không** có đường nào đổi verdict: allowlist đến từ config boot-time (server-
-  // controlled), `template` trong body chỉ được so khớp, không bao giờ được merge vào
-  // allowlist. `403` dùng chung một message hằng cho "không có trong allowlist" — không
-  // phân biệt "template của principal khác" với "template chưa approve", vì sự phân biệt
-  // đó là oracle liệt kê catalog template.
-  const allowedTemplates = config.templatesByPrincipal.get(principal.principal);
-  if (allowedTemplates === undefined || !allowedTemplates.includes(validated.request.template)) {
+  // Bước 3b — AUTHORIZE THEO TEMPLATE (SR-001): verdict do use case
+  // `isTemplateAuthorized` ở application layer quyết định (allowlist boot-time, default-
+  // deny, không merge từ payload — semantics đầy đủ ở đó). Route chỉ làm HTTP mapping: vị
+  // trí của bước này là một phần của verdict — sau validate shape và **trước** mọi
+  // persistence lẫn idempotency lookup, nên một principal bị revoke template không được
+  // tiếp tục nhận `200` replay của request cũ; và `403` giữ chung một message hằng, không
+  // phân biệt hai trường hợp deny — sự phân biệt đó là oracle liệt kê catalog template.
+  const authorization = isTemplateAuthorized({
+    principalId: principal.principal,
+    template: validated.request.template,
+    templatesByPrincipal: config.templatesByPrincipal,
+  });
+  if (!authorization.allowed) {
     return c.json(errorBody('forbidden', 'Principal is not allowed to use this template'), 403);
   }
 
