@@ -17,7 +17,7 @@
  * (§5.1), và BFF không bao giờ thấy machine token.
  */
 import type { MiddlewareHandler } from 'hono';
-import type { AppEnv } from '../domain/types';
+import type { AppEnv } from '../types';
 import { sha256Hex } from './hashing';
 
 /** Hình dạng repo tra token — repo layer cài đặt. */

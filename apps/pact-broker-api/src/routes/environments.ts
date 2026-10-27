@@ -4,10 +4,9 @@
  * application/hal+json, PUT luôn 201 application/json, GET 200.
  */
 import { Hono, type MiddlewareHandler } from 'hono';
-import type { AppEnv } from '../domain/types';
+import type { AppEnv } from '../types';
 import { currentTenantId } from '../middleware/tenant-context';
-import { HalBuilder, getBaseUrl } from '../domain/hal';
-import { environmentNameSchema } from '../domain/validation';
+import { HalBuilder, environmentNameSchema, getBaseUrl } from '@ecoma-io/pact-broker-api-domain';
 import { readJsonBodyWithLimit, validateParam } from '../middleware/validate';
 import { PgEnvironmentRepo } from '../repo/environment-repo';
 import { insertAuditEvent } from '../repo/token-repo';

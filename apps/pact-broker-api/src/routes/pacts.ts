@@ -7,16 +7,17 @@
  * 5 MiB cho mọi route; publish pact bị siết riêng như upstream.
  */
 import { Hono, type MiddlewareHandler } from 'hono';
-import type { AppEnv } from '../domain/types';
+import type { AppEnv } from '../types';
 import { currentTenantId } from '../middleware/tenant-context';
-import { HalBuilder, getBaseUrl } from '../domain/hal';
 import {
-  nameSchema,
-  versionSchema,
-  shaSchema,
+  HalBuilder,
   branchSchema,
+  getBaseUrl,
+  nameSchema,
+  shaSchema,
   tagSchema,
-} from '../domain/validation';
+  versionSchema,
+} from '@ecoma-io/pact-broker-api-domain';
 import { readJsonBodyWithLimit, validateParam } from '../middleware/validate';
 import { PgPactRepo, type PactContent, type PactFull } from '../repo/pact-repo';
 

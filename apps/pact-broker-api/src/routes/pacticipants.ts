@@ -5,16 +5,17 @@
  * deployed-versions 201, DELETE deployed 204, PUT branch-version 200.
  */
 import { Hono, type MiddlewareHandler } from 'hono';
-import type { AppEnv } from '../domain/types';
+import type { AppEnv } from '../types';
 import { currentTenantId } from '../middleware/tenant-context';
-import { HalBuilder, getBaseUrl } from '../domain/hal';
 import {
-  nameSchema,
-  versionSchema,
-  tagSchema,
+  HalBuilder,
   branchSchema,
   environmentNameSchema,
-} from '../domain/validation';
+  getBaseUrl,
+  nameSchema,
+  tagSchema,
+  versionSchema,
+} from '@ecoma-io/pact-broker-api-domain';
 import { readJsonBodyWithLimit, validateParam } from '../middleware/validate';
 import { PgVersionRepo } from '../repo/version-repo';
 import { PgEnvironmentRepo } from '../repo/environment-repo';

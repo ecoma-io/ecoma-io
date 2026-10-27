@@ -536,6 +536,9 @@ importers:
 
   apps/pact-broker-api:
     dependencies:
+      '@ecoma-io/pact-broker-api-domain':
+        specifier: workspace:*
+        version: link:../../libs/pact-broker-api-domain
       hono:
         specifier: ^4.13.13
         version: 4.13.13
@@ -755,6 +758,12 @@ importers:
         version: 8.23.1
 
   libs/internal-auth-contracts: {}
+
+  libs/pact-broker-api-domain:
+    dependencies:
+      zod:
+        specifier: ^4.0.0
+        version: 4.6.7
 
   libs/push-notification-application:
     dependencies:

@@ -12,7 +12,7 @@
 import { Hono, type MiddlewareHandler } from 'hono';
 // Named imports, chủ ý — xem ghi chú trong src/domain/validation.ts.
 import { array, enum as zEnum, object, string } from 'zod';
-import type { AppEnv } from '../domain/types';
+import type { AppEnv } from '../types';
 import { currentTenantId } from '../middleware/tenant-context';
 import { PgTenantRepo } from '../repo/tenant-repo';
 import { readJsonBodyWithLimit } from '../middleware/validate';

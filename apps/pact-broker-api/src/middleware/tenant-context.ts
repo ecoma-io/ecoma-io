@@ -10,7 +10,7 @@
  * `tenant_id = undefined`.
  */
 import type { Context } from 'hono';
-import type { AppEnv } from '../domain/types';
+import type { AppEnv } from '../types';
 
 export function currentTenantId(c: Context<AppEnv>): string {
   const tenantId = c.get('tenantId');

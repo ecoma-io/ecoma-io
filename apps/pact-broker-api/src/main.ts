@@ -19,7 +19,7 @@
 import { Hono } from 'hono';
 import type { ExecutionContext, MiddlewareHandler } from 'hono';
 import type { Pool } from 'pg';
-import type { AppEnv } from './domain/types';
+import type { AppEnv } from './types';
 import {
   loadPactBrokerConfig,
   PactBrokerConfigurationError,

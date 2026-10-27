@@ -9,12 +9,19 @@
  * và honor `?environment=` / `q[][environment]` cho --to-environment.
  */
 import { Hono, type MiddlewareHandler } from 'hono';
-import type { AppEnv, MatrixRowData } from '../domain/types';
+import type { AppEnv } from '../types';
 import { currentTenantId } from '../middleware/tenant-context';
-import { HalBuilder, getBaseUrl } from '../domain/hal';
-import { summarizeMatrix, toSummaryRows } from '../domain/matrix-summary';
-import { decorateMatrixRow } from '../domain/matrix-row';
-import { nameSchema, versionSchema, branchSchema } from '../domain/validation';
+import {
+  HalBuilder,
+  branchSchema,
+  decorateMatrixRow,
+  getBaseUrl,
+  nameSchema,
+  summarizeMatrix,
+  toSummaryRows,
+  versionSchema,
+} from '@ecoma-io/pact-broker-api-domain';
+import type { MatrixRowData } from '@ecoma-io/pact-broker-api-domain';
 import { validateParam, validateOptionalQuery } from '../middleware/validate';
 import { PgMatrixRepo } from '../repo/matrix-repo';
 import { PgVersionRepo } from '../repo/version-repo';
