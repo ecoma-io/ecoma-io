@@ -14,18 +14,21 @@ export {
   AUTHORIZATION_AUDIT_ID_MAX_LENGTH,
   AUTHORIZATION_FAILURE_INVALID_ACTOR,
   ENFORCEMENT_DENIAL_STALE_WRITE,
-  recordAuthorizationFailure,
-  recordDecision,
-  recordPrivilegedSuccess,
-  recordStaleWriteDenial,
-} from './authorization-audit';
+} from '@ecoma-io/backoffice-application';
 export type {
   AuthorizationAuditContext,
   AuthorizationFailureAuditInput,
   DecisionAuditInput,
   EnforcementDenialAuditInput,
-  PrivilegedOperationAuditInput,
+} from '@ecoma-io/backoffice-application';
+
+export {
+  recordAuthorizationFailure,
+  recordDecision,
+  recordPrivilegedSuccess,
+  recordStaleWriteDenial,
 } from './authorization-audit';
+export type { PrivilegedOperationAuditInput } from './authorization-audit';
 
 export { listPermissions, listRoles, listStaff, loadPrincipalAuthorization } from './queries';
 export type { PrincipalAuthorizationData, RoleRow, StaffRow } from './queries';

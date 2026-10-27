@@ -12,6 +12,7 @@
     }
   },
   "dependencies": {
+    "@ecoma-io/backoffice-application": "workspace:*",
     "@ecoma-io/backoffice-domain": "workspace:*",
     "jose": "6.2.13",
     "pg": "^8.23.1"

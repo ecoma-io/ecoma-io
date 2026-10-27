@@ -64,7 +64,7 @@ import {
   consumeLoginFlow,
   hashFlowIdentifier,
   LOGIN_FLOW_COOKIE_NAME,
-} from '../../auth/login-flow';
+} from '@ecoma-io/backoffice-application';
 import { readWorkerEnv } from '../../db';
 import { writeLog } from '../../log';
 

@@ -35,143 +35,20 @@
 
 import type { Client } from 'pg';
 
-import type {
-  AuthorizationDecision,
-  AuthorizationMode,
-  AuthorizationRiskClass,
-  CatalogPermission,
-} from '@ecoma-io/backoffice-domain';
 import { isBackofficeAccountId } from '@ecoma-io/backoffice-domain';
 
-/**
- * Độ dài tối đa của `request_id` / `correlation_id` ghi vào audit.
- *
- * ⚠️ Hai ID này là **correlation** id do tầng trên sinh, không phải payload:
- * giới hạn độ dài chặn một chuỗi tuỳ ý dài vô hạn làm đầy bảng audit (SR-013
- * đòi "mỗi privileged operation một record", nên bảng này là bảng ghi sự kiện
- * chứ không phải nơi chứa dữ liệu). Cùng ngưỡng này được DB chặn bằng CHECK ở
- * migration `0004` — tầng app và tầng DB cùng một con số, và test integration
- * ghim rằng hai bên không lệch.
- */
-export const AUTHORIZATION_AUDIT_ID_MAX_LENGTH = 128;
+import {
+  AUTHORIZATION_AUDIT_ID_MAX_LENGTH,
+  AUTHORIZATION_FAILURE_INVALID_ACTOR,
+  ENFORCEMENT_DENIAL_STALE_WRITE,
+} from '@ecoma-io/backoffice-application';
+import type {
+  DecisionAuditInput,
+  AuthorizationAuditContext,
+  AuthorizationFailureAuditInput,
+  EnforcementDenialAuditInput,
+} from '@ecoma-io/backoffice-application';
 
-/**
- * Reason code của denial phát sinh ở **tầng enforcement** (không phải từ
- * policy `can()`) — tập ĐÓNG, không ghép chữ tự do.
- *
- * `stale_write_blocked`: write path nhận ảnh authorization đã quá TTL của
- * risk class, nên không đủ tươi cho thao tác ghi (SR-008, ADR-0002) — đường
- * này fail-closed thay vì âm thầm nới cửa sổ.
- */
-export const ENFORCEMENT_DENIAL_STALE_WRITE = 'stale_write_blocked';
-
-/**
- * Reason code của một lần kiểm tra authorization **không xác định được actor**
- * — actor sai định dạng thì không gắn được actor vào bản ghi (S4, issue #102).
- */
-export const AUTHORIZATION_FAILURE_INVALID_ACTOR = 'invalid_actor';
-
-/**
- * Các mảnh thông tin của một lần gọi `requirePermission` — cấu thành **đúng
- * 7 trường** của SR-013; struct KHÔNG có chỗ nào cho token/secret/payload
- * (SR-014 ở tầng type, mạnh hơn CHECK của SQL).
- */
-export interface DecisionAuditInput {
-  /** Account ID của actor — đã qua validate {@link isBackofficeAccountId}. */
-  readonly actorSub: string;
-  /** Account ID của subject bị tác động, nếu operation tác động ai đó. */
-  readonly targetSub?: string;
-  /**
-   * Permission đã hỏi (`domain.action`) — vào cột `action` của audit; định
-   * danh tới catalog, không phải chuỗi tự do.
-   */
-  readonly permission: CatalogPermission;
-  /** Quyết định của {@link can} — outcome + reason_code + risk class. */
-  readonly decision: AuthorizationDecision;
-  /** Request ID — cột `request_id`, không nhận giá trị từ client. */
-  readonly requestId?: string;
-  /** Correlation ID — cột `correlation_id`, không nhận giá trị từ client. */
-  readonly correlationId?: string;
-  /**
-   * Đường thao tác (`read` | `write`) — ghi vào `context` để audit đọc được
-   * quyết định được đánh giá trên đường nào (F4, issue #101). Mặc định
-   * `'read'` khớp với mặc định của `requirePermission`.
-   */
-  readonly mode?: AuthorizationMode;
-}
-
-/**
- * Ngữ cảnh audit ghi vào cột `context` — chỉ marker, **không** payload.
- *
- * ⚠️ `context` là cột jsonb duy nhất của bảng audit có thể mang dữ liệu tuỳ ý,
- * nên nó là nơi SR-014 (không secret/PII) dễ hở nhất. Vì vậy kiểu này là
- * **đóng**: mọi trường đều là marker đã biết, không có chỗ cho payload lạ.
- */
-export interface AuthorizationAuditContext {
-  /** Risk class mà quyết định được tính theo (ADR-0002). */
-  readonly riskClass: AuthorizationRiskClass;
-  /** Marker ảnh authorization đã quá TTL của risk class hay chưa. */
-  readonly stale: boolean;
-  /** Đường thao tác: `'read'` hay `'write'` (SR-008 — re-check at write time). */
-  readonly mode: AuthorizationMode;
-}
-
-/**
- * Đầu vào của bản ghi **failure** — lần kiểm tra authorization không xác định
- * được actor (S4, issue #102).
- */
-export interface AuthorizationFailureAuditInput {
-  /** Permission đã hỏi — vẫn biết dù actor không xác định được. */
-  readonly permission: CatalogPermission;
-  /** Risk class của operation (để audit đọc được ngữ cảnh). */
-  readonly riskClass: AuthorizationRiskClass;
-  /** Đường thao tác (`read` | `write`). */
-  readonly mode: AuthorizationMode;
-  /** Request ID — cột `request_id`. */
-  readonly requestId?: string;
-  /** Correlation ID — cột `correlation_id`. */
-  readonly correlationId?: string;
-}
-
-/**
- * Đầu vào của bản ghi **denied phát sinh ở tầng enforcement** — write path thấy
- * ảnh authorization quá TTL (S1/F2).
- */
-export interface EnforcementDenialAuditInput {
-  /** Account ID của actor — đã qua validate {@link isBackofficeAccountId}. */
-  readonly actorSub: string;
-  /** Account ID của subject bị tác động, nếu operation tác động ai đó. */
-  readonly targetSub?: string;
-  /** Permission đã hỏi (`domain.action`). */
-  readonly permission: CatalogPermission;
-  /** Risk class của operation. */
-  readonly riskClass: AuthorizationRiskClass;
-  /** Marker stale của ảnh authorization đã dùng để đánh giá. */
-  readonly stale: boolean;
-  /** Đường thao tác — luôn là `'write'` ở đường này. */
-  readonly mode: AuthorizationMode;
-  /** Request ID — cột `request_id`. */
-  readonly requestId?: string;
-  /** Correlation ID — cột `correlation_id`. */
-  readonly correlationId?: string;
-}
-
-/**
- * Ghi một bản ghi audit **denied** cho một lần gọi `requirePermission` —
- * outcome luôn `denied` (SR-018: deny cũng phải quan sát được); đường
- * success của privileged operation dùng {@link recordPrivilegedSuccess}.
- *
- * ⚠️ Propagate error — KHÔNG nuốt (I-08). Lỗi DB phải ném lên caller, caller
- * {@link requirePermission} dùng nó để fail-closed: một denial KHÔNG log
- * được là một request phải từ chối, không phải request được im lặng cho qua.
- *
- * ⚠️ Chỉ nhận client của **runtime role** — bảng chỉ grant SELECT+INSERT cho
- * `ecoma_backoffice_runtime` và caller phải tự cắm credential đúng; thư viện
- * này không tự mở connection (không node-local state). `INSERT` column-name
- * tường minh: `id`/`occurred_at` để DB default, không nhận giá trị từ code.
- *
- * @param client pg client đã kết nối bằng runtime role.
- */
 export async function recordDecision(client: Client, input: DecisionAuditInput): Promise<void> {
   if (!isBackofficeAccountId(input.actorSub)) {
     // Actor sai định dạng là bug tầng composition, không phải dữ liệu tin
