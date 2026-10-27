@@ -586,6 +586,94 @@ describe('D1JobStateRepository group 4: reconciliation data', () => {
     expect(stuck.map((job: JobRecord) => job.deliveryId)).toEqual(['del-stuck-0', 'del-stuck-1']);
   });
 
+  // Ngân sách attempt của production (`RECONCILE_MAX_ATTEMPTS = 3` ở composition root) đi vào
+  // `listStuck` qua `maxAttempts`, nhưng suite này chưa từng truyền tham số đó — ba test dưới
+  // đây ghim clause ngân sách trong SQL của `listStuck` (comment "Điều kiện kiệt") trên D1 thật.
+  //
+  // Job kiệt vì `consume_count`: ba lần consume cùng `attempt = 1` — attempt record là
+  // idempotent theo cặp `(delivery_id, attempt)` nên chỉ có một row, còn `consume_count` vẫn
+  // đếm đủ 3. Tách đúng hai bộ đếm mà clause phải phân biệt.
+  it('excludes a job whose consume_count reached maxAttempts from listStuck when maxAttempts is given', async () => {
+    await seedJob('del-budget-cc', T0 - 60 * 60_000);
+    await seedJob('del-budget-cc', T0 - 60 * 60_000);
+    await seedJob('del-budget-cc', T0 - 60 * 60_000);
+
+    const withBudget = await repo.listStuck({
+      stuckAfterMs: 15 * 60_000,
+      nowMs: T0,
+      limit: 10,
+      maxAttempts: 3,
+    });
+    // Cùng bảng, KHÔNG budget: job vẫn kẹt đúng ngưỡng — chứng minh nó bị loại bởi clause
+    // ngân sách chứ không phải bởi ngưỡng "kẹt".
+    const withoutBudget = await repo.listStuck({ stuckAfterMs: 15 * 60_000, nowMs: T0, limit: 10 });
+
+    expect(withBudget).toEqual([]);
+    expect(withoutBudget.map((job: JobRecord) => job.deliveryId)).toEqual(['del-budget-cc']);
+  });
+
+  // Nhánh thứ hai của clause: attempt row **mới nhất** đã chạm trần (Queue redeliver hết ngân
+  // sách) dù `consume_count` còn dưới trần. Rows 2 và 3 được ghi thẳng SQL (precedent: test
+  // UNIQUE của nhóm 1) vì mọi đường `beginAttempt` đều tăng `consume_count` — mà test này
+  // cần nó ở 1 để nhánh `consume_count` không thể giải thích việc bị loại.
+  it('excludes a job whose latest attempt row reached maxAttempts even when consume_count is below it', async () => {
+    await repo.beginAttempt({
+      envelope: envelopeFor('del-budget-attempt'),
+      attempt: 1,
+      nowMs: T0 - 60 * 60_000,
+    });
+    await repo.completeAttempt({
+      deliveryId: 'del-budget-attempt',
+      attempt: 1,
+      outcome: 'retrying',
+      phase: 'after_send',
+      httpStatus: 503,
+      retryAfterMs: 1_000,
+      nowMs: T0 - 59 * 60_000,
+    });
+    for (const attempt of [2, 3]) {
+      await db
+        .prepare(
+          `INSERT INTO push_job_attempts (delivery_id, attempt, outcome, phase, http_status, retry_after_ms, state, started_at, updated_at) VALUES ('del-budget-attempt', ?, 'retrying', 'after_send', 503, 1000, 'completed', ?, ?);`,
+        )
+        .bind(attempt, T0 - (61 - attempt) * 60_000, T0 - (60 - attempt) * 60_000)
+        .run();
+    }
+
+    // Guard hình dạng dữ liệu: `consume_count` phải ở dưới trần và attempt row mới nhất phải
+    // ở trần — nếu không, assertion loại job dưới đây không còn nhắm đúng nhánh của clause.
+    const record = await loadOrThrow('del-budget-attempt');
+    expect(record.consumeCount).toBe(1);
+    expect(record.lastAttempt?.attempt).toBe(3);
+
+    const stuck = await repo.listStuck({
+      stuckAfterMs: 15 * 60_000,
+      nowMs: T0,
+      limit: 10,
+      maxAttempts: 3,
+    });
+    expect(stuck).toEqual([]);
+  });
+
+  // Bất biến "lọc TRƯỚC LIMIT" của cùng comment đó: job kiệt cũ hơn nên đứng ĐẦU danh sách
+  // kẹt — nếu `LIMIT` áp trước khi lọc ngân sách thì nó chiếm mất slot và job kẹt thật bị cắt
+  // (sai loại một: trả rỗng; sai loại hai: trả chính job kiệt).
+  it('keeps an exhausted job hidden while a genuinely stuck job still surfaces, applying the budget before LIMIT', async () => {
+    await seedJob('del-budget-first', T0 - 2 * DAY_MS);
+    await seedJob('del-budget-first', T0 - 2 * DAY_MS);
+    await seedJob('del-budget-first', T0 - 2 * DAY_MS);
+    await seedJob('del-budget-stuck', T0 - 60 * 60_000);
+
+    const stuck = await repo.listStuck({
+      stuckAfterMs: 15 * 60_000,
+      nowMs: T0,
+      limit: 1,
+      maxAttempts: 3,
+    });
+
+    expect(stuck.map((job: JobRecord) => job.deliveryId)).toEqual(['del-budget-stuck']);
+  });
+
   it('orders by the oldest consumption first', async () => {
     await seedJob('del-younger', T0 - 20 * 60_000);
     await seedJob('del-older', T0 - 40 * 60_000);
