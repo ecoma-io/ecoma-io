@@ -850,6 +850,36 @@ describe('internal delivery routes on real D1 (§7.2, §6.2.2)', () => {
 });
 
 describe('scheduled handler (publish loop + redispatch budget A)', () => {
+  // Invariant 12 (`docs/overview/01-architecture.md`): không correctness write nào qua
+  // `ctx.waitUntil()`. Scheduled của control plane mail khai `ctx` nhưng chỉ `void ctx` —
+  // publish (QUEUE.send + markPublished) là correctness write và phải nằm trong promise trả
+  // về. ExecutionContext bẫy ném thay vì ghi nhận: một lời gọi `waitUntil` duy nhất là đỏ.
+  it('completes the publish phase inside its returned promise, never touching a throwing waitUntil', async () => {
+    const queue = captureQueue();
+    const env = makeEnv(proxy?.env['mail'], queue.binding);
+
+    const response = await accountPost(env, TEMPLATE_BODY, 'invariant12-seed-key');
+    expect(response.status).toBe(201);
+    const { delivery_id: deliveryId } = (await response.json()) as { readonly delivery_id: string };
+
+    const trapCtx = {
+      waitUntil: (_promise: Promise<unknown>): void => {
+        throw new Error('waitUntil called on the scheduled path - invariant 12 violation');
+      },
+    };
+    await worker.scheduled({ cron: '*/5 * * * *' }, env, trapCtx);
+
+    // Sau khi promise trả về, correctness writes đã thấy: command đã ra Queue binding và
+    // outbox row đã `published` trên D1 — không phải việc nào đó đang treo ở ctx.
+    expect(sentCountFor(queue.sent, deliveryId)).toBe(1);
+    const outbox = await rawRows<{ status: string }>(
+      env,
+      'SELECT status FROM mail_outbox WHERE delivery_id = ?',
+      deliveryId,
+    );
+    expect(outbox).toEqual([{ status: 'published' }]);
+  });
+
   it('publish loop drains a pending outbox row through the queue binding and marks it queued', async () => {
     const queue = captureQueue();
     const env = makeEnv(proxy?.env['mail'], queue.binding);
