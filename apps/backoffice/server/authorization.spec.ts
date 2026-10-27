@@ -26,7 +26,7 @@ import type { recordDecision } from '@ecoma-io/backoffice-infrastructure';
 
 import { requirePermission, type PrincipalAuthorization } from './authorization';
 
-// ⚠️ Độ dài entropy phải khớp `SUBJECT_ENTROPY_LENGTH` của identity-domain
+// ⚠️ Độ dài entropy phải khớp `SUBJECT_ENTROPY_LENGTH` của account-domain
 // (32 ký tự base32) — `isBackofficeAccountId` từ chối mọi `sub` khác độ dài, và
 // một actor 52 ký tự sẽ bị từ chối ở bước validate, tức mọi test ở đây sẽ
 // đỏ vì lý do sai.

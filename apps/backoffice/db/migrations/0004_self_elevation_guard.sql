@@ -21,7 +21,7 @@
 --   * `libs/backoffice-domain/src/account-id.ts` — định dạng Account ID:
 --     prefix `sub_` + **32** ký tự base32 viết thường (`a`–`z`, `2`–`7`).
 --     `BACKOFFICE_ACCOUNT_ID_ENTROPY_CHARS = 32`, ngưỡng 160 bit lấy từ
---     producer `libs/identity-domain/src/subject.ts`.
+--     producer `libs/account-domain/src/subject.ts`.
 --
 -- ⚠️ **Đây là lớp phòng thủ thứ hai, không thay thế enforcement ở tầng
 -- application.** `requirePermission` (workstream B) vẫn là checkpoint chính;

@@ -1,5 +1,5 @@
 /**
- * `@ecoma-io/identity-domain` — value object, invariant vòng đời và policy thuần của
+ * `@ecoma-io/account-domain` — value object, invariant vòng đời và policy thuần của
  * bounded context `identity`.
  *
  * Thư viện này **không** import Nx project khác, **không** SQL, **không** Node builtin

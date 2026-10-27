@@ -15,7 +15,7 @@
 
 /**
  * Assurance trên wire là **một ACR URN** — assurance cao nhất mà session đã vượt
- * qua (`urn:ecoma:acr:*`, xem `@ecoma-io/identity-domain` `ACR`).
+ * qua (`urn:ecoma:acr:*`, xem `@ecoma-io/account-domain` `ACR`).
  *
  * ⚠️ Contract này không khai lại mảng `ACR_VALUES` của tầng domain: `type:contracts`
  * cấm phụ thuộc `type:domain` (kể cả transitive). Tên URN được mirror tại đây và

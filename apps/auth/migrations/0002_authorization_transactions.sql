@@ -77,7 +77,7 @@ CREATE TABLE auth.authorization_transactions (
     -- `db-auth` không được biết schema của `db-account`.
     sub                    text,
     -- Mức xác thực lúc `/authorize`, dùng để chọn bước tiếp theo của máy trạng thái.
-    -- ⚠️ Tập giá trị phải khớp `AUTHN_LEVELS` ở `libs/identity-domain` (nguồn sự thật dùng
+    -- ⚠️ Tập giá trị phải khớp `AUTHN_LEVELS` ở `libs/account-domain` (nguồn sự thật dùng
     -- chung). `db-account` chưa được provision (issue #83), nên ràng buộc toàn vẹn giữa hai
     -- bên chưa có — xem README §"Ràng buộc liên service chưa có".
     authn_level            text,
@@ -135,7 +135,7 @@ CREATE TABLE auth.authorization_transactions (
             'already_processed'        -- terminal idempotent: handle đã dùng hết (FR-008f)
         )),
 
-    -- ⚠️ Danh sách này phải khớp `AUTHN_LEVELS` (`libs/identity-domain/src/authn-level.ts`).
+    -- ⚠️ Danh sách này phải khớp `AUTHN_LEVELS` (`libs/account-domain/src/authn-level.ts`).
     CONSTRAINT authorization_transactions_authn_level_check
         CHECK (authn_level IS NULL OR authn_level IN ('anonymous', 'password', 'totp', 'passkey')),
 

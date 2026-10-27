@@ -2,9 +2,9 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig(() => ({
   root: import.meta.dirname,
-  cacheDir: '../../node_modules/.vite/libs/identity-domain',
+  cacheDir: '../../node_modules/.vite/libs/account-domain',
   test: {
-    name: '@ecoma-io/identity-domain',
+    name: '@ecoma-io/account-domain',
     watch: false,
     globals: true,
     environment: 'node',

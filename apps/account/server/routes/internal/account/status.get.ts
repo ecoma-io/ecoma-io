@@ -35,7 +35,7 @@ import {
   validateAccountStatusResponse,
   type AccountStatusResponseValue,
 } from '@ecoma-io/account-contracts';
-import { isAccountStatus, isSubject } from '@ecoma-io/identity-domain';
+import { isAccountStatus, isSubject } from '@ecoma-io/account-domain';
 
 import { accountHyperdrive } from '../../../utils/bindings';
 import { selectAccountStatus, withRequestPool } from '../../../utils/db';
@@ -132,7 +132,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // SR-010: audit **mỗi** lần đọc theo `sub`. `sub` là opaque identifier, không phải
-  // bí mật (`identity-domain/src/subject.ts`), nên nó được phép trong log — nó chính là
+  // bí mật (`account-domain/src/subject.ts`), nên nó được phép trong log — nó chính là
   // thứ nối dòng log này với một account.
   writeLog({ event: 'account_status.read', status: 200, sub });
 

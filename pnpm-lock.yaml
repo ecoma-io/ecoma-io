@@ -403,12 +403,12 @@ importers:
       '@ecoma-io/account-contracts':
         specifier: workspace:*
         version: link:../../libs/account-contracts
+      '@ecoma-io/account-domain':
+        specifier: workspace:*
+        version: link:../../libs/account-domain
       '@ecoma-io/auth-contracts':
         specifier: workspace:*
         version: link:../../libs/auth-contracts
-      '@ecoma-io/identity-domain':
-        specifier: workspace:*
-        version: link:../../libs/identity-domain
       '@ecoma-io/internal-auth-contracts':
         specifier: workspace:*
         version: link:../../libs/internal-auth-contracts
@@ -666,6 +666,8 @@ importers:
         specifier: workspace:*
         version: link:../internal-auth-contracts
 
+  libs/account-domain: {}
+
   libs/auth-application:
     dependencies:
       '@ecoma-io/account-contracts':
@@ -751,8 +753,6 @@ importers:
       '@types/pg':
         specifier: ^8.23.1
         version: 8.23.1
-
-  libs/identity-domain: {}
 
   libs/internal-auth-contracts: {}
 

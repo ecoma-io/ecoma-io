@@ -1,5 +1,5 @@
 /**
- * Khai báo global tối thiểu cho các Web API mà `@ecoma-io/identity-domain` thực dùng:
+ * Khai báo global tối thiểu cho các Web API mà `@ecoma-io/account-domain` thực dùng:
  * WebCrypto (`crypto.subtle` HMAC + PBKDF2, `crypto.getRandomValues`), `TextEncoder`,
  * `URLSearchParams` và `BufferSource`.
  *

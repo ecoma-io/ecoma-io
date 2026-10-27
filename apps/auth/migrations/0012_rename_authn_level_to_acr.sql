@@ -35,7 +35,7 @@ ALTER TABLE auth.authorization_transactions
 -- bám theo cột qua rename (PostgreSQL giữ constraint khi cột đổi tên), nên DROP bằng tên
 -- constraint, KHÔNG phụ thuộc tên cột.
 --
--- Tập mới là ĐÚNG ba URN ACR của `@ecoma-io/identity-domain` (`ACR_VALUES`) — parity với
+-- Tập mới là ĐÚNG ba URN ACR của `@ecoma-io/account-domain` (`ACR_VALUES`) — parity với
 -- contracts được canh bằng test, không phải bằng niềm tin:
 --   - `urn:ecoma:acr:email-otp`          — đăng nhập OTP email (phương thức duy nhất).
 --   - `urn:ecoma:acr:mfa`                — OTP + yếu tố thứ hai (TOTP hoặc Passkey).

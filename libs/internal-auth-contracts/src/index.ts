@@ -9,7 +9,7 @@
  * identity (`@ecoma-io/account-contracts`, `@ecoma-io/auth-contracts`) cũng re-export lại
  * từ đây cho caller lẫn callee của từng contract, qua đúng một nguồn.
  *
- * ⚠️ **Không identity-domain logic.** Giao thức không mang principal, user hay permission
+ * ⚠️ **Không account-domain logic.** Giao thức không mang principal, user hay permission
  * — receiver tự suy consumer từ credential đã khớp trong registry của nó. Bất kỳ khái niệm
  * thuộc một bounded context nào lọt vào đây là vi phạm taxonomy `scope:platform`
  * (`docs/overview/05-code-architecture.md`), và `pnpm dx arch-check` chặn consumer

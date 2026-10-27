@@ -174,7 +174,7 @@ Tham số OTP (TTL 600 giây, resend cooldown 60 giây, tối đa 5 lần thử,
 
 ### 3.8 Mô hình assurance — ACR thay thang bậc `authn_level`
 
-Mức xác thực của session được ghi dưới dạng **ACR URN** (`urn:ecoma:acr:*`), không còn thang bậc tuyến tính `authn_level` (migration `0004` đổi tên cột `account_sessions.authn_level` → `acr`). Model set-membership (`libs/identity-domain/src/acr.ts`, chính sách ở mục này — file code chỉ giữ hằng và phép kiểm tập):
+Mức xác thực của session được ghi dưới dạng **ACR URN** (`urn:ecoma:acr:*`), không còn thang bậc tuyến tính `authn_level` (migration `0004` đổi tên cột `account_sessions.authn_level` → `acr`). Model set-membership (`libs/account-domain/src/acr.ts`, chính sách ở mục này — file code chỉ giữ hằng và phép kiểm tập):
 
 | URN                                | Nghĩa                                                               | Quan hệ kéo theo                                                  |
 | ---------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- |
@@ -182,7 +182,7 @@ Mức xác thực của session được ghi dưới dạng **ACR URN** (`urn:ec
 | `urn:ecoma:acr:mfa`                | OTP **cộng thêm** một yếu tố thứ hai (TOTP hoặc Passkey)            | Kéo theo `email-otp`                                              |
 | `urn:ecoma:acr:phishing-resistant` | Yếu tố thứ hai là **Passkey/WebAuthn**                              | Kéo theo `mfa` (TOTP shareable-secret **không** kéo theo URN này) |
 
-Kiểm tra "session đủ assurance cho hành động X" là phép **thuộc tập**: tập ACR của session phải **chứa** ACR yêu cầu (`acrSatisfies`). Không có rank, không suy diễn xuôi/ngược; tập được tính từ bằng chứng bằng `acrSetFor`, nơi gọi không tự ghép URN tay. ACR của session đi vào payload `POST /internal/session/verified` (`libs/identity-contracts/src/session-verified.ts`) và được `auth` bind vào transaction rồi đưa vào ID token dưới claim `acr`.
+Kiểm tra "session đủ assurance cho hành động X" là phép **thuộc tập**: tập ACR của session phải **chứa** ACR yêu cầu (`acrSatisfies`). Không có rank, không suy diễn xuôi/ngược; tập được tính từ bằng chứng bằng `acrSetFor`, nơi gọi không tự ghép URN tay. ACR của session đi vào payload `POST /internal/session/verified` (`libs/auth-contracts/src/session-verified.ts`) và được `auth` bind vào transaction rồi đưa vào ID token dưới claim `acr`.
 
 ## 4. Session và cookie security
 
@@ -231,7 +231,7 @@ Kiểm tra "session đủ assurance cho hành động X" là phép **thuộc t�
 
 ⚠️ **Internal contract dùng envelope HMAC, không dựa vào Service Binding.** Đối chiếu tài liệu Cloudflare: **không có** header, request property hay cơ chế nào cho Worker phân biệt request qua Service Binding với request từ internet; mô hình chính thức là **isolation, không phải verification** — giữ Worker đích không reachable từ internet. `account` không áp dụng được mô hình đó vì phải phục vụ BFF công khai trên chính Worker đó. Cloudflare cũng nói rõ không được coi lời gọi downstream là đã xác thực bởi Access context của caller. Bằng chứng và hệ quả → [`04-implementation.md`](./04-implementation.md).
 
-Envelope ký trên `method + path + timestamp + nonce + body-hash`, kiểm bằng so sánh thời gian hằng, có cửa sổ skew và chống replay trong cửa sổ đó bằng một nonce chiếm vào kho bền vững; thiếu header → `401`, kho nonce không gọi được → `503`. Định dạng, quy tắc canonical, retention và taxonomy lỗi có **một** nguồn sự thật: [`../auth/01-architecture.md`](../auth/01-architecture.md) §5.1.8, cài đặt ở `libs/identity-contracts`. Service Binding vẫn là **đường đi được khuyến nghị** (không cần public route, không tốn egress), nhưng nó là tối ưu hóa đường đi chứ **không phải** cơ chế xác thực — không có Service Binding nào thay được signature.
+Envelope ký trên `method + path + timestamp + nonce + body-hash`, kiểm bằng so sánh thời gian hằng, có cửa sổ skew và chống replay trong cửa sổ đó bằng một nonce chiếm vào kho bền vững; thiếu header → `401`, kho nonce không gọi được → `503`. Định dạng, quy tắc canonical, retention và taxonomy lỗi có **một** nguồn sự thật: [`../auth/01-architecture.md`](../auth/01-architecture.md) §5.1.8, cài đặt ở `libs/internal-auth-contracts`. Service Binding vẫn là **đường đi được khuyến nghị** (không cần public route, không tốn egress), nhưng nó là tối ưu hóa đường đi chứ **không phải** cơ chế xác thực — không có Service Binding nào thay được signature.
 
 ⚠️ **Đây là hai contract tách biệt, không phải một.** Endpoint BFF phải **bỏ qua** mọi tham số `sub` do client gửi và luôn đọc subject từ session — nếu không, attacker chỉ cần thêm `?sub=<của người khác>` là đọc được preference người khác. Endpoint internal thì ngược lại: **không** nhận cookie, và phải kiểm caller được phép hỏi `sub` đó.
 

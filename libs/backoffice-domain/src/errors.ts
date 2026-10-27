@@ -1,7 +1,7 @@
 /**
  * Taxonomy lỗi của tầng domain `backoffice`.
  *
- * Source of truth (pattern): `libs/identity-domain/src/errors.ts` — một domain
+ * Source of truth (pattern): `libs/account-domain/src/errors.ts` — một domain
  * error chỉ mang `code` ổn định + `message` tiếng Việt ngắn gọn, không field nào
  * cho identifier/token/secret hay payload tuỳ ý.
  *
