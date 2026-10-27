@@ -26,13 +26,8 @@ import postgres from 'postgres';
 import type { Provider } from 'oidc-provider';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import {
-  base64UrlToBytes,
-  deriveHandle,
-  hashHandle,
-  HANDLE_DOMAINS,
-} from '@ecoma-io/identity-auth-domain';
-import type { PostgresClientLike } from '@ecoma-io/identity-auth-infrastructure';
+import { base64UrlToBytes, deriveHandle, hashHandle, HANDLE_DOMAINS } from '@ecoma-io/auth-domain';
+import type { PostgresClientLike } from '@ecoma-io/auth-infrastructure';
 
 import { createAuthorizationStore, checkRevocationAtIssuance } from '../../src/authorization-store';
 import { runConsentContext, runConsentDecide } from '../../src/consent-handler';

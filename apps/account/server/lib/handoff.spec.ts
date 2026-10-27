@@ -32,7 +32,7 @@ function handoffRow(overrides: Partial<LoginHandoffRow> = {}): LoginHandoffRow {
 describe('LOGIN_HANDOFF_TTL_SECONDS', () => {
   it('pins the short TTL to the auth transaction TTL (10 minutes)', () => {
     // §3.6: "`expires_at` — TTL ngắn, bằng TTL transaction phía auth".
-    // `TRANSACTION_TTL_MS` của `libs/identity-auth-application` là 10 phút.
+    // `TRANSACTION_TTL_MS` của `libs/auth-application` là 10 phút.
     expect(LOGIN_HANDOFF_TTL_SECONDS).toBe(600);
   });
 });

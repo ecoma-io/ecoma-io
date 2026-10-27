@@ -112,7 +112,7 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     # PostgreSQL thật cho các suite `test-integration` của `apps/account`,
-    # `identity-auth-infrastructure` và `apps/auth` đến từ **testcontainers**:
+    # `auth-infrastructure` và `apps/auth` đến từ **testcontainers**:
     # mỗi spec file tự dựng một container `postgres:17-alpine`, provision hai role
     # đúng runbook `apps/auth/migrations/README.md` (migrator có DDL, runtime chỉ
     # DML) và apply migration bằng credential migrator thật. Không có service

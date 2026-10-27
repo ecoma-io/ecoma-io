@@ -13,7 +13,7 @@
 --    migration và được runner khoá bằng checksum. Mọi thay đổi đi qua đây.
 --
 -- ============================================================ VÌ SAO FILE NÀY PHẢI NHƯ VẬY ============================================================
--- Domain (`libs/identity-auth-domain/src/transaction.ts`) và schema (`0002`) từng mô tả HAI
+-- Domain (`libs/auth-domain/src/transaction.ts`) và schema (`0002`) từng mô tả HAI
 -- máy trạng thái khác nhau, và `createOpaqueId()` sinh transaction ID base64url 43 ký tự
 -- trong khi cột `transaction_id` là `uuid`. Ba tầng không thể giao tiếp với nhau trên dữ
 -- liệu thật: một `beginAuthorization` chạy thật sẽ ném `transaction_id qua ngan` trước cả

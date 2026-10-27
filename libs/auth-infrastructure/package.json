@@ -1,5 +1,5 @@
 {
-  "name": "@ecoma-io/identity-auth-infrastructure",
+  "name": "@ecoma-io/auth-infrastructure",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -12,9 +12,10 @@
     }
   },
   "dependencies": {
-    "@ecoma-io/identity-auth-application": "workspace:*",
-    "@ecoma-io/identity-auth-domain": "workspace:*",
+    "@ecoma-io/auth-application": "workspace:*",
+    "@ecoma-io/auth-domain": "workspace:*",
     "@ecoma-io/internal-auth-contracts": "workspace:*",
+    "jose": "^6.2.12",
     "postgres": "^3.4.9"
   },
   "devDependencies": {

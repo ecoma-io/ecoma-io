@@ -2,7 +2,7 @@ import postgres from 'postgres';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { PostgresClientLike } from '@ecoma-io/identity-auth-infrastructure';
+import type { PostgresClientLike } from '@ecoma-io/auth-infrastructure';
 
 import {
   checkRevocationAtIssuance,

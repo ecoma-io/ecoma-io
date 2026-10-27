@@ -4,10 +4,11 @@
   "private": true,
   "dependencies": {
     "@ecoma-io/account-contracts": "workspace:*",
+    "@ecoma-io/auth-application": "workspace:*",
     "@ecoma-io/auth-contracts": "workspace:*",
-    "@ecoma-io/identity-auth-application": "workspace:*",
-    "@ecoma-io/identity-auth-domain": "workspace:*",
-    "@ecoma-io/identity-auth-infrastructure": "workspace:*",
+    "@ecoma-io/auth-domain": "workspace:*",
+    "@ecoma-io/auth-infrastructure": "workspace:*",
+    "jose": "^6.2.12",
     "oidc-provider": "9.13.0",
     "pg": "^8.23.1"
   },

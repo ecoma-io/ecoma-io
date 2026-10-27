@@ -468,7 +468,7 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
       'namespace:cookieKeys',
     ]);
     // Hai secret ứng dụng của auth là hình 32 byte base64url — contract
-    // `importKey` của identity-auth-domain bắt ĐÚNG 32 byte từ AUTH_HANDLE_KEY
+    // `importKey` của auth-domain bắt ĐÚNG 32 byte từ AUTH_HANDLE_KEY
     // và cookieKeys là keygrip key của oidc-provider (#284: mật khẩu 24 byte
     // của database bị tái dùng nhầm làm mọi /authorize chết lúc mint đầu).
     const authHandleInput = identityConfigSets.find(
@@ -505,7 +505,7 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
     )?.[4]?.['input'];
     // Hình PEM dựng từ DASHES — rule `private-key` của gitleaks quét cả spec;
     // một literal PEM trông đúng trong source là false positive chặn push
-    // (cùng lý do với `signing-key.ts` của identity-auth-domain).
+    // (cùng lý do với `signing-key.ts` của auth-domain).
     const DASHES = '-'.repeat(5);
     const pemBegin = `${DASHES}BEGIN PRIVATE KEY${DASHES}`;
     const pemEnd = `${DASHES}END PRIVATE KEY${DASHES}`;
@@ -894,7 +894,7 @@ describe('generatePostgresPassword', () => {
 
 describe('generateAppSecret', () => {
   it('is exactly 32 bytes decoded from base64url — the HMAC-SHA-256 contract size', () => {
-    // `importKey` của identity-auth-domain bắt ĐÚNG 32 byte từ AUTH_HANDLE_KEY
+    // `importKey` của auth-domain bắt ĐÚNG 32 byte từ AUTH_HANDLE_KEY
     // (#284): 24 byte của mật khẩu database là chết lúc mint đầu tiên.
     const secret = generateAppSecret();
     expect(Buffer.from(secret, 'base64url').byteLength).toBe(32);

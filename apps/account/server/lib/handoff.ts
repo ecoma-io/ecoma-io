@@ -23,7 +23,7 @@
 /**
  * TTL của một binding handoff (giây) — **TTL ngắn**, cùng mốc 10 phút với TTL
  * transaction phía `auth` (`TRANSACTION_TTL_MS` của
- * `libs/identity-auth-application`, §3.6: "`expires_at` — TTL ngắn, bằng TTL
+ * `libs/auth-application`, §3.6: "`expires_at` — TTL ngắn, bằng TTL
  * transaction phía auth").
  *
  * ⚠️ Đây là TTL **không gia hạn**: FR-006g cấm đường gia hạn âm thầm, trigger

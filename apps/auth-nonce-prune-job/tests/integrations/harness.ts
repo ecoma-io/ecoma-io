@@ -11,7 +11,7 @@
  *  1. `MIGRATIONS_DIR` trỏ sang `apps/auth/migrations` — migrations của `db-auth` sống
  *     ở app sở hữu database, KHÔNG ở job; đây là đường dẫn FILE (harness đọc và áp nội
  *     dung), không phải import code app→app, nên không tạo cạnh dependency trên project
- *     graph (pattern mà `libs/identity-auth-infrastructure/src/auth-test-harness.ts`
+ *     graph (pattern mà `libs/auth-infrastructure/src/auth-test-harness.ts`
  *     đã dùng cho cùng một thư mục migration).
  *  2. Client là driver `pg` — đúng driver mà job chạy trong production
  *     (`src/main.ts` dựng `pg.Pool` qua Hyperdrive binding), thay vì `postgres` của

@@ -120,7 +120,7 @@ CREATE INDEX IF NOT EXISTS tenant_members_sub_idx ON pact.tenant_members (sub);
 -- Token chỉ lưu HASH (SHA-256 hex), plaintext hiện một lần trong response của
 -- lệnh tạo rồi mất — không đường nào đọc lại (SR-002). Revoke = set
 -- `revoked_at`, hiệu lực tức thời vì mọi request tra hash rồi check.
--- Pattern: `libs/identity-auth-application/src/token-service.ts` (32B entropy
+-- Pattern: `libs/auth-application/src/token-service.ts` (32B entropy
 -- base64url, SHA-256) + `apps/auth/migrations/0005_refresh_tokens.sql`
 -- (`token_hash` UNIQUE) + `0006_token_revocations.sql` (control plane tách
 -- khỏi trạng thái thực thi).

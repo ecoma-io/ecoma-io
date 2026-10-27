@@ -1,9 +1,9 @@
 /**
- * SQL của `auth` cho `db-auth` — phần KHÔNG nằm trong `identity-auth-infrastructure`.
+ * SQL của `auth` cho `db-auth` — phần KHÔNG nằm trong `auth-infrastructure`.
  *
  * ## Ranh giới
  *
- * `libs/identity-auth-infrastructure` sở hữu các hàm CAS có test parity với migration
+ * `libs/auth-infrastructure` sở hữu các hàm CAS có test parity với migration
  * (`consumeHandleXAndBindIdentity`, `advanceTransactionWithHandle`, `consumeHandleY`,
  * …). Các truy vấn CÒN LẠI — nạp client đăng ký, nạp/tạo grant, kiểm thu hồi — chưa có
  * nhà ở đó, và bản sao trong app này là chỗ tạm của chúng: cùng một cú pháp tham số
@@ -24,18 +24,15 @@ import type {
   NewAuthorizationCode,
   NewAuthorizationTransaction,
   RegisteredClient,
-} from '@ecoma-io/identity-auth-application';
+} from '@ecoma-io/auth-application';
 import {
   insertAuthorizationCode as insertAuthorizationCodeRow,
   insertTransaction,
   findTransactionByHandleX,
   transitionTransaction,
-} from '@ecoma-io/identity-auth-infrastructure';
-import type { PostgresClientLike, Queryable } from '@ecoma-io/identity-auth-infrastructure';
-import type {
-  AuthorizationTransactionState,
-  RevocationCheckResult,
-} from '@ecoma-io/identity-auth-domain';
+} from '@ecoma-io/auth-infrastructure';
+import type { PostgresClientLike, Queryable } from '@ecoma-io/auth-infrastructure';
+import type { AuthorizationTransactionState, RevocationCheckResult } from '@ecoma-io/auth-domain';
 
 /** Hàng `oauth_clients` + redirect URI gom sẵn — hình dạng `findClient` trả. */
 interface ClientRow {
@@ -454,7 +451,7 @@ export interface AuthorizationStoreDeps {
 /** Cài đặt `AuthStore` của application layer cho `db-auth`. */
 export function createAuthorizationStore(
   deps: AuthorizationStoreDeps,
-): import('@ecoma-io/identity-auth-application').AuthStore {
+): import('@ecoma-io/auth-application').AuthStore {
   const { client } = deps;
   return {
     async findTransactionByHandleX(params) {

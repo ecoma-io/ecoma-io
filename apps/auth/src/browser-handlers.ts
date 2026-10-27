@@ -36,8 +36,8 @@ import {
   confirmBrowser,
   createOpaqueId,
   type AuthStore,
-} from '@ecoma-io/identity-auth-application';
-import { OAuthProtocolError, hashHandle } from '@ecoma-io/identity-auth-domain';
+} from '@ecoma-io/auth-application';
+import { OAuthProtocolError, hashHandle } from '@ecoma-io/auth-domain';
 import type { AuthConfig } from './config';
 
 /**

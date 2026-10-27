@@ -7,7 +7,7 @@
  * Token là JWT ES256, header `typ: at+jwt` + `kid`; payload runtime gồm
  * `sub`, `aud`, `iss`, `exp`, `iat`, `scope`, `client_id`, `jti` — **không có
  * `nbf`** (`formats/jwt.js` của provider không đặt claim này;
- * `AccessTokenClaims` trong `libs/identity-auth-application` khai `nbf` nhưng
+ * `AccessTokenClaims` trong `libs/auth-application` khai `nbf` nhưng
  * đường phát hành production là oidc-provider, không qua interface này). Vì
  * vậy phép verify ở đây ghim: chữ ký ES256 theo `kid`, `iss` exact, `aud`
  * exact, `exp` trong quá khứ — **không** đòi `nbf` và **không** đòi claim

@@ -1,5 +1,5 @@
 {
-  "name": "@ecoma-io/identity-auth-application",
+  "name": "@ecoma-io/auth-domain",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -12,13 +12,11 @@
     }
   },
   "dependencies": {
-    "@ecoma-io/account-contracts": "workspace:*",
-    "@ecoma-io/auth-contracts": "workspace:*",
-    "@ecoma-io/identity-auth-domain": "workspace:*"
+    "@ecoma-io/account-contracts": "workspace:*"
   },
   "nx": {
     "tags": [
-      "type:application",
+      "type:domain",
       "scope:identity",
       "runtime:edge"
     ]

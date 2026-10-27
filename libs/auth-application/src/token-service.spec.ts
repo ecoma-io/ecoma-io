@@ -1,8 +1,9 @@
 import { decodeProtectedHeader, exportPKCS8, generateKeyPair, importJWK, jwtVerify } from 'jose';
 import { expect, it, describe } from 'vitest';
 
-import { SigningKeyProvider } from '@ecoma-io/identity-auth-domain';
+import type { SigningKeyProvider } from '@ecoma-io/auth-domain';
 
+import { signingKeyProviderFromPemForSpec } from './signing-key-test-support';
 import {
   JWT_SIGNING_ALG,
   DEFAULT_ACCESS_TOKEN_TTL_SECONDS,
@@ -17,7 +18,7 @@ import {
 async function makeSigningKey(): Promise<SigningKeyProvider> {
   const { privateKey } = await generateKeyPair('ES256', { extractable: true });
   const pem = await exportPKCS8(privateKey);
-  return SigningKeyProvider.fromPem({ pem, kid: 'kid-test' });
+  return signingKeyProviderFromPemForSpec({ pem, kid: 'kid-test' });
 }
 
 describe('assertAccessTokenTtl — the TTL bounds are the revocation delay', () => {

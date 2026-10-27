@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { AuthConfigurationError } from '@ecoma-io/identity-auth-domain';
+import { AuthConfigurationError } from '@ecoma-io/auth-domain';
 
 import { createPostgresClient, type PostgresClientLike } from './postgres';
 

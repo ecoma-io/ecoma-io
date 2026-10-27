@@ -305,7 +305,7 @@ consent≠grant §3.4, signing keys §3.5, no-FK §3.6, máy trạng thái §5.1
 
 ## Chạy test trên PostgreSQL thật
 
-Bảy spec PG **không** dùng fake: ba spec trong `libs/identity-auth-infrastructure/src/`
+Bảy spec PG **không** dùng fake: ba spec trong `libs/auth-infrastructure/src/`
 (`authorization-code-cas.spec.ts` — tính đúng đắn của CAS nằm ở hành vi khoá hàng của
 PostgreSQL dưới `READ COMMITTED`; `authorization-transaction-store.spec.ts` — hợp đồng
 persistence của `authorization_transactions` — catalog schema sau `0011`, codec
@@ -317,7 +317,7 @@ PG của `apps/auth/src/`. Một fake `Map` cho đúng một winner và vẫn d�
 ⚠️ **PostgreSQL đến từ testcontainers.** Mỗi spec file tự dựng **một container**
 `postgres:17-alpine` riêng (`startAuthDatabase` trong `integration-specs/harness.ts`
 của `apps/auth` và trong `tests/integration/harness.ts` của
-`libs/identity-auth-infrastructure`), provisioning hai role đúng trình tự operator ở
+`libs/auth-infrastructure`), provisioning hai role đúng trình tự operator ở
 §"Vai trò của operator" (migrator có DDL, runtime chỉ DML), rồi apply **chính các file
 trong thư mục này** bằng credential `ecoma_auth_migrator` thật — nên nó kiểm adapter
 với đúng schema production. Một bảng do test tự chế là một schema thứ hai, và test
@@ -330,7 +330,7 @@ test đầu dựng cột `code_id`/`scope` trong khi schema thật có
 thật thay vì một nửa suite skip với exit 0. Chạy tay chỉ cần Docker daemon đang chạy:
 
 ```bash
-pnpm nx test @ecoma-io/identity-auth-infrastructure --skip-nx-cache
+pnpm nx test @ecoma-io/auth-infrastructure --skip-nx-cache
 pnpm nx test @ecoma-io/auth --skip-nx-cache
 ```
 

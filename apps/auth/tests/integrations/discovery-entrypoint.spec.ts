@@ -51,10 +51,10 @@ import postgres from 'postgres';
 import { exportPKCS8, generateKeyPair } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { bytesToBase64Url } from '@ecoma-io/identity-auth-domain';
+import { bytesToBase64Url } from '@ecoma-io/auth-domain';
 
 import { loadAuthConfig, type AuthEnv } from '../../src/config';
-import { createPostgresClient } from '@ecoma-io/identity-auth-infrastructure';
+import { createPostgresClient } from '@ecoma-io/auth-infrastructure';
 import { startAuthDatabase, type AuthDatabase } from './harness';
 
 /* ------------------------------------------------------------------ */

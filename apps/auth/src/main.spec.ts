@@ -5,7 +5,7 @@ import { signRequest } from '@ecoma-io/auth-contracts';
 // Namespace import để `vi.spyOn` thay thế `createPostgresClient` theo từng ca
 // (stub tầng driver của readiness probe — xem các ca `account_unreachable` và
 // nhánh 200 trong `describe('GET /ready')`).
-import * as infrastructure from '@ecoma-io/identity-auth-infrastructure';
+import * as infrastructure from '@ecoma-io/auth-infrastructure';
 
 import app from './main';
 import type { AuthEnv } from './config';
@@ -236,7 +236,7 @@ describe('GET /ready', () => {
     //
     // ⚠️ Thứ tự probe trong route là config → DB → account: probe DB chạy
     // TRƯỚC probe account, nên ca này stub tầng DB
-    // (`vi.spyOn` trên namespace import của `identity-auth-infrastructure`)
+    // (`vi.spyOn` trên namespace import của `auth-infrastructure`)
     // để request đi TỚI probe account — fetch-stub của binding đếm được lần
     // gọi, còn DB thật thì không cần (không PostgreSQL trong unit runner).
     const readyEnv: AuthEnv = {

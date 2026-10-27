@@ -14,10 +14,18 @@
     "tsBuildInfoFile": "dist/tsconfig.lib.tsbuildinfo"
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["out-tsc", "dist", "src/**/*.test.ts", "src/**/*.spec.ts"],
+  "exclude": [
+    "out-tsc",
+    "dist",
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts",
+    // Test-support chỉ tồn tại lúc spec (fixture dựng port thật cho spec colocated):
+    // không thuộc bundle lib, và lib build không cần type `jose` lúc emit d.ts.
+    "src/signing-key-test-support.ts"
+  ],
   "references": [
     {
-      "path": "../identity-auth-domain"
+      "path": "../auth-domain"
     },
     {
       "path": "../account-contracts/tsconfig.lib.json"

@@ -77,7 +77,7 @@ export {
   SIGNING_ALGORITHM,
   SIGNING_CURVE,
   SIGNING_KEY_TYPE,
-  SigningKeyProvider,
   type PublicJwk,
   type SigningKeyMetadata,
+  type SigningKeyProvider,
 } from './signing-key';

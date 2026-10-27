@@ -48,7 +48,7 @@ import { exportPKCS8, generateKeyPair, importJWK, jwtVerify } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { signRequest, createNonce } from '@ecoma-io/auth-contracts';
-import { createPostgresClient } from '@ecoma-io/identity-auth-infrastructure';
+import { createPostgresClient } from '@ecoma-io/auth-infrastructure';
 
 import { PROVIDER_ROUTES } from './oidc/provider';
 import { loadAuthConfig, type AuthEnv } from './config';

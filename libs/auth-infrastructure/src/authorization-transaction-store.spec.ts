@@ -5,7 +5,7 @@ import postgres from 'postgres';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { bytesToBase64Url } from '@ecoma-io/identity-auth-domain';
+import { bytesToBase64Url } from '@ecoma-io/auth-domain';
 
 import {
   advanceTransactionWithHandle,

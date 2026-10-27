@@ -38,13 +38,13 @@
       "path": "../../libs/auth-contracts/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/identity-auth-infrastructure/tsconfig.lib.json"
+      "path": "../../libs/auth-infrastructure/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/identity-auth-domain"
+      "path": "../../libs/auth-domain"
     },
     {
-      "path": "../../libs/identity-auth-application"
+      "path": "../../libs/auth-application"
     }
   ]
 }

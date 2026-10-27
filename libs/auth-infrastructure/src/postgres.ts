@@ -1,6 +1,6 @@
 import postgresJs from 'postgres';
 
-import { AuthConfigurationError } from '@ecoma-io/identity-auth-domain';
+import { AuthConfigurationError } from '@ecoma-io/auth-domain';
 import { assertNonceExpirySeconds } from '@ecoma-io/internal-auth-contracts';
 
 /**
@@ -22,7 +22,7 @@ declare const NONCE_CLAIM_TARGET: unique symbol;
  * Kho nonce trả về hình dạng khác hợp đồng của adapter — lỗi **runtime**, không phải lỗi cấu hình.
  *
  * ⚠️ **Vì sao không dùng `AuthConfigurationError`.** Class đó được định nghĩa là lỗi
- * "fail-fast lúc khởi động hoặc lúc dựng dependency" (`identity-auth-domain/src/errors.ts`).
+ * "fail-fast lúc khởi động hoặc lúc dựng dependency" (`auth-domain/src/errors.ts`).
  * Một `Queryable` trả `{ rows }` thay vì mảng hàng thì cấu hình vẫn đúng — nó là một vi phạm
  * hợp đồng của **adapter lúc chạy**, và trộn hai loại đó vào một class khiến một lỗi tích hợp
  * trông như một lỗi cấu hình nếu về sau có chỗ phân nhánh theo class (log mức khác, retry khác).

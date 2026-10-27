@@ -1,5 +1,8 @@
-import { AuthConfigurationError, SigningKeyProvider } from '@ecoma-io/identity-auth-domain';
 import { assertKid, DEFAULT_SKEW_SECONDS, MAX_SKEW_SECONDS } from '@ecoma-io/auth-contracts';
+// Port (kiểu) từ domain; bản cài đặt (giá trị, đường `jose`) từ infrastructure —
+// composition root là nơi duy nhất được ghép hai lớp này vào nhau.
+import { AuthConfigurationError, type SigningKeyProvider } from '@ecoma-io/auth-domain';
+import { SigningKeyProvider as SigningKeyProviderImpl } from '@ecoma-io/auth-infrastructure';
 
 /**
  * Nạp cấu hình từ Worker Secrets (D2, D4).
@@ -243,7 +246,7 @@ export async function loadAuthConfig(env: AuthEnv): Promise<AuthConfig> {
     }),
     internalAuthSkewSeconds,
     accessTokenTtlSeconds: 300,
-    signingKeyProvider: await SigningKeyProvider.fromPem({ pem: signingKeyPem, kid }),
+    signingKeyProvider: await SigningKeyProviderImpl.fromPem({ pem: signingKeyPem, kid }),
     signingKeyPem,
     hyperdrive,
     cookieKeys: parseCookieKeys(env.AUTH_COOKIE_KEYS),
