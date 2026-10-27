@@ -22,8 +22,8 @@
 import { describe, expect, it } from 'vitest';
 
 import type { GrantedAssignment } from '@ecoma-io/backoffice-domain';
+import type { recordDecision } from '@ecoma-io/backoffice-infrastructure';
 
-import type { recordDecision } from './authorization-audit';
 import { requirePermission, type PrincipalAuthorization } from './authorization';
 
 // ⚠️ Độ dài entropy phải khớp `SUBJECT_ENTROPY_LENGTH` của identity-domain

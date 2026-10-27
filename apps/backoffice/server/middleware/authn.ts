@@ -71,22 +71,21 @@
 import { createError, defineEventHandler, getCookie, type H3Event } from 'h3';
 import type { Pool } from 'pg';
 
-import { backofficeAuthConfig } from '../auth/config';
 import {
+  backofficeHyperdrive,
+  backofficeNodeDatabaseUrl,
   hashSessionIdentifier,
   isSessionLive,
   loadSessionByHash,
   SESSION_COOKIE_NAME,
   SESSION_IDLE_SECONDS,
   touchSession,
-} from '../auth/session-store';
-import { verifyAccessToken } from '../auth/verify';
-import {
-  backofficeHyperdrive,
-  backofficeNodeDatabaseUrl,
-  readWorkerEnv,
+  verifyAccessToken,
   withBackofficePool,
-} from '../db';
+} from '@ecoma-io/backoffice-infrastructure';
+
+import { backofficeAuthConfig } from '../auth/config';
+import { readWorkerEnv } from '../db';
 import { PRINCIPAL_CONTEXT_KEY, type VerifiedPrincipal } from '../principal';
 
 /**

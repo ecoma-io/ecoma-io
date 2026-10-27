@@ -4,9 +4,10 @@ import {
   backofficeHyperdrive,
   backofficeNodeDatabaseUrl,
   createNodePool,
-  readWorkerEnv,
   withBackofficePool,
-} from '../db';
+} from '@ecoma-io/backoffice-infrastructure';
+
+import { readWorkerEnv } from '../db';
 
 /**
  * `GET /ready` — readiness, có kiểm phụ thuộc DB/schema.

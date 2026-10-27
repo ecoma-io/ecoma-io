@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Client } from 'pg';
 
 import { type BackofficeDatabase, startBackofficeDatabase } from './harness';
-import { recordDecision } from '../../server/authorization-audit';
+import { recordDecision } from '@ecoma-io/backoffice-infrastructure';
 
 const ACTOR = 'sub_' + 'a'.repeat(32);
 const TARGET = 'sub_' + 'c'.repeat(32);

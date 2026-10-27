@@ -36,10 +36,17 @@ const pool = vi.hoisted(() => ({
   released: 0,
 }));
 
+// ⚠️ Hai mock ranh giới: `./db` (đọc `env` ra khỏi `H3Event` — phần h3 của app)
+// và `@ecoma-io/backoffice-infrastructure` (binding + pool — phần lib). Subject
+// của module này là *khung*, không phải cách đọc env hay cách dựng pool.
 vi.mock('./db', () => ({
   readWorkerEnv: () => ({ DB_BACKOFFICE: { connectionString: 'postgres://fake' } }),
+}));
+
+vi.mock('@ecoma-io/backoffice-infrastructure', () => ({
   backofficeHyperdrive: (env: unknown) =>
     (env as { DB_BACKOFFICE?: { connectionString: string } })?.DB_BACKOFFICE ?? null,
+  loadPrincipalAuthorization: async () => ({ assignments: [] }),
   withBackofficePool: async <T>(_hyperdrive: unknown, callback: (pool: Pool) => Promise<T>) => {
     if (pool.failOnConnect !== null) {
       throw pool.failOnConnect;

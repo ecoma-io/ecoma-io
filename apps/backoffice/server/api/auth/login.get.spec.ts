@@ -33,6 +33,9 @@ const db = vi.hoisted(() => ({
 
 vi.mock('../../db', () => ({
   readWorkerEnv: () => undefined,
+}));
+
+vi.mock('@ecoma-io/backoffice-infrastructure', () => ({
   backofficeHyperdrive: () => null,
   backofficeNodeDatabaseUrl: () => db.nodeUrl,
   withBackofficePool: async <T>(

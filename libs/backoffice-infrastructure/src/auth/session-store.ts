@@ -66,13 +66,6 @@ export const SESSION_ABSOLUTE_SECONDS = 7 * 24 * 3600;
 /** TTL cookie (giây) = absolute lifetime; idle enforce ở server. */
 const SESSION_MAX_AGE = SESSION_ABSOLUTE_SECONDS;
 
-/**
- * TTL của hàng login-in-progress (giây) — 10 phút, cùng mốc interaction TTL
- * của `auth` (600s): một luồng login không hoàn tất trong thời gian `auth`
- * giữ transaction thì hàng này chết trước khi nó có thể tạo phiên.
- */
-export const LOGIN_FLOW_TTL_SECONDS = 600;
-
 /** Entropy của session ID / CSRF token — 256 bit, cùng mốc `account`. */
 export const SESSION_ID_BYTES = 32;
 

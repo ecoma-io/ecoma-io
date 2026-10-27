@@ -305,6 +305,13 @@ export async function recordPrivilegedSuccess(
     throw new TypeError('authorization audit yêu cầu actorSub là BackofficeAccountId hợp lệ');
   }
 
+  if (input.targetSub !== undefined && !isBackofficeAccountId(input.targetSub)) {
+    throw new TypeError('authorization audit yêu cầu targetSub là BackofficeAccountId hợp lệ');
+  }
+
+  assertBoundedCorrelationId(input.requestId, 'requestId');
+  assertBoundedCorrelationId(input.correlationId, 'correlationId');
+
   await client.query(
     `INSERT INTO backoffice.authorization_audit
        (actor_sub, target_sub, action, outcome, reason_code, request_id, correlation_id, context)

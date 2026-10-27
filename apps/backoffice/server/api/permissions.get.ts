@@ -17,7 +17,7 @@
 import { defineEventHandler } from 'h3';
 import type { PoolClient } from 'pg';
 
-import { listPermissions } from '../queries';
+import { listPermissions } from '@ecoma-io/backoffice-infrastructure';
 import { withReadEnforcement } from '../read-route';
 
 export default defineEventHandler((event) =>
