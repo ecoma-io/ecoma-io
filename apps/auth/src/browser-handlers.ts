@@ -152,8 +152,18 @@ export async function handleAuthorize(params: {
   }
   target.searchParams.set('ecoma_x', beginResult.handle);
   // `resource` được chèn để access token resource-bound theo cấu hình
-  // resourceIndicators của provider (defaultResource chỉ nhận config.audience).
-  target.searchParams.set('resource', config.audience);
+  // resourceIndicators của provider. Chọn audience theo client_id nếu client
+  // được map tới resource riêng (vd. backoffice); nếu không dùng primary.
+  // ⚠️ `client_id` có thể là mảng (query lặp tham số); lọc lấy phần tử string
+  // và map qua TẤT CẢ candidate — match đầu tiên thắng, không match ⇒ primary.
+  const requestedClientIds = query['client_id'];
+  const candidates = (
+    Array.isArray(requestedClientIds) ? requestedClientIds : [requestedClientIds]
+  ).filter((id): id is string => typeof id === 'string');
+  const mappedAudience = config.resources.find((resource) =>
+    candidates.some((id) => resource.clientIds.includes(id)),
+  )?.audience;
+  target.searchParams.set('resource', mappedAudience ?? config.audience);
   // ⚠️ `prompt=consent` khi scope có `offline_access` — bắt buộc của provider
   // (`checkScope`: scopes.js:33-40 cắt `offline_access` khỏi params trừ khi
   // request mang `prompt=consent`; điều kiện `PARAM_LIST.has('prompt')` luôn

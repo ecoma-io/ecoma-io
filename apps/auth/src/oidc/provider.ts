@@ -20,7 +20,7 @@
  *     bất biến đó.
  */
 
-import { Provider, interactionPolicy } from 'oidc-provider';
+import { Provider, interactionPolicy, errors as oidcErrors } from 'oidc-provider';
 
 import type { AuthConfig } from '../config';
 import type { PostgresClientLike } from '@ecoma-io/identity-auth-infrastructure';
@@ -392,20 +392,32 @@ export async function createProvider(deps: ProviderDeps): Promise<Provider> {
          * chèn `resource` mặc định vào authorize params (defaultResource bên dưới) —
          * token luôn resource-bound, luôn verify offline được.
          */
-        defaultResource: (_ctx, _client, oneOf): string => {
+        defaultResource: (_ctx, client, oneOf): string => {
+          // Chọn resource theo client nếu client được map tới một audience riêng
+          // (vd. backoffice); nếu không, dùng primary audience (AUTH_AUDIENCE).
+          const clientId =
+            typeof client === 'object' && client !== null
+              ? (client as { client_id?: unknown }).client_id
+              : undefined;
+          const mapped =
+            typeof clientId === 'string'
+              ? config.resources.find((resource) => resource.clientIds.includes(clientId))?.audience
+              : undefined;
+          const fallback = mapped ?? config.audience;
           // ⚠️ `oneOf` là mảng khi client gửi nhiều `resource`; ghi đè tường
           // minh thành phần tử thứ nhất (duy nhất được phép — multiple
           // resource bị `InvalidTarget` ở token time) thay vì trả nguyên mảng:
           // chữ ký của hàm chỉ nhận MỘT indicator.
           if (Array.isArray(oneOf)) {
-            return oneOf[0] ?? config.audience;
+            return oneOf[0] ?? fallback;
           }
-          return oneOf ?? config.audience;
+          return oneOf ?? fallback;
         },
         useGrantedResource: (): boolean => true,
         getResourceServerInfo: (
           ctx,
           resourceIndicator,
+          client,
         ): {
           readonly accessTokenFormat: 'jwt';
           readonly accessTokenTTL: number;
@@ -415,13 +427,40 @@ export async function createProvider(deps: ProviderDeps): Promise<Provider> {
         } => {
           // ⚠️ Chỉ resource indicator của chính hệ sinh thái được phục vụ: một
           // `resource` lạ sẽ nhận InvalidTarget thay vì một token audience-sai.
-          if (resourceIndicator !== config.audience) {
-            throw new Error(
+          const matched = config.resources.find(
+            (resource) => resource.audience === resourceIndicator,
+          );
+          // Back-compat: primary audience luôn được phục vụ kể cả khi chưa khai báo
+          // trong registry.
+          const isKnown = matched !== undefined || resourceIndicator === config.audience;
+          if (!isKnown) {
+            throw new oidcErrors.InvalidTarget(
               `resource indicator khong duoc ho tro (ctx issuer: ${ctx.oidc.issuer})`,
             );
           }
+          // ⚠️ Audience phụ (khác primary) chỉ cấp cho client nằm trong allowlist
+          // `clientIds` của audience đó. Không kiểm thì MỌI client public đã đăng ký
+          // đều xin `resource=<audience backoffice>` trực tiếp qua `/auth` (bypass
+          // glue `/authorize`) và nhận token `aud=backoffice`. Provider truyền
+          // client của request vào tham số thứ ba ở CẢ authorize lẫn token time
+          // (shared/check_resource.js:75, helpers/grant_authorization.js:49,
+          // actions/grants/refresh_token.js:184 của oidc-provider 9.13) — kiểm tra
+          // ở đây là chốt chặn duy nhất cần thiết.
+          if (matched !== undefined && matched.clientIds.length > 0) {
+            const clientId =
+              typeof client === 'object' && client !== null
+                ? (client as { clientId?: unknown }).clientId
+                : undefined;
+            const clientAllowed =
+              typeof clientId === 'string' && matched.clientIds.includes(clientId);
+            if (!clientAllowed) {
+              throw new oidcErrors.InvalidTarget(
+                `client khong duoc phep dung resource indicator nay (ctx issuer: ${ctx.oidc.issuer})`,
+              );
+            }
+          }
           return {
-            audience: config.audience,
+            audience: resourceIndicator,
             accessTokenFormat: 'jwt',
             accessTokenTTL: TTL.AccessToken,
             jwt: { sign: { alg: 'ES256' } },
