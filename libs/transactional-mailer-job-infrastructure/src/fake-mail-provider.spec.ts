@@ -119,6 +119,10 @@ function effectiveLibs(configPath: string): readonly string[] {
 /** Toàn bộ specifier mà source của lib này được phép có (quét từ đĩa ở trên). */
 const ALLOWED_SOURCE_SPECIFIERS = new Set([
   '@ecoma-io/transactional-mailer-job-application',
+  // §7.4 — signed client gọi private delivery interface của `transactional-mail`:
+  // contract canonical của giao thức ký + validator body của wire contract.
+  '@ecoma-io/internal-auth-contracts',
+  '@ecoma-io/transactional-mail-contracts',
   './fake-mail-provider',
   './d1-database-like',
   './d1-lifecycle-event-store',
@@ -129,6 +133,10 @@ const ALLOWED_SOURCE_SPECIFIERS = new Set([
   './resend-mail-provider',
   // §11 — provider thật mặc định (Cloudflare send_email binding), chung boundary guard.
   './cloudflare-mail-provider',
+  // §7.4 — signed client và adapter `MailDeliveryGateway` bọc client đó
+  // (chuyển từ composition root `apps/transactional-mailer-job/src/main.ts` về đây).
+  './internal-delivery-client',
+  './internal-delivery-gateway',
 ]);
 
 describe('deterministic scenarios', () => {
@@ -609,7 +617,12 @@ describe('dependency boundary', () => {
     expect(discovered.length).toBeGreaterThan(0);
     expect(workspaceImports.length).toBeGreaterThan(0);
     expect(new Set(workspaceImports)).toEqual(
-      new Set(['@ecoma-io/transactional-mailer-job-application']),
+      new Set([
+        '@ecoma-io/transactional-mailer-job-application',
+        // §7.4 — signed client: hai gói contract của giao thức ký và wire contract.
+        '@ecoma-io/internal-auth-contracts',
+        '@ecoma-io/transactional-mail-contracts',
+      ]),
     );
   });
 
@@ -648,7 +661,9 @@ describe('dependency boundary', () => {
     // Chỉ liệt kê **value** export: type export không xuất hiện trong
     // `Object.keys`, nên danh sách này là đúng bề mặt runtime mà consumer thấy.
     // `createResendMailProvider` và `createCloudflareMailProvider` là hai provider
-    // thật (§10.2, §11) nằm cạnh fake trong cùng package root.
+    // thật (§10.2, §11) nằm cạnh fake trong cùng package root; signed client
+    // (`InternalDeliveryClient`) và adapter gateway của nó (`createGateway`) cùng
+    // nằm ở đây từ khi wiring rời composition root (issue #333).
     expect(new Set(Object.keys(packageRoot))).toEqual(
       new Set([
         'FakeMailProvider',
@@ -664,6 +679,12 @@ describe('dependency boundary', () => {
         'QUARANTINE_COLUMNS',
         'createResendMailProvider',
         'createCloudflareMailProvider',
+        'INTERNAL_AUTH_SECRET_ENV',
+        'InternalDeliveryClient',
+        'InternalDeliveryConfigError',
+        'InternalDeliveryRequestError',
+        'createGateway',
+        'resolveInternalAuthSecret',
       ]),
     );
   });

@@ -53,10 +53,10 @@ import type {
 /**
  * Binding `send_email` ở đúng subset mà adapter dùng.
  *
- * Khai cục bộ thay vì import `@cloudflare/workers-types` vì cùng lý do với Resend
- * adapter (docblock module của nó): lib này là `runtime:edge` với `types: []`, phải
- * typecheck không cần ambient API nào. Composition root cast env binding qua
- * `unknown` vào shape này — tương thích subset được ghim ở spec, không chứng minh lại
+ * Khai cục bộ đúng subset thay vì lấy surface đầy đủ từ ambient types: cùng lý do với
+ * Resend adapter (docblock module của nó) và `d1-database-like.ts` — lib là `runtime:edge`,
+ * bề mặt type của adapter phải hẹp đúng những gì nó gọi. Composition root cast env binding
+ * qua `unknown` vào shape này — tương thích subset được ghim ở spec, không chứng minh lại
  * tại call site.
  */
 export interface SendEmailBindingLike {

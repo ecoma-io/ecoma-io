@@ -4,10 +4,10 @@
  * ## Vì sao tự khai báo thay vì import `@cloudflare/workers-types`
  *
  * D1 là binding của Cloudflare Workers. `@ecoma-io/transactional-mailer-job-infrastructure`
- * là `runtime:edge` và tsconfig của nó đặt `types: []` — không nạp ambient types của
- * platform. Khai báo ở đây đúng ba member repository cần (`prepare`, `bind`, `run`,
- * `first`, `all`) giữ lib chạy được trên edge mà không thêm dependency runtime nào
- * (CR-001: worker không được thêm runtime dependency).
+ * là `runtime:edge`; khai báo ở đây đúng subset member mà repository cần (`prepare`,
+ * `bind`, `run`, `first`, `all`) — bề mặt type hẹp đúng mức dùng, giữ lib chạy được trên
+ * edge mà không thêm dependency runtime nào (CR-001: worker không được thêm runtime
+ * dependency).
  *
  * Interface này **cấu trúc** (structural), nên binding D1 thật của Workers khớp với nó
  * mà không cần adapter; test harness (D1 thật qua `wrangler getPlatformProxy`) cũng khớp.

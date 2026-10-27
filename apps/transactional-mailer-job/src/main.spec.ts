@@ -33,11 +33,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import {
   D1MailJobRepository,
   FAKE_PROVIDER_MESSAGE_ID,
+  INTERNAL_AUTH_SECRET_ENV,
   type D1DatabaseLike,
 } from '@ecoma-io/transactional-mailer-job-infrastructure';
 
 import workerMj from './main';
-import { INTERNAL_AUTH_SECRET_ENV } from './internal-delivery-client';
 
 // `main` không export hằng tên queue (named export non-function làm workerd
 // từ chối boot entry module) — test khai literal khớp consumer config trong

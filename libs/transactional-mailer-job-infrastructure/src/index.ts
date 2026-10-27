@@ -63,3 +63,22 @@ export {
   D1LifecycleEventStore,
   type D1LifecycleEventStoreOptions,
 } from './d1-lifecycle-event-store';
+
+/**
+ * Client HTTP ký HMAC gọi private delivery interface của `transactional-mail` qua Service
+ * Binding, và adapter bọc client thành port `MailDeliveryGateway` của application.
+ *
+ * Composition root (`apps/transactional-mailer-job/src/main.ts`) dựng client từ env
+ * (`resolveInternalAuthSecret` + binding) rồi `createGateway(client)` — wiring ở entry
+ * module chỉ là gọi hai factory này, không biết chi tiết ký hay phân loại response.
+ */
+export {
+  INTERNAL_AUTH_SECRET_ENV,
+  InternalDeliveryClient,
+  InternalDeliveryConfigError,
+  InternalDeliveryRequestError,
+  type InternalDeliveryBinding,
+  type InternalDeliveryClientOptions,
+  resolveInternalAuthSecret,
+} from './internal-delivery-client';
+export { createGateway } from './internal-delivery-gateway';

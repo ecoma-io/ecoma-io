@@ -8,17 +8,20 @@
  *
  * ## Vì sao khai Web API bằng `declare` ở **module scope**
  *
- * `tsconfig.lib.json` của lib này đặt `lib: ["es2022"]` + `types: []` — không nạp
- * ambient type nào, nên `fetch`, `AbortController`, `setTimeout` đều **không tồn tại**
- * với typechecker. Cùng lý do `d1-database-like.ts` tự khai subset D1 thay vì
- * import `@cloudflare/workers-types`: lib là `runtime:edge` và phải typecheck được mà
- * không kéo thêm ambient Workers API vào (API chỉ có ở Workers như Durable Object hay
- * `caches.default` sẽ compile xanh rồi chết lúc chạy).
+ * `fetch`, `AbortController`, `setTimeout` của global là bộ signature **tối thiểu** mà
+ * adapter dùng, không phải toàn bộ surface của `fetch` hay `AbortController` thật. Khai
+ * **module-scope** (`declare const fetch: …`) để chỉ áp trong file này: bề mặt global của
+ * consumer **không** bị đổi, và global `fetch`/`AbortController` thật vẫn gán được vào các
+ * kiểu ở đây (compile ở `resend-mail-provider.spec.ts` là bằng chứng). Shape subset khai
+ * cục bộ cùng một lý do với `d1-database-like.ts` — lib là `runtime:edge`, muốn bề mặt
+ * type của adapter hẹp đúng những gì nó dùng; ambient Workers API thừa
+ * (`DurableObjectNamespace`, `caches.default`…) không được để compile xanh rồi chết lúc chạy.
  *
- * `fetch`, `AbortController`, `setTimeout` được khai **module-scope** (`declare const
- * fetch: …`) để chỉ áp trong file này: bề mặt global của consumer **không** bị đổi, và
- * global `fetch`/`AbortController` thật vẫn gán được vào các kiểu ở đây (compile ở
- * `resend-mail-provider.spec.ts` là bằng chứng).
+ * (Trước issue #333, tsconfig của lib đặt `types: []` nên các global này không tồn tại với
+ * typechecker và phải khai đầy đủ; signed client chuyển về lib này dùng global
+ * `Request`/`Response` thật, nên lib chuyển sang `types: ["@cloudflare/workers-types"]` —
+ * các `declare` subset ở dưới vẫn giữ nguyên, vì chúng vẫn là bản ghi chính xác nhất của
+ * mức hẹp mà adapter gọi.)
  *
  * `AbortSignal` là ngoại lệ **duy nhất**, và không phải vì hời hợt — xem docblock ngay
  * trên `declare global` bên dưới: nó là thứ khiến `fetch` thật gán được vào
@@ -66,20 +69,20 @@ import type {
  * sao cấu trúc "đúng từng chữ ký" của `AbortSignal` — thì nó **không phải** `AbortSignal`
  * của lib `dom`, và global `fetch` thật không gán được vào `ProviderFetch`.
  *
- * Đó không phải lỗi hình thức: composition root (`apps/transactional-mailer-job`, có
- * `lib: ["es2023","dom"]`) truyền thẳng global `fetch` vào `deps.fetchImpl` — đó là cách
- * dùng được tài liệu hoá. Với một interface riêng, chỗ duy nhất đỏ là composition root,
- * còn adapter và toàn bộ lib này vẫn xanh hoàn toàn.
+ * Đó không phải lỗi hình thức: composition root (`apps/transactional-mailer-job`) truyền
+ * thẳng global `fetch` vào `deps.fetchImpl` — đó là cách dùng được tài liệu hoá. Với một
+ * interface riêng, chỗ duy nhất đỏ là composition root, còn adapter và toàn bộ lib này vẫn
+ * xanh hoàn toàn.
  *
  * ## Vì sao mở rộng chứ không khai `declare global` trần
  *
- * Khai một interface trùng tên sẽ **ghi đè** `AbortSignal` của lib `dom` ở mọi consumer
+ * Khai một interface trùng tên sẽ **ghi đè** `AbortSignal` của môi trường ở mọi consumer
  * đọc declaration của lib — gồm cả composition root — và làm hỏng chính những chỗ dùng
  * `AbortSignal` thật. Khai rỗng (`interface AbortSignal {}`) thì hợp nhất với khai báo
- * của lib `dom` bằng **declaration merging**: consumer có `dom` thì thấy `AbortSignal` đầy
- * đủ, consumer không có `dom` thì thấy interface rỗng — và ở lib này (`lib: ["es2022"]`,
- * `types: []`) adapter vẫn tự dựng được một `AbortController` với signal hợp lệ qua
- * {@link ProviderAbortController} bên dưới.
+ * sẵn có bằng **declaration merging**: consumer có `AbortSignal` đầy đủ (lib `dom`,
+ * workers-types, Node types) thì thấy bản đầy đủ; nếu một consumer nào không có sẵn thì
+ * vẫn có interface tối thiểu để adapter tự dựng được một `AbortController` với signal hợp
+ * lệ qua {@link ProviderAbortController} bên dưới.
  */
 declare global {
   // oxlint-disable-next-line typescript/no-empty-object-type, typescript/no-empty-interface

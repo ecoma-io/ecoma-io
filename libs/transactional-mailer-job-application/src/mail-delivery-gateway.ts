@@ -3,9 +3,9 @@
  * orchestration (Queue execution, report sweep) dùng để đọc runtime material và báo outcome.
  *
  * Port do **lead** định nghĩa trước khi dispatch để hai nhóm dùng chung một hình dạng; adapter
- * thật bọc `InternalDeliveryClient` (app đã có, ký HMAC) và nằm ở composition root
- * (`apps/transactional-mailer-job/src/main.ts`). Orchestration **không** import client trực
- * tiếp — dependency direction: application không biết transport.
+ * thật bọc `InternalDeliveryClient` (ký HMAC) và nằm ở infrastructure lib
+ * (`libs/transactional-mailer-job-infrastructure/src/internal-delivery-gateway.ts`). Orchestration
+ * **không** import client trực tiếp — dependency direction: application không biết transport.
  *
  * Phân loại lỗi tuân theo `docs/services/transactional-mailer-job/02-requirements.md` FR-004
  * và `01-architecture.md` §9.2.2: `401`/`403` là lỗi internal-auth/authz của **chính worker**,

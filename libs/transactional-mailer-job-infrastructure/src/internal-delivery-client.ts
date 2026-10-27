@@ -50,6 +50,21 @@ import {
   type PostDeliveryOutcomeRequest,
 } from '@ecoma-io/transactional-mail-contracts';
 
+/**
+ * `TextEncoder` khai **module-scope** thay vì dùng global từ `@cloudflare/workers-types`:
+ * `encode()` của bản ambient trả `Uint8Array` (tức `Uint8Array<ArrayBufferLike>`), còn chữ
+ * ký `#send` của client đòi đúng `Uint8Array<ArrayBuffer>` — kiểu mà `BodyInit` chấp nhận
+ * mà không cần bản sao (xem docblock `#send`). Bản của Node lib khai trả
+ * `Uint8Array<ArrayBuffer>`, nên shadow đúng kiểu đó ở đây; byte encode ra là như nhau,
+ * chỉ có type là chính xác hơn. Cùng kỹ thuật `declare` module-scope với Resend/Cloudflare
+ * adapter của lib này.
+ */
+declare const TextEncoder: {
+  new (): {
+    encode(input?: string): Uint8Array<ArrayBuffer>;
+  };
+};
+
 /** Tên Worker Secret chứa HMAC secret dùng để ký request nội bộ. */
 export const INTERNAL_AUTH_SECRET_ENV = 'TRANSACTIONAL_MAIL_INTERNAL_AUTH_SECRET';
 

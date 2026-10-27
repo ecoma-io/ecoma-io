@@ -36,12 +36,6 @@
     },
     {
       "path": "../../libs/transactional-mailer-job-application/tsconfig.lib.json"
-    },
-    {
-      "path": "../../libs/transactional-mail-contracts/tsconfig.lib.json"
-    },
-    {
-      "path": "../../libs/internal-auth-contracts/tsconfig.lib.json"
     }
   ]
 }
