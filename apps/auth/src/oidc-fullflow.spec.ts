@@ -88,6 +88,8 @@ const CLIENT_REDIRECT = 'https://rp.example.com/cb';
 const SUB = 'sub-fullflow-000000000000000000000000000';
 const INTERNAL_SECRET = 'fullflow-internal-secret';
 const TEST_AUDIENCE = 'https://api.ecoma.io/fullflow';
+/** Audience phụ có allowlist client — dùng để pin client-allowlist của resource server. */
+const RESTRICTED_AUDIENCE = 'https://office.ecoma.io/fullflow';
 const ACCOUNT_BASE_URL = 'https://account.ecoma.io';
 /** Issuer phải khớp origin của server Node cục bộ — provider dựng URL tuyệt đối từ nó. */
 let ISSUER = 'http://127.0.0.1:0';
@@ -233,6 +235,9 @@ function makeEnv(pem: string): AuthEnv {
     AUTH_INTERNAL_SECRET: INTERNAL_SECRET,
     AUTH_ISSUER: ISSUER,
     AUTH_AUDIENCE: TEST_AUDIENCE,
+    AUTH_RESOURCES: JSON.stringify([
+      { audience: RESTRICTED_AUDIENCE, clientIds: ['backoffice-only'] },
+    ]),
     AUTH_COOKIE_KEYS: 'fullflow-cookie-key-1,fullflow-cookie-key-2',
     AUTH_ACCOUNT_BASE_URL: ACCOUNT_BASE_URL,
   };
@@ -694,5 +699,64 @@ describe('oidc-provider full flow — against a real PostgreSQL (acceptance)', (
     `;
     // Test approve trước đã tạo một grant active; deny KHÔNG được tạo thêm.
     expect(grants.length).toBe(1);
+  });
+
+  it('a registered client requesting a restricted resource it is not allowlisted for is refused (client-allowlist gate)', async () => {
+    // Provider đã boot với AUTH_RESOURCES khai RESTRICTED_AUDIENCE cho riêng
+    // client 'backoffice-only'. Client fullflow (không nằm allowlist) xin thẳng
+    // resource đó qua /auth: authorize path gọi getResourceServerInfo với client
+    // của request (check_resource.js:75) — gate phải InvalidTarget TRƯỚC khi có
+    // transaction nào, dù audience có trong registry.
+    const { privateKey } = await generateKeyPair('ES256', { extractable: true });
+    const pem = await exportPKCS8(privateKey);
+    const env = makeEnv(pem);
+    const { default: app } = await import('./main');
+
+    const challenge = Buffer.from(
+      await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode('allowlist-verifier-000000000000000'),
+      ),
+    ).toString('base64url');
+    const providerResponse = await app.request(
+      `/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(CLIENT_REDIRECT)}` +
+        `&response_type=code&scope=openid&state=st-allowlist&nonce=n-allowlist` +
+        `&code_challenge=${challenge}&code_challenge_method=S256` +
+        `&resource=${encodeURIComponent(RESTRICTED_AUDIENCE)}`,
+      { redirect: 'manual' },
+      env,
+    );
+    // Glue /authorize chỉ forward params trong allowlist — `resource` KHÔNG nằm
+    // trong AUTHORIZED_FORWARD_PARAMS (glue tự chọn resource theo client), nên
+    // request qua glue KHÔNG bao giờ chạm gate với resource lạ. Đi thẳng provider
+    // mới là đường bypass thật cần chặn:
+    expect(providerResponse.status).toBe(302);
+    const providerAuthUrl = new URL(providerResponse.headers.get('location') as string);
+    const directUrl = new URL(`${ISSUER}/auth`);
+    for (const key of [
+      'client_id',
+      'redirect_uri',
+      'response_type',
+      'scope',
+      'state',
+      'nonce',
+      'code_challenge',
+      'code_challenge_method',
+    ]) {
+      const value = providerAuthUrl.searchParams.get(key);
+      if (value !== null) directUrl.searchParams.set(key, value);
+    }
+    directUrl.searchParams.set('resource', RESTRICTED_AUDIENCE);
+
+    const refused = await localFetch(directUrl.pathname + directUrl.search, {
+      redirect: 'manual',
+    });
+    // InvalidTarget GIỮA authorize flow (sau khi redirect_uri đã kiểm) là error
+    // redirectable theo RFC 6749 §4.1.2.1: 303 về redirect_uri của client mang
+    // error=invalid_target — KHÔNG phải trang 400.
+    expect(refused.status).toBe(303);
+    const errorUrl = new URL(refused.headers.get('location') as string);
+    expect(errorUrl.origin).toBe('https://rp.example.com');
+    expect(errorUrl.searchParams.get('error')).toBe('invalid_target');
   });
 });

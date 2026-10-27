@@ -59,6 +59,13 @@ export interface AuthEnv {
   /** Audience của access token — resource server được phép dùng. */
   AUTH_AUDIENCE?: string;
   /**
+   * JSON array của registry resource server: mỗi phần tử `{ audience, clientIds? }`.
+   * `audience` là resource indicator được phép; `clientIds` (tuỳ chọn) là danh
+   * sách client được glue tự chọn resource đó. Thiếu biến ⇒ chỉ dùng
+   * `AUTH_AUDIENCE` như resource duy nhất (back-compat).
+   */
+  AUTH_RESOURCES?: string;
+  /**
    * Cookie keys (keygrip) dùng ký cookie phiên của oidc-provider — một hoặc nhiều
    * key, phân tách bằng dấu phẩy. Key đầu là key ký; các key sau chỉ để verify
    * trong cửa sổ xoay khoá.
@@ -75,10 +82,20 @@ export interface AuthEnv {
   };
 }
 
+/** Một resource server được `auth` phục vụ — audience và các client được glue
+ *  tự chọn resource đó cho. */
+export interface AuthResource {
+  readonly audience: string;
+  readonly clientIds: readonly string[];
+}
+
 /** Cấu hình đã kiểm, dùng bởi composition root. */
 export interface AuthConfig {
   readonly issuer: string;
   readonly audience: string;
+  /** Registry resource server được `auth` phục vụ (audience → client). Dùng cho
+   *  `resourceIndicators` của provider và glue chọn resource theo client. */
+  readonly resources: readonly AuthResource[];
   readonly handleKey: string;
   /** Phiên bản của `handleKey` tại thời điểm mint (§5.6: ghi lại lúc mint). */
   readonly handleKeyVersion: number;
@@ -212,9 +229,12 @@ export async function loadAuthConfig(env: AuthEnv): Promise<AuthConfig> {
   const internalAuthSkewSeconds = parseInternalAuthSkewSeconds(env.AUTH_INTERNAL_SKEW_SECONDS);
   const handleKeyVersion = parseHandleKeyVersion(env.AUTH_HANDLE_KEY_VERSION);
 
+  const audience = requireSecret(env.AUTH_AUDIENCE, 'AUTH_AUDIENCE');
+
   return {
     issuer: requireSecret(env.AUTH_ISSUER, 'AUTH_ISSUER'),
-    audience: requireSecret(env.AUTH_AUDIENCE, 'AUTH_AUDIENCE'),
+    audience,
+    resources: parseResources(env.AUTH_RESOURCES, audience),
     handleKey: requireSecret(env.AUTH_HANDLE_KEY, 'AUTH_HANDLE_KEY'),
     handleKeyVersion,
     internalSecret: requireSecret(env.AUTH_INTERNAL_SECRET, 'AUTH_INTERNAL_SECRET'),
@@ -431,4 +451,91 @@ function buildInternalSecretsByKid(entries: {
     secretsByValue.set(secret, kid);
   }
   return map;
+}
+
+/**
+ * Parse registry resource server từ env `AUTH_RESOURCES` (JSON array). Thiếu
+ * biến ⇒ chỉ primary audience (back-compat). Fail-closed khi JSON hỏng hoặc
+ * thiếu `audience`.
+ *
+ * Mỗi phần tử: `{ audience: string, clientIds?: string[] }`.
+ */
+export function parseResources(
+  value: string | undefined,
+  primaryAudience: string,
+): readonly AuthResource[] {
+  const primary: AuthResource = { audience: primaryAudience, clientIds: Object.freeze([]) };
+  if (value === undefined || value.trim() === '') {
+    return Object.freeze([Object.freeze(primary)]);
+  }
+  if (value !== value.trim()) {
+    throw new AuthConfigurationError(
+      'Worker Secret AUTH_RESOURCES co khoang trang dau/cuoi; auth tu choi thay vi trim am tham',
+    );
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value) as unknown;
+  } catch {
+    throw new AuthConfigurationError('Worker Secret AUTH_RESOURCES khong phai JSON hop le');
+  }
+  if (!Array.isArray(parsed)) {
+    throw new AuthConfigurationError('Worker Secret AUTH_RESOURCES phai la JSON array');
+  }
+  const resources: AuthResource[] = [];
+  const seenAudiences = new Set<string>();
+  // Client ID phải duy nhất TOÀN CỤC: một client map vào hai audience là mapping
+  // mơ hồ — glue chọn theo thứ tự mảng sẽ cho kết quả khác nhau khi thứ tự đổi.
+  // Chặn lúc boot, cùng bộ luật "cấu hình mơ hồ bị từ chối" với kid/secret trùng.
+  const seenClientIds = new Set<string>();
+  for (const entry of parsed) {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+      throw new AuthConfigurationError('Worker Secret AUTH_RESOURCES: moi phan tu phai la object');
+    }
+    const record = entry as Record<string, unknown>;
+    const aud = record['audience'];
+    if (typeof aud !== 'string' || aud.trim() === '' || aud !== aud.trim()) {
+      throw new AuthConfigurationError(
+        'Worker Secret AUTH_RESOURCES: truong "audience" phai la chuoi khong rong, khong khoang trang dau/cuoi',
+      );
+    }
+    if (seenAudiences.has(aud)) {
+      throw new AuthConfigurationError('Worker Secret AUTH_RESOURCES: audience trung lap');
+    }
+    seenAudiences.add(aud);
+    const rawClientIds = record['clientIds'];
+    let clientIds: readonly string[] = Object.freeze([]);
+    if (rawClientIds !== undefined) {
+      if (!Array.isArray(rawClientIds)) {
+        throw new AuthConfigurationError(
+          'Worker Secret AUTH_RESOURCES: "clientIds" phai la mang chuoi',
+        );
+      }
+      const localSeen = new Set<string>();
+      const frozen: string[] = [];
+      for (const id of rawClientIds) {
+        if (typeof id !== 'string' || id.trim() === '' || id !== id.trim()) {
+          throw new AuthConfigurationError(
+            'Worker Secret AUTH_RESOURCES: moi client id phai la chuoi khong rong',
+          );
+        }
+        if (localSeen.has(id) || seenClientIds.has(id)) {
+          throw new AuthConfigurationError(
+            'Worker Secret AUTH_RESOURCES: client id trung lap trong registry',
+          );
+        }
+        localSeen.add(id);
+        seenClientIds.add(id);
+        frozen.push(id);
+      }
+      clientIds = Object.freeze(frozen);
+    }
+    resources.push({ audience: aud, clientIds });
+  }
+  // Đảm bảo primary audience luôn có trong registry (back-compat): nếu
+  // AUTH_RESOURCES không khai primary, thêm primary vào đầu.
+  if (!resources.some((resource) => resource.audience === primaryAudience)) {
+    resources.unshift(Object.freeze(primary));
+  }
+  return Object.freeze(resources);
 }

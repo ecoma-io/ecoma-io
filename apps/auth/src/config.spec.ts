@@ -466,3 +466,78 @@ describe('resolveInternalSecret — the resolver of the internal envelope', () =
     await expect(resolve('abcd0123')).resolves.toBe('the-preloaded-internal-secret');
   });
 });
+
+/**
+ * Registry resource server (`AUTH_RESOURCES`) — một client id chỉ được map vào
+ * MỘT audience. Mapping mơ hồ (trùng trong cùng entry hoặc giữa hai entry) là
+ * cấu hình sai: glue chọn theo thứ tự mảng sẽ cho kết quả phụ thuộc thứ tự viết.
+ * Fail-closed lúc boot, cùng bộ luật với kid trùng / secret trùng giá trị.
+ */
+describe('AUTH_RESOURCES — duplicate client ids are rejected at boot', () => {
+  it('rejects a client id duplicated inside one entry', async () => {
+    await expect(
+      loadAuthConfig(
+        makeEnv({
+          AUTH_RESOURCES: JSON.stringify([
+            { audience: 'https://api.ecoma.io', clientIds: ['backoffice', 'backoffice'] },
+          ]),
+        }),
+      ),
+    ).rejects.toThrow(/client id trung lap/u);
+  });
+
+  it('rejects a client id duplicated across two entries', async () => {
+    await expect(
+      loadAuthConfig(
+        makeEnv({
+          AUTH_RESOURCES: JSON.stringify([
+            { audience: 'https://api.ecoma.io', clientIds: ['backoffice'] },
+            { audience: 'https://other.ecoma.io', clientIds: ['backoffice'] },
+          ]),
+        }),
+      ),
+    ).rejects.toThrow(/client id trung lap/u);
+  });
+
+  it('the returned registry is frozen against mutation after parse', async () => {
+    const config = await loadAuthConfig(
+      makeEnv({
+        AUTH_RESOURCES: JSON.stringify([
+          { audience: 'https://api.ecoma.io', clientIds: ['backoffice'] },
+        ]),
+      }),
+    );
+    expect(Object.isFrozen(config.resources)).toBe(true);
+    expect(Object.isFrozen(config.resources[0]?.clientIds)).toBe(true);
+  });
+
+  it('a registry without AUTH_RESOURCES keeps only the primary, frozen', async () => {
+    const config = await loadAuthConfig(makeEnv());
+    expect(config.resources).toEqual([{ audience: 'https://api.ecoma.io', clientIds: [] }]);
+    expect(Object.isFrozen(config.resources)).toBe(true);
+  });
+
+  it('every clientIds array in the registry is frozen, including defaults', async () => {
+    const config = await loadAuthConfig(
+      makeEnv({
+        AUTH_RESOURCES: JSON.stringify([
+          { audience: 'https://api.ecoma.io' },
+          { audience: 'https://other.ecoma.io', clientIds: ['backoffice'] },
+        ]),
+      }),
+    );
+    for (const resource of config.resources) {
+      expect(Object.isFrozen(resource.clientIds)).toBe(true);
+    }
+  });
+
+  it('freezing is deep: pushing into a default clientIds throws in strict mode', async () => {
+    const config = await loadAuthConfig(makeEnv());
+    const primary = config.resources[0];
+    expect(primary).toBeDefined();
+    expect(() => {
+      'use strict';
+      (primary.clientIds as string[]).push('intruder');
+    }).toThrow(/is not extensible/u);
+  });
+});

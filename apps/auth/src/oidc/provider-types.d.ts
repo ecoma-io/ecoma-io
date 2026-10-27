@@ -59,6 +59,14 @@ declare module 'oidc-provider' {
   }
 
   /** Module namespace `interactionPolicy` — index.js export cuối của lib. */
+  /** Error constructors của oidc-provider (helpers/errors.js). */
+  export const errors: {
+    InvalidTarget: new (
+      description?: string,
+      options?: unknown,
+    ) => Error & { allow_redirect?: boolean };
+  };
+
   export const interactionPolicy: {
     base(): InteractionPolicyBase;
     Check: new (
@@ -224,8 +232,8 @@ declare module 'oidc-provider' {
         readonly enabled: boolean;
         readonly defaultResource?: (
           ctx: ProviderKoaContext,
-          clientId: string,
-          oneOf?: string[],
+          client: unknown,
+          oneOf?: string | string[],
         ) => string | undefined | Promise<string | undefined>;
         readonly useGrantedResource?: (
           ctx: ProviderKoaContext,
