@@ -221,7 +221,7 @@ apps/account/db/
 ├── migrate.mts           # hằng số + helper dùng chung
 ├── apply.mts             # CLI runner cho CI
 └── migrations/
-    ├── 0001_core.sql                # users, sessions, handoffs, audit, outbox
+    ├── 0001_identity_core.sql      # users, sessions, handoffs, audit, outbox
     ├── 0002_roles_and_grants.sql   # hai role + grant + chặn chéo
     ├── 0003_internal_nonces.sql    # kho nonce cho replay guard
     ├── 0004_rename_authn_level_to_acr.sql

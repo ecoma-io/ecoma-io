@@ -35,7 +35,7 @@ Each project carries **exactly one** tag per dimension: `type:*`, `scope:*`, `ru
 
 ## Contracts with peer services
 
-⚠️ **Sharing a contract must be a decision with an issue, not a coding-time convenience.** `account-contracts` serves `account` consumers and `auth-contracts` serves `auth`; cross-scope consumers import the platform contract `libs/internal-auth-contracts` (`scope:platform`), which both re-export. Sharing happens only after the contract's boundary is pinned down in documentation. A drift in a canonical string, a header name, the skew window or the replay check fails **silently on both ends** — no compile error catches it.
+⚠️ **Sharing a contract must be a decision with an issue, not a coding-time convenience.** Contracts are owned **by provider**: the account-side contract lib (currently `libs/identity-contracts`, to be renamed with the bounded-context split) owns the account-status contract, and the auth-side libs (`libs/identity-auth-contracts`, same rename pending) own the session-verified/consent contracts. Cross-scope consumers import the platform contract `libs/internal-auth-contracts` (`scope:platform`), which both re-export. Sharing happens only after the contract's boundary is pinned down in documentation. A drift in a canonical string, a header name, the skew window or the replay check fails **silently on both ends** — no compile error catches it.
 
 ## Language
 

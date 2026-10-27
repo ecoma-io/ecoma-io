@@ -255,7 +255,7 @@ Bounded context/product scope (`account`, `auth`, `backoffice`, `llm`, `payment`
 hai tầng nền — đó là vai trò foundation layer, khác hẳn dependency chéo scope nghiệp vụ: giữa các scope nghiệp vụ ngang hàng,
 chỉ được phụ thuộc qua `type:contracts` của provider, không bao giờ import implementation của scope khác.
 
-Scope hiện dùng: `public`, `shared`, `platform`, `account`, `auth`, `backoffice`, `llm`, `payment`, `messaging`, `notifications`,
+Scope dùng: `public`, `shared`, `platform`, `account`, `auth`, `backoffice`, `llm`, `payment`, `messaging`, `notifications`,
 `local`. Scope mới thêm vào phải được khai báo trong constraint của `.oxlintrc.json` và `KNOWN_SCOPES` của
 `tools/dx/src/architecture/arch-tags.ts` — hai nguồn này được test ràng buộc đồng bộ hai chiều: scope nào thiếu constraint, constraint
 nào nhắm scope lạ, hay runtime constraint lệch ma trận compatibility đều bị test bắt.

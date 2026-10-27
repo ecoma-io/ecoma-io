@@ -12,7 +12,7 @@ account.ecoma.io  (Nuxt UI + BFF: account · login · consent)
                     db-auth      (grant · token — account đọc qua contract, không đọc DB)
 ```
 
-Ranh giới context tại system level → [`docs/overview/01-architecture.md`](../../overview/01-architecture.md) §2.1 · rule Nx cho `scope:account` → [`docs/overview/05-code-architecture.md`](../../overview/05-code-architecture.md) §6.3.
+Ranh giới context tại system level → [`docs/overview/01-architecture.md`](../../overview/01-architecture.md) §2.1 · rule Nx theo scope của từng app → [`docs/overview/05-code-architecture.md`](../../overview/05-code-architecture.md) §6.3.
 
 ## Hiện trạng
 

@@ -90,7 +90,7 @@ Hợp đồng của ADR này bám **hành vi đã chạy**: nhánh `granted` tr�
 - Workstream C phase 2 (J3) nhận thêm điều kiện flip staging: audience riêng + client seed của context `auth` phải có mặt trước (§5) — nếu chưa, dừng ở khai báo và ghi cho deploy lane/context `auth` (đúng AC của #109).
 - Context `auth` có hai việc đi kèm, tracked riêng khỏi PR `backoffice`: (1) audience riêng cho `backoffice`, (2) seed client public `backoffice` + redirect URI + `allowed_scopes` (`openid`, `offline_access`) — đúng quyết định D-2/D-3 của issue #116.
 - `AccessTokenClaims` (interface khai `nbf` nhưng không nằm trên đường phát hành production) không được dùng làm chuẩn verifier; nếu cần dọn code gây nhầm lẫn về sau, việc dọn thuộc context `auth` (lib nằm ở `libs/identity-auth-application`).
-- Hyperdrive query cache không thuộc ADR này — tác động của nó tới cửa sổ revocation đã ghi ở [`01-architecture.md`](./01-architecture.md) §6 và được deploy lane xác nhận OFF (không set được từ `wrangler.jsonc`).
+- Hyperdrive query cache không thuộc ADR này — tác động của nó tới cửa sổ revocation đã ghi ở [`01-architecture.md`](../01-architecture.md) §6 và được deploy lane xác nhận OFF (không set được từ `wrangler.jsonc`).
 - Acceptance matrix `02-requirements.md` bổ sung dòng authn khi PR B implement (đúng hệ quả của ADR-0011) — không sửa ngầm ở đây.
 
 ## Cross-reference
