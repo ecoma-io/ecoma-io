@@ -3,7 +3,8 @@
 > **Phạm vi:** Nx project taxonomy, Bounded Context trong code, DDD layer structure, dependency direction, contract project
 > và architecture enforcement.
 > Không chứa: topology, data ownership, invariant → `01-architecture.md` · CI/CD, migration, cách chạy test → `02-delivery.md` ·
-> kiến trúc test → `06-testing.md` · design chi tiết của một service → `services/<service>/`.
+> kiến trúc test → `06-testing.md` · catalog bounded context, context map, ngôn ngữ domain → `07-domains.md` ·
+> design chi tiết của một service → `services/<service>/`.
 
 ---
 
@@ -265,6 +266,13 @@ context, còn `account` và `auth` là hai deploy unit độc lập trong đó (
 Ranh giới giữa chúng **không** do tag Nx enforce: constraint `type:composition` cấm app import app, và đó là ranh giới
 duy nhất mà tag đảm bảo. Ranh giới protocol/UI giữa `account` và `auth` là quyết định kiến trúc, enforce bằng review và
 contract test — không phải bằng tag mới.
+
+⚠️ **Nx scope ≠ catalog bounded context.** Scope là trục sở hữu **code**; catalog bounded context là trục sở hữu
+**nghiệp vụ và dữ liệu**, canonical ở [`07-domains.md`](./07-domains.md) §3. Hai trục phần lớn trùng tên
+(`identity`, `backoffice`, `llm`, `payment`) nhưng không đồng nhất: `messaging` (transactional-mail) và `notifications`
+(push-notification) là bounded context nghiệp vụ mang scope chia sẻ theo chức năng; `local`, `public`, `shared`,
+`platform` là scope hạ tầng/chia sẻ, không phải bounded context; và `pact-broker` là bounded context mang scope `pact`.
+Danh sách scope trong mục này mô tả cấu trúc code — **không** phải một bản catalog thứ hai của bounded context.
 
 **Scope của deployment project là ranh giới provisioning, không phải bounded context.** Một `deploys/<unit>-deploy` mang
 `scope` của deploy unit mà nó provision (cùng scope với app tương ứng), vì nó sở hữu **hạ tầng** của unit đó chứ không
