@@ -3,7 +3,7 @@
 # Container này KHÔNG build code: nó chạy `wrangler dev` (local mode) từ mount
 # read-only của repo — build bundle là việc của `wrangler dev` lúc khởi động,
 # đúng đường code canonical mà local worker runtime (`tools/dx`) dùng cho mọi
-# worker khác. 02-identity.md §Database access: image phái sinh từ Node pin của
+# worker khác. 02-account-auth.md §Database access: image phái sinh từ Node pin của
 # repo + `ca-certificates` (PF2 — workerd fail khởi động service `internet`
 # khi thiếu CA hệ thống).
 #

@@ -1,6 +1,6 @@
 # Account
 
-`account` là deploy unit giữ **bằng chứng đăng nhập** và mọi UI liên quan tài khoản trong bounded context `identity`. Bổ sung `auth` (authorization server, API-only) — cùng context, hai database riêng.
+`account` là bounded context giữ **bằng chứng đăng nhập** và mọi UI liên quan tài khoản; deploy unit cùng tên phục vụ nó. Bổ sung `auth` (authorization server, API-only) — bounded context riêng, hai database riêng.
 
 ```text
 account.ecoma.io  (Nuxt UI + BFF: account · login · consent)
@@ -12,7 +12,7 @@ account.ecoma.io  (Nuxt UI + BFF: account · login · consent)
                     db-auth      (grant · token — account đọc qua contract, không đọc DB)
 ```
 
-Ranh giới context tại system level → [`docs/overview/01-architecture.md`](../../overview/01-architecture.md) §2.1 · rule Nx cho `scope:identity` → [`docs/overview/05-code-architecture.md`](../../overview/05-code-architecture.md) §6.3.
+Ranh giới context tại system level → [`docs/overview/01-architecture.md`](../../overview/01-architecture.md) §2.1 · rule Nx cho `scope:account` → [`docs/overview/05-code-architecture.md`](../../overview/05-code-architecture.md) §6.3.
 
 ## Hiện trạng
 

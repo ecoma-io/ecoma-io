@@ -8,7 +8,7 @@
 
 ## 1. Mục đích và ranh giới
 
-`account` là deploy unit giữ **bằng chứng đăng nhập** của người dùng và mọi UI liên quan tài khoản, trong bounded context `identity`.
+`account` là bounded context giữ **bằng chứng đăng nhập** của người dùng và mọi UI liên quan tài khoản; deploy unit cùng tên phục vụ context này.
 
 | Sở hữu                                                                                                                                 | Không sở hữu                                                                                                                                       |
 | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -32,7 +32,7 @@ account.ecoma.io  (Cloudflare Worker, Nuxt 4 + Nitro preset cloudflare_module)
 
 ## 3. Data model — `db-account`
 
-Greenfield: **không có** schema hay migration history `db-identity` nào để kế thừa ([`overview/01-architecture.md`](../../overview/01-architecture.md) §4). Dưới đây là **logical specification** — định nghĩa ý nghĩa, ràng buộc, vòng đời; **không** phải DDL, không chốt kiểu cột vật lý hay index cụ thể.
+Greenfield: **không có** schema hay migration history chung nào để kế thừa ([`overview/01-architecture.md`](../../overview/01-architecture.md) §4). Dưới đây là **logical specification** — định nghĩa ý nghĩa, ràng buộc, vòng đời; **không** phải DDL, không chốt kiểu cột vật lý hay index cụ thể.
 
 Quy ước: `sub` là **opaque, không tái sử dụng, không tái phát hành**; mọi cột thời gian là UTC. Kiểu vật lý và index chốt ở migration, mỗi index phải gắn với một truy vấn hoặc ràng buộc cụ thể — không thêm index "cho chắc".
 
@@ -91,7 +91,7 @@ Ba trường này được đọc bởi **nhiều** service qua contract, và ch
 | `timezone`   | IANA TZ name (`Asia/Ho_Chi_Minh`)  | Validate theo tz database; reject tên không có                       | `Asia/Ho_Chi_Minh`                                           | Đổi cách hiển thị thời gian               |
 | `color_mode` | enum `system` \| `light` \| `dark` | Enum đóng                                                            | `system`                                                     | Đổi theme                                 |
 
-⚠️ **Không trùng với timezone nghiệp vụ.** `user_preferences.timezone` là thiết lập cá nhân của identity (timezone máy người dùng đang ở). Một trường kiểu "timezone giao dịch" của business thuộc service sở hữu nghiệp vụ đó, **không** đọc từ `db-account` — nó là quyết định nghiệp vụ, không phải thiết lập hiển thị. Service nghiệp vụ nhận `timezone` qua contract nếu user muốn dùng làm mặc định, và tự lưu bản riêng.
+⚠️ **Không trùng với timezone nghiệp vụ.** `user_preferences.timezone` là thiết lập cá nhân của account (timezone máy người dùng đang ở). Một trường kiểu "timezone giao dịch" của business thuộc service sở hữu nghiệp vụ đó, **không** đọc từ `db-account` — nó là quyết định nghiệp vụ, không phải thiết lập hiển thị. Service nghiệp vụ nhận `timezone` qua contract nếu user muốn dùng làm mặc định, và tự lưu bản riêng.
 
 Contract (`GET`/`PATCH /account/preferences`) → [`02-requirements.md`](./02-requirements.md) FR-008.
 

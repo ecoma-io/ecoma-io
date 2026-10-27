@@ -86,7 +86,7 @@ không được gộp thành một chữ "đã xong":
 
 | Tầng                                | Trạng thái hôm nay                                                                                                                                    |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **(1) Quyết định thiết kế**         | ✔ Cron Trigger `17 3 * * *`, chỉ `scheduled()`, KHÔNG `fetch` export — thay workflow identity-nonce-prune (issue #82)                                 |
+| **(1) Quyết định thiết kế**         | ✔ Cron Trigger `17 3 * * *`, chỉ `scheduled()`, KHÔNG `fetch` export — thay workflow cron GitHub cũ (issue #82)                                       |
 | **(2) Cấu hình (`wrangler.jsonc`)** | ✔ `triggers.crons` khai `["17 3 * * *"]`, `workers_dev: false`, không route — đi cùng (3)                                                             |
 | **(3) Implement (`scheduled()`)**   | ✔ `src/main.ts` export `scheduled()`; hai kho qua `Promise.allSettled` rồi rethrow `PruneJobConfigError` → `not_configured` log riêng trước khi throw |
 | **(4) Xác minh trên runtime**       | ✖ Chưa xác minh — ngoài deploy matrix, không có deployment nào để kiểm                                                                                |

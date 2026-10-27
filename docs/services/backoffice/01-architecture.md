@@ -22,19 +22,19 @@ Tài liệu này mô tả ranh giới, domain model khái niệm và authorizati
 
 ### 2.2. Ngoài phạm vi
 
-- **Account identity, credential, MFA/passkey, browser session** → [`../account/README.md`](../account/README.md); `backoffice` không nhân bản state này.
+- **Dữ liệu danh tính của account (profile, credential), MFA/passkey, browser session** → [`../account/README.md`](../account/README.md); `backoffice` không nhân bản state này.
 - **Giao thức OAuth 2.0 / OIDC** — flows, clients, token issuance/validation/revocation → [`../auth/README.md`](../auth/README.md).
 - **Dữ liệu nghiệp vụ của resource-owning backend** — `backoffice` không sở hữu, không đọc database của nó.
 - **Chính sách authorization của từng resource** — `backoffice` chỉ _điều hướng_ về service sở hữu resource; việc enforce nằm ở service đó (§5).
 
 ## 3. Boundary và ownership
 
-| Sở hữu của `backoffice`                                                                                                                                           | Không sở hữu                                                                                                                                                                   |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Staff directory · staff lifecycle · permission catalog · staff-role assignment · role-management governance · privileged-operation workflow · authorization audit | Account identity · credential/MFA/passkey · browser session · OAuth 2.0/OIDC protocol · dữ liệu nghiệp vụ của resource-owning backend · authorization policy của từng resource |
+| Sở hữu của `backoffice`                                                                                                                                           | Không sở hữu                                                                                                                                                                                |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Staff directory · staff lifecycle · permission catalog · staff-role assignment · role-management governance · privileged-operation workflow · authorization audit | Dữ liệu danh tính của account · credential/MFA/passkey · browser session · OAuth 2.0/OIDC protocol · dữ liệu nghiệp vụ của resource-owning backend · authorization policy của từng resource |
 
-- **Account ID là cross-service identity reference.** Một **staff member** liên kết tới đúng **một** Account ID (`sub`): không tái phát hành, không tái sử dụng. Đây là **reference**, không phải khoá ngoại xuyên database — không có FK từ database của `backoffice` sang database của `account`. Email **không** phải primary identity key.
-- **`account`** sở hữu canonical account identity: hồ sơ, email đã xác thực, credential, MFA/passkey, browser session, account lifecycle, authn audit. Nó **không** sở hữu staff membership, staff role, permission assignment hay authorization policy của `backoffice`, và **không** được ghi vào dữ liệu staff/role/permission của `backoffice`.
+- **Account ID là tham chiếu danh tính xuyên service.** Một **staff member** liên kết tới đúng **một** Account ID (`sub`): không tái phát hành, không tái sử dụng. Đây là **reference**, không phải khoá ngoại xuyên database — không có FK từ database của `backoffice` sang database của `account`. Email **không** phải khoá danh tính chính.
+- **`account`** sở hữu dữ liệu danh tính canonical của account: hồ sơ, email đã xác thực, credential, MFA/passkey, browser session, account lifecycle, authn audit. Nó **không** sở hữu staff membership, staff role, permission assignment hay authorization policy của `backoffice`, và **không** được ghi vào dữ liệu staff/role/permission của `backoffice`.
 - **`auth`** sở hữu trách nhiệm giao thức OAuth 2.0 / OIDC: flows, clients, redirect URI validation, token issuance/validation/revocation, audience restriction, assurance. Nó **không** sở hữu business role/permission của `backoffice`. **OAuth scope ≠ application-level permission** (A22).
 - **`backoffice` không phải một IdP thứ hai và không phải credential store.** Authentication tới `backoffice` đi qua `account`/`auth` như mọi application khác; `backoffice` chỉ tiêu thụ Account ID và token đã xác thực, và **không** giữ duplicate credential/MFA/passkey state.
 - **Database trust.** `backoffice` sở hữu database của nó: `db-backoffice`, PostgreSQL, schema `backoffice` ([ADR-0001](./adr/0001-storage-schema-staff-rbac.md)). `account` và `auth` **không** được ghi vào dữ liệu staff/role/permission của `backoffice` dù chung hạ tầng/instance — chung PostgreSQL instance ≠ chung write authority. Runtime role chỉ có quyền tối thiểu, tách migrator/runtime privilege; pattern tham chiếu ở [`../account/03-operations.md`](../account/03-operations.md) §3 — **tham chiếu, không sao chép**.
@@ -48,7 +48,7 @@ Tài liệu này mô tả ranh giới, domain model khái niệm và authorizati
 
 - **staff member** (thành viên staff) là một người trong **staff directory** của `backoffice`, liên kết tới đúng **một** Account ID.
 - Thuật ngữ là **`staff`** — không dùng `user`, `employee` hay `admin` để chỉ khái niệm này, tránh nhầm với account `users` của `account`.
-- Account ID (`sub`) là **reference** ổn định, không tái phát hành/không tái sử dụng; **email không phải primary identity key**.
+- Account ID (`sub`) là **reference** ổn định, không tái phát hành/không tái sử dụng; **email không phải khoá danh tính chính**.
 - Một Account ID có thể không có staff entry; khi có, mapping là 1:1. Không suy ra staff membership từ việc một Account tồn tại.
 - Không tạo staff entry bằng dữ liệu do client gửi; linkage do server-side decision tạo và audit.
 

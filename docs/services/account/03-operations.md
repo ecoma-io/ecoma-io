@@ -59,11 +59,11 @@ Câu lệnh này **không phụ thuộc table nào tồn tại**, nên từ ch�
 SELECT has_database_privilege('ecoma_account_runtime', 'db-auth', 'CONNECT');  -- phải = false
 ```
 
-⚠️ **Đây là lớp enforce thật của ranh giới database của identity, không phải tag Nx.** Cả hai app đều mang `scope:identity`, nên tag không phân biệt được chúng và **không** chặn được việc `apps/account` khai báo binding trỏ `db-auth` ([`05` §6.3](../../overview/05-code-architecture.md)). Ranh giới đó là credential không cho phép.
+⚠️ **Đây là lớp enforce thật của ranh giới database giữa `account` và `auth`, không phải tag Nx.** Tag không phân biệt được hai app và **không** chặn được việc `apps/account` khai báo binding trỏ `db-auth` ([`05` §6.3](../../overview/05-code-architecture.md)). Ranh giới đó là credential không cho phép.
 
 ### 3.2 Migration
 
-- **Greenfield provisioning, không phải data migration.** Không có `db-identity` nào tồn tại để kế thừa. Danh sách migration đã có trong repo tại `apps/account/db/migrations/`: `0001` identity core (`users`, `account_sessions`, `login_handoffs`, `security_events`, `account_outbox_events`), `0002` roles và grants, `0003` `internal_nonces`, `0004` đổi tên `account_sessions.authn_level` → `acr` (đồng bộ với `0012` của `db-auth`), `0005` `email_addresses`, `0006` `otp_challenges`, `0007` role pruner riêng cho kho nonce (`ecoma_account_nonce_pruner`, song sinh với `0014` của `db-auth`). Mọi file idempotent (runner chạy lại toàn bộ mỗi lần apply) và forward-only; integration test áp mọi file hai lần (`apps/account/tests/databases/migrations.spec.ts`).
+- **Greenfield provisioning, không phải data migration.** Không có schema chung nào tồn tại để kế thừa. Danh sách migration đã có trong repo tại `apps/account/db/migrations/`: `0001` core (`users`, `account_sessions`, `login_handoffs`, `security_events`, `account_outbox_events`), `0002` roles và grants, `0003` `internal_nonces`, `0004` đổi tên `account_sessions.authn_level` → `acr` (đồng bộ với `0012` của `db-auth`), `0005` `email_addresses`, `0006` `otp_challenges`, `0007` role pruner riêng cho kho nonce (`ecoma_account_nonce_pruner`, song sinh với `0014` của `db-auth`). Mọi file idempotent (runner chạy lại toàn bộ mỗi lần apply) và forward-only; integration test áp mọi file hai lần (`apps/account/tests/databases/migrations.spec.ts`).
 - Migration chạy từ **CI runner** bằng PostgreSQL client kết nối thẳng, dùng role `_migrator_`, giữ advisory lock ([`02` §3.1](../../overview/02-delivery.md)). Hyperdrive không hỗ trợ advisory lock (`04` HD6) nên không thể chạy migration từ trong Worker. Runner đã có: `pnpm nx run @ecoma-io/account:db:migrate` với `DATABASE_URL` (bắt buộc) và `ECOMA_AUTH_DATABASE` (tuỳ chọn) — thiếu `DATABASE_URL` thì exit code khác 0 chứ không im lặng coi như đã apply.
 - **Migration history độc lập** với `db-auth` — hai deploy unit rollout độc lập ([`01` invariant 18](../../overview/01-architecture.md)). Dùng chung bảng migration là cách buộc hai service vào một release, đúng thứ tách deploy unit sinh ra để tránh.
 - Expand → compatible rollout → contract; không down-migration, **forward-fix** ([`01` invariant 10](../../overview/01-architecture.md)).
@@ -91,7 +91,7 @@ Thứ tự provisioning, mỗi bước dừng an toàn:
 
 ### 3.3 Dọn nonce hết hạn
 
-`account.internal_nonces` cũng phình theo lưu lượng của đường nội bộ. Việc dọn nó **không** còn là job `prune-account` của GitHub Actions: workflow `.github/workflows/identity-nonce-prune.yaml` đã bị **xoá** khỏi `main` (issue #82, PR #89) và thay bằng cron Worker `apps/auth-nonce-prune-job` — nhịp `17 3 * * *`, một lần mỗi ngày, chạy **hai lane song song**; lane `DB_ACCOUNT` xoá `account.internal_nonces` (predicate `expires_at < now()`, xoá theo lô có giới hạn) bằng role riêng `ecoma_account_nonce_pruner` (tạo ở `0007_nonce_pruner_role.sql`), **không** phải `ecoma_account_migrator` — Worker không được cầm credential DDL ([`02` §6 rule 11](../../overview/02-delivery.md)). Job **chưa chạy thật lần nào**: nó chưa có target `deploy`, chưa nằm trong release matrix, và binding Hyperdrive `DB_ACCOUNT` của nó còn là placeholder — nên kho nonce bên này chưa từng được prune.
+`account.internal_nonces` cũng phình theo lưu lượng của đường nội bộ. Việc dọn nó **không** còn là job `prune-account` của GitHub Actions: workflow cron cũ (dùng chung cho hai bên) đã bị **xoá** khỏi `main` (issue #82, PR #89) và thay bằng cron Worker `apps/auth-nonce-prune-job` — nhịp `17 3 * * *`, một lần mỗi ngày, chạy **hai lane song song**; lane `DB_ACCOUNT` xoá `account.internal_nonces` (predicate `expires_at < now()`, xoá theo lô có giới hạn) bằng role riêng `ecoma_account_nonce_pruner` (tạo ở `0007_nonce_pruner_role.sql`), **không** phải `ecoma_account_migrator` — Worker không được cầm credential DDL ([`02` §6 rule 11](../../overview/02-delivery.md)). Job **chưa chạy thật lần nào**: nó chưa có target `deploy`, chưa nằm trong release matrix, và binding Hyperdrive `DB_ACCOUNT` của nó còn là placeholder — nên kho nonce bên này chưa từng được prune.
 
 Cố ý **không** dùng `ecoma_account_runtime` cho job định kỳ, dù runtime bên này có `DELETE` trên bảng đó (khối giải thích grant của `internal_nonces` ở cuối `0002_roles_and_grants.sql`, và grant thật ở `0003_internal_nonces.sql`): một job định kỳ không nên phụ thuộc vào một ngoại lệ chỉ tồn tại ở một bên — nên cron Worker cầm principal riêng của từng kho (`ecoma_account_nonce_pruner` / `ecoma_auth_nonce_pruner`), hai role **dứt khoái**, không chia credential. Credential của `auth` không bao giờ được dùng ở đây và ngược lại.
 
@@ -99,7 +99,7 @@ Cơ chế, tần suất, hợp đồng log, hành vi khi hỏng và đường ch
 
 ⚠️ **Prune `otp_challenges` chưa hiện thực: grant `DELETE` đã có, nhưng chưa có job nào dùng nó.** Migration `0006_otp_challenges.sql` ghi rõ `DELETE` là "prune theo TTL, thao tác của bảng", song mọi hàng đã consume hoặc đã hết hạn của `otp_challenges` nằm lại database vô hạn — không job nào dọn nó (`internal_nonces` bên cạnh giờ đã có cron Worker dọn ở trên, nhưng `otp_challenges` vẫn "grant có, job chưa"; một job tương tự theo hình dạng §3.3 là follow-up riêng). Không khẩn cấp vì throttle resend 60 giây và rate limit 3/15 phút + 10/giờ chặn được phần lớn volume. Việc này **không cần cấp thêm quyền** — `ecoma_account_runtime` đã có `DELETE`; và cũng không chạy bằng role khác, vì hai lý do trong đoạn trên.
 
-Điều kiện an toàn cho prune này đã có sẵn trong thiết kế: rate limit đếm các hàng `otp_challenges` trong cửa sổ 15 phút và 1 giờ, nên bất kỳ job dọn nào chỉ xoá hàng **quá TTL** (600 giây) thì không và không thể làm sai một phép đếm rate limit đang hiệu lực. Ràng buộc duy nhất cần giữ khi hiện thực: predicate prune phải dựa trên `consumed_at`/`expires_at` (vòng đời của bảng). Workflow `identity-nonce-prune.yaml` dùng chung cho hai bên không còn ở `main` — đã bị xoá trong PR #89 (commit `bf920d3c`), khi nó được thay bằng cron Worker `apps/auth-nonce-prune-job`; trên `main` chỉ còn lại `ci.yaml`, `code-analysis.yml`, `code-review.yml`. Việc hiện thực lại prune cho hai bảng này (nonce và `otp_challenges`) do phần delivery đảm nhiệm và phải dựa trên đặc tả baseline ở `docs/services/auth/03-operations.md` §3.3, không dừng ở trạng thái tài liệu đã drift.
+Điều kiện an toàn cho prune này đã có sẵn trong thiết kế: rate limit đếm các hàng `otp_challenges` trong cửa sổ 15 phút và 1 giờ, nên bất kỳ job dọn nào chỉ xoá hàng **quá TTL** (600 giây) thì không và không thể làm sai một phép đếm rate limit đang hiệu lực. Ràng buộc duy nhất cần giữ khi hiện thực: predicate prune phải dựa trên `consumed_at`/`expires_at` (vòng đời của bảng). Workflow cron cũ đã bị xoá khỏi `main` trong PR #89 (commit `bf920d3c`), khi nó được thay bằng cron Worker `apps/auth-nonce-prune-job`; trên `main` chỉ còn lại `ci.yaml`, `code-analysis.yml`, `code-review.yml`. Việc hiện thực lại prune cho hai bảng này (nonce và `otp_challenges`) do phần delivery đảm nhiệm và phải dựa trên đặc tả baseline ở `docs/services/auth/03-operations.md` §3.3, không dừng ở trạng thái tài liệu đã drift.
 
 ## 4. Environment isolation
 
@@ -109,9 +109,9 @@ Cơ chế, tần suất, hợp đồng log, hành vi khi hỏng và đường ch
 | Staging    | Database riêng, cùng instance | Role staging riêng                 |
 | PR Preview | DB preview riêng hoặc mock    | **Không** có production credential |
 
-- **Không bao giờ** bind Hyperdrive production vào Preview ([`01` invariant 2](../../overview/01-architecture.md)) — identity không có ngoại lệ.
-- ⚠️ **Staging không phải bằng chứng HA.** `db-account` và `db-auth` cùng nằm trên **một PostgreSQL instance**, nên staging **không** kiểm chứng được failure domain độc lập — sập instance là sập cả hai service identity cùng lúc ([`03` §3.2](../../overview/03-operations.md)). Một run staging xanh chứng minh logic và contract chạy đúng, **không** chứng minh tách lỗi. Staging dùng chung host với production cũng vì vậy **không** phải HA test ([`02` §4](../../overview/02-delivery.md)). Muốn kiểm chứng HA thì phải theo trigger và tier ở [`03` §6](../../overview/03-operations.md).
-- ⚠️ **Cả hai hướng binding đều là đường xác thực, không phải read-only.** `account` → `auth` (`POST /internal/session/verified`) là nơi `auth` nhận danh tính đã xác minh; `auth` → `account` (`GET /internal/account/status`) là control point fail-closed lúc phát hành ([`01-architecture.md`](./01-architecture.md) §5.1, §6.0). Worker đích giữ Hyperdrive production nên Preview gọi binding là **ghi vào dữ liệu production qua một Worker production**. Với identity, cả hai vế đều áp dụng: binding của `account` tới `auth` **và** Hyperdrive config `db-account`. **Login/consent E2E và kiểm tra trạng thái account đều không chạy dependency mode A** — dùng Mode C (mock, mặc định cho smoke) hoặc Mode B với service token riêng theo môi trường ([`02` §5.3](../../overview/02-delivery.md)). Mỗi môi trường khai báo binding tường minh; thiếu binding thì fail closed, không rơi về đường không xác thực.
+- **Không bao giờ** bind Hyperdrive production vào Preview ([`01` invariant 2](../../overview/01-architecture.md)) — không có ngoại lệ.
+- ⚠️ **Staging không phải bằng chứng HA.** `db-account` và `db-auth` cùng nằm trên **một PostgreSQL instance**, nên staging **không** kiểm chứng được failure domain độc lập — sập instance là sập cả hai service `account`/`auth` cùng lúc ([`03` §3.2](../../overview/03-operations.md)). Một run staging xanh chứng minh logic và contract chạy đúng, **không** chứng minh tách lỗi. Staging dùng chung host với production cũng vì vậy **không** phải HA test ([`02` §4](../../overview/02-delivery.md)). Muốn kiểm chứng HA thì phải theo trigger và tier ở [`03` §6](../../overview/03-operations.md).
+- ⚠️ **Cả hai hướng binding đều là đường xác thực, không phải read-only.** `account` → `auth` (`POST /internal/session/verified`) là nơi `auth` nhận danh tính đã xác minh; `auth` → `account` (`GET /internal/account/status`) là control point fail-closed lúc phát hành ([`01-architecture.md`](./01-architecture.md) §5.1, §6.0). Worker đích giữ Hyperdrive production nên Preview gọi binding là **ghi vào dữ liệu production qua một Worker production**. Với `account`, cả hai vế đều áp dụng: binding của `account` tới `auth` **và** Hyperdrive config `db-account`. **Login/consent E2E và kiểm tra trạng thái account đều không chạy dependency mode A** — dùng Mode C (mock, mặc định cho smoke) hoặc Mode B với service token riêng theo môi trường ([`02` §5.3](../../overview/02-delivery.md)). Mỗi môi trường khai báo binding tường minh; thiếu binding thì fail closed, không rơi về đường không xác thực.
 
 ## 5. Hyperdrive
 
@@ -119,7 +119,7 @@ Mỗi service **một config riêng**, không dùng chung:
 
 - Query cache **OFF** (HD3/HD4: cache bật mặc định và **không** invalidate khi ghi → [`01` invariant 14](../../overview/01-architecture.md)). Không có đường correctness nào được bỏ qua quy tắc này.
 - Cấu hình tách biệt **không chỉ** là tách credential — nó là điều kiện để **repoint được độc lập** khi DR: sửa origin của `db-account` không được kéo `auth` đi theo.
-- Ngân sách connection tính **theo từng config** (HD9 ~20 Free / ~100 Paid, HD13 tối thiểu 5). Tách `identity` thành hai service **nhân đôi** số config so với một `db-identity` → [`03` §2.1](../../overview/03-operations.md).
+- Ngân sách connection tính **theo từng config** (HD9 ~20 Free / ~100 Paid, HD13 tối thiểu 5). `db-account` và `db-auth` là hai config riêng — ngân sách tính cho cả hai, không gộp → [`03` §2.1](../../overview/03-operations.md).
 - Không dùng advisory lock / `LISTEN`/`NOTIFY` / SQL-level `PREPARE` (HD6 → [`01` invariant 13](../../overview/01-architecture.md)).
 
 ## 6. Observability
@@ -172,7 +172,7 @@ Ngưỡng số cụ thể chưa chốt ([`01` §10](../../overview/01-architectu
 
 ## 9. Backup và restore
 
-Chính sách backup system-level → [`03` §3.1](../../overview/03-operations.md). Điểm riêng của identity:
+Chính sách backup system-level → [`03` §3.1](../../overview/03-operations.md). Điểm riêng của `db-account` (và song song với `db-auth`):
 
 ⚠️ **`pg_dumpall` dump toàn cluster** (`04` PG1) và thường cần superuser (PG2) → `db-account` và `db-auth` **luôn backup và restore cùng nhau**. Đúng thứ không mong muốn khi chỉ một database hỏng logic. Cần **restore path độc lập theo database**: dump riêng cho lớp "chỉ một DB hỏng", còn WAL/PITR là lớp crash-recovery chung của instance. Hai lớp khác nhau về mục đích, không thay thế nhau.
 
@@ -183,7 +183,7 @@ Chính sách backup system-level → [`03` §3.1](../../overview/03-operations.m
 | Restore **`db-account`** lên instance tạm             | Hằng tháng | Service chạy được trên bản restore và verify invariant của nó (`01-architecture.md` §7) **qua chính đường Hyperdrive** |
 | Restore **cả hai** database từ cùng một restore point | Hằng tháng | Hai service nhất quán chéo: `sub` trong `db-auth` resolve được trong `db-account`                                      |
 
-Drill dừng ở "PostgreSQL đã restore trên một máy" là **chưa đo** — phải gồm bước repoint Hyperdrive. Với identity, repoint từng config và verify **cả hai** service, vì dữ liệu chéo database không được coi là hợp lệ chỉ vì nó từng tồn tại.
+Drill dừng ở "PostgreSQL đã restore trên một máy" là **chưa đo** — phải gồm bước repoint Hyperdrive. Với cặp `account`/`auth`, repoint từng config và verify **cả hai** service, vì dữ liệu chéo database không được coi là hợp lệ chỉ vì nó từng tồn tại.
 
 ### 9.2 Partial restore
 
@@ -211,7 +211,7 @@ Drill dừng ở "PostgreSQL đã restore trên một máy" là **chưa đo** �
 1. Runtime role chỉ DML trên `db-account`, không `CONNECT` sang `db-auth` (§3.1).
 2. Migrator role chỉ sống trong CI secret store; không bao giờ là Worker secret.
 3. Query cache OFF trên Hyperdrive config `db-account`.
-4. Không Hyperdrive config nào của identity trỏ production origin từ Preview.
+4. Không Hyperdrive config nào của `account` trỏ production origin từ Preview.
 5. Migration history độc lập với `db-auth`; rollback Worker **không** rollback database.
 6. `db-account` có restore path độc lập **và** được drill hằng tháng.
 7. Mất `db-account` phải kèm thu hồi grant trước khi cho traffic trở lại; mất `db-auth` không được làm mất account.

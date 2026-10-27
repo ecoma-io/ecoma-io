@@ -10,7 +10,7 @@
 # của container do Docker healthcheck đảm nhiệm (probe `GET /health` của
 # worker, không chạm DB — thiết kế của app).
 #
-# Container chạy trên platform network (02-identity.md §Database access):
+# Container chạy trên platform network (02-account-auth.md §Database access):
 #   - Repo mount READ-ONLY tại /repo: bundle `dist/` (build trên host, mount
 #     bind ro vào đúng vị trí) + wrangler.jsonc là input; KHÔNG gì ghi được
 #     xuống đây.

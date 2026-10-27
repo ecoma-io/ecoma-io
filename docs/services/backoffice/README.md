@@ -15,11 +15,11 @@ Nó **không** phải một IdP thứ hai và **không** phải credential store
 
 ## 2. Mối quan hệ với các bounded context khác
 
-| Context      | Sở hữu (rút gọn)                                                                                            | Không sở hữu (rút gọn)                                                                     | Tài liệu                            |
-| ------------ | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------- |
-| `account`    | Canonical account identity: hồ sơ, email đã xác thực, credential, MFA/passkey, browser session, authn audit | Staff membership, staff role, permission assignment, authorization policy của `backoffice` | [`README.md`](../account/README.md) |
-| `auth`       | Giao thức OAuth 2.0 / OIDC: flows, clients, redirect URI validation, token issuance/validation/revocation   | Business role/permission của `backoffice` — **OAuth scope ≠ application-level permission** | [`README.md`](../auth/README.md)    |
-| `backoffice` | Staff directory, staff lifecycle, role/permission catalog, staff-role assignment, authorization audit       | Không phải IdP, không phải credential store; không nhân bản credential/MFA/passkey state   | trang này                           |
+| Context      | Sở hữu (rút gọn)                                                                                               | Không sở hữu (rút gọn)                                                                     | Tài liệu                            |
+| ------------ | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------- |
+| `account`    | Dữ liệu danh tính của account: hồ sơ, email đã xác thực, credential, MFA/passkey, browser session, authn audit | Staff membership, staff role, permission assignment, authorization policy của `backoffice` | [`README.md`](../account/README.md) |
+| `auth`       | Giao thức OAuth 2.0 / OIDC: flows, clients, redirect URI validation, token issuance/validation/revocation      | Business role/permission của `backoffice` — **OAuth scope ≠ application-level permission** | [`README.md`](../auth/README.md)    |
+| `backoffice` | Staff directory, staff lifecycle, role/permission catalog, staff-role assignment, authorization audit          | Không phải IdP, không phải credential store; không nhân bản credential/MFA/passkey state   | trang này                           |
 
 - `account`/`auth` **không bao giờ ghi** vào dữ liệu staff/role/permission của `backoffice` — dù có chung hạ tầng PostgreSQL instance, cùng hạ tầng không có nghĩa chung write authority.
 - Token hợp lệ **không** phải bằng chứng privilege còn hiện hành; đây là nguyên tắc chung của ba context (A22, A24).

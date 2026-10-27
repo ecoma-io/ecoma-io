@@ -1,7 +1,7 @@
 /**
  * Adapter HTTP cho Service Binding `AUTH_SERVICE` trên preset `node-server`
  * (local Docker lane) — chiều account → auth của topology local
- * (`docs/services/local-platform/02-identity.md` §Service bindings: "Nitro
+ * (`docs/services/local-platform/02-account-auth.md` §Service bindings: "Nitro
  * adapter fetch thẳng `http://ecoma-<ns>-auth:4203`").
  *
  * ## Vì sao shim tồn tại

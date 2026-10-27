@@ -69,7 +69,7 @@
 | FR-008e | `PATCH /account/preferences` cập nhật từng trường, trả kết quả hợp lệ; trường không gửi thì giữ nguyên, không reset về default        | `PATCH` chỉ `color_mode` → `locale`/`timezone` không đổi                                                           |
 | FR-008g | Contract internal `GET /internal/account/preferences?sub=` yêu cầu envelope HMAC hợp lệ, **không** nhận cookie, mỗi lần đọc đều audit | Gọi không có signature hợp lệ bị từ chối; assert có audit event mỗi lần đọc                                        |
 | FR-008h | Internal contract chỉ trả cho `sub` mà caller được phép hỏi; caller không hợp lệ → `404`                                              | Service không có quyền → `404`, không phải `403` để không xác nhận sự tồn tại                                      |
-| FR-008f | Preference là **identity-owned**; không trùng với timezone nghiệp vụ của service khác                                                 | `user_preferences` không chứa trường kiểu "timezone giao dịch" — [`01-architecture.md`](./01-architecture.md) §3.3 |
+| FR-008f | Preference là **tài sản của `account`**; không trùng với timezone nghiệp vụ của service khác                                          | `user_preferences` không chứa trường kiểu "timezone giao dịch" — [`01-architecture.md`](./01-architecture.md) §3.3 |
 
 Default, chốt tại [`01-architecture.md`](./01-architecture.md) §3.3:
 
@@ -128,13 +128,13 @@ Default, chốt tại [`01-architecture.md`](./01-architecture.md) §3.3:
 
 ### 1.6 Privacy request
 
-| ID      | Yêu cầu                                                                                                                                  | Kiểm chứng                                                                        |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| FR-013  | Tiếp nhận `export`, `correct`, `delete`, `restrict`, `object`; lưu `subject_sub` opaque, trạng thái và deadline                          | Mỗi loại request tạo được và có deadline gắn với loại request                     |
-| FR-013a | `identity` **orchestrate** privacy request; service sở hữu dữ liệu **tự** export/correct/delete record của mình theo contract định nghĩa | Contract nêu rõ service nào phụ trách record nào                                  |
-| FR-013b | **Legal consent, OAuth consent và notification preference là ba khái niệm riêng biệt** — không dùng chung bảng                           | Assert ba bảng tách biệt, không có foreign key chéo                               |
-| FR-014  | Mỗi loại privacy request có **deadline** theo luật; request hỏng **không** được kéo dài deadline                                         | Test: request vượt deadline được đánh dấu vi phạm và escalate                     |
-| FR-015  | Privacy request phải **hoàn thành hoặc báo lỗi tới data subject**; trạng thái hỏng phải nhìn thấy được và có người chịu trách nhiệm      | Test: request ở trạng thái lỗi vẫn hiện trong danh sách với lý do, không biến mất |
+| ID      | Yêu cầu                                                                                                                                 | Kiểm chứng                                                                        |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| FR-013  | Tiếp nhận `export`, `correct`, `delete`, `restrict`, `object`; lưu `subject_sub` opaque, trạng thái và deadline                         | Mỗi loại request tạo được và có deadline gắn với loại request                     |
+| FR-013a | `account` **orchestrate** privacy request; service sở hữu dữ liệu **tự** export/correct/delete record của mình theo contract định nghĩa | Contract nêu rõ service nào phụ trách record nào                                  |
+| FR-013b | **Legal consent, OAuth consent và notification preference là ba khái niệm riêng biệt** — không dùng chung bảng                          | Assert ba bảng tách biệt, không có foreign key chéo                               |
+| FR-014  | Mỗi loại privacy request có **deadline** theo luật; request hỏng **không** được kéo dài deadline                                        | Test: request vượt deadline được đánh dấu vi phạm và escalate                     |
+| FR-015  | Privacy request phải **hoàn thành hoặc báo lỗi tới data subject**; trạng thái hỏng phải nhìn thấy được và có người chịu trách nhiệm     | Test: request ở trạng thái lỗi vẫn hiện trong danh sách với lý do, không biến mất |
 
 ## 2. Non-functional requirements
 
@@ -146,7 +146,7 @@ Default, chốt tại [`01-architecture.md`](./01-architecture.md) §3.3:
 | NFR-002b | Không có foreign key, `postgres_fdw`, `dblink` hay query xuyên database                | Quét `pg_constraint`/`pg_extension`; review migration                         |
 | NFR-003  | `nodejs_compat` là **load-bearing** cho Nuxt runtime                                   | Worker build + start không có flag này → fail                                 |
 | NFR-004  | Observability **không** bao giờ là serving-path dependency                             | Sổ Observability trả `503` vẫn phục vụ request bình thường                    |
-| NFR-005  | Không Hyperdrive config nào của identity trỏ production origin từ Preview              | Assert cấu hình binding theo môi trường                                       |
+| NFR-005  | Không Hyperdrive config nào của `account` trỏ production origin từ Preview             | Assert cấu hình binding theo môi trường                                       |
 | NFR-006  | Migration history của `db-account` độc lập với `db-auth`                               | Apply trên `db-account` không chạm `db-auth`                                  |
 
 ## 3. Security requirements
@@ -329,7 +329,7 @@ Nguồn pháp lý chính thức **không truy cập được từ môi trường
 
 ### 7.2 Ranh giới vai trò
 
-⚠️ **`db-account` KHÔNG phải chủ sở hữu toàn bộ personal data của Ecoma.** `identity` **orchestrate** privacy request; từng service sở hữu dữ liệu **tự export, correct hoặc delete** record của mình theo contract định nghĩa (FR-013a).
+⚠️ **`db-account` KHÔNG phải chủ sở hữu toàn bộ personal data của Ecoma.** `account` **orchestrate** privacy request; từng service sở hữu dữ liệu **tự export, correct hoặc delete** record của mình theo contract định nghĩa (FR-013a).
 
 `db-account` chỉ sở hữu dữ liệu **về chính account**: subject, profile, email, credential, authenticator, session, preference, security event, privacy request của chính nó. Một yêu cầu xoá dữ liệu phải đi tới service sở hữu giao dịch, không phải tới `account`.
 

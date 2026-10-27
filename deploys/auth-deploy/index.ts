@@ -23,7 +23,7 @@
  * wrangler từ đó. Secrets đi qua `envs` của container (kênh
  * container env — không argv, không label, không log), `pulumi.secret` bọc
  * trước khi interpolate để redact trong diff/log. Traefik route
- * `Host(auth.<rootHostname>)` theo bảng hostname của `02-identity.md`; router
+ * `Host(auth.<rootHostname>)` theo bảng hostname của `02-account-auth.md`; router
  * đọc HTTP từ workerd (workerd chỉ nghe plain HTTP — TLS do Traefik chấm dứt
  * phía trước, cùng model home/backoffice; `x-forwarded-proto` được bridge
  * provider ghi lại từ URL scheme của request Worker, runtime.ts).
@@ -251,7 +251,7 @@ const LOCAL_BACKOFFICE_CLIENT_ID = 'ecoma-backoffice-local';
  * header `Host` của request với path này), nên URI đăng ký là
  * `https://office.<rootHostname>:<traefikHostPort>/api/auth/callback` — đúng
  * origin Traefik serve (`office.<rootHostname>`, cùng bảng hostname của
- * `02-identity.md`). So khớp ở `auth` là exact string, và `Host` mà browser
+ * `02-account-auth.md`). So khớp ở `auth` là exact string, và `Host` mà browser
  * gửi luôn mang port (`fbi.com:<port>` — port là một phần của URL client,
  * Traefik vẫn match rule `Host(office.fbi.com)` không port) — bỏ port là
  * exact-match fail ở bước authorize. URI theo output platform là cách duy nhất
@@ -509,7 +509,7 @@ const wicBundleHash = pulumi.output(
  *   wrangler dev map env process vào secrets của worker.
  * - `BRIDGE_TARGET_ORIGIN` cho shim: alias DNS container account của
  *   account stack (`dockerResourceName(ns, 'account')`, port nội bộ 3000 —
- *   cùng nguồn tên với hình dạng `ecoma-<ns>-account` trong `02-identity.md`).
+ *   cùng nguồn tên với hình dạng `ecoma-<ns>-account` trong `02-account-auth.md`).
  *   Shim thiếu biến vẫn boot nhưng trả 503 fail-closed cho mọi request qua
  *   binding (src/main.ts của bridge).
  * - `AUTH_ACCOUNT_BASE_URL` trỏ origin HTTPS của account qua Traefik — đúng
@@ -621,7 +621,7 @@ const wic = new docker.Container(
     ],
     healthcheck: {
       // `/ready` chứ không phải `/health`: readiness phải chứng minh DB probe
-      // thật + ACCOUNT_SERVICE probe thành công (`02-identity.md` §Runtime
+      // thật + ACCOUNT_SERVICE probe thành công (`02-account-auth.md` §Runtime
       // contracts) — `/health` 200 không chạm dependency nào nên không đủ làm
       // bằng chứng container phục vụ được request thật.
       tests: [

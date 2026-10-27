@@ -1,6 +1,6 @@
 {
   // Shim worker của identity local platform (docs/services/local-platform/
-  // 02-identity.md §Service bindings): mặt trước service-binding cho container
+  // 02-account-auth.md §Service bindings): mặt trước service-binding cho container
   // account. Worker caller (`ecoma-auth`) giữ binding `ACCOUNT_SERVICE` đúng
   // shape contract thật; shim chuyển tiếp fetch qua HTTP plain tới upstream
   // (PF8), bảo mật lớp application là envelope HMAC `ecoma-internal-v1` —

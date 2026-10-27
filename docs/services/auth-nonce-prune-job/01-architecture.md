@@ -22,9 +22,9 @@ auth-nonce-prune-job (module Worker, chỉ scheduled(), KHÔNG fetch)
    │     └── role ecoma_account_nonce_pruner
 ```
 
-Job là **port TypeScript** của `PRUNE_SCRIPT` trong workflow cũ
-(`.github/workflows/identity-nonce-prune.yaml` — file đã bị xoá khỏi `main`
-trong cùng PR này): toàn bộ biên và bất biến của script cũ được giữ nguyên,
+Job là **port TypeScript** của `PRUNE_SCRIPT` trong workflow cron GitHub cũ
+(file đã bị xoá khỏi `main` trong cùng PR này): toàn bộ biên và bất biến của
+script cũ được giữ nguyên,
 chỉ đổi (a) executor Docker/`psql` thành driver `pg` trên Hyperdrive, và
 (b) quỹ thời gian (ghim mới, phần `§6`).
 

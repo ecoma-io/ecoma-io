@@ -94,7 +94,7 @@ export type DeployResourceKind =
   | 'auth'
   /** Image `node-server` của app account (PR #182 — container + Traefik local). */
   | 'account-image'
-  /** WIC container của auth-deploy (auth + shim bridge, 02-identity.md §Database access). */
+  /** WIC container của auth-deploy (auth + shim bridge, 02-account-auth.md §Database access). */
   | 'auth-wic'
   /** Image của WIC container. */
   | 'auth-wic-image'

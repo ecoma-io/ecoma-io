@@ -11,7 +11,7 @@ migration là file SQL thuần.
 | `apply.ts`               | CLI runner, chạy trong CI                                            |
 | `../tests/integrations/` | Test integration trên PostgreSQL thật (testcontainers)               |
 
-## Vì sao không có `db-identity` để migrate
+## Vì sao đây là greenfield provisioning
 
 `db-account` là **greenfield provisioning**, không phải data migration. Trên `main`
 không có schema, không có migration history, không có Hyperdrive binding. Không có
@@ -116,9 +116,9 @@ nguyên ACL. Đó chính là lý do nó nằm ở provisioning chứ không nằ
 
 ## Chặn chéo — lớp enforce thật của ranh giới database
 
-⚠️ **Cả hai app `account` và `auth` đều mang tag `scope:identity`**, nên tag Nx không
-phân biệt được chúng và **không** chặn được `apps/account` khai báo binding trỏ
-`db-auth`. Ranh giới đó là **credential**, không phải tag.
+⚠️ **Tag Nx không chặn được ranh giới database.** `apps/account` mang `scope:account`
+và `apps/auth` mang `scope:auth`, nhưng tag chỉ mã hoá graph — **không** chặn được
+`apps/account` khai báo binding trỏ `db-auth`. Ranh giới đó là **credential**, không phải tag.
 
 **Phải REVOKE cả `PUBLIC`, không chỉ role.** PostgreSQL cấp `CONNECT` cho `PUBLIC`
 theo mặc định, và quyền của `PUBLIC` là _quyền mặc định_. `REVOKE CONNECT …
@@ -221,7 +221,7 @@ apps/account/db/
 ├── migrate.mts           # hằng số + helper dùng chung
 ├── apply.mts             # CLI runner cho CI
 └── migrations/
-    ├── 0001_identity_core.sql      # users, sessions, handoffs, audit, outbox
+    ├── 0001_core.sql                # users, sessions, handoffs, audit, outbox
     ├── 0002_roles_and_grants.sql   # hai role + grant + chặn chéo
     ├── 0003_internal_nonces.sql    # kho nonce cho replay guard
     ├── 0004_rename_authn_level_to_acr.sql

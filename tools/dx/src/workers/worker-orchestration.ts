@@ -262,7 +262,7 @@ function buildWranglerEnv(persistTo: string, injected?: Record<string, string>):
 }
 
 /**
- * Account container alias trong platform network (02-identity.md §Service
+ * Account container alias trong platform network (02-account-auth.md §Service
  * bindings): auth-deploy dựng container account dưới alias `ecoma-<ns>-account`
  * nghe port nội bộ 3000 (preset Nitro `node-server`, cùng hằng số với
  * `home-deploy`). Shim bridge upstream trỏ đúng alias đó — một nguồn duy nhất

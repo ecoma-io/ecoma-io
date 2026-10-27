@@ -578,7 +578,7 @@ Device · Push Subscription · Push Provider · Push Provider Credential
 App–Provider Mapping · Push Notification · Push Delivery · Push Routing Policy · Outbox · Audit
 ```
 
-Các domain service khác chỉ là **producer của notification intent** (bounded context `identity` → `account`/`auth`, `payment`, `llm-api` → API/event) — không quản lý trực tiếp `Push Subscription` hay `Push Delivery`. Cross-service đi qua API/event/Service Binding theo `docs/overview/01-architecture.md` §5.
+Các domain service khác chỉ là **producer của notification intent** (bounded context `account`, bounded context `auth`, `payment`, `llm-api` → API/event) — không quản lý trực tiếp `Push Subscription` hay `Push Delivery`. Cross-service đi qua API/event/Service Binding theo `docs/overview/01-architecture.md` §5.
 
 ```text
 Business Services ──notification intent──► push-notification
@@ -591,7 +591,7 @@ Business Services ──notification intent──► push-notification
 ```
 
 - `push-notification` **không** phụ thuộc implementation của business service.
-- Không dependency ngược: delivery worker **không** gọi `payment`/bounded context `identity`/business service (enforcement → `docs/overview/05-code-architecture.md`).
+- Không dependency ngược: delivery worker **không** gọi `payment`/bounded context `account`/`auth`/business service (enforcement → `docs/overview/05-code-architecture.md`).
 
 ---
 

@@ -25,7 +25,7 @@ Each project carries **exactly one** tag per dimension: `type:*`, `scope:*`, `ru
 
 ⚠️ **`type:contracts` must not import `type:domain`, not even transitively.** A contract is what a provider **publishes** for consumers to depend on, not a layer to travel down the dependency direction. That is why a shared type is re-declared at the contracts layer as a `wire` union instead of importing the domain's union.
 
-⚠️ **Tags cannot distinguish two deploy units with the same scope.** `apps/account` and `apps/auth` are both `type:composition` + `scope:identity`, so **no** tag can stop an app from declaring a binding that points at the other app's database. That boundary is enforced by credentials that do not allow it ([`docs/overview/05-code-architecture.md`](../docs/overview/05-code-architecture.md) §6.3).
+⚠️ **The Nx graph does not guard the database boundary.** `apps/account` is `scope:account` and `apps/auth` is `scope:auth`, but no Nx tag stops an app from declaring a binding that points at the other app's database — tags only encode the graph, not credentials. That boundary is enforced by database grants that do not allow it ([`docs/overview/05-code-architecture.md`](../docs/overview/05-code-architecture.md) §6.3).
 
 ## Imports
 
@@ -35,7 +35,7 @@ Each project carries **exactly one** tag per dimension: `type:*`, `scope:*`, `ru
 
 ## Contracts with peer services
 
-⚠️ **Sharing a contract must be a decision with an issue, not a coding-time convenience.** Two deploy units may share `identity-contracts`, but only after the contract's boundary is pinned down in documentation. A drift in a canonical string, a header name, the skew window or the replay check fails **silently on both ends** — no compile error catches it.
+⚠️ **Sharing a contract must be a decision with an issue, not a coding-time convenience.** `account-contracts` serves `account` consumers and `auth-contracts` serves `auth`; cross-scope consumers import the platform contract `libs/internal-auth-contracts` (`scope:platform`), which both re-export. Sharing happens only after the contract's boundary is pinned down in documentation. A drift in a canonical string, a header name, the skew window or the replay check fails **silently on both ends** — no compile error catches it.
 
 ## Language
 

@@ -9,7 +9,7 @@ Hạ tầng deployment **local** dùng chung cho mọi deploy unit, chạy trên
 ## Documents
 
 - [01-architecture.md](./01-architecture.md) — ownership, namespace cách ly worktree, contract outputs, invariants.
-- [02-identity.md](./02-identity.md) — topology identity (account + auth) local: hostname, database access, service bindings, dependency graph.
+- [02-account-auth.md](./02-account-auth.md) — topology của hai bounded context `account` + `auth` trên local: hostname, database access, service bindings, dependency graph.
 - [03-operations.md](./03-operations.md) — prerequisites, luồng deploy, URL/certificate, teardown, smoke, giới hạn đã biết.
 - [04-worker-runtime-spike.md](./04-worker-runtime-spike.md) — spike `wrangler dev` làm Worker local runtime: readiness, queue, cron, persist dir.
 - [05-worker-runtime-e2e.md](./05-worker-runtime-e2e.md) — bằng chứng E2E Worker local runtime trên wrangler thật + script E2E in-repo lặp lại được.
