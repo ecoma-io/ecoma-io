@@ -78,8 +78,8 @@ CREATE TABLE auth.authorization_transactions (
     sub                    text,
     -- Mức xác thực lúc `/authorize`, dùng để chọn bước tiếp theo của máy trạng thái.
     -- ⚠️ Tập giá trị phải khớp `AUTHN_LEVELS` ở `libs/identity-domain` (nguồn sự thật dùng
-    -- chung). Ràng buộc toàn vẹn giữa hai bên chưa có vì `identity` chưa có schema — xem
-    -- README §"Ràng buộc liên service chưa có".
+    -- chung). `db-account` chưa được provision (issue #83), nên ràng buộc toàn vẹn giữa hai
+    -- bên chưa có — xem README §"Ràng buộc liên service chưa có".
     authn_level            text,
     authn_at               timestamptz,
     -- Tham chiếu session của `account`, để `auth` không phải gọi lại `account` ở bước `/token`.

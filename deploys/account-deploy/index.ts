@@ -1,6 +1,6 @@
 /**
  * Chương trình Pulumi của `account-deploy` — deploy unit của `apps/account`
- * (identity/account) ở LAN LOCAL deployment.
+ * (bounded context `account`) ở LAN LOCAL deployment.
  *
  * Đủ vòng đời theo `02-account-auth.md` §Dependency graph: provision `db-account`
  * + bộ 4 role chuẩn (owner/migrator/runtime/pruner) → migration đường canonical

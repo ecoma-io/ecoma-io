@@ -59,7 +59,7 @@ Câu lệnh này **không phụ thuộc table nào tồn tại**, nên từ ch�
 SELECT has_database_privilege('ecoma_account_runtime', 'db-auth', 'CONNECT');  -- phải = false
 ```
 
-⚠️ **Đây là lớp enforce thật của ranh giới database giữa `account` và `auth`, không phải tag Nx.** Tag không phân biệt được hai app và **không** chặn được việc `apps/account` khai báo binding trỏ `db-auth` ([`05` §6.3](../../overview/05-code-architecture.md)). Ranh giới đó là credential không cho phép.
+⚠️ **Đây là lớp enforce thật của ranh giới database giữa `account` và `auth`, không phải tag Nx.** Dù hai app đang dùng chung một scope hay đã tách hai scope riêng, tag Nx đều **không** chặn được việc `apps/account` khai báo binding trỏ `db-auth` — tag chỉ mã hoá graph ([`05` §6.3](../../overview/05-code-architecture.md)). Ranh giới đó là credential không cho phép.
 
 ### 3.2 Migration
 
