@@ -1,6 +1,6 @@
 # 01 — Architecture
 
-> **Phạm vi:** system topology, deploy/service boundary, data ownership, cross-service communication, security boundary, hostname/routing (gồm production/non-production boundary, routing boundary và preview architecture boundary), architectural decisions và system invariants. Không chứa: preview deployment mechanics, preview lifecycle (creation/cleanup), CI/CD implementation, release mechanics, migration → `02-delivery.md` · backup/DR, observability, runbook, database hosting tier chi tiết → `03-operations.md` · platform limit → `04-platform-facts.md` · DDD layer, Nx project → `05-code-architecture.md` · design của một service → `docs/services/<service>/`.
+> **Phạm vi:** system topology, deploy/service boundary, data ownership, cross-service communication, security boundary, hostname/routing (gồm production/non-production boundary, routing boundary và preview architecture boundary), architectural decisions và system invariants. Không chứa: preview deployment mechanics, preview lifecycle (creation/cleanup), CI/CD implementation, release mechanics, migration → `02-delivery.md` · backup/DR, observability, runbook, database hosting tier chi tiết → `03-operations.md` · platform limit → `04-platform-facts.md` · DDD layer, Nx project → `05-code-architecture.md` · ngôn ngữ domain dùng chung, catalog bounded context, context map, ranh giới chưa chốt ở cấp nghiệp vụ → `07-domains.md` · design của một service → `docs/services/<service>/`.
 
 ---
 
@@ -48,6 +48,8 @@ Workers (deploy unit độc lập · Service Binding nội bộ)
 
 ## 2. Deploy / Service Boundaries
 
+Catalog bounded context và trách nhiệm nghiệp vụ của từng context → [`07-domains.md`](./07-domains.md) §3; bảng dưới đây là trục **deploy unit** — một bounded context có thể hiện thành nhiều dòng.
+
 | Service / Unit                                                                                  | Runtime                        | Public/Internal                  | Hostname / Interface                                                                                                      | Storage owner                                                        |
 | ----------------------------------------------------------------------------------------------- | ------------------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | `home` (mount `blog`, `docs`, `docs/api` — reserved cho `api-reference` tương lai — và `legal`) | Edge (Worker)                  | Public                           | `ecoma.io` — path `/<locale>/<mount>`                                                                                     | —                                                                    |
@@ -80,8 +82,7 @@ Workers (deploy unit độc lập · Service Binding nội bộ)
 
 - Tách này tạo **service boundary, deployment boundary, protocol boundary và security boundary** riêng. Nó **không** tạo bounded context mới: cả hai vẫn là `identity`, vẫn dùng chung `scope:identity`, và cùng một quyết định data ownership.
 - `auth` là **API-only**: không Nuxt, không Vue, không trang login hay consent. UI nào liên quan tài khoản đều thuộc `account`.
-- **Không suy ra chung database từ chung bounded context.** Hai database riêng, hai owner, hai role riêng. Design chi tiết — ma trận ownership và login/consent contract → [`docs/services/account/`](../services/account/README.md) và [`docs/services/auth/`](../services/auth/README.md).
-- **Phân biệt kiến trúc định hướng với hiện trạng:** authorization server OAuth 2.0/OIDC đã implement ở `apps/auth` (provider `oidc-provider` 9.12.2 qua bridge `cloudflare:node`, glue login/consent với `account`, 14 migration `db-auth`); `account` có migrations `db-account`, luồng đăng nhập email-OTP, **login/consent UI thật** (`/login`, `/login/continue`, `/consent`) và **back-channel đẩy sang `auth`** (`POST /internal/session/verified`, `POST /internal/consent/{context,decide}`) — chi tiết ở [`docs/services/account/`](../services/account/README.md). `db-account`/`db-auth` **chưa** provision; phần chưa có của `account` là BFF cho thao tác dữ liệu tài khoản và đường cấp `access_token`/`id_token` cho bên thứ ba — `account` không bao giờ chạm hai loại token đó.
+- **Không suy ra chung database từ chung bounded context.** Hai database riêng, hai owner, hai role riêng. Design chi tiết — ma trận ownership và login/consent contract → [`docs/services/account/`](../services/account/README.md) và [`docs/services/auth/`](../services/auth/README.md). Trách nhiệm nghiệp vụ của `identity` trong catalog → [`07-domains.md`](./07-domains.md) §3.
 
 ### 2.2 Bounded context `backoffice`: một deploy unit
 
@@ -93,8 +94,8 @@ Workers (deploy unit độc lập · Service Binding nội bộ)
 
 - **Danh tính xuyên service là Account ID (`sub`)**, không phải email. Một staff member liên kết đúng một Account ID; đó là tham chiếu, không phải foreign key xuyên database (§9 invariant 7).
 - **`backoffice` không phải IdP thứ hai và không phải credential store.** Authentication đi qua `auth` và `account` như mọi application khác; `backoffice` chỉ tiêu thụ kết quả đã xác thực. Không nhân bản credential, MFA/passkey hay passwordless state vào đây.
-- **Enforcement chia đôi, không hợp nhất.** `backoffice` định nghĩa permission và vòng đời của chúng; **resource-owning backend enforce** permission đó trên operation và tài nguyên của chính nó, trên **mọi** protected request. Không mặc định một lời gọi đồng bộ tới `backoffice` cho mỗi request — cách đưa trạng thái authorization tới từng backend là quyết định chưa chốt (§10); và backend không tự phát minh permission ngoài catalog.
-- Ranh giới này là quyết định kiến trúc **A21–A24** (§8); database và schema cụ thể của staff/RBAC **chưa chốt** (§10) — engine theo quy tắc bounded context ở §4. Design chi tiết → [`docs/services/backoffice/`](../services/backoffice/README.md).
+- **Enforcement chia đôi, không hợp nhất.** `backoffice` định nghĩa permission và vòng đời của chúng; **resource-owning backend enforce** permission đó trên operation và tài nguyên của chính nó, trên **mọi** protected request. Hình dạng kênh lan truyền đã chốt ở ADR-0009 (batch/event-based sync, không sync call per request); **cơ chế cụ thể** và cách bảo đảm revocation latency là quyết định chưa chốt (§10, [`07-domains.md`](./07-domains.md) §5.2); backend không tự phát minh permission ngoài catalog.
+- Ranh giới này là quyết định kiến trúc **A21–A24** (§8); database và schema cụ thể của staff/RBAC **chưa chốt** (§10) — engine theo quy tắc bounded context ở §4. Design chi tiết → [`docs/services/backoffice/`](../services/backoffice/README.md); vai trò của `backoffice` trong context map → [`07-domains.md`](./07-domains.md) §4.
 
 ---
 

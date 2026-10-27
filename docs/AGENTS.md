@@ -26,12 +26,22 @@
 - `04-platform-facts.md`: verified external platform facts only.
 - `05-code-architecture.md`: Nx project structure, Bounded Context, DDD layers, dependency rules, contracts.
 - `06-testing.md`: canonical testing architecture — taxonomy, ownership/layout, Nx target contracts, test environment.
+- `07-domains.md`: canonical domain map — shared domain language (glossary), bounded context catalog, context map, and genuinely undecided business boundaries.
 
 `overview/` describes services only at boundary level. Design details, API, storage, procedures and runbooks belong in service documents.
 
+### `07-domains.md` rules
+
+- The domain map describes the **target architecture**. A bounded context stays in the catalog because the architecture docs define it — missing runtime, database or provisioning never removes one. Never mark catalog entries or context-map relations as implemented/unimplemented.
+- Distinguish "not yet implemented but architected" (stays in the catalog) from "decision not yet made" (goes to its open-boundaries section only).
+- Only genuinely undecided items belong in the open-boundaries section. A decision already settled by an ADR or an overview decision must not be re-listed as open; only the explicitly unresolved part of it may be.
+- A deploy-unit doc (or a new app/job) does not create a bounded context. A new context enters the catalog only when the architecture docs define new business responsibility and data ownership.
+- Shared infrastructure (`local-platform`, `cache`, `janitor`, `deploys/*`, provisioning projects) is never a bounded context.
+- Do not copy the catalog or the context map into other documents; reference `07-domains.md` instead.
+
 ### `services/<service>/`
 
-`service` in the path is a **bounded context**, not necessarily one deploy unit. When a context has several deploy units (e.g. `identity` → `account` + `auth`), a shared document directory covers them — service boundary, contract and data ownership still live in `overview/01`.
+`service` in the path is a **bounded context**, not necessarily one deploy unit. When a context has several deploy units (e.g. `identity` → `account` + `auth`), a shared document directory covers them — service boundary, contract and data ownership still live in `overview/01`, and the catalog of contexts lives in `overview/07`.
 
 **The one exception — `services/local-platform/`**: shared local Docker infrastructure for every deploy unit (network, Traefik, PostgreSQL), owned by no bounded context. It sits under `services/` because it serves **all** services, not because it is one — see the bounding table in [`README.md`](./README.md).
 
@@ -46,14 +56,15 @@ Service documents describe **only that service**.
 
 Each fact or decision has exactly **one canonical location**:
 
-| Content                             | Canonical location                 |
-| ----------------------------------- | ---------------------------------- |
-| System architecture/policy          | `overview/`                        |
-| Code architecture                   | `overview/05-code-architecture.md` |
-| Testing architecture                | `overview/06-testing.md`           |
-| Service design/behaviour/operations | `services/<service>/`              |
-| External platform fact              | `overview/04-platform-facts.md`    |
-| Exact API/schema/contract           | Machine-readable contract          |
+| Content                                               | Canonical location                 |
+| ----------------------------------------------------- | ---------------------------------- |
+| System architecture/policy                            | `overview/`                        |
+| Code architecture                                     | `overview/05-code-architecture.md` |
+| Testing architecture                                  | `overview/06-testing.md`           |
+| Domain language, bounded context catalog, context map | `overview/07-domains.md`           |
+| Service design/behaviour/operations                   | `services/<service>/`              |
+| External platform fact                                | `overview/04-platform-facts.md`    |
+| Exact API/schema/contract                             | Machine-readable contract          |
 
 Do not duplicate the same decision across multiple documents.
 
