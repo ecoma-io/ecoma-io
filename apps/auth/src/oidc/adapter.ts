@@ -12,7 +12,7 @@
  * (`base_model.js:26-34`: `new Adapter(obj.name)`), mọi method đều nhận/tra theo `jti`.
  */
 
-import type { PostgresClientLike } from '@ecoma-io/identity-auth-infrastructure';
+import type { PostgresClientLike } from '@ecoma-io/auth-infrastructure';
 
 /**
  * Cổng kiểm tại thời điểm PHÁT HÀNH artifact grantable (§6.0, SR-015, FR-020).

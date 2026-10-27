@@ -42,20 +42,15 @@
  */
 
 import type { ConsentContextResponse, ConsentDecideResponse } from '@ecoma-io/auth-contracts';
-import {
-  HANDLE_DOMAINS,
-  assessRiskLevel,
-  deriveHandle,
-  hashHandle,
-} from '@ecoma-io/identity-auth-domain';
+import { HANDLE_DOMAINS, assessRiskLevel, deriveHandle, hashHandle } from '@ecoma-io/auth-domain';
 import {
   advanceTransactionWithHandle,
   consumeHandleY,
   findTransactionByHandleY,
   type PostgresClientLike,
-} from '@ecoma-io/identity-auth-infrastructure';
+} from '@ecoma-io/auth-infrastructure';
 import type { Provider } from 'oidc-provider';
-import type { AuthorizationTransactionRecord } from '@ecoma-io/identity-auth-application';
+import type { AuthorizationTransactionRecord } from '@ecoma-io/auth-application';
 import {
   attachInteractionResult,
   buildLoginResult,

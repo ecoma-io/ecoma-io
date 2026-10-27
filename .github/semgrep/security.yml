@@ -296,7 +296,7 @@ rules:
       # `signInternalForAccountClient` (+2). Không còn sanitizer nào không có ca ghim.
 
     pattern-sinks:
-      # Đo được trên `identity-auth-*` + `apps/auth` (PR #175): 8 FP, phần lớn
+      # Đo được trên các auth lib cũ của bounded context identity + `apps/auth` (PR #175): 8 FP, phần lớn
       # cùng một hình dạng — `return verifyEnvelope({ secret: params.secret, … })`
       # và `return { ok, nonce }`. Ở cả hai, giá trị đi **VÀO** object literal để
       # kiểm chữ ký hoặc đóng gói kết quả xác thực; nó không đi ra ngoài.

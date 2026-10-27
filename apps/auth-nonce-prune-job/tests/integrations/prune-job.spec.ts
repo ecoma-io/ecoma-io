@@ -2,7 +2,7 @@
  * Integration specs của `auth-nonce-prune-job` trên PostgreSQL THẬT.
  *
  * Subject của suite này là **JOB**, không phải store: store (`auth.internal_nonces`)
- * đã được phủ bởi `libs/identity-auth-infrastructure/src/internal-nonces.spec.ts` và
+ * đã được phủ bởi `libs/auth-infrastructure/src/internal-nonces.spec.ts` và
  * bản twin bên account. Ở đây ta ghim những thứ chỉ PostgreSQL mới quyết định:
  *
  *   - preflight identity `ecoma_auth_nonce_pruner|deletable` chạy được với đúng grant

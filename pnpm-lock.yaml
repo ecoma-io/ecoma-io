@@ -437,18 +437,21 @@ importers:
       '@ecoma-io/account-contracts':
         specifier: workspace:*
         version: link:../../libs/account-contracts
+      '@ecoma-io/auth-application':
+        specifier: workspace:*
+        version: link:../../libs/auth-application
       '@ecoma-io/auth-contracts':
         specifier: workspace:*
         version: link:../../libs/auth-contracts
-      '@ecoma-io/identity-auth-application':
+      '@ecoma-io/auth-domain':
         specifier: workspace:*
-        version: link:../../libs/identity-auth-application
-      '@ecoma-io/identity-auth-domain':
+        version: link:../../libs/auth-domain
+      '@ecoma-io/auth-infrastructure':
         specifier: workspace:*
-        version: link:../../libs/identity-auth-domain
-      '@ecoma-io/identity-auth-infrastructure':
-        specifier: workspace:*
-        version: link:../../libs/identity-auth-infrastructure
+        version: link:../../libs/auth-infrastructure
+      jose:
+        specifier: ^6.2.12
+        version: 6.2.13
       oidc-provider:
         specifier: 9.13.0
         version: 9.13.0(supports-color@10.2.2)
@@ -663,11 +666,57 @@ importers:
         specifier: workspace:*
         version: link:../internal-auth-contracts
 
+  libs/auth-application:
+    dependencies:
+      '@ecoma-io/account-contracts':
+        specifier: workspace:*
+        version: link:../account-contracts
+      '@ecoma-io/auth-contracts':
+        specifier: workspace:*
+        version: link:../auth-contracts
+      '@ecoma-io/auth-domain':
+        specifier: workspace:*
+        version: link:../auth-domain
+      jose:
+        specifier: ^6.2.12
+        version: 6.2.13
+
   libs/auth-contracts:
     dependencies:
       '@ecoma-io/internal-auth-contracts':
         specifier: workspace:*
         version: link:../internal-auth-contracts
+
+  libs/auth-domain:
+    dependencies:
+      '@ecoma-io/account-contracts':
+        specifier: workspace:*
+        version: link:../account-contracts
+
+  libs/auth-infrastructure:
+    dependencies:
+      '@ecoma-io/auth-application':
+        specifier: workspace:*
+        version: link:../auth-application
+      '@ecoma-io/auth-domain':
+        specifier: workspace:*
+        version: link:../auth-domain
+      '@ecoma-io/internal-auth-contracts':
+        specifier: workspace:*
+        version: link:../internal-auth-contracts
+      jose:
+        specifier: ^6.2.12
+        version: 6.2.13
+      postgres:
+        specifier: ^3.4.9
+        version: 3.4.9
+    devDependencies:
+      '@testcontainers/postgresql':
+        specifier: 12.2.1
+        version: 12.2.1(supports-color@10.2.2)
+      testcontainers:
+        specifier: 12.2.1
+        version: 12.2.1(supports-color@10.2.2)
 
   libs/backoffice-application:
     dependencies:
@@ -702,49 +751,6 @@ importers:
       '@types/pg':
         specifier: ^8.23.1
         version: 8.23.1
-
-  libs/identity-auth-application:
-    dependencies:
-      '@ecoma-io/account-contracts':
-        specifier: workspace:*
-        version: link:../account-contracts
-      '@ecoma-io/auth-contracts':
-        specifier: workspace:*
-        version: link:../auth-contracts
-      '@ecoma-io/identity-auth-domain':
-        specifier: workspace:*
-        version: link:../identity-auth-domain
-
-  libs/identity-auth-domain:
-    dependencies:
-      '@ecoma-io/account-contracts':
-        specifier: workspace:*
-        version: link:../account-contracts
-      jose:
-        specifier: ^6.2.12
-        version: 6.2.12
-
-  libs/identity-auth-infrastructure:
-    dependencies:
-      '@ecoma-io/identity-auth-application':
-        specifier: workspace:*
-        version: link:../identity-auth-application
-      '@ecoma-io/identity-auth-domain':
-        specifier: workspace:*
-        version: link:../identity-auth-domain
-      '@ecoma-io/internal-auth-contracts':
-        specifier: workspace:*
-        version: link:../internal-auth-contracts
-      postgres:
-        specifier: ^3.4.9
-        version: 3.4.9
-    devDependencies:
-      '@testcontainers/postgresql':
-        specifier: 12.2.1
-        version: 12.2.1(supports-color@10.2.2)
-      testcontainers:
-        specifier: 12.2.1
-        version: 12.2.1(supports-color@10.2.2)
 
   libs/identity-domain: {}
 
@@ -8102,9 +8108,6 @@ packages:
   jiti@2.7.0:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
     hasBin: true
-
-  jose@6.2.12:
-    resolution: {integrity: sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw==}
 
   jose@6.2.13:
     resolution: {integrity: sha512-7TIg10ZE1x82YediN+lcrPNvGMKge9yFHQD+Qho/b8y2adfugU3AsvvHfxV0fzyFllT6l9xCjf4RWY9g/Z9PJQ==}
@@ -19669,8 +19672,6 @@ snapshots:
   jiti@2.6.1: {}
 
   jiti@2.7.0: {}
-
-  jose@6.2.12: {}
 
   jose@6.2.13: {}
 

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { generateKeyPair, exportPKCS8 } from 'jose';
 
-import { AuthConfigurationError } from './errors';
-import { SIGNING_ALGORITHM, SigningKeyProvider } from './signing-key';
+import { AuthConfigurationError, SIGNING_ALGORITHM } from '@ecoma-io/auth-domain';
+import { SigningKeyProvider } from './signing-key';
 
 /** Sinh cặp khoá thật để test chạy trên cùng đường code với production. */
 async function makePem(): Promise<string> {

@@ -27,10 +27,10 @@
   ],
   "references": [
     {
-      "path": "../identity-auth-domain"
+      "path": "../auth-domain"
     },
     {
-      "path": "../identity-auth-application"
+      "path": "../auth-application"
     },
     {
       "path": "../internal-auth-contracts/tsconfig.lib.json"

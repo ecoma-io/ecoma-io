@@ -4,10 +4,10 @@
   "files": [],
   "references": [
     {
-      "path": "./libs/identity-auth-application"
+      "path": "./libs/auth-application"
     },
     {
-      "path": "./libs/identity-auth-domain"
+      "path": "./libs/auth-domain"
     },
     {
       "path": "./deploys/web-push-notification-job-deploy"

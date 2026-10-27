@@ -81,7 +81,7 @@ COPY libs/ui-ecoma-logo/ ./libs/ui-ecoma-logo/
 # tới mọi project `libs/*` và `deploys/*`, mà image này không chứa chúng. Copy
 # nó vào là Vite (`resolve.tsconfigPaths: true` trong `nuxt.config.ts`) dừng ở
 # `/repo/tsconfig.json` rồi thử nạp từng project được tham chiếu và fail:
-#     Error: [postcss] Tsconfig not found /repo/libs/identity-auth-application
+#     Error: [postcss] Tsconfig not found /repo/libs/auth-application
 # (postcss vì `styles.css` chạy qua PostCSS, nhưng gốc rễ là tsconfig walk của
 # Vite.) Giữ manifest monorepo ra khỏi image là cách sửa: build **một** app không
 # cần graph của cả workspace.

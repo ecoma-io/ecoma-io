@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { loadAuthConfig, type AuthConfig } from './config';
 import { handleAuthorize, type AuthorizeQuery } from './browser-handlers';
-import type { AuthStore, RegisteredClient } from '@ecoma-io/identity-auth-application';
+import type { AuthStore, RegisteredClient } from '@ecoma-io/auth-application';
 
 /**
  * Unit cho glue `/authorize` — phần chọn `resource` theo client_id (registry

@@ -28,11 +28,8 @@ import { generateKeyPair, exportPKCS8 } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createNonce, signRequest } from '@ecoma-io/auth-contracts';
-import { allowsIssuance } from '@ecoma-io/identity-auth-domain';
-import {
-  createPostgresClient,
-  type PostgresClientLike,
-} from '@ecoma-io/identity-auth-infrastructure';
+import { allowsIssuance } from '@ecoma-io/auth-domain';
+import { createPostgresClient, type PostgresClientLike } from '@ecoma-io/auth-infrastructure';
 
 import { PROVIDER_ROUTES } from './oidc/provider';
 import type { IssuanceGate } from './oidc/adapter';

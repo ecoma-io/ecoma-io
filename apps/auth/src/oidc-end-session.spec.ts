@@ -38,7 +38,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { PROVIDER_ROUTES } from './oidc/provider';
 import { loadAuthConfig, type AuthEnv } from './config';
-import { createPostgresClient } from '@ecoma-io/identity-auth-infrastructure';
+import { createPostgresClient } from '@ecoma-io/auth-infrastructure';
 import { startAuthDatabase, type AuthDatabase } from '../tests/integrations/harness.ts';
 
 /* ------------------------------------------------------------------ */

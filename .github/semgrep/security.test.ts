@@ -129,7 +129,7 @@ export function returnObject() {
   return { token };
 }
 
-// ── Ranh giới FP đo được trên identity-auth-* (PR #175) ───────────────────────
+// ── Ranh giới FP đo được trên các auth lib cũ của bounded context identity (PR #175) ───────────────────────
 //
 // Các case dưới đây nằm TRONG function: một `return` ở top-level của module là
 // lỗi cú pháp, parser bỏ qua nên `ok:` sẽ "pass" vì lý do sai — ca kiểm thử

@@ -39,7 +39,7 @@ import type {
   ConnectedApplicationsResponse,
   ConnectedApplicationRevokeResponse,
 } from '@ecoma-io/auth-contracts';
-import type { PostgresClientLike } from '@ecoma-io/identity-auth-infrastructure';
+import type { PostgresClientLike } from '@ecoma-io/auth-infrastructure';
 
 import {
   insertClientRevocation,

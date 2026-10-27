@@ -110,7 +110,7 @@ export function generateInternalHmacSecret(): string {
  * contract phía consumer kiểm theo byte (không phải credential database).
  *
  * 32 byte = 256 bit là kích thước chuẩn HMAC-SHA-256: contract của
- * `identity-auth-domain` (`importKey`) bắt ĐÚNG 32 byte từ `AUTH_HANDLE_KEY`,
+ * `auth-domain` (`importKey`) bắt ĐÚNG 32 byte từ `AUTH_HANDLE_KEY`,
  * và cookie keyring của oidc-provider cũng là key ký ứng dụng — dùng mật
  * khẩu 24 byte của database cho secret ứng dụng là che giấu hai NGHĨA khác
  * nhau sau một hình dạng giá trị chung (#284). `base64url` giữ tính an toàn

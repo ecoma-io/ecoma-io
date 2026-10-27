@@ -13,7 +13,7 @@ import {
   signRequest,
   verifyRequest,
 } from '@ecoma-io/auth-contracts';
-import { createPostgresClient, recordNonce } from '@ecoma-io/identity-auth-infrastructure';
+import { createPostgresClient, recordNonce } from '@ecoma-io/auth-infrastructure';
 
 /**
  * Client gọi ngược `account` qua contract nội bộ `auth → account`.
@@ -248,7 +248,7 @@ export async function isAuthenticatedInternalRequest(params: {
  *
  * ⚠️ **Pool không được dùng lại giữa các lần gọi, và không được dựng trước.** `auth`
  * không có `withRequestPool` (đó là pattern của Nitro app `account`); Worker của `auth` là
- * Hono trên Cloudflare, và `createPostgresClient` của `libs/identity-auth-infrastructure`
+ * Hono trên Cloudflare, và `createPostgresClient` của `libs/auth-infrastructure`
  * tạo pool `max: 3` với `prepare: false` (HD6). Guard này **tạo một pool cho mỗi lần
  * callback được gọi** và `end()` nó ngay trong `finally` — xem giải thích trong thân hàm.
  * Không giữ pool ở module scope (runtime:edge cấm node-local state).

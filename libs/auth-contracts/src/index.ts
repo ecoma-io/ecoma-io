@@ -37,7 +37,7 @@
  *
  * ⚠️ **`allowsIssuance` KHÔNG thuộc contract.** Hàm đó là policy cấp phát credential
  * (mọi trạng thái ngoài `active` đều chặn issuance) — nó sống ở tầng domain
- * (`@ecoma-io/identity-auth-domain`), không phải ở wire contract.
+ * (`@ecoma-io/auth-domain`), không phải ở wire contract.
  */
 
 export {

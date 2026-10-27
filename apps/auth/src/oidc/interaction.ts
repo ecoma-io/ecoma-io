@@ -31,7 +31,7 @@ import {
   OAuthProtocolError,
   deriveHandle,
   hashHandle,
-} from '@ecoma-io/identity-auth-domain';
+} from '@ecoma-io/auth-domain';
 
 import type {
   Provider,
@@ -76,7 +76,7 @@ export interface AttachedInteraction {
  */
 export async function attachInteractionResult(params: {
   readonly provider: Provider;
-  readonly postgresClient: import('@ecoma-io/identity-auth-infrastructure').PostgresClientLike;
+  readonly postgresClient: import('@ecoma-io/auth-infrastructure').PostgresClientLike;
   readonly handleX: string;
   readonly result?: InteractionResultInput;
 }): Promise<AttachedInteraction | undefined> {

@@ -40,7 +40,7 @@
 
 import postgres from 'postgres';
 
-import type { PostgresClientLike } from '@ecoma-io/identity-auth-infrastructure';
+import type { PostgresClientLike } from '@ecoma-io/auth-infrastructure';
 
 import { checkRevocationAtIssuance } from '../../src/authorization-store';
 import type { PostgresAdapter } from '../../src/oidc/adapter';

@@ -1,9 +1,16 @@
-// Import tương đối: lib không tự import qua tên package của chính nó — tên đó
-// chỉ resolve được từ project KHÁC trong workspace.
-import { AuthConfigurationError } from './errors';
+// Import qua tên package: lib tiêu thụ lib anh em qua bề mặt export của nó.
+import {
+  SIGNING_ALGORITHM,
+  SIGNING_CURVE,
+  SIGNING_KEY_TYPE,
+  AuthConfigurationError,
+  type PublicJwk,
+} from '@ecoma-io/auth-domain';
 
 /**
- * Custody của khoá ký ES256 (FR-023..FR-025).
+ * Cài đặt của port khoá ký ES256 (FR-023..FR-025) — class
+ * `SigningKeyProvider` thực thi interface `SigningKeyProvider` của
+ * `auth-domain`.
  *
  * ⚠️ Ba luật mà cài đặt này buộc phải theo, và cả ba đều đến từ việc Cloudflare
  * KHÔNG có managed signing service: Secrets Store chỉ có `get()`, trả về một
@@ -18,40 +25,12 @@ import { AuthConfigurationError } from './errors';
  * 3. **Private key không được chạm vào log, error, JWKS hay config dump.**
  *
  * `db-auth` chỉ giữ metadata khoá — không giữ private key, theo FR-023.
+ *
+ * Tầng này đứng ở infrastructure vì đường nạp khoá là thao tác trên thư viện
+ * mã hoá (`jose.importPKCS8`/`exportJWK`) + kiểm hình dạng PEM — không phải
+ * logic protocol thuần của domain. Port mà domain/application tiêu thụ là
+ * interface cùng tên ở `auth-domain`.
  */
-
-/** Thuật toán ký duy nhất được chấp nhận. */
-export const SIGNING_ALGORITHM = 'ES256' as const;
-
-/** Nhãn `kty` tương ứng. */
-export const SIGNING_KEY_TYPE = 'EC' as const;
-
-/** Đường cong duy nhất được chấp nhận: P-256. */
-export const SIGNING_CURVE = 'P-256' as const;
-
-/** Metadata khoá ký — thứ DUY NHẤT `db-auth` được giữ về khoá. */
-export interface SigningKeyMetadata {
-  kid: string;
-  alg: typeof SIGNING_ALGORITHM;
-  kty: typeof SIGNING_KEY_TYPE;
-  crv: typeof SIGNING_CURVE;
-  /** Khoá còn dùng để phát hành không. */
-  status: 'active' | 'retiring' | 'compromised';
-  createdAt: Date;
-  notBefore?: Date;
-}
-
-/** Public JWK đúng những trường JWKS được phép chứa. */
-export interface PublicJwk {
-  kty: typeof SIGNING_KEY_TYPE;
-  crv: typeof SIGNING_CURVE;
-  /** Điểm x/y trên đường cong — công khai theo định nghĩa. */
-  x: string;
-  y: string;
-  alg: typeof SIGNING_ALGORITHM;
-  use: 'sig';
-  kid: string;
-}
 
 /**
  * PEM PKCS#8 cho private key.

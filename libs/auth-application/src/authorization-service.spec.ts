@@ -2,8 +2,9 @@ import { exportPKCS8, generateKeyPair, importJWK, jwtVerify } from 'jose';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AccountStatusResponseValue } from '@ecoma-io/account-contracts';
-import { SigningKeyProvider, hashHandle } from '@ecoma-io/identity-auth-domain';
+import { type SigningKeyProvider, hashHandle } from '@ecoma-io/auth-domain';
 
+import { signingKeyProviderFromPemForSpec } from './signing-key-test-support';
 import {
   type AccountClient,
   type AuthStore,
@@ -20,7 +21,7 @@ import {
  *
  * ⚠️ Những test này kiểm THỨ TỰ và SỰ FAIL-CLOSED, không kiểm SQL. Chúng dùng
  * một store giả để cô lập tầng này — còn tính nguyên tử thật của database được
- * kiểm bằng PostgreSQL thật ở `identity-auth-infrastructure`.
+ * kiểm bằng PostgreSQL thật ở `auth-infrastructure`.
  */
 
 /** Store giả, ghi lại mọi lời gọi để kiểm thứ tự. */
@@ -82,7 +83,7 @@ function makeAccount(fail = false, status: 'active' | 'suspended' = 'active'): A
 async function makeSigningKey(): Promise<SigningKeyProvider> {
   const { privateKey } = await generateKeyPair('ES256', { extractable: true });
   const pem = await exportPKCS8(privateKey);
-  return SigningKeyProvider.fromPem({ pem, kid: 'kid-test' });
+  return signingKeyProviderFromPemForSpec({ pem, kid: 'kid-test' });
 }
 
 /**

@@ -36,10 +36,7 @@
  */
 
 import { type AuthConfig, type AuthEnv, loadAuthConfig } from '../config';
-import {
-  type PostgresClientLike,
-  createPostgresClient,
-} from '@ecoma-io/identity-auth-infrastructure';
+import { type PostgresClientLike, createPostgresClient } from '@ecoma-io/auth-infrastructure';
 import { AccountClient } from '../account-client';
 
 import { createProvider } from './provider';

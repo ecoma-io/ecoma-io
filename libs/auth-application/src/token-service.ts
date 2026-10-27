@@ -1,4 +1,4 @@
-import type { PublicJwk, SigningKeyProvider } from '@ecoma-io/identity-auth-domain';
+import type { PublicJwk, SigningKeyProvider } from '@ecoma-io/auth-domain';
 
 /**
  * Phát hành token (FR-030..FR-036), theo quyết định D3:

@@ -5,7 +5,7 @@ import postgres from 'postgres';
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import type { PostgresClientLike } from '@ecoma-io/identity-auth-infrastructure';
+import type { PostgresClientLike } from '@ecoma-io/auth-infrastructure';
 
 import { PostgresAdapter } from './adapter';
 import { startAuthDatabase, type AuthDatabase } from '../../tests/integrations/harness.ts';

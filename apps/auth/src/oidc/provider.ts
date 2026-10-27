@@ -23,7 +23,7 @@
 import { Provider, interactionPolicy, errors as oidcErrors } from 'oidc-provider';
 
 import type { AuthConfig } from '../config';
-import type { PostgresClientLike } from '@ecoma-io/identity-auth-infrastructure';
+import type { PostgresClientLike } from '@ecoma-io/auth-infrastructure';
 import type { IssuanceGate } from './adapter';
 import { createAdapterFactory } from './adapter';
 

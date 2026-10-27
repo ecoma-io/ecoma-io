@@ -486,7 +486,7 @@ describe('localStackSecrets — per-stack secret contract', () => {
   });
 
   it('auth-deploy application secrets decode to exactly 32 bytes (handleKey + cookieKeys)', () => {
-    // `handleKey` đi vào `importKey` của identity-auth-domain — hàm bắt ĐÚNG
+    // `handleKey` đi vào `importKey` của auth-domain — hàm bắt ĐÚNG
     // 32 byte (HMAC-SHA-256); `cookieKeys` là keygrip key của oidc-provider.
     // Cả hai là secret ứng dụng (#284) — mật khẩu 24 byte của database từng
     // làm mọi lane mới chết `K_auth phai dai 32 byte` ở request đầu tiên.

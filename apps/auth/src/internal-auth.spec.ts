@@ -24,7 +24,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
  *
  * ⚠️ Database PostgreSQL đến từ **testcontainers**, dựng một container riêng cho
  * chính file này (`startAuthDatabase`): suite bên lib
- * (`libs/identity-auth-infrastructure/src/internal-nonces.spec.ts`) dọn và đếm toàn
+ * (`libs/auth-infrastructure/src/internal-nonces.spec.ts`) dọn và đếm toàn
  * bảng `auth.internal_nonces`, nên một database dùng chung là nguồn xung đột lịch
  * chạy — container riêng làm các test "sở hữu schema" thành đúng, và xoá luôn nhu
  * cầu advisory lock của hình thức cũ.
@@ -40,7 +40,7 @@ import {
   signRequest,
   verifyRequest,
 } from '@ecoma-io/auth-contracts';
-import { createPostgresClient } from '@ecoma-io/identity-auth-infrastructure';
+import { createPostgresClient } from '@ecoma-io/auth-infrastructure';
 import { startAuthDatabase, type AuthDatabase } from '../tests/integrations/harness.ts';
 
 import {
@@ -262,10 +262,7 @@ describe('internal-auth contract (auth-side view)', () => {
     // chất đó trên nguồn: nếu ai đó đưa lại một connection string dùng chung, test
     // đỏ trước khi khoá cũ được viết lại.
     const other = readFileSync(
-      join(
-        import.meta.dirname,
-        '../../../libs/identity-auth-infrastructure/src/internal-nonces.spec.ts',
-      ),
+      join(import.meta.dirname, '../../../libs/auth-infrastructure/src/internal-nonces.spec.ts'),
       'utf8',
     );
     const here = readFileSync(join(import.meta.dirname, 'internal-auth.spec.ts'), 'utf8');

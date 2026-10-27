@@ -18,7 +18,7 @@ import {
   type AuthorizationTransactionState,
   type RevocationCheckResult,
   type SigningKeyProvider,
-} from '@ecoma-io/identity-auth-domain';
+} from '@ecoma-io/auth-domain';
 
 import { type IssuedTokens, createRefreshToken, issueAccessToken } from './token-service';
 

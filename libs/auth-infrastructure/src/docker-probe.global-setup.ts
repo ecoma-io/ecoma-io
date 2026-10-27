@@ -1,5 +1,5 @@
 /**
- * `globalSetup` của Vitest cho `identity-auth-infrastructure` — probe Docker
+ * `globalSetup` của Vitest cho `auth-infrastructure` — probe Docker
  * **một lần** mỗi lần chạy, trước khi bất kỳ worker/spec file nào khởi động.
  *
  * Đây là shell mỏng, copy có chủ đích của probe app-owned

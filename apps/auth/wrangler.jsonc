@@ -15,7 +15,7 @@
   // không phụ thuộc filesystem, không phụ thuộc process, không dùng API mà
   // Cloudflare Workers không cung cấp. `.oxlintrc.json` chặn import trực tiếp
   // Node builtin trong project `runtime:edge`; driver được phép dùng qua
-  // lớp adapter trong `libs/identity-auth-infrastructure`, không import thẳng
+  // lớp adapter trong `libs/auth-infrastructure`, không import thẳng
   // trong `apps/auth`.
   //
   // Worker identity lâu dài — PR không tạo Worker mới, Preview chạy dưới

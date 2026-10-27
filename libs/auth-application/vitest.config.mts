@@ -3,9 +3,9 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig(() => ({
   root: import.meta.dirname,
-  cacheDir: '../../node_modules/.vite/libs/identity-auth-domain',
+  cacheDir: '../../node_modules/.vite/libs/auth-application',
   test: {
-    name: '@ecoma-io/identity-auth-domain',
+    name: '@ecoma-io/auth-application',
     watch: false,
     globals: true,
     environment: 'node',

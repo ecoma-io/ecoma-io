@@ -1,5 +1,5 @@
 /**
- * Harness PostgreSQL thật cho spec colocated của `identity-auth-infrastructure`.
+ * Harness PostgreSQL thật cho spec colocated của `auth-infrastructure`.
  *
  * Copy có chủ đích của `apps/auth/tests/integrations/harness.ts` — app sở hữu
  * database `db-auth` mà những spec này dùng làm dependency thật. 06-testing.md

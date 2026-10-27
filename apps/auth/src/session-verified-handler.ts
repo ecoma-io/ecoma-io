@@ -34,23 +34,15 @@ import {
   type SessionVerifiedResponse,
   validateSessionVerifiedRequest,
 } from '@ecoma-io/auth-contracts';
-import {
-  allowsIssuance,
-  bytesToBase64Url,
-  hashHandle,
-  needsConsent,
-} from '@ecoma-io/identity-auth-domain';
+import { allowsIssuance, bytesToBase64Url, hashHandle, needsConsent } from '@ecoma-io/auth-domain';
 import {
   advanceTransactionWithHandle,
   consumeHandleXAndBindIdentity,
   findTransactionByHandleX,
   type PostgresClientLike,
-} from '@ecoma-io/identity-auth-infrastructure';
+} from '@ecoma-io/auth-infrastructure';
 import type { Provider } from 'oidc-provider';
-import type {
-  AuthorizationTransactionRecord,
-  AuthStore,
-} from '@ecoma-io/identity-auth-application';
+import type { AuthorizationTransactionRecord, AuthStore } from '@ecoma-io/auth-application';
 import {
   attachInteractionResult,
   buildLoginResult,

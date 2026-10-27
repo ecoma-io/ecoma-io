@@ -2,13 +2,10 @@ import {
   base64UrlToBytes,
   bytesToBase64Url,
   type AuthorizationTransactionState,
-} from '@ecoma-io/identity-auth-domain';
+} from '@ecoma-io/auth-domain';
 
 import type { AuthorizationCodeRow } from './authorization-code-cas';
-import type {
-  NewAuthorizationCode,
-  NewAuthorizationTransaction,
-} from '@ecoma-io/identity-auth-application';
+import type { NewAuthorizationCode, NewAuthorizationTransaction } from '@ecoma-io/auth-application';
 import type { PostgresClientLike, Queryable } from './postgres';
 
 /**
@@ -113,7 +110,7 @@ function mapTransactionRow(row: RawTransactionRow): AuthorizationTransactionRowD
 
 /** Re-export dạng type public để caller không import từ application hai lần. */
 export type AuthorizationTransactionRowDto =
-  import('@ecoma-io/identity-auth-application').AuthorizationTransactionRecord;
+  import('@ecoma-io/auth-application').AuthorizationTransactionRecord;
 
 /**
  * Tạo transaction mới.
