@@ -13,7 +13,7 @@ import { array, boolean, enum as zEnum, object, record, string } from 'zod';
 import type { AppEnv } from '../types';
 import { currentTenantId } from '../middleware/tenant-context';
 import { HalBuilder, getBaseUrl } from '@ecoma-io/pact-broker-api-domain';
-import { PgWebhookRepo } from '../repo/webhook-repo';
+import { PgWebhookRepo } from '@ecoma-io/pact-broker-api-infrastructure';
 import { readJsonBodyWithLimit } from '../middleware/validate';
 
 const webhookCreateSchema = object({

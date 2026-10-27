@@ -14,9 +14,8 @@ import { Hono, type MiddlewareHandler } from 'hono';
 import { array, enum as zEnum, object, string } from 'zod';
 import type { AppEnv } from '../types';
 import { currentTenantId } from '../middleware/tenant-context';
-import { PgTenantRepo } from '../repo/tenant-repo';
+import { PgTenantRepo, insertAuditEvent } from '@ecoma-io/pact-broker-api-infrastructure';
 import { readJsonBodyWithLimit } from '../middleware/validate';
-import { insertAuditEvent } from '../repo/token-repo';
 
 const createTokenSchema = object({
   name: string().min(1, 'name is required').max(255, 'name exceeds 255 characters'),

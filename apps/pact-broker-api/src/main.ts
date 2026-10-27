@@ -25,8 +25,11 @@ import {
   PactBrokerConfigurationError,
   type PactBrokerConfig,
 } from './config';
-import { createPool, isConnectionTerminatedError } from './db/client';
-import { PgTokenRepo } from './repo/token-repo';
+import {
+  PgTokenRepo,
+  createPool,
+  isConnectionTerminatedError,
+} from '@ecoma-io/pact-broker-api-infrastructure';
 import { requireMachineToken } from './auth/token-auth';
 import type { TokenRepo } from '@ecoma-io/pact-broker-api-application';
 import { indexRoutes } from './routes';

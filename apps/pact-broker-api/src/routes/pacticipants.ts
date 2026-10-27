@@ -17,8 +17,7 @@ import {
   versionSchema,
 } from '@ecoma-io/pact-broker-api-domain';
 import { readJsonBodyWithLimit, validateParam } from '../middleware/validate';
-import { PgVersionRepo } from '../repo/version-repo';
-import { PgEnvironmentRepo } from '../repo/environment-repo';
+import { PgEnvironmentRepo, PgVersionRepo } from '@ecoma-io/pact-broker-api-infrastructure';
 
 export function pacticipantRoutes(
   readAuth: () => MiddlewareHandler<AppEnv>,

@@ -23,8 +23,7 @@ import {
 } from '@ecoma-io/pact-broker-api-domain';
 import type { MatrixRowData } from '@ecoma-io/pact-broker-api-domain';
 import { validateParam, validateOptionalQuery } from '../middleware/validate';
-import { PgMatrixRepo } from '../repo/matrix-repo';
-import { PgVersionRepo } from '../repo/version-repo';
+import { PgMatrixRepo, PgVersionRepo } from '@ecoma-io/pact-broker-api-infrastructure';
 
 interface Selector {
   pacticipant: string;

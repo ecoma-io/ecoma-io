@@ -542,6 +542,9 @@ importers:
       '@ecoma-io/pact-broker-api-domain':
         specifier: workspace:*
         version: link:../../libs/pact-broker-api-domain
+      '@ecoma-io/pact-broker-api-infrastructure':
+        specifier: workspace:*
+        version: link:../../libs/pact-broker-api-infrastructure
       hono:
         specifier: ^4.13.13
         version: 4.13.13
@@ -773,6 +776,22 @@ importers:
       zod:
         specifier: ^4.0.0
         version: 4.6.7
+
+  libs/pact-broker-api-infrastructure:
+    dependencies:
+      '@ecoma-io/pact-broker-api-application':
+        specifier: workspace:*
+        version: link:../pact-broker-api-application
+      '@ecoma-io/pact-broker-api-domain':
+        specifier: workspace:*
+        version: link:../pact-broker-api-domain
+      pg:
+        specifier: ^8.23.1
+        version: 8.23.1
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.15.6
+        version: 8.23.1
 
   libs/push-notification-application:
     dependencies:

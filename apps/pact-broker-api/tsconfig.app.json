@@ -17,6 +17,9 @@
   "exclude": ["out-tsc", "dist", "vitest.config.mts", "src/**/*.test.ts", "src/**/*.spec.ts"],
   "references": [
     {
+      "path": "../../libs/pact-broker-api-infrastructure/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/pact-broker-api-domain/tsconfig.lib.json"
     },
     {

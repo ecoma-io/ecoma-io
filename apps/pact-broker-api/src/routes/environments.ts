@@ -8,8 +8,8 @@ import type { AppEnv } from '../types';
 import { currentTenantId } from '../middleware/tenant-context';
 import { HalBuilder, environmentNameSchema, getBaseUrl } from '@ecoma-io/pact-broker-api-domain';
 import { readJsonBodyWithLimit, validateParam } from '../middleware/validate';
-import { PgEnvironmentRepo } from '../repo/environment-repo';
-import { insertAuditEvent } from '../repo/token-repo';
+import { PgEnvironmentRepo, insertAuditEvent } from '@ecoma-io/pact-broker-api-infrastructure';
+import type { EnvironmentRecord } from '@ecoma-io/pact-broker-api-infrastructure';
 
 export function environmentRoutes(
   readAuth: () => MiddlewareHandler<AppEnv>,
@@ -119,7 +119,7 @@ export function environmentRoutes(
     const tenantId = currentTenantId(c);
     const environment = UUID_RE.test(raw)
       ? await repo.getEnvironmentByUuid(tenantId, raw)
-      : await (async (): Promise<import('../repo/environment-repo').EnvironmentRecord | null> => {
+      : await (async (): Promise<EnvironmentRecord | null> => {
           const r = validateParam(c, environmentNameSchema, raw, 'name');
           if (!r.valid) return null;
           return repo.getEnvironment(tenantId, r.value);

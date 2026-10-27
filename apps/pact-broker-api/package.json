@@ -5,6 +5,7 @@
   "dependencies": {
     "@ecoma-io/pact-broker-api-application": "workspace:*",
     "@ecoma-io/pact-broker-api-domain": "workspace:*",
+    "@ecoma-io/pact-broker-api-infrastructure": "workspace:*",
     "hono": "^4.13.13",
     "pg": "^8.23.1",
     "zod": "^4.0.0"
@@ -14,6 +15,11 @@
     "@types/pg": "^8.15.6",
     "testcontainers": "^12.2.1"
   },
+  "//": [
+    "`pg` giữ ở dependencies cho `db/apply.mts` + `db/migrate.mts` — migration",
+    "runner chạy ở CI runner (Node), không thuộc bundle Worker. Nguồn `pg`",
+    "runtime của app là `@ecoma-io/pact-broker-api-infrastructure`."
+  ],
   "nx": {
     "tags": [
       "type:composition",
