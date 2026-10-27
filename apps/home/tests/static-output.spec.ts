@@ -5,6 +5,7 @@ import { PUBLIC_MOUNTS } from '../app/layout/index';
 import { SERIES_META } from '../app/blog/blog-series';
 import { blogUiStrings } from '../app/blog/blog-ui-strings';
 import { legalUiStrings } from '../app/domain/legal-ui-strings';
+import { MIN_OUTPUT_SVG_ASSETS, assessOutputSvgAssets } from '../shared/static-output-contract';
 
 /**
  * Verification của **output production thật** (`.output/` sau `home:build`) —
@@ -1051,7 +1052,32 @@ describe('static output: media resolution', () => {
     // Mọi `src="/assets/x.svg"` trong mọi HTML phải tồn tại trong output
     // `assets/` — bắt broken media ở test thay vì ở browser.
     const available = new Set(Object.keys(OUTPUT_ASSETS).map(outputPath));
-    expect(available.size).toBeGreaterThanOrEqual(6);
+    // Sàn tối thiểu dùng chung với hook build (`modules/static-assets-guard.ts`
+    // qua `shared/static-output-contract.ts`) - hook đã fail-loud ngay lúc
+    // build, nên tới được đây tức artifact thường hợp lệ; test giữ assertion
+    // như lớp bảo vệ cuối. Thông báo phân biệt HAI tiền đề: HTML prerender có
+    // nội dung trong khi glob asset rỗng ⇒ `nuxt-content-assets` đã chạy nhưng
+    // không đóng góp asset nào (nuốt lỗi load content config, cảnh báo bị Nx
+    // ẩn khi task vẫn pass) - không phải assertion sai. Vượt qua `available`
+    // (không phải số 0 trơ trọi) để khi assertion đỏ, diff in ra những gì glob
+    // thực sự thấy.
+    expect(
+      available.size,
+      `${
+        Object.keys(PRERENDERED_HTML).length > 0 && available.size === 0
+          ? 'Prerendered HTML exists but the output assets glob is empty: the ' +
+            'nuxt-content-assets module produced no assets in this build (it ' +
+            'swallows content-config load errors with only a warning; look ' +
+            "for '[content-assets] Unable to load content config' in " +
+            'untruncated build output). The build-side guard in ' +
+            'modules/static-assets-guard.ts should already have failed the ' +
+            'build; reaching this message means the guard did not run.'
+          : `output assets directory (contract floor: ${MIN_OUTPUT_SVG_ASSETS})`
+      }`,
+    ).toBeGreaterThanOrEqual(MIN_OUTPUT_SVG_ASSETS);
+    // Hợp đồng chung build↔test được assert luôn ở phía test: cùng hàm đánh
+    // giá, cùng thông báo vi phạm (pin cả hai phía dùng một nguồn).
+    expect(assessOutputSvgAssets(available.size)).toBeNull();
     for (const [path, html] of Object.entries(PRERENDERED_HTML)) {
       for (const match of html.matchAll(/src="(\/assets\/[^"]+)"/gu)) {
         const assetRef = match[1] ?? '';
@@ -1062,10 +1088,36 @@ describe('static output: media resolution', () => {
   });
 
   it('leaves no unresolved relative asset path in any HTML', () => {
+    // Một `src` tương đối sót lại (`../../../assets/...`) nghĩa là
+    // `content:file:afterParse` không rewrite được - hệ quả trực tiếp của asset
+    // index rỗng (cùng nguyên nhân gốc với test trên): module không có index
+    // nào để tra cứu đường dẫn. Regex bắt cả hai dạng: `../` leo thư mục và
+    // `assets/` tương đối trần.
+    const unresolved: string[] = [];
     for (const [path, html] of Object.entries(PRERENDERED_HTML)) {
-      expect(html, `${path}`).not.toMatch(/src="[^"]*\.\.\//u);
-      expect(html, `${path}`).not.toMatch(/src="assets\//u);
+      if (/src="[^"]*\.\.\//u.test(html)) {
+        unresolved.push(`${path}: contains ../ in an asset src`);
+      }
+      if (/src="assets\//u.test(html)) {
+        unresolved.push(`${path}: contains a bare relative assets/ src`);
+      }
     }
+    // Hỏng dạng này là sản phẩm phụ của asset index rỗng - cùng root cause với
+    // assertion sàn asset phía trên, nên thông báo trỏ về cùng nguồn: một khi
+    // guard build (`modules/static-assets-guard.ts`) chạy, hỏng đến được đây
+    // chỉ khi guard không chạy.
+    expect(
+      unresolved,
+      `${
+        unresolved.length > 0
+          ? 'Prerendered HTML still contains unresolved relative asset paths: the ' +
+            'nuxt-content-assets asset index was empty in this build, so ' +
+            'content:file:afterParse could not rewrite them. Same root cause ' +
+            'as the assets-floor assertion above; see ' +
+            'modules/static-assets-guard.ts.'
+          : 'unresolved relative asset paths'
+      }`,
+    ).toEqual([]);
   });
 
   it('renders cover images with meaningful alt text on articles that declare one', () => {

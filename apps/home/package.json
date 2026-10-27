@@ -13,6 +13,22 @@
       "runtime:edge"
     ],
     "targets": {
+      "build": {
+        "dependsOn": [
+          "^build",
+          "nuxt-prepare"
+        ],
+        "//": [
+          "Chỉ ghi đè `dependsOn` - các property khác (executor `nx:run-commands`,",
+          "command `nuxt build`, inputs `production`/`^production`, outputs `.nuxt` +",
+          "`.output`) vẫn do plugin @nx/nuxt suy ra và merge theo property với",
+          "khối này. Plugin mặc định chỉ có `^build`; thêm `nuxt-prepare` để mọi",
+          "đường vào build đều đã qua `nuxt prepare` - như vậy thứ tự chuẩn bị",
+          "(.nuxt types) không còn phụ thuộc việc task nào chạy trước trong graph.",
+          "`test` đã dependsOn `build`, nên chuỗi test → build → nuxt-prepare giờ",
+          "được đảm bảo trọn vẹn."
+        ]
+      },
       "nuxt-prepare": {
         "executor": "nx:run-commands",
         "options": {
