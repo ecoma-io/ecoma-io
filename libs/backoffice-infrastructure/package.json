@@ -1,0 +1,29 @@
+{
+  "name": "@ecoma-io/backoffice-infrastructure",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": {
+      "@ecoma-io/source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@ecoma-io/backoffice-domain": "workspace:*",
+    "jose": "6.2.13",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1"
+  },
+  "nx": {
+    "tags": [
+      "type:infrastructure",
+      "scope:backoffice",
+      "runtime:edge"
+    ]
+  }
+}

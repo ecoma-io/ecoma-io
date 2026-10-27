@@ -36,6 +36,12 @@ import {
 } from 'h3';
 
 import {
+  backofficeHyperdrive,
+  backofficeNodeDatabaseUrl,
+  withBackofficePool,
+} from '@ecoma-io/backoffice-infrastructure';
+
+import {
   codeChallenge,
   createFlowValue,
   hashFlowIdentifier,
@@ -44,12 +50,7 @@ import {
   loginFlowCookie,
 } from '../../auth/login-flow';
 import { backofficeAuthConfig } from '../../auth/config';
-import {
-  backofficeHyperdrive,
-  backofficeNodeDatabaseUrl,
-  readWorkerEnv,
-  withBackofficePool,
-} from '../../db';
+import { readWorkerEnv } from '../../db';
 
 /** Scope xin từ `auth` — hằng số ghim ADR-0012 §6, không nhận từ query. */
 const LOGIN_SCOPE = 'openid offline_access';

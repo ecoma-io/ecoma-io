@@ -484,6 +484,9 @@ importers:
       '@ecoma-io/backoffice-domain':
         specifier: workspace:*
         version: link:../../libs/backoffice-domain
+      '@ecoma-io/backoffice-infrastructure':
+        specifier: workspace:*
+        version: link:../../libs/backoffice-infrastructure
       '@ecoma-io/ui-app-shell':
         specifier: workspace:*
         version: link:../../libs/ui-app-shell
@@ -649,6 +652,22 @@ importers:
   deploys/web-push-notification-job-deploy: {}
 
   libs/backoffice-domain: {}
+
+  libs/backoffice-infrastructure:
+    dependencies:
+      '@ecoma-io/backoffice-domain':
+        specifier: workspace:*
+        version: link:../backoffice-domain
+      jose:
+        specifier: 6.2.13
+        version: 6.2.13
+      pg:
+        specifier: ^8.23.1
+        version: 8.23.1
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
 
   libs/identity-auth-application:
     dependencies:

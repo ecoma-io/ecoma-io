@@ -29,15 +29,15 @@ import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import authnMiddleware from '../../server/middleware/authn';
-import { resetJwksCacheForTests } from '../../server/auth/jwks';
 import {
   SESSION_COOKIE_NAME,
   SESSION_IDLE_SECONDS,
   createSessionIdentifier,
   hashSessionIdentifier,
   insertSession,
+  resetJwksCacheForTests,
   sessionDeadlines,
-} from '../../server/auth/session-store';
+} from '@ecoma-io/backoffice-infrastructure';
 import { BACKOFFICE_DATABASE, type BackofficeDatabase, startBackofficeDatabase } from './harness';
 
 const AUDIENCE = 'https://api.test.ecoma.io/backoffice';

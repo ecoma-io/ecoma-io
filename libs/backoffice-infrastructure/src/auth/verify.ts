@@ -34,7 +34,24 @@
 import { jwtVerify } from 'jose';
 
 import { jwksResolver } from './jwks';
-import type { BackofficeAuthConfig } from './config';
+
+/**
+ * Cấu hình OIDC đã qua kiểm hình dạng — hình dạng tối thiểu mà verifier dùng.
+ *
+ * ⚠️ Khai **structurally** ở đây, không import từ `apps/backoffice`
+ * (`server/auth/config.ts`): lib infrastructure không phụ thuộc app composition.
+ * `config.ts` phía app trả object đúng shape này, nên caller truyền thẳng —
+ * TypeScript kiểm tương thích theo cấu trúc. Export cho test và cho caller cần
+ * type tham số.
+ */
+export interface BackofficeAuthConfig {
+  /** Issuer của `auth` — so exact với claim `iss` và làm base của mọi endpoint. */
+  readonly issuer: string;
+  /** Audience của `backoffice` — so exact với claim `aud` của access token. */
+  readonly audience: string;
+  /** `client_id` của `backoffice` tại `auth` — verifier không dùng tới. */
+  readonly clientId: string;
+}
 
 /** Kết quả verify thành công — đúng tập claim mà verifier dùng. */
 export interface VerifiedAccessToken {

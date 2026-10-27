@@ -29,8 +29,9 @@
 import { createError, defineEventHandler, getCookie, getHeader, setResponseHeader } from 'h3';
 import type { H3Event } from 'h3';
 
-import { backofficeAuthConfig } from '../../auth/config';
 import {
+  backofficeHyperdrive,
+  backofficeNodeDatabaseUrl,
   clearCsrfCookie,
   clearSessionCookie,
   CSRF_COOKIE_NAME,
@@ -40,13 +41,11 @@ import {
   loadSessionByHash,
   revokeSessionByHash,
   SESSION_COOKIE_NAME,
-} from '../../auth/session-store';
-import {
-  backofficeHyperdrive,
-  backofficeNodeDatabaseUrl,
-  readWorkerEnv,
   withBackofficePool,
-} from '../../db';
+} from '@ecoma-io/backoffice-infrastructure';
+
+import { backofficeAuthConfig } from '../../auth/config';
+import { readWorkerEnv } from '../../db';
 import { writeLog } from '../../log';
 
 function poolBinding(event: H3Event): { connectionString: string } | null {

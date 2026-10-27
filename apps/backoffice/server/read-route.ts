@@ -32,11 +32,15 @@ import { createError, type H3Event } from 'h3';
 import type { Pool, PoolClient } from 'pg';
 
 import type { CatalogPermission } from '@ecoma-io/backoffice-domain';
+import {
+  backofficeHyperdrive,
+  loadPrincipalAuthorization,
+  withBackofficePool,
+} from '@ecoma-io/backoffice-infrastructure';
 
 import { requirePermission, type PrincipalAuthorization } from './authorization';
-import { backofficeHyperdrive, readWorkerEnv, withBackofficePool } from './db';
+import { readWorkerEnv } from './db';
 import { requirePrincipal } from './principal';
-import { loadPrincipalAuthorization } from './queries';
 
 /**
  * Đọc ảnh assignment của principal bằng **một** client của pool — cùng một

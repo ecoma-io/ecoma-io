@@ -9,7 +9,7 @@
  *   `BACKOFFICE_AUTH_ISSUER`, `BACKOFFICE_AUTH_AUDIENCE`,
  *   `BACKOFFICE_AUTH_CLIENT_ID` (Worker Secret) — đọc qua
  *   {@link readWorkerEnv} (`server/db.ts`), cùng đường với binding
- *   `DB_BACKOFFICE`.
+ *   `DB_BACKOFFICE` mà `@ecoma-io/backoffice-infrastructure` đọc.
  * - **Node container local** (`node-server` preset): biến Nitro private
  *   `backofficeAuthIssuer` ← `NUXT_BACKOFFICE_AUTH_ISSUER` (vv.), khai ở
  *   `nuxt.config.ts`, không default.

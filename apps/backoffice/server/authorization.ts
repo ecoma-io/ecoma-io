@@ -82,12 +82,11 @@ import {
   type CatalogPermission,
   type GrantedAssignment,
 } from '@ecoma-io/backoffice-domain';
-
 import {
   recordAuthorizationFailure,
   recordDecision,
   recordStaleWriteDenial,
-} from './authorization-audit';
+} from '@ecoma-io/backoffice-infrastructure';
 
 /**
  * Dữ liệu authorization đã đồng bộ của một principal — caller dựng từ

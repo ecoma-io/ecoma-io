@@ -26,7 +26,7 @@ import type { Server } from 'node:http';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { BackofficeAuthConfig } from './config';
+import type { BackofficeAuthConfig } from './verify';
 import { JWKS_CACHE_TTL_SECONDS, resetJwksCacheForTests } from './jwks';
 import { verifyAccessToken } from './verify';
 

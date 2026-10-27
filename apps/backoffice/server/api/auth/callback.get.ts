@@ -43,30 +43,29 @@ import {
 import { jwtVerify } from 'jose';
 import type { H3Event } from 'h3';
 
+import {
+  backofficeHyperdrive,
+  backofficeNodeDatabaseUrl,
+  createCsrfToken,
+  createSessionIdentifier,
+  csrfCookie,
+  hashSessionIdentifier,
+  insertSession,
+  jwksResolver,
+  sessionCookie,
+  sessionDeadlines,
+  verifyAccessToken,
+  withBackofficePool,
+} from '@ecoma-io/backoffice-infrastructure';
+
 import { backofficeAuthConfig, type BackofficeAuthConfig } from '../../auth/config';
-import { jwksResolver } from '../../auth/jwks';
 import {
   clearLoginFlowCookie,
   consumeLoginFlow,
   hashFlowIdentifier,
   LOGIN_FLOW_COOKIE_NAME,
 } from '../../auth/login-flow';
-import {
-  createCsrfToken,
-  createSessionIdentifier,
-  csrfCookie,
-  hashSessionIdentifier,
-  insertSession,
-  sessionCookie,
-  sessionDeadlines,
-} from '../../auth/session-store';
-import { verifyAccessToken } from '../../auth/verify';
-import {
-  backofficeHyperdrive,
-  backofficeNodeDatabaseUrl,
-  readWorkerEnv,
-  withBackofficePool,
-} from '../../db';
+import { readWorkerEnv } from '../../db';
 import { writeLog } from '../../log';
 
 /**
