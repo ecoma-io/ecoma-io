@@ -247,12 +247,12 @@ describe('root .dockerignore: required build inputs are included', () => {
     expect(isExcluded('apps/account/package.json')).toBe(false);
     expect(isExcluded('apps/account/.npmrc')).toBe(false);
     expect(isExcluded('apps/account/nuxt.config.ts')).toBe(false);
-    expect(isExcluded('libs/identity-contracts/src/index.ts')).toBe(false);
-    // `identity-contracts` re-export lib này (project reference qua
-    // `tsconfig.lib.json`), nên nó cũng là input của image account.
+    expect(isExcluded('libs/account-contracts/src/index.ts')).toBe(false);
+    expect(isExcluded('libs/auth-contracts/src/index.ts')).toBe(false);
+    // Account re-export lib này (dependency qua `package.json` và project
+    // reference qua `tsconfig.lib.json`), nên nó cũng là input của image account.
     expect(isExcluded('libs/internal-auth-contracts/src/index.ts')).toBe(false);
     expect(isExcluded('libs/identity-domain/src/index.ts')).toBe(false);
-    expect(isExcluded('libs/identity-auth-contracts/src/index.ts')).toBe(false);
     expect(isExcluded('libs/transactional-mail-contracts/src/index.ts')).toBe(false);
   });
 

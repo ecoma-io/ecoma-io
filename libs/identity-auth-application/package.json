@@ -12,7 +12,8 @@
     }
   },
   "dependencies": {
-    "@ecoma-io/identity-auth-contracts": "workspace:*",
+    "@ecoma-io/account-contracts": "workspace:*",
+    "@ecoma-io/auth-contracts": "workspace:*",
     "@ecoma-io/identity-auth-domain": "workspace:*"
   },
   "nx": {

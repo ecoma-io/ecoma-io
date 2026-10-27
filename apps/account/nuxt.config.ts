@@ -72,9 +72,10 @@ export default defineNuxtConfig({
   //
   // `tsconfig.base.json` có `paths: {}` rỗng và `vite.resolve.tsconfigPaths` chỉ
   // đọc `paths`, nên cả hai cùng không map gì cho `@ecoma-io/identity-domain` /
-  // `@ecoma-io/identity-contracts`. Hệ quả đã quan sát được: Vite resolve
-  // `@ecoma-io/*` **không** được ở runtime, nên import trong `server/` chỉ nổ ở
-  // request đầu tiên chạm tới route đó (dev 500, production 500 theo cold start).
+  // `@ecoma-io/account-contracts` / `@ecoma-io/auth-contracts`. Hệ quả đã quan
+  // sát được: Vite resolve `@ecoma-io/*` **không** được ở runtime, nên import
+  // trong `server/` chỉ nổ ở request đầu tiên chạm tới route đó (dev 500,
+  // production 500 theo cold start).
   //
   // Vì sao không sửa `tsconfig.base.json`: đó là file dùng chung của **mọi** app,
   // nên thêm `paths` ở đó là thay đổi ngoài phạm vi app này — và app nào không có
@@ -86,10 +87,12 @@ export default defineNuxtConfig({
     // import.meta.url).pathname` cho đường dẫn tuyệt đối mà không cần `resolve`.
     '@ecoma-io/identity-domain': new URL('../../libs/identity-domain/src/index.ts', import.meta.url)
       .pathname,
-    '@ecoma-io/identity-contracts': new URL(
-      '../../libs/identity-contracts/src/index.ts',
+    '@ecoma-io/account-contracts': new URL(
+      '../../libs/account-contracts/src/index.ts',
       import.meta.url,
     ).pathname,
+    '@ecoma-io/auth-contracts': new URL('../../libs/auth-contracts/src/index.ts', import.meta.url)
+      .pathname,
     '@ecoma-io/transactional-mail-contracts': new URL(
       '../../libs/transactional-mail-contracts/src/index.ts',
       import.meta.url,
@@ -144,7 +147,7 @@ export default defineNuxtConfig({
     mailInternalAuthSecret: '',
     // Cửa sổ skew (giây) của envelope HMAC; rỗng ⇒ `verifyRequest` dùng mặc định
     // 300s. Để trống chứ không đặt số ở đây để chỉ có **một** nơi định nghĩa mặc định
-    // (trong `identity-contracts`) — tránh hai nguồn sự thật cho cùng một luật.
+    // (trong `internal-auth-contracts`) — tránh hai nguồn sự thật cho cùng một luật.
     internalAuthSkewSeconds: '',
     // Adapter HTTP cho Service Binding `AUTH_SERVICE` — CHỈ preset `node-server`
     // (local Docker lane). Rỗng = chưa cấu hình ⇒ không mount gì ⇒

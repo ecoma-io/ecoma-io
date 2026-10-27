@@ -33,10 +33,10 @@
       "path": "../identity-auth-application"
     },
     {
-      "path": "../identity-contracts/tsconfig.lib.json"
+      "path": "../internal-auth-contracts/tsconfig.lib.json"
     }
   ],
   "nx": {
-    "sync": { "ignoredReferences": ["../identity-contracts/tsconfig.lib.json"] }
+    "sync": { "ignoredReferences": ["../internal-auth-contracts/tsconfig.lib.json"] }
   }
 }

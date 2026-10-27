@@ -71,6 +71,8 @@ export {
   type RevocationScope,
 } from './revocation';
 
+export { allowsIssuance } from './issuance-policy';
+
 export {
   SIGNING_ALGORITHM,
   SIGNING_CURVE,

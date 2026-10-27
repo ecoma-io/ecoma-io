@@ -40,7 +40,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 // Hai import tương đối dưới đây là đường có chủ đích: composition root của control plane
 // phải gặp composition root của job trong cùng một process test, mà cạnh `app → app` trong
 // package.json bị depConstraints chặn (`type:composition` chỉ compose bốn type lib). Exemption
-// theo precedent của `libs/identity-auth-contracts/src/root-surface.spec.ts` — file spec chạy
+// theo precedent của root-surface spec từng sống ở `libs/identity-auth-contracts` (đã xoá ở
+// issue #324) — file spec chạy
 // trên Node runner, không bundle vào Worker edge.
 // oxlint-disable-next-line @nx/enforce-module-boundaries
 import controlPlaneWorker from '../../push-notification/src/main';

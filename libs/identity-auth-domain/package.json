@@ -12,6 +12,7 @@
     }
   },
   "dependencies": {
+    "@ecoma-io/account-contracts": "workspace:*",
     "jose": "^6.2.12"
   },
   "nx": {

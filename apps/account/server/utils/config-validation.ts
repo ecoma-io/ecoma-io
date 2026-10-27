@@ -29,7 +29,7 @@
  * trực tiếp, không cần stub) và giữ plugin làm lớp glue.
  */
 
-import { assertKid, MAX_SKEW_SECONDS, MIN_SKEW_SECONDS } from '@ecoma-io/identity-contracts';
+import { assertKid, MAX_SKEW_SECONDS, MIN_SKEW_SECONDS } from '@ecoma-io/internal-auth-contracts';
 
 import { MIN_OTP_HMAC_SECRET_LENGTH } from '../lib/otp';
 import { DATA_MODE_MOCK_IN_ARTIFACT_REASON, resolveServerDataMode } from './data-mode-server';
@@ -120,7 +120,7 @@ export function validateAccountConfig(config: AccountRuntimeConfig): void {
   const skew = config.internalAuthSkewSeconds;
   if (skew !== undefined && skew !== null) {
     // Rỗng (`''` từ `runtimeConfig`) là "chưa đặt" và được bỏ qua để mặc định của
-    // `identity-contracts` là nguồn duy nhất — tránh hai nguồn sự thật cho một luật.
+    // `internal-auth-contracts` là nguồn duy nhất — tránh hai nguồn sự thật cho một luật.
     if (
       skew !== '' &&
       (typeof skew !== 'number' || !Number.isInteger(skew) || skew < MIN_SKEW_SECONDS)

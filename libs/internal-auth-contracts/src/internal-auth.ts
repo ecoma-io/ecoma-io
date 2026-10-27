@@ -37,12 +37,14 @@ export const PROTOCOL_ID = 'ecoma-internal-v1';
  *
  * ⚠️ **File này là nguồn sự thật duy nhất của giao thức.** Trước đây `auth` và
  * `account` ship hai envelope không tương thích (hai đường import của
- * `libs/identity-contracts` và `libs/identity-auth-contracts`) trùng tên header nhưng
+ * `libs/identity-contracts` và `libs/identity-auth-contracts` trước khi hợp nhất) trùng
+ * tên header nhưng
  * lệch nhau ở chữ hoa/thường của method, đơn vị của length prefix, đơn vị của timestamp
  * và định dạng nonce — và `auth` hoàn toàn không có kho nonce bền, nên
  * `/internal/session/verified` của nó phát lại được trong cửa sổ skew. Hai bên chỉ test
- * với chính mình, nên sự không tương thích không hiện ra. File này hợp nhất chúng; hai
- * package identity kia giờ re-export lại từ đây.
+ * với chính mình, nên sự không tương thích không hiện ra. File này hợp nhất chúng; từ
+ * issue #324, hai contract lib của identity (`account-contracts`, `auth-contracts`)
+ * re-export lại từ đây cho đúng phía của mình.
  *
  * ## Tính chất của envelope
  *
@@ -242,7 +244,7 @@ export async function hashBody(body: Uint8Array | null | undefined): Promise<str
   // ⚠️ **Không dựa vào caller để giữ hợp đồng kiểu.** Khi một chuỗi lọt vào đây (spec không
   // được typecheck, JS thuần, hoặc một `as` sai), `new Uint8Array('<chuỗi>')` cho ra mảng
   // **rỗng** — tức thân bị băm thành rỗng trong im lặng, và hai phía cùng "đúng" trên cùng
-  // một sai lầm. Đã xảy ra thật với spec interop của `identity-auth-contracts`. Ném thay vì
+  // một sai lầm. Đã xảy ra thật với spec interop của một facade identity-contracts cũ. Ném thay vì
   // băm rỗng là fail-closed: chữ ký bao giờ cũng phải phủ đúng byte được truyền vào.
   if (body !== null && body !== undefined && !isUint8Array(body)) {
     throw new TypeError('hashBody can only hash a Uint8Array body, or null/undefined');

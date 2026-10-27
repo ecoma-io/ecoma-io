@@ -10,7 +10,7 @@
  *
  * Client **không** tự dựng canonical string, không tự băm thân và không tự định dạng chữ
  * ký: cả ba việc đó thuộc `signRequest`/`verifyRequest` trong `@ecoma-io/internal-auth-contracts`
- * (bản canonical nằm ở `@ecoma-io/identity-contracts`, lib này chỉ re-export). Việc chép lại
+ * — bản canonical của giao thức, không qua facade nào. Việc chép lại
  * bất kỳ tầng nào trong ba tầng đó là tạo ra một giao thức thứ hai lệch phiên bản — đúng thứ
  * PR hợp nhất envelope đã dẹp.
  *

@@ -26,6 +26,7 @@
 # `tools/dx/package.json`, `apps/home/**`, `apps/backoffice/**`,
 # `apps/account/**`, `apps/pact-broker-app/**`, `libs/ui-ecoma-logo/**`,
 # `libs/ui-app-shell/**`, `libs/backoffice-domain/**`,
+# `libs/account-contracts/**`, `libs/auth-contracts/**`,
 # `libs/internal-auth-contracts/**`, `tsconfig.base.json`,
 # `deploys/auth-deploy/wic-entrypoint.sh`,
 # `deploys/pact-broker-api-deploy/wic-entrypoint.sh`. Spec
@@ -55,10 +56,10 @@ libs/*
 !libs/backoffice-domain
 !libs/ui-app-shell
 !libs/ui-ecoma-logo
-!libs/identity-contracts
+!libs/account-contracts
+!libs/auth-contracts
 !libs/internal-auth-contracts
 !libs/identity-domain
-!libs/identity-auth-contracts
 !libs/transactional-mail-contracts
 tools/*
 !tools/dx

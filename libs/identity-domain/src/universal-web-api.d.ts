@@ -7,7 +7,7 @@
  * mang tag `runtime:universal` — cam kết chạy được trên cả Cloudflare Workers lẫn Node
  * (vitest chạy trên Node). Typecheck dưới global Workers/dom sẽ cho qua API chỉ một
  * bên có (`caches.default`, `document`, …) và code như vậy compile xanh nhưng chết
- * lúc chạy Node. Cùng lý do, `identity-contracts` giữ `src/universal-web-api.d.ts`
+ * lúc chạy Node. Cùng lý do, `internal-auth-contracts` giữ `src/universal-web-api.d.ts`
  * riêng của nó. Mọi API khai dưới đây thuộc phần giao thực có trên cả Workers lẫn
  * Node ≥ 19, nên khai báo đúng phần dùng là ràng buộc chặt nhất: thêm API Workers-only
  * hay browser-only vào lib này sẽ FAIL typecheck ngay.

@@ -18,9 +18,6 @@
   "references": [
     {
       "path": "../identity-auth-domain"
-    },
-    {
-      "path": "../identity-auth-contracts"
     }
   ]
 }

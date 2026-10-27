@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { MAX_SKEW_SECONDS, MIN_SKEW_SECONDS } from '@ecoma-io/identity-contracts';
+import { MAX_SKEW_SECONDS, MIN_SKEW_SECONDS } from '@ecoma-io/internal-auth-contracts';
 
 import { lazyConfigValidator, validateAccountConfig } from './config-validation';
 
@@ -87,7 +87,7 @@ describe('validateAccountConfig', () => {
   });
 
   it('rejects a skew window above the protocol cap', () => {
-    // Trần là **hằng giao thức** của `identity-contracts`, không phải ngưỡng cục bộ: nếu
+    // Trần là **hằng giao thức** của `internal-auth-contracts`, không phải ngưỡng cục bộ: nếu
     // `account` nhận `86400` trong khi `auth` từ chối nó, hai service chạy hai cửa sổ khác
     // nhau và bên rộng hơn quyết định cửa sổ replay thật. Test neo đúng biên qua biên:
     // `MAX_SKEW_SECONDS` phải **qua**, `MAX_SKEW_SECONDS + 1` phải **rơi**.
@@ -111,7 +111,7 @@ describe('validateAccountConfig', () => {
 
   it('accepts an absent skew window so the library default stays authoritative', () => {
     // Không đặt ⇒ `verifyRequest` dùng `DEFAULT_SKEW_SECONDS`. Chỉ có một nơi định
-    // nghĩa mặc định, trong `identity-contracts`, để không có hai nguồn sự thật cho
+    // nghĩa mặc định, trong `internal-auth-contracts`, để không có hai nguồn sự thật cho
     // một luật.
     expect(() => validateAccountConfig(validConfig({ internalAuthSkewSeconds: '' }))).not.toThrow();
     expect(() => validateAccountConfig(validConfig())).not.toThrow();

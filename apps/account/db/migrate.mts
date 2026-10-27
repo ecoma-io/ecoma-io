@@ -43,7 +43,7 @@ export const MIGRATION_LOCK_KEY = 4_827_163n;
 
 /**
  * Cửa sổ skew của internal envelope (giây) — giá trị giao thức, phải bằng
- * `DEFAULT_SKEW_SECONDS` trong `libs/identity-contracts/src/internal-auth.ts`.
+ * `DEFAULT_SKEW_SECONDS` trong `libs/internal-auth-contracts/src/internal-auth.ts`.
  *
  * ⚠️ Số được **lặp lại** ở đây chứ không import từ lib, và đó là điểm cần nói rõ:
  * `apps/account/tests/databases/` chạy bằng `vitest.config.mts` của app, mà
@@ -76,7 +76,7 @@ export const INTERNAL_SKEW_SECONDS = 300;
  * đúng thời điểm hết hạn.
  *
  * ⚠️ **Giá trị canonical là `NONCE_TTL_BUFFER_SECONDS` trong
- * `libs/identity-contracts/src/internal-auth.ts`.** Phần serving
+ * `libs/internal-auth-contracts/src/internal-auth.ts`.** Phần serving
  * (`server/middleware/internal-auth.ts`) import thẳng hằng đó, vì lib
  * `runtime:universal` dùng được ở cả hai runtime. File này **không** import được:
  * đây là script Node đọc `node:fs` để liệt kê file migration, và kéo `node:fs` vào

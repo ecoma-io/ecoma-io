@@ -15,8 +15,8 @@ import {
   findActiveGrant,
   insertAuditEvent,
 } from '../authorization-store';
-import { allowsIssuance } from '@ecoma-io/identity-auth-contracts';
-import type { AccountStatusResponseValue } from '@ecoma-io/identity-contracts';
+import type { AccountStatusResponseValue } from '@ecoma-io/account-contracts';
+import { allowsIssuance } from '@ecoma-io/identity-auth-domain';
 import type { IssuanceGate } from './adapter';
 
 /**

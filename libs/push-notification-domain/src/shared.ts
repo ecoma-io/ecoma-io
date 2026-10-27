@@ -13,7 +13,7 @@
  *   `@ecoma-io/push-notification-contracts`: hai lib nằm ở hai phía của ranh giới
  *   boundary (`type:contracts` và `type:domain`), neither import theo hướng nào —
  *   contracts là wire schema, domain là business invariant (theo mô hình mà
- *   `identity-domain` / `identity-contracts` đã thiết lập). Hai lớp cùng mirror
+ *   `identity-domain` / các contract lib của identity đã thiết lập). Hai lớp cùng mirror
  *   canonical docs.
  * - Thời gian trong domain luôn là epoch millis kiểu `number`, do caller truyền vào.
  *   Domain không đọc đồng hồ (không `Date.now()`), không parse RFC 3339 (việc

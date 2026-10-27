@@ -232,7 +232,7 @@ function toHex(bytes: Uint8Array): string {
 /**
  * So hex theo thời gian hằng — XOR từng byte, không short-circuit. Cùng hình dạng
  * với `timingSafeDigestEqual` của `apps/account/server/lib/otp.ts` và
- * `timingSafeEqualHex` của `libs/identity-contracts`: lặp lại một hàm 15 dòng rẻ
+ * `timingSafeEqualHex` của `libs/internal-auth-contracts`: lặp lại một hàm 15 dòng rẻ
  * hơn thêm phụ thuộc từ `type:domain` (lib này không được import project nào khác).
  */
 function timingSafeEqualHex(a: string, b: string): boolean {

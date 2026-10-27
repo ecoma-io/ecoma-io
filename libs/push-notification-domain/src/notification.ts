@@ -90,7 +90,7 @@ export function serializePayloadCanonically(payload: NotificationPayload): strin
  * sẽ cho qua mọi API browser-only (`document`, `window`, …) và code như vậy typecheck
  * xanh nhưng chết lúc chạy trong Worker. Khai báo đúng một method đang dùng là ràng
  * buộc chặt nhất. Không dùng shim `declare global` để tránh một khai báo global thứ hai
- * trong monorepo (identity-contracts đã có một cái); khai báo ở phạm vi module này chỉ
+ * trong monorepo (internal-auth-contracts đã có một cái); khai báo ở phạm vi module này chỉ
  * che trong file này và bị xoá khi compile.
  */
 interface ModuleTextEncoder {

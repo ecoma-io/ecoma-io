@@ -61,7 +61,7 @@
 
 import { createError, defineEventHandler, readValidatedBody, setResponseHeader } from 'h3';
 
-import type { SessionVerifiedRequest } from '@ecoma-io/identity-contracts';
+import type { SessionVerifiedRequest } from '@ecoma-io/auth-contracts';
 
 import { announceSessionVerified, authServiceBinding } from '../../lib/auth-client';
 import { requireAuthedSession } from '../../lib/bff-session';

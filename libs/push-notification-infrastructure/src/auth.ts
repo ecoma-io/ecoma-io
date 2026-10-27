@@ -10,7 +10,8 @@
  * 2. **Admin API** (`Backoffice`): bearer token đơn.
  * 3. **Application API**: bearer token đơn, và `app` **derive từ** principal đã xác thực.
  *
- * ⚠️ **Không import `identity-contracts`.** Boundary tag của `scope:notifications` chỉ cho
+ * ⚠️ **Không import contract lib của identity** (`account-contracts`, `auth-contracts`,
+ * hay package platform `internal-auth-contracts`). Boundary tag của `scope:notifications` chỉ cho
  * phép import `scope:identity` nếu rule cho phép; auth ở đây là so sánh secret thuần, không
  * cần JWT verify, và một dependency vào `identity` sẽ kéo cả một bề mặt vào một service không
  * dùng đến nó.

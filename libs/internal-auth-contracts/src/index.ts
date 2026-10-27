@@ -5,9 +5,9 @@
  * ⚠️ **Một bản cài đặt duy nhất.** File `./internal-auth` là nguồn sự thật của giao thức;
  * package này không có bản cài đặt thứ hai và không cho phép một bản nào xuất hiện.
  * Consumer phụ thuộc trực tiếp package này (`apps/account`, `apps/auth`,
- * `apps/transactional-mail`, `apps/transactional-mailer-job`); `identity-contracts` và
- * `identity-auth-contracts` re-export lại từ đây nên đường import cũ của account/auth
- * giữ nguyên hoạt động.
+ * `apps/transactional-mail`, `apps/transactional-mailer-job`); hai contract lib của
+ * identity (`@ecoma-io/account-contracts`, `@ecoma-io/auth-contracts`) cũng re-export lại
+ * từ đây cho caller lẫn callee của từng contract, qua đúng một nguồn.
  *
  * ⚠️ **Không identity-domain logic.** Giao thức không mang principal, user hay permission
  * — receiver tự suy consumer từ credential đã khớp trong registry của nó. Bất kỳ khái niệm

@@ -178,7 +178,7 @@ export async function otpDigest(hmacKey: string, purpose: string, code: string):
 
 /**
  * So sánh digest theo thời gian hằng trên hex — bản dùng cho OTP của
- * `timingSafeEqualHex` trong `libs/identity-contracts` (không import được: contract
+ * `timingSafeEqualHex` trong `libs/internal-auth-contracts` (không import được: contract
  * lib không export hàm nội bộ đó, và lặp lại một hàm 15 dòng với cùng JSDoc là rẻ
  * hơn một phụ thuộc mới vào `type:contracts` từ composition app).
  *

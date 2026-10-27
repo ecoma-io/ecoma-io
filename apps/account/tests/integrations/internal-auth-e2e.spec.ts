@@ -27,7 +27,7 @@
 import { createApp, createRouter, defineEventHandler, toWebHandler, type WebHandler } from 'h3';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createNonce, signRequest } from '@ecoma-io/identity-contracts';
+import { createNonce, signRequest } from '@ecoma-io/internal-auth-contracts';
 
 import internalAuthMiddleware from '../../server/middleware/internal-auth';
 import { writeLog } from '../../server/utils/logger';
@@ -198,7 +198,7 @@ describe('internal-auth middleware end-to-end', () => {
     const response = await handler(new Request(`http://localhost${PROBE_PATH}`, { headers }));
 
     expect(response.status).toBe(401);
-    // ⚠️ Assert này đòi `verifyRequest` của `@ecoma-io/identity-contracts` chỉ
+    // ⚠️ Assert này đòi `verifyRequest` của `@ecoma-io/internal-auth-contracts` chỉ
     // gọi `claimNonce` **sau** khi chữ ký đã đúng: trước khi reorder, một request
     // ký sai vẫn ghi mất nonce của chính nó, vô tình "đốt" nonce hợp lệ nếu
     // attacker đoán được. Lib đã reorder — assert này giữ cho lần tái phạm.

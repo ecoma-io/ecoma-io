@@ -40,7 +40,7 @@ import {
   resolveSkewSeconds,
   verifyRequest,
   type VerifyFailureReason,
-} from '@ecoma-io/identity-contracts';
+} from '@ecoma-io/internal-auth-contracts';
 
 import { accountHyperdrive } from '../utils/bindings';
 import { recordNonce, withRequestPool } from '../utils/db';

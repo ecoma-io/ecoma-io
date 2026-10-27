@@ -38,7 +38,7 @@ import challengeRoute from '../../server/api/auth/challenge.post';
 import verifyRoute from '../../server/api/auth/verify.post';
 
 import { ACCOUNT_DATABASE, type AccountDatabase, startAccountDatabase } from './harness.ts';
-import { INTERNAL_TIMESTAMP_HEADER, verifyRequest } from '@ecoma-io/identity-contracts';
+import { INTERNAL_TIMESTAMP_HEADER, verifyRequest } from '@ecoma-io/internal-auth-contracts';
 import { OTP_ACR, type AccountSessionRow } from '../../server/lib/session';
 import { installRuntimeConfigStub, type AccountTestRuntimeConfig } from './nuxt-globals.ts';
 

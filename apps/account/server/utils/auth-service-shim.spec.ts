@@ -7,13 +7,13 @@
  * **tính nguyên vẹn của transport**: envelope HMAC mà `auth-client` đã ký
  * trước khi vào binding phải tới nơi với đúng path, đúng header, đúng byte —
  * nên chữ ký được verify lại bằng `verifyRequest` **thật** của
- * `@ecoma-io/identity-contracts` trên những gì shim gửi ra, cùng cách
+ * `@ecoma-io/internal-auth-contracts` trên những gì shim gửi ra, cùng cách
  * `auth-client.spec.ts` verify chiều ngược lại.
  */
 
 import { describe, expect, it } from 'vitest';
 
-import { createNonce, signRequest, verifyRequest } from '@ecoma-io/identity-contracts';
+import { createNonce, signRequest, verifyRequest } from '@ecoma-io/internal-auth-contracts';
 
 import { httpAuthServiceBinding } from './auth-service-shim';
 

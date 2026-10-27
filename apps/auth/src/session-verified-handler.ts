@@ -29,13 +29,17 @@
  * chúng là một so khớp sai âm thầm.
  */
 
+import type { AccountStatusResponseValue } from '@ecoma-io/account-contracts';
 import {
-  type AccountStatusResponseValue,
   type SessionVerifiedResponse,
   validateSessionVerifiedRequest,
-} from '@ecoma-io/identity-contracts';
-import { allowsIssuance } from '@ecoma-io/identity-auth-contracts';
-import { bytesToBase64Url, hashHandle, needsConsent } from '@ecoma-io/identity-auth-domain';
+} from '@ecoma-io/auth-contracts';
+import {
+  allowsIssuance,
+  bytesToBase64Url,
+  hashHandle,
+  needsConsent,
+} from '@ecoma-io/identity-auth-domain';
 import {
   advanceTransactionWithHandle,
   consumeHandleXAndBindIdentity,

@@ -54,7 +54,7 @@ describe('entropy threshold', () => {
     // boundary cấm `backoffice-domain` phụ thuộc implementation của identity BC,
     // và thêm cạnh đó chỉ để lấy hai con số là một thay đổi kiến trúc, không phải
     // một test (cùng pattern mà `internal-nonces.spec.ts` cross-check hằng của
-    // `identity-contracts` bằng readFileSync). Producer đổi độ dài mà không sửa
+    // `internal-auth-contracts` bằng readFileSync). Producer đổi độ dài mà không sửa
     // bên đây → test này đỏ trước khi hai `sub` lệch format ở runtime.
     const producerSource = readFileSync(
       resolve(import.meta.dirname, '../../identity-domain/src/subject.ts'),

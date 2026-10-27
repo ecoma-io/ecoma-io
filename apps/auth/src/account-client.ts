@@ -1,16 +1,18 @@
 import {
-  NONCE_TTL_BUFFER_SECONDS,
-  type AccountStatus,
   type AccountStatusResponse,
+  type AccountStatusResponseValue,
+  isAccountStatusResponseValue,
+} from '@ecoma-io/account-contracts';
+import {
   type SessionVerifiedRequest,
   type SessionVerifiedResponse,
-  isAccountStatusResponseValue,
   type VerifyFailureReason,
+  NONCE_TTL_BUFFER_SECONDS,
   createNonce,
   resolveSkewSeconds,
   signRequest,
   verifyRequest,
-} from '@ecoma-io/identity-auth-contracts';
+} from '@ecoma-io/auth-contracts';
 import { createPostgresClient, recordNonce } from '@ecoma-io/identity-auth-infrastructure';
 
 /**
@@ -94,7 +96,7 @@ export const NONCE_CLAIM_CONNECT_TIMEOUT_SECONDS = 2;
  * đó*, và không có gì trong kiểu buộc điều ấy). Trả cả hai thì "ký byte nào, gửi byte ấy"
  * là một sự thật của cấu trúc, không phải một quy ước phải nhớ.
  *
- * ⚠️ Timestamp là **epoch giây** (theo `libs/identity-contracts`), không phải ms như
+ * ⚠️ Timestamp là **epoch giây** (theo `libs/auth-contracts`), không phải ms như
  * version cũ của file này — hai bên đã từng dùng hai đơn vị và back-channel không bao
  * giờ nào verify được nhau.
  */
@@ -352,7 +354,10 @@ export class AccountClient {
    * Không nhận thêm `account_id` ở phía provider: hai tên cho một hợp đồng là
    * hai đường để chúng lệch nhau lần nữa (#208).
    */
-  async checkStatus(params: { accountId: string; nowMs: number }): Promise<AccountStatus> {
+  async checkStatus(params: {
+    accountId: string;
+    nowMs: number;
+  }): Promise<AccountStatusResponseValue> {
     const body: AccountStatusResponse = await this.#get(
       `/internal/account/status?sub=${encodeURIComponent(params.accountId)}`,
       params.nowMs,

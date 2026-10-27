@@ -14,10 +14,7 @@
 
 import { Hono } from 'hono';
 
-import {
-  INTERNAL_BODY_LIMIT_BYTES,
-  type VerifyFailureReason,
-} from '@ecoma-io/identity-auth-contracts';
+import { INTERNAL_BODY_LIMIT_BYTES, type VerifyFailureReason } from '@ecoma-io/auth-contracts';
 import { createPostgresClient } from '@ecoma-io/identity-auth-infrastructure';
 import { createAuthorizationStore } from './authorization-store';
 import {

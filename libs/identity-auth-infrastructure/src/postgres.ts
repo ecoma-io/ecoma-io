@@ -1,7 +1,7 @@
 import postgresJs from 'postgres';
 
 import { AuthConfigurationError } from '@ecoma-io/identity-auth-domain';
-import { assertNonceExpirySeconds } from '@ecoma-io/identity-contracts';
+import { assertNonceExpirySeconds } from '@ecoma-io/internal-auth-contracts';
 
 /**
  * Brand danh nghĩa cho {@link PostgresClientLike}.

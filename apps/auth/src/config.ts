@@ -1,9 +1,5 @@
 import { AuthConfigurationError, SigningKeyProvider } from '@ecoma-io/identity-auth-domain';
-import {
-  assertKid,
-  DEFAULT_SKEW_SECONDS,
-  MAX_SKEW_SECONDS,
-} from '@ecoma-io/identity-auth-contracts';
+import { assertKid, DEFAULT_SKEW_SECONDS, MAX_SKEW_SECONDS } from '@ecoma-io/auth-contracts';
 
 /**
  * Nạp cấu hình từ Worker Secrets (D2, D4).
@@ -313,7 +309,7 @@ function parseHandleKeyVersion(value: string | undefined): number {
 /**
  * Trần của skew envelope internal (giây) — **hằng giao thức, không phải tuỳ chọn vận hành**.
  *
- * Trần sống ở `@ecoma-io/identity-auth-contracts` (`MAX_SKEW_SECONDS`) chứ không ở đây: nếu
+ * Trần sống ở `@ecoma-io/auth-contracts` (`MAX_SKEW_SECONDS`) chứ không ở đây: nếu
  * mỗi service tự chốt trần riêng thì `auth` có thể từ chối `86400` lúc boot trong khi
  * `account` vẫn nhận và mở cửa sổ replay 24 giờ — đúng kiểu trôi lệch mà PR hợp nhất này
  * dẹp. `parseInternalAuthSkewSeconds` kiểm lại cùng con số đó (chứ không chỉ đọc hằng) vì

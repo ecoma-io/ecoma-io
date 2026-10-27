@@ -15,7 +15,7 @@
  * khi `encodeURIComponent` đổi thứ tự, còn capture ở đây thì không.
  *
  * ⚠️ `verifyRequest` được dùng ở đây là **hàm canonical thật** của
- * `@ecoma-io/identity-contracts`, không phải một bản chép: chữ ký trong test được kiểm
+ * `@ecoma-io/auth-contracts`, không phải một bản chép: chữ ký trong test được kiểm
  * bằng đúng đoạn code mà `account` chạy trong middleware internal-auth.
  *
  * ⚠️ Test cuối file đọc source của provider. Đó là **drift detector**, không phải một
@@ -33,7 +33,7 @@ import {
   INTERNAL_SIGNATURE_HEADER,
   INTERNAL_TIMESTAMP_HEADER,
   verifyRequest,
-} from '@ecoma-io/identity-auth-contracts';
+} from '@ecoma-io/auth-contracts';
 
 import { AccountClient, type AccountServiceBinding } from './account-client';
 

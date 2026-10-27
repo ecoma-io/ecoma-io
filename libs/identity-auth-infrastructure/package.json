@@ -14,7 +14,7 @@
   "dependencies": {
     "@ecoma-io/identity-auth-application": "workspace:*",
     "@ecoma-io/identity-auth-domain": "workspace:*",
-    "@ecoma-io/identity-contracts": "workspace:*",
+    "@ecoma-io/internal-auth-contracts": "workspace:*",
     "postgres": "^3.4.9"
   },
   "devDependencies": {

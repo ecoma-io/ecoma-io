@@ -1,11 +1,9 @@
-import {
-  allowsIssuance,
-  type AccountStatus,
-  type ConsentDecision,
-} from '@ecoma-io/identity-auth-contracts';
+import type { AccountStatusResponseValue } from '@ecoma-io/account-contracts';
+import type { ConsentDecision } from '@ecoma-io/auth-contracts';
 import {
   HANDLE_DOMAINS,
   OAuthProtocolError,
+  allowsIssuance,
   assertBrowserConfirmed,
   assertRegisteredRedirectUri,
   assertUsableClient,
@@ -179,7 +177,7 @@ export interface AccountClient {
    * ⚠️ Control point fail-closed. Implementation PHẢI ném khi không gọi được
    * Account — không được trả một giá trị "không rõ" rồi để tầng này tự suy diễn.
    */
-  checkStatus(params: { accountId: string }): Promise<AccountStatus>;
+  checkStatus(params: { accountId: string }): Promise<AccountStatusResponseValue>;
 }
 
 /** Kết quả bắt đầu một giao dịch uỷ quyền. */
