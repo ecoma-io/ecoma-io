@@ -1,5 +1,5 @@
 /**
- * Unit test của `server/account/client.ts` — kết quả discriminated cho từng
+ * Unit test của `account/client.ts` — kết quả discriminated cho từng
  * nhánh hạ tầng, không ném (06 §9: spec colocated không boot DB/worker thật).
  *
  * ⚠️ Mock dừng ở đúng ranh giới mà module này nhìn thấy: Service Binding
@@ -39,21 +39,12 @@ function fakeBinding(response: Response | Error): AccountServiceBinding {
   };
 }
 
-/**
- * H3Event-rảnh event tối thiểu: `accountClientConfig` đọc `env` qua
- * `readWorkerEnv` (`event.context.cloudflare.env`), nên test truyền đúng hình
- * dạng đó thay vì env trần.
- */
-function eventWithEnv(env: unknown): unknown {
-  return { context: { cloudflare: { env } } };
-}
-
-/** Môi trường `env` Worker với binding + secret. */
+/** Môi trường `env` Worker với binding + secret — truyền thẳng vào config. */
 function envWith(binding: AccountServiceBinding | null, secret: string | null): unknown {
-  return eventWithEnv({
+  return {
     [ACCOUNT_SERVICE_BINDING_NAME]: binding,
     [AUTH_INTERNAL_SECRET_ENV]: secret,
-  });
+  };
 }
 
 /**
@@ -64,8 +55,8 @@ function envWith(binding: AccountServiceBinding | null, secret: string | null): 
 function configWith(
   binding: AccountServiceBinding,
   secret: string,
-): ReturnType<typeof accountClientConfig> {
-  const config = accountClientConfig(envWith(binding, secret) as never);
+): NonNullable<ReturnType<typeof accountClientConfig>> {
+  const config = accountClientConfig(envWith(binding, secret));
   if (config === null) {
     throw new Error('configWith: envWith produced a null config — test env shape drifted');
   }
@@ -75,7 +66,7 @@ function configWith(
 describe('accountClientConfig', () => {
   it('reads the binding from the worker env and keeps the secret out of the config', () => {
     const binding = fakeBinding(new Response('{}'));
-    const config = accountClientConfig(envWith(binding, SECRET) as never);
+    const config = accountClientConfig(envWith(binding, SECRET));
     expect(config).not.toBeNull();
     expect(config?.binding).toBe(binding);
     // Secret không là property của config — chỉ tiếp cận được qua `signHeaders`.
@@ -85,7 +76,7 @@ describe('accountClientConfig', () => {
 
   it('signs with the env secret through signHeaders', async () => {
     const binding = fakeBinding(new Response('{}'));
-    const config = accountClientConfig(envWith(binding, SECRET) as never);
+    const config = accountClientConfig(envWith(binding, SECRET));
     const headers = await config?.signHeaders('/internal/account/profiles?subs=sub_x');
     expect(headers?.['x-ecoma-internal-signature']).toMatch(/^v1=[0-9a-f]+$/u);
     expect(headers?.['x-ecoma-internal-timestamp']).toMatch(/^\d+$/u);
@@ -93,13 +84,16 @@ describe('accountClientConfig', () => {
   });
 
   it.each([
-    ['no env object at all', eventWithEnv(undefined)],
+    ['no env object at all', undefined],
     ['binding missing', envWith(null, SECRET)],
     ['secret missing', envWith(fakeBinding(new Response('{}')), null)],
     ['secret empty string', envWith(fakeBinding(new Response('{}')), '')],
-    ['binding without fetch', envWith({ notFetch: 1 }, SECRET)],
+    // `accountClientConfig` nhận `unknown` — env sai hình dạng ("binding" không
+    // có `fetch`) vẫn phải trả `null`, không ném; cast vì `envWith` định hình
+    // đúng cho các nhánh còn lại.
+    ['binding without fetch', envWith({ notFetch: 1 } as never, SECRET)],
   ])('returns null when %s', (_label, env) => {
-    expect(accountClientConfig(env as never)).toBeNull();
+    expect(accountClientConfig(env)).toBeNull();
   });
 });
 

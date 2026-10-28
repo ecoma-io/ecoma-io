@@ -743,6 +743,9 @@ importers:
 
   libs/backoffice-infrastructure:
     dependencies:
+      '@ecoma-io/account-contracts':
+        specifier: workspace:*
+        version: link:../account-contracts
       '@ecoma-io/backoffice-application':
         specifier: workspace:*
         version: link:../backoffice-application

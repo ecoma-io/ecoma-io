@@ -25,12 +25,12 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { BACKOFFICE_ACCOUNT_ID_ENTROPY_CHARS } from '@ecoma-io/backoffice-domain';
 
 import { accountProfilesResponse } from '@ecoma-io/account-contracts';
-
+import { resetDisplayNameCacheForTests } from '@ecoma-io/backoffice-application';
 import {
   ACCOUNT_SERVICE_BINDING_NAME,
   AUTH_INTERNAL_SECRET_ENV,
-} from '../../server/account/client';
-import { resetDisplayNameCacheForTests } from '../../server/account/display-name-cache';
+} from '@ecoma-io/backoffice-infrastructure';
+
 import staffRoute from '../../server/api/staff.get';
 import { PRINCIPAL_CONTEXT_KEY } from '../../server/principal';
 import { BACKOFFICE_DATABASE, type BackofficeDatabase, startBackofficeDatabase } from './harness';

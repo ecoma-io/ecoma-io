@@ -30,3 +30,12 @@ export {
   AuthorizationUnavailableError,
 } from './authorization';
 export type { PrincipalAuthorization } from './authorization';
+
+export {
+  DISPLAY_NAME_CACHE_TTL_SECONDS,
+  cachedDisplayName,
+  resetDisplayNameCacheForTests,
+  storeDisplayNames,
+} from './display-name-cache';
+
+export { needsDisplayName } from './onboarding';

@@ -17,6 +17,9 @@
   "exclude": ["out-tsc", "dist", "src/**/*.test.ts", "src/**/*.spec.ts"],
   "references": [
     {
+      "path": "../account-contracts/tsconfig.lib.json"
+    },
+    {
       "path": "../backoffice-application/tsconfig.lib.json"
     },
     {

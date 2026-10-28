@@ -28,10 +28,14 @@
 import { defineEventHandler } from 'h3';
 import type { PoolClient } from 'pg';
 
-import { listStaff } from '@ecoma-io/backoffice-infrastructure';
+import {
+  accountClientConfig,
+  fetchAccountProfiles,
+  listStaff,
+} from '@ecoma-io/backoffice-infrastructure';
+import { cachedDisplayName, storeDisplayNames } from '@ecoma-io/backoffice-application';
 
-import { accountClientConfig, fetchAccountProfiles } from '../account/client';
-import { cachedDisplayName, storeDisplayNames } from '../account/display-name-cache';
+import { readWorkerEnv } from '../db';
 import { writeLog } from '../log';
 import { withReadEnforcement } from '../read-route';
 
@@ -47,7 +51,7 @@ export default defineEventHandler((event) =>
       .filter((sub) => cachedDisplayName(sub, nowMs) === undefined);
 
     if (missingSubs.length > 0) {
-      const config = accountClientConfig(event);
+      const config = accountClientConfig(readWorkerEnv(event));
       const result = config === null ? null : await fetchAccountProfiles(config, missingSubs);
 
       if (result !== null && result.ok) {
