@@ -134,11 +134,16 @@ function reject(event: H3Event, status: 400 | 401 | 503, reason: string): never 
  * (đối chiếu `browser-handlers.ts` + `provider.ts`) — client không có quyền
  * chọn resource, một `resource` lạ bị `auth` loại bằng `InvalidTarget`.
  *
+ * ⚠️ Origin fetch là `fetchOrigin` (fallback issuer): trên local, issuer mang
+ * port động của Traefik đúng cho browser nhưng container Node không tới được
+ * origin đó — fetch đi qua origin nội bộ do cấu hình cấp (`config.ts`). URL
+ * path `/token` không đổi: provider serve cùng endpoint trên cả hai origin.
+ *
  * @returns Response đã parse, hoặc `null` cho mọi nhánh thất bại (network,
  *   non-2xx, body không parse được) — caller phân loại chung một lý do.
  */
 async function exchangeCode(
-  issuer: string,
+  fetchOrigin: string,
   clientId: string,
   redirectUri: string,
   code: string,
@@ -153,7 +158,7 @@ async function exchangeCode(
   });
   let response: Response;
   try {
-    response = await fetch(new URL('/token', issuer).toString(), {
+    response = await fetch(new URL('/token', fetchOrigin).toString(), {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
@@ -181,7 +186,9 @@ async function verifyIdToken(
   expectedSub: string,
 ): Promise<{ authTimeMs: number | null; acr: string | null } | null> {
   try {
-    const resolver = await jwksResolver(config.issuer);
+    // Cùng luật fetch-origin với access token: JWKS lấy từ origin nội bộ khi
+    // cấu hình (local), `iss` vẫn so exact với issuer trên cả hai đường.
+    const resolver = await jwksResolver(config.issuer, config.internalOrigin ?? undefined);
     const { payload } = await jwtVerify(idToken, resolver, {
       issuer: config.issuer,
       audience: config.clientId,
@@ -239,9 +246,10 @@ export default defineEventHandler(async (event: H3Event): Promise<void> => {
     reject(event, 401, 'flow_not_consumable');
   }
 
-  // 3. Đổi code → token.
+  // 3. Đổi code → token — fetch origin nội bộ khi cấu hình (local), issuer
+  // khi không (production): danh tính `iss` không đổi, chỉ nơi POST đổi.
   const tokens = await exchangeCode(
-    config.issuer,
+    config.internalOrigin ?? config.issuer,
     config.clientId,
     callbackRedirectUri(event),
     code,

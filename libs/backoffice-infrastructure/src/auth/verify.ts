@@ -51,6 +51,13 @@ export interface BackofficeAuthConfig {
   readonly audience: string;
   /** `client_id` của `backoffice` tại `auth` — verifier không dùng tới. */
   readonly clientId: string;
+  /**
+   * Origin fetch JWKS (tuỳ chọn, local-only) — `null`/`undefined` ⇒ fetch từ
+   * issuer như production. KHÔNG tham gia verify: `iss` vẫn so exact với
+   * `issuer`, origin chỉ đổi nơi JWKS được lấy. Khai báo tuỳ chọn để caller
+   * không có trường này (test, config cũ) vẫn typecheck.
+   */
+  readonly internalOrigin?: string | null;
 }
 
 /** Kết quả verify thành công — đúng tập claim mà verifier dùng. */
@@ -93,7 +100,10 @@ export async function verifyAccessToken(
 ): Promise<TokenVerifyResult> {
   let resolver;
   try {
-    resolver = await jwksResolver(config.issuer);
+    // Origin nội bộ (nếu có) chỉ đổi NƠI JWKS được fetch — issuer vẫn là khóa
+    // cache và chuẩn so `iss` exact. `null`/`undefined` là production: URL từ
+    // issuer, hành vi giữ nguyên.
+    resolver = await jwksResolver(config.issuer, config.internalOrigin ?? undefined);
   } catch {
     return { outcome: 'unavailable' };
   }
