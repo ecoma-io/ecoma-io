@@ -9,7 +9,7 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "forceConsistentCasingInFileNames": true,
-    "types": [],
+    "types": ["@cloudflare/workers-types"],
     "rootDir": "src",
     "lib": ["es2022"],
     "tsBuildInfoFile": "dist/tsconfig.lib.tsbuildinfo"
@@ -17,6 +17,12 @@
   "include": ["src/**/*.ts"],
   "exclude": ["out-tsc", "dist", "src/**/*.test.ts", "src/**/*.spec.ts"],
   "references": [
+    {
+      "path": "../internal-auth-contracts/tsconfig.lib.json"
+    },
+    {
+      "path": "../transactional-mail-contracts/tsconfig.lib.json"
+    },
     {
       "path": "../transactional-mailer-job-application/tsconfig.lib.json"
     }

@@ -12,6 +12,8 @@
     }
   },
   "dependencies": {
+    "@ecoma-io/internal-auth-contracts": "workspace:*",
+    "@ecoma-io/transactional-mail-contracts": "workspace:*",
     "@ecoma-io/transactional-mailer-job-application": "workspace:*"
   },
   "nx": {

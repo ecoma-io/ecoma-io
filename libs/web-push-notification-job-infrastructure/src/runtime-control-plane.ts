@@ -2,7 +2,7 @@
  * Client của private delivery runtime API của `push-notification` — hiện thực
  * {@link DeliveryRuntimePort} trên Service Binding.
  *
- * ⚠️ **Ranh giới trách nhiệm, giống `apps/transactional-mailer-job/src/internal-delivery-client.ts`:**
+ * ⚠️ **Ranh giới trách nhiệm, giống `libs/transactional-mailer-job-infrastructure/src/internal-delivery-client.ts`:**
  * client **không** retry, **không** phân loại lỗi mạng thành hành động, **không** chuyển một
  * `5xx` của control plane thành một kết quả gửi. Nó chỉ làm ba việc: dựng request có xác thực,
  * đọc status, và **validate body bằng chính validator canonical của `@ecoma-io/push-notification-contracts`**.
