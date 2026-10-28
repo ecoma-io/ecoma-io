@@ -231,4 +231,4 @@ async function main(): Promise<void> {
   }
 }
 
-export default main();
+export default main;

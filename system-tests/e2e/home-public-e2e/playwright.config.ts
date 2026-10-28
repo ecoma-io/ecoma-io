@@ -55,17 +55,27 @@ import { defineConfig, devices } from '@playwright/test';
  * ═══ Không `webServer` ═══
  *
  * Stack là external state, quản bởi `pnpm dx local-deploy` — Playwright không
- * tự dựng server. Gate "stack phải đang sống" thuộc `global-setup.ts`
- * (fail-closed: stack không có → suite ĐỎ, không bao giờ skip).
+ * tự dựng server. Gate "stack phải đang sống" thuộc `global-setup.ts`, được
+ * wire qua property `globalSetup` bên dưới (fail-closed: stack không có →
+ * suite ĐỎ, không bao giờ skip).
+ *
+ * ⚠️ global-setup LÀ BẮT BUỘC trong mọi cách gọi suite: nó chạy trước test
+ * đầu tiên ở CẢ chạy qua target `system-test` lẫn gọi `npx playwright test`
+ * trực tiếp. Đã từng quên wire property này — CI chạy `playwright test` thật
+ * (trước khi stub `e2e` ở package.json chặn) thì 16 test đỏ lẻo từng cái với
+ * DNS failure thay vì MỘT message gate rõ ràng. Wire property + gate fail
+ * trong global-setup là cặp phải luôn đi cùng nhau.
  *
  * ⚠️ Hệ quả phải biết khi debug graph Nx: `@nx/playwright/plugin` EVAL config
- * này lúc DỰNG PROJECT GRAPH (để suy target `e2e`), và config throw khi thiếu
- * `ROOT_DOMAIN`/`ROOT_HOST` — tức thiếu env là **toàn bộ graph Nx fail**, cả
- * với lệnh không liên quan gì đến suite này. Đây là fail-loud CÓ CHỦ ĐÍCH
- * (message nêu đúng remedy), nhưng ba suite kế tiếp phải biết: một config
- * system-test throw-loud làm mọi lệnh `nx` trong worktree chưa deploy đỏ.
- * Playwright chạy thật (qua target `system-test`) không bao giờ gặp throw này
- * — nó chạy SAU khi Nx đã load `.env` vào task env.
+ * này lúc DỰNG PROJECT GRAPH (để suy target `e2e`). Bài học ĐÃ TRẢ GIÁ trên CI:
+ * config throw-loud khi thiếu `ROOT_DOMAIN`/`ROOT_HOST` làm MỌI job CI đỏ
+ * (`build`, `verify`, `integration-test`) với cùng một graph error, kể cả lệnh
+ * `nx affected` không đụng gì đến suite — runner CI không có `.env` vì stack
+ * local không tồn tại ở đó. Vì thế config KHÔNG BAO GIỜ throw: thiếu origin là
+ * trả placeholder `.invalid` vô hại, và fail-closed thật nằm ở `global-setup.ts`
+ * (probe trước test đầu tiên, exit 1 với message nêu remedy `pnpm dx
+ * local-deploy`). Ba suite kế tiếp copy đúng mô hình này: config load đỡ vửa,
+ * gate chặn thật.
  */
 
 /**
@@ -123,9 +133,26 @@ function withOrigin(raw: string): string {
  * `nx.js` — trước khi mọi plugin chạy), nên qua `nx run`/`npx playwright test`
  * dưới target Nx thì biến có sẵn cả khi plugin `@nx/playwright` eval config
  * lúc dựng graph. Chạy `npx playwright test` TRỰC TIẾP (ngoài Nx) thì không —
- * fallback đọc file `.env` của repo root ở dưới phủ đúng trường hợp đó. Vẫn
- * throw khi cả hai nguồn rỗng: fail loud, không sinh suite âm thầm nhắm vào
- * origin không tồn tại.
+ * fallback đọc file `.env` của repo root ở dưới phủ đúng trường hợp đó.
+ *
+ * ⚠️ KHÔNG throw khi cả hai nguồn rỗng (đã thử — CI đỏ cả repo): plugin
+ * `@nx/playwright` eval config này LÚC DỰNG PROJECT GRAPH, mà runner CI không
+ * có `.env` (stack local không tồn tại ở đó) — throw ở đây làm MỌI job CI
+ * (`build`, `verify`/pr-check, `integration-test`) đỏ với cùng một graph error
+ * của lệnh `nx affected` không liên quan gì đến suite. Fail-closed nằm ở ĐÚNG
+ * lớp của nó: `global-setup.ts` probe origin trước test đầu tiên và exit 1 với
+ * message tiếng Anh nêu remedy — config load chỉ cần trả một placeholder vô
+ * hại (origin không thể route được) để graph dựng được và `--list` xem được
+ * test; suite thật KHÔNG BAO GIỜ chạy với placeholder vì gate đã chặn trước.
+ *
+ * ⚠️ Lớp chặn thứ hai cho PR CI: plugin cũng SUY target `e2e` từ config này,
+ * và job `e2e` của CI chạy `nx affected -t e2e` — nếu chỉ sửa config-no-throw
+ * thì suite chạy thật trên runner không có stack và 16 test đỏ lẻo (run
+ * 40740897352). Nên target `e2e` bị ĐÈ bằng stub `echo` khai tường minh trong
+ * `package.json` của suite (project config thắng target plugin suy ra); suite
+ * thực thi qua target `system-test`. Chi tiết đầy đủ nằm ở comment `e2e` của
+ * `package.json`. Ba suite kế tiếp copy CẢ HAI lớp: config no-throw + stub
+ * `e2e`, đừng bỏ một trong hai.
  */
 function resolveStackOrigin(): string {
   const raw = process.env.ROOT_DOMAIN ?? process.env.ROOT_HOST;
@@ -143,19 +170,21 @@ function resolveStackOrigin(): string {
       }
     }
   } catch {
-    // `.env` vắng mặt — rơi xuống throw bên dưới với message chỉ đúng remedy.
+    // `.env` vắng mặt — placeholder bên dưới thay thế; gate trong global-setup
+    // là đường fail-closed thật.
   }
-  throw new Error(
-    'ROOT_DOMAIN (or ROOT_HOST) is not set and no .env file defines it. ' +
-      'Run `pnpm dx local-deploy` first to deploy the local stack — it writes the ' +
-      'dynamic Traefik port into the repo-root .env. Refusing to run a system E2E ' +
-      'suite against a guessed or missing origin.',
-  );
+  // Placeholder vô hại: TLD `.invalid` (RFC 2606) không resolve — nếu gate
+  // global-setup bị bỏ qua thì mọi test đỏ với DNS failure thay vì xanh giả.
+  return 'placeholder.invalid:443';
 }
 
 const ROOT_ORIGIN = resolveStackOrigin();
 
 export default defineConfig({
+  // Gate fail-closed chạy trước test đầu tiên — module mặc định export chính
+  // hàm `main` (KHÔNG phải `main()`: export Promise là crash `globalSetup`
+  // với "invoked a non-function"). Xem khối "Không `webServer`" ở đầu file.
+  globalSetup: './global-setup.ts',
   testDir: './e2e',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
