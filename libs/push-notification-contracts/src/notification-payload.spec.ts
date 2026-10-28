@@ -478,19 +478,63 @@ describe('validated payload is detached from its source (A4)', () => {
   // Regress F5 (bất biến, không phải một độ sâu cụ thể): copy đệ quy và `JSON.stringify`
   // có ngân sách stack khác nhau, nên nếu thiếu gate serialize thì tồn tại một độ sâu mà
   // validator **nhận** nhưng chính serializer của consumer **đứt**. Bất biến phải là: không
-  // tồn tại độ sâu nào như vậy. Quét mịn để bắt đúng cửa sổ phân kỳ.
+  // tồn tại độ sâu nào như vậy.
+  //
+  // Quét hai pha thay vì quét mịn toàn dải (chi phí giảm ~10 lần, quan trọng trên CI nơi
+  // mỗi depth bị từ chối tốn trọn một lần duyệt đệ quy kết thúc bằng RangeError):
+  // - Pha thô: bước 1024 trên toàn dải 1024..40960 — bắt mọi phân kỳ "lớn".
+  // - Pha mịn: chỉ quét lại bước 64 tại các **cửa sổ biên** — cặp (depth cuối được nhận,
+  //   depth đầu bị từ chối) liền kề nhau ở kết quả pha thô.
+  //
+  // Vì sao pha mịn chỉ cần ở biên: trên cùng một engine + máy, ngân sách stack của copy
+  // và của stringify đều **giảm đơn điệu theo độ sâu** (mỗi cấp tốn thêm frame, không có
+  // hiệu ứng đảo chiều theo chiều sâu), nên tập depth mà validator nhận mà serializer đứt
+  // là một **khoảng liên tục** quanh biên nhận/từ-chối của validator. Nếu không có phân kỳ
+  // nào ở độ phân giải thô, cũng như trong từng cửa sổ biên quét mịn, thì không còn điểm
+  // lưới nào khác có thể phân kỳ — F5 vẫn được chứng minh trọn vẹn, chỉ bỏ bớt các điểm lưới
+  // dư thừa nằm sâu trong vùng từ-chối hoặc sâu trong vùng nhận.
   it('never accepts data that its own canonical serializer rejects', () => {
     let divergenceDepth = -1;
-    for (let depth = 1024; depth <= 40_960; depth += 256) {
+    const acceptedByDepth: boolean[] = [];
+
+    // Pha thô: bước 1024 trên toàn dải.
+    for (let depth = 1024; depth <= 40_960; depth += 1024) {
       const data = nest(depth);
-      if (!validateNotificationPayload({ title: 'T', body: 'B', data }).ok) {
-        continue;
+      const accepted = validateNotificationPayload({ title: 'T', body: 'B', data }).ok;
+      acceptedByDepth.push(accepted);
+      if (accepted) {
+        try {
+          JSON.stringify(data);
+        } catch {
+          divergenceDepth = depth;
+          break;
+        }
       }
-      try {
-        JSON.stringify(data);
-      } catch {
-        divergenceDepth = depth;
-        break;
+    }
+
+    // Pha mịn: quét bước 64 từng cửa sổ biên (được nhận liền kề bị từ chối) của pha thô.
+    if (divergenceDepth === -1) {
+      for (let i = 0; i + 1 < acceptedByDepth.length; i += 1) {
+        if (acceptedByDepth[i] === acceptedByDepth[i + 1]) {
+          continue;
+        }
+        const lo = Math.min(1024 + i * 1024, 1024 + (i + 1) * 1024);
+        const hi = Math.max(1024 + i * 1024, 1024 + (i + 1) * 1024);
+        for (let depth = lo + 64; depth < hi; depth += 64) {
+          const data = nest(depth);
+          if (!validateNotificationPayload({ title: 'T', body: 'B', data }).ok) {
+            continue;
+          }
+          try {
+            JSON.stringify(data);
+          } catch {
+            divergenceDepth = depth;
+            break;
+          }
+        }
+        if (divergenceDepth !== -1) {
+          break;
+        }
       }
     }
 
