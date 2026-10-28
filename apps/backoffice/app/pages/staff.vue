@@ -54,7 +54,9 @@ const filtered = computed(() => {
       return false;
     }
     if (term !== '') {
-      const byName = member.displayName.toLowerCase().includes(term);
+      // `displayName` có thể là `null` (người dùng chưa đặt tên — issue #325):
+      // search theo tên khi đó chỉ còn đường Account ID, không phải lỗi.
+      const byName = member.displayName !== null && member.displayName.toLowerCase().includes(term);
       const byId = member.accountId.toLowerCase().includes(term);
       if (!byName && !byId) {
         return false;
@@ -158,7 +160,22 @@ const statusLabel = (status: StaffStatus): string => {
             </thead>
             <tbody>
               <tr v-for="member in filtered" :key="member.accountId" class="border-t border-border">
-                <td class="p-3 font-medium">{{ member.displayName }}</td>
+                <td class="p-3 font-medium">
+                  <!--
+                    `null` = người dùng chưa đặt tên ở `account` (issue #325):
+                    hiện nhãn riêng thay vì ô trống, để "không có dữ liệu" không
+                    lẫn vào "dữ liệu rỗng".
+                  -->
+                  <template v-if="member.displayName !== null">{{ member.displayName }}</template>
+                  <template v-else>
+                    <span
+                      class="font-normal italic text-muted-foreground"
+                      data-testid="staff-no-display-name"
+                    >
+                      {{ i18n.t('onboarding.noDisplayName') }}
+                    </span>
+                  </template>
+                </td>
                 <td class="p-3 font-mono text-xs text-muted-foreground">{{ member.accountId }}</td>
                 <td class="p-3">{{ statusLabel(member.status) }}</td>
                 <td class="p-3 text-muted-foreground">

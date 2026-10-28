@@ -125,6 +125,46 @@ export async function selectAccountStatus(pool: Pool, sub: string): Promise<stri
 }
 
 /**
+ * Đọc `displayName` theo batch cho một danh sách `sub` từ `account.user_profiles`.
+ *
+ * Contract `GET /internal/account/profiles` (issue #325): `displayName` là dữ liệu
+ * hồ sơ cho **tên hiển thị** — mục đích trình bày trong backoffice, không phải dữ
+ * liệu định danh. Vì vậy query này chỉ chọn **hai** cột `user_sub` + `display_name`
+ * (allowlist, không `SELECT *`), cùng lý do với {@link selectAccountStatus}: một cột
+ * `email`/`avatar_url` thêm vào sau sẽ không tự đi vào response.
+ *
+ * ## Ý nghĩa của NULL
+ *
+ * `NULL` = sub đó **chưa đặt tên** (giữ nguyên nghĩa cột trong `0008_data_domain_v1.sql`,
+ * CHECK `length > 0` nên không tồn tại chuỗi rỗng). `sub` không có row profile cũng
+ * dùng chung nghĩa đó — caller không phân biệt "chưa có row" với "có row nhưng
+ * display_name NULL", và **không** trả `sub` nào ngoài danh sách được hỏi.
+ *
+ * ⚠️ Truy vấn bằng `= ANY($1)` với mảng tham số hoá — danh sách `sub` đến từ query
+ * string của caller, không được nối vào SQL.
+ *
+ * @returns Map `sub -> displayName` cho **tối đa** các sub được hỏi; sub không có
+ *   dữ liệu vắng mặt khỏi map.
+ */
+export async function selectDisplayNames(
+  pool: Pool,
+  subs: readonly string[],
+): Promise<Map<string, string | null>> {
+  const result = await withClient(pool, (client) =>
+    client.query<{ user_sub: string; display_name: string | null }>(
+      'SELECT user_sub, display_name FROM account.user_profiles WHERE user_sub = ANY($1)',
+      [[...subs]],
+    ),
+  );
+
+  const names = new Map<string, string | null>();
+  for (const row of result.rows) {
+    names.set(row.user_sub, row.display_name);
+  }
+  return names;
+}
+
+/**
  * Ghi một nonce đã xác thực vào kho bền; trả `true` khi nonce **đã** tồn tại.
  *
  * ⚠️ Đây là hình thức `claimNonce` mà `verifyRequest` cần: **kiểm tra và ghi trong

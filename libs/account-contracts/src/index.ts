@@ -65,3 +65,16 @@ export {
   type AccountStatusResponseValue,
   type AccountStatusValidation,
 } from './account-status-contract';
+export {
+  ACCOUNT_PROFILES_DISPLAY_NAME_MAX_LENGTH,
+  ACCOUNT_PROFILES_MAX_SUBS,
+  accountProfilesResponse,
+  dedupeProfileSubs,
+  FORBIDDEN_ACCOUNT_PROFILE_ENTRY_FIELDS,
+  isAccountProfileEntry,
+  validateAccountProfilesResponse,
+  type AccountProfileEntry,
+  type AccountProfilesRejectionReason,
+  type AccountProfilesResponse,
+  type AccountProfilesValidation,
+} from './account-profiles-contract';

@@ -163,12 +163,14 @@ describe('read routes /api/staff, /api/roles, /api/permissions', () => {
       });
 
       expect(status).toBe(200);
-      // Thứ tự là `ORDER BY sub` — không phải thứ tự insert.
+      // Thứ tự là `ORDER BY sub` — không phải thứ tự insert. `displayName` do
+      // issue #325 thêm: env ở đây không có binding `ACCOUNT_SERVICE`, nên
+      // merge degrade về `null` cho mọi hàng — controlled degrade của sổ staff.
       expect(body).toEqual({
         staff: [
-          { sub: READER, status: 'active' },
-          { sub: NO_PERMISSION_STAFF, status: 'active' },
-          { sub: SUSPENDED_STAFF, status: 'suspended' },
+          { sub: READER, status: 'active', displayName: null },
+          { sub: NO_PERMISSION_STAFF, status: 'active', displayName: null },
+          { sub: SUSPENDED_STAFF, status: 'suspended', displayName: null },
         ],
       });
     });

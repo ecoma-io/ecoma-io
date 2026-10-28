@@ -487,6 +487,9 @@ importers:
 
   apps/backoffice:
     dependencies:
+      '@ecoma-io/account-contracts':
+        specifier: workspace:*
+        version: link:../../libs/account-contracts
       '@ecoma-io/backoffice-application':
         specifier: workspace:*
         version: link:../../libs/backoffice-application

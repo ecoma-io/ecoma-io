@@ -48,6 +48,13 @@ export default defineNuxtConfig({
     backofficeAuthClientId: '',
     public: {
       backofficeDataMode: BACKOFFICE_DATA_MODE_DISABLED,
+      // URL trang profile của `account` (origin + path, vd
+      // `https://account.example.com/`) — màn onboarding (#325) dùng nó làm
+      // link "đặt tên hiển thị". KHÔNG default: rỗng = deployment chưa cấu
+      // hình ⇒ ẩn link thay vì render link chết. Workers cấp qua `vars`
+      // (`NITRO_PUBLIC_BACKOFFICE_ACCOUNT_PROFILE_URL`); Node container local
+      // qua biến cùng tên trong `.env`.
+      backofficeAccountProfileUrl: '',
     },
   },
   typescript: {

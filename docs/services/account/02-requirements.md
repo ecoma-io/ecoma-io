@@ -100,6 +100,19 @@ Default, chốt tại [`01-architecture.md`](./01-architecture.md) §3.3:
 | FR-011e | Đọc trạng thái **trực tiếp từ `db-account`** ở mỗi lần gọi: **không** projection cache, **không** stale read; response gắn `Cache-Control: no-store` | Test: sau khi suspend, lần gọi kế tiếp phản ánh trạng thái mới; assert header `no-store`                    |
 | FR-011f | Endpoint **không** xác nhận "phiên trình `sub` này có thật" — nó chỉ trả trạng thái của một account. Suy ra phiên từ đây là đường xác thực giả       | Test: `auth` dùng kết quả endpoint này làm bằng chứng phiên → bị review chặn (FR-006h)                      |
 
+### 1.4b `GET /internal/account/profiles` — provider cho `backoffice`
+
+Batch displayName cho backoffice (xem [01-architecture.md](01-architecture.md) §5.2). Đây là contract **riêng**, không mở rộng `GET /internal/account/status` để giữ nguyên bất biến single-field của FR-011b.
+
+| ID      | Yêu cầu                                                                                                                               | Kiểm chứng                                                                             |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| FR-011g | Chỉ trả đúng các `sub` được hỏi; sub không nằm trong `subs` không bao giờ xuất hiện trong response, kể cả khi profile tồn tại         | Test: seed thêm user ngoài batch → response không chứa sub đó                          |
+| FR-011h | Trần **100 sub/request** (tính sau dedupe); quá trần hoặc `subs` malformed → 400                                                      | Test: 101 sub → 400; sub không khớp định dạng subject → 400                            |
+| FR-011i | `displayName: null` nghĩa là "chưa đặt tên" — hàng `user_profiles` thiếu và hàng có `display_name` NULL không phân biệt được với nhau | Test: seed một user không có hàng profile và một user có hàng NULL → cả hai trả `null` |
+| FR-011j | Mỗi entry chỉ gồm `sub` + `displayName`; consumer (backoffice) validate response bằng contract trước khi dùng                         | Test: response chứa trường lạ (ví dụ `email`) → validator từ chối                      |
+| FR-011k | Read-only, yêu cầu envelope HMAC hợp lệ, **không** nhận cookie trình duyệt; response gắn `Cache-Control: no-store`                    | Test: gọi không signature bị 401; assert header `no-store`                             |
+| FR-011l | Ghi audit log mỗi lần đọc theo tinh thần T-14d; **không** log giá trị `displayName`                                                   | Test: log events chỉ chứa metadata (sub count, duration), không chứa tên               |
+
 ### 1.5 Vòng đời account
 
 | ID      | Yêu cầu                                                                                                                                 | Kiểm chứng                                                         |

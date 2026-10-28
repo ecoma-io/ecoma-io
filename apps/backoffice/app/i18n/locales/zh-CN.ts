@@ -167,6 +167,18 @@ const zhCN: BackofficeMessages = {
     },
   },
 
+  onboarding: {
+    title: '完善个人资料',
+    body: '您的账号还没有显示名称。请设置显示名称，以便同事在员工目录中找到您。',
+    setDisplayName: '前往 Account 设置显示名称',
+    continue: '暂不设置，继续使用',
+    twoFactor: {
+      title: '双因素认证',
+      comingSoon: '即将推出——目前尚无法注册双因素认证。',
+    },
+    noDisplayName: '未设置显示名称',
+  },
+
   nav: {
     platform: '平台',
     overview: '概览',

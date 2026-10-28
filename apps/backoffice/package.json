@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "dependencies": {
+    "@ecoma-io/account-contracts": "workspace:*",
     "@ecoma-io/backoffice-application": "workspace:*",
     "@ecoma-io/backoffice-domain": "workspace:*",
     "@ecoma-io/backoffice-infrastructure": "workspace:*",
