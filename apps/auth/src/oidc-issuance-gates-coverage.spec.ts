@@ -29,12 +29,16 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createNonce, signRequest } from '@ecoma-io/auth-contracts';
 import { allowsIssuance } from '@ecoma-io/auth-domain';
-import { createPostgresClient, type PostgresClientLike } from '@ecoma-io/auth-infrastructure';
+import {
+  checkRevocationAtIssuance,
+  createPostgresClient,
+  insertAuditEvent,
+  type PostgresClientLike,
+} from '@ecoma-io/auth-infrastructure';
 
 import { PROVIDER_ROUTES } from './oidc/provider';
 import type { IssuanceGate } from './oidc/adapter';
 import { AccountClient } from './account-client';
-import { checkRevocationAtIssuance, insertAuditEvent } from './authorization-store';
 import { loadAuthConfig, type AuthEnv } from './config';
 import { startAuthDatabase, type AuthDatabase } from '../tests/integrations/harness.ts';
 let db: AuthDatabase;

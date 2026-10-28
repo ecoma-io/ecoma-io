@@ -2,8 +2,6 @@ import postgres from 'postgres';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { PostgresClientLike } from '@ecoma-io/auth-infrastructure';
-
 import {
   checkRevocationAtIssuance,
   findActiveGrant,
@@ -13,13 +11,16 @@ import {
   insertConsentDecision,
   insertGrant,
   insertGrantScopes,
-} from '../../src/authorization-store';
+  type PostgresClientLike,
+} from '@ecoma-io/auth-infrastructure';
 import { startAuthDatabase, type AuthDatabase } from './harness';
 
 /**
- * Hợp đồng đọc/ghi của `authorization-store.ts` trên PostgreSQL THẬT.
+ * Hợp đồng đọc/ghi của các store `db-auth` trong `@ecoma-io/auth-infrastructure`
+ * (`oauth-client-store`, `oauth-grant-store`, `token-revocation-store`,
+ * `authorization-audit-store`) trên PostgreSQL THẬT.
  *
- * ⚠️ Vì sao suite này tồn tại: các hàm của `authorization-store.ts` chỉ có
+ * ⚠️ Vì sao suite này tồn tại: các hàm của các store đó chỉ có
  * coverage GIÁN TIẾP qua handler/gate (internal-handlers, mid-flow,
  * gate-wiring) — mỗi nhánh chưa đi qua được ở đường đó thì chưa được test.
  * Đúng nguyên tắc §7 của 06-testing.md: gần trạng thái authoritative

@@ -27,9 +27,11 @@ import type { Provider } from 'oidc-provider';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { base64UrlToBytes, deriveHandle, hashHandle, HANDLE_DOMAINS } from '@ecoma-io/auth-domain';
-import type { PostgresClientLike } from '@ecoma-io/auth-infrastructure';
-
-import { createAuthorizationStore, checkRevocationAtIssuance } from '../../src/authorization-store';
+import {
+  checkRevocationAtIssuance,
+  createAuthorizationStore,
+  type PostgresClientLike,
+} from '@ecoma-io/auth-infrastructure';
 import { runConsentContext, runConsentDecide } from '../../src/consent-handler';
 import { runSessionVerified } from '../../src/session-verified-handler';
 import { createIssuanceGateFromDeps } from '../../src/oidc/issuance-gate';

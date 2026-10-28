@@ -46,7 +46,14 @@ import { HANDLE_DOMAINS, assessRiskLevel, deriveHandle, hashHandle } from '@ecom
 import {
   advanceTransactionWithHandle,
   consumeHandleY,
+  findActiveGrant,
+  findCommittedConsentDecision,
+  findRegisteredClient,
   findTransactionByHandleY,
+  insertAuditEvent,
+  insertConsentDecision,
+  insertGrant,
+  insertGrantScopes,
   type PostgresClientLike,
 } from '@ecoma-io/auth-infrastructure';
 import type { Provider } from 'oidc-provider';
@@ -63,15 +70,6 @@ import {
   GRANT_TTL_SECONDS,
   payloadHashOf,
 } from './session-verified-handler';
-import {
-  findActiveGrant,
-  findCommittedConsentDecision,
-  findRegisteredClient,
-  insertAuditEvent,
-  insertConsentDecision,
-  insertGrant,
-  insertGrantScopes,
-} from './authorization-store';
 
 /** Kết quả dùng chung — status + body JSON. */
 export type ConsentResult =
