@@ -23,7 +23,7 @@
  * cả khi delivery `queued` và không còn intent — tức thứ tự kiểm tra, không chỉ tập hành động.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   RECONCILE_ACTION,

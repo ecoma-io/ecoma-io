@@ -19,7 +19,7 @@
  * ⚠️ **Mỗi test có database riêng** nên chạy song song không cần reset chung.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   D1DeliveryRepository,
