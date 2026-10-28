@@ -22,6 +22,7 @@ import {
   versionSchema,
 } from '@ecoma-io/pact-broker-api-domain';
 import type { MatrixRowData } from '@ecoma-io/pact-broker-api-domain';
+import { evaluateCanIDeploy } from '@ecoma-io/pact-broker-api-application';
 import { validateParam, validateOptionalQuery } from '../middleware/validate';
 import { PgMatrixRepo, PgVersionRepo } from '@ecoma-io/pact-broker-api-infrastructure';
 
@@ -152,27 +153,21 @@ export function matrixRoutes(readAuth: () => MiddlewareHandler<AppEnv>): Hono<Ap
 
     const reasonSelector = selectors.find((s) => s.resolvedVersion !== undefined) ?? selectors[0];
 
-    const noVerifications =
-      hasVersion && allRows.length === 0
-        ? anyExists
-          ? `Version ${reasonSelector.resolvedVersion} of ${reasonSelector.pacticipant} exists but has no ` +
-            `pacts published — no verification can exist, deployability is unknown`
-          : `There is no version ${reasonSelector.resolvedVersion} of ${reasonSelector.pacticipant} ` +
-            `(or no pact published for it) — cannot determine deployability`
-        : null;
-
+    // Cùng verdict fail-closed của use case can-i-deploy, áp cho /matrix khi
+    // selector mang version: matrix rỗng lúc đó là fail-OPEN nếu để qua
+    // summarizeMatrix([]) — ép null kèm reason tường minh (DOM-02). Khi
+    // selector KHÔNG có version, giữ semantics upstream: matrix rỗng đi qua
+    // summarizeMatrix([]) → deployable true ("no missing dependencies").
     const { summary, notices } =
-      noVerifications !== null
-        ? {
-            summary: {
-              deployable: null,
-              reason: noVerifications,
-              success: 0,
-              failed: 0,
-              unknown: 1,
-            },
-            notices: [{ type: 'error' as const, text: noVerifications }],
-          }
+      hasVersion && allRows.length === 0
+        ? evaluateCanIDeploy({
+            rows: allRows,
+            pacticipant: reasonSelector.pacticipant,
+            // `hasVersion` đúng đảm bảo reasonSelector.resolvedVersion khác
+            // undefined; fallback chỉ để types chặt.
+            version: reasonSelector.resolvedVersion ?? reasonSelector.pacticipant,
+            consumerVersionExists: anyExists,
+          })
         : summarizeMatrix(toSummaryRows(allRows));
 
     const hal = new HalBuilder(getBaseUrl(c.req.raw));
@@ -223,34 +218,13 @@ export function matrixRoutes(readAuth: () => MiddlewareHandler<AppEnv>): Hono<Ap
       targetKind,
     );
 
-    // Fail-closed bổ sung so với upstream: upstream để matrix rỗng đi qua
-    // summarizeMatrix([]) → deployable true ("no missing dependencies"). Hai
-    // tình huống rỗng đều fail-OPEN theo §6 (unknown không bao giờ là safe):
-    //  * selector không khớp version/pacticipant nào — version gõ sai thấy xanh;
-    //  * version tồn tại nhưng chưa publish pact nào — version chưa từng được
-    //    contract-test vẫn thấy xanh.
-    // Cả hai ép deployable null kèm reason nói rõ tình huống.
-    const noVerifications =
-      rows.length === 0
-        ? consumerVersionExists
-          ? `Version ${versionResult.value} of ${pacticipantResult.value} exists but has no ` +
-            `pacts published — no verification can exist, deployability is unknown`
-          : `There is no version ${versionResult.value} of ${pacticipantResult.value} ` +
-            `(or no pact published for it) — cannot determine deployability`
-        : null;
-    const { summary, notices } =
-      noVerifications !== null
-        ? {
-            summary: {
-              deployable: null,
-              reason: noVerifications,
-              success: 0,
-              failed: 0,
-              unknown: 1,
-            },
-            notices: [{ type: 'error' as const, text: noVerifications }],
-          }
-        : summarizeMatrix(toSummaryRows(rows));
+    // Verdict fail-closed (DOM-02) thuộc use case — route chỉ map ra HAL.
+    const { summary, notices } = evaluateCanIDeploy({
+      rows,
+      pacticipant: pacticipantResult.value,
+      version: versionResult.value,
+      consumerVersionExists,
+    });
 
     const hal = new HalBuilder(getBaseUrl(c.req.raw));
     return c.json({

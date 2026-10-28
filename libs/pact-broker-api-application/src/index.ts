@@ -12,4 +12,10 @@
 export { authorizeToken, hashToken, scopeSatisfied } from './token-auth';
 export type { TokenDecision, TokenLookupResult, TokenRepo } from './token-auth';
 
+export { evaluateCanIDeploy } from './can-i-deploy';
+export type { CanIDeployEvaluation, CanIDeployInput } from './can-i-deploy';
+
+export { validatePactStructure, MAX_PACT_INTERACTIONS } from './publish-pact';
+export type { PactStructuralDecision } from './publish-pact';
+
 export { randomToken, sha256Hex } from './hashing';
