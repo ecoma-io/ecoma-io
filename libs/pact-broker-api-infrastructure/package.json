@@ -1,0 +1,29 @@
+{
+  "name": "@ecoma-io/pact-broker-api-infrastructure",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": {
+      "@ecoma-io/source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@ecoma-io/pact-broker-api-application": "workspace:*",
+    "@ecoma-io/pact-broker-api-domain": "workspace:*",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.6"
+  },
+  "nx": {
+    "tags": [
+      "type:infrastructure",
+      "scope:pact",
+      "runtime:edge"
+    ]
+  }
+}

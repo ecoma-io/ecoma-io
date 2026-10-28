@@ -6,12 +6,11 @@
  * uuid; HAL self link ghim uuid thật thay vì số thứ tự.
  */
 import { Hono, type MiddlewareHandler } from 'hono';
-import type { AppEnv } from '../domain/types';
+import type { AppEnv } from '../types';
 import { currentTenantId } from '../middleware/tenant-context';
-import { HalBuilder, getBaseUrl } from '../domain/hal';
-import { nameSchema, shaSchema } from '../domain/validation';
+import { HalBuilder, getBaseUrl, nameSchema, shaSchema } from '@ecoma-io/pact-broker-api-domain';
 import { readJsonBodyWithLimit, validateParam } from '../middleware/validate';
-import { PgVerificationRepo } from '../repo/verification-repo';
+import { PgVerificationRepo } from '@ecoma-io/pact-broker-api-infrastructure';
 
 /** UUID format — id của verification ở schema PG. */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;

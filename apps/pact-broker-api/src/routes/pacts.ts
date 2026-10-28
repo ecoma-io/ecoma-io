@@ -7,18 +7,20 @@
  * 5 MiB cho mọi route; publish pact bị siết riêng như upstream.
  */
 import { Hono, type MiddlewareHandler } from 'hono';
-import type { AppEnv } from '../domain/types';
+import type { AppEnv } from '../types';
 import { currentTenantId } from '../middleware/tenant-context';
-import { HalBuilder, getBaseUrl } from '../domain/hal';
 import {
-  nameSchema,
-  versionSchema,
-  shaSchema,
+  HalBuilder,
   branchSchema,
+  getBaseUrl,
+  nameSchema,
+  shaSchema,
   tagSchema,
-} from '../domain/validation';
+  versionSchema,
+} from '@ecoma-io/pact-broker-api-domain';
 import { readJsonBodyWithLimit, validateParam } from '../middleware/validate';
-import { PgPactRepo, type PactContent, type PactFull } from '../repo/pact-repo';
+import { PgPactRepo, PgVersionRepo } from '@ecoma-io/pact-broker-api-infrastructure';
+import type { PactContent, PactFull } from '@ecoma-io/pact-broker-api-infrastructure';
 
 // 1 MB per-route cap trên PUT /pacts/... — cao hơn nhiều so với pact thực tế
 // (~100 KB) mà vẫn là trần có ý nghĩa chống lạm dụng token lộ.
@@ -306,9 +308,7 @@ export function pactRoutes(
     const repo = new PgPactRepo(c.get('pool'));
     const tenantId = currentTenantId(c);
     const allPacts: PactFull[] = [];
-    const providers = await new (await import('../repo/version-repo')).PgVersionRepo(
-      c.get('pool'),
-    ).getAllPacticipants(tenantId);
+    const providers = await new PgVersionRepo(c.get('pool')).getAllPacticipants(tenantId);
     for (const p of providers) {
       const pacts = await repo.getLatestPactsForProvider(tenantId, p.name);
       allPacts.push(...pacts);

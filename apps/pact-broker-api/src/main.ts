@@ -19,16 +19,19 @@
 import { Hono } from 'hono';
 import type { ExecutionContext, MiddlewareHandler } from 'hono';
 import type { Pool } from 'pg';
-import type { AppEnv } from './domain/types';
+import type { AppEnv } from './types';
 import {
   loadPactBrokerConfig,
   PactBrokerConfigurationError,
   type PactBrokerConfig,
 } from './config';
-import { createPool, isConnectionTerminatedError } from './db/client';
-import { PgTokenRepo } from './repo/token-repo';
+import {
+  PgTokenRepo,
+  createPool,
+  isConnectionTerminatedError,
+} from '@ecoma-io/pact-broker-api-infrastructure';
 import { requireMachineToken } from './auth/token-auth';
-import type { TokenRepo } from './auth/token-auth';
+import type { TokenRepo } from '@ecoma-io/pact-broker-api-application';
 import { indexRoutes } from './routes';
 import { pacticipantRoutes } from './routes/pacticipants';
 import { pactRoutes } from './routes/pacts';

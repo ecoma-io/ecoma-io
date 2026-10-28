@@ -6,13 +6,19 @@
  * `--branch` thành no-op im lặng. POST luôn 200 (không 201).
  */
 import { Hono, type MiddlewareHandler } from 'hono';
-import type { AppEnv } from '../domain/types';
+import type { AppEnv } from '../types';
 import { currentTenantId } from '../middleware/tenant-context';
-import { HalBuilder, getBaseUrl } from '../domain/hal';
-import { nameSchema, versionSchema, branchSchema, tagSchema } from '../domain/validation';
+import {
+  HalBuilder,
+  branchSchema,
+  getBaseUrl,
+  nameSchema,
+  tagSchema,
+  versionSchema,
+} from '@ecoma-io/pact-broker-api-domain';
 import { readJsonBodyWithLimit, validateParam } from '../middleware/validate';
-import { PgPactRepo, type PactContent } from '../repo/pact-repo';
-import { PgVersionRepo } from '../repo/version-repo';
+import { PgPactRepo, PgVersionRepo } from '@ecoma-io/pact-broker-api-infrastructure';
+import type { PactContent } from '@ecoma-io/pact-broker-api-infrastructure';
 
 // Khớp per-pact cap của PUT /pacts/..., nhưng body contracts/publish hợp lệ
 // mang nhiều pact cho một consumer nên trần cao hơn.

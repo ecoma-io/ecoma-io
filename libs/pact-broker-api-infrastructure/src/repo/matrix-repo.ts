@@ -19,7 +19,7 @@
  * Mọi query ghim `tenant_id` = tenant đã xác thực.
  */
 import type { Pool } from 'pg';
-import type { MatrixRowData, MatrixTarget } from '../domain/types';
+import type { MatrixRowData, MatrixTarget } from '@ecoma-io/pact-broker-api-domain';
 
 export interface MatrixQueryResult {
   rows: MatrixRowData[];

@@ -5,7 +5,7 @@
  * kiểm tra hai bước (token hợp lệ lúc tra, tenant bị suspend giữa chừng).
  */
 import type { Pool } from 'pg';
-import type { TokenLookupResult, TokenRepo } from '../auth/token-auth';
+import type { TokenLookupResult, TokenRepo } from '@ecoma-io/pact-broker-api-application';
 
 /** Kết quả tra thô từ DB (snake_case). */
 interface TokenRow {

@@ -2,32 +2,32 @@
   {
     "rule": "security-sensitive-value-in-http-response",
     "path": "apps/pact-broker-api/src/routes/admin.ts",
-    "start": 103,
-    "end": 116,
-    "reason": "Show-once machine token creation: POST /admin/machine-tokens tra token ban ro DUNG MOT LAN trong response 201 - day la hop dong cua endpoint (xem comment 'Show-once' trong code). Token hash nam trong DB; moi list sau do chi thay metadata.",
+    "start": 102,
+    "end": 115,
+    "reason": "Show-once machine token creation: POST /admin/machine-tokens tra token ban ro DUNG MOT LAN trong response 201 - day la hop dong cua endpoint (xem comment 'Show-once' trong code). Token hash nam trong DB; moi list sau do chi thay metadata. Line pin doi theo khoang cach import khi tach repo layer (#335) - noi dung response khong doi.",
     "lines": {
-      "103": "^    return c\\.json\\($",
-      "104": "^      \\{$",
-      "105": "^        token: \\{$",
-      "106": "^          id: record\\.id,$",
-      "107": "^          name: parsed\\.data\\.name,$",
-      "108": "^          scopes: parsed\\.data\\.scopes,$",
-      "109": "^          createdAt: record\\.createdAt,$",
-      "110": "^          revokedAt: null,$",
-      "111": "^        \\},$",
-      "112": "^        // Show-once: giá trị duy nhất lần này response chứa nó\\.$",
-      "113": "^        secret: token,$",
-      "114": "^      \\},$",
-      "115": "^      201,$",
-      "116": "^    \\);$"
+      "102": "^    return c\\.json\\($",
+      "103": "^      \\{$",
+      "104": "^        token: \\{$",
+      "105": "^          id: record\\.id,$",
+      "106": "^          name: parsed\\.data\\.name,$",
+      "107": "^          scopes: parsed\\.data\\.scopes,$",
+      "108": "^          createdAt: record\\.createdAt,$",
+      "109": "^          revokedAt: null,$",
+      "110": "^        \\},$",
+      "111": "^        // Show-once: giá trị duy nhất lần này response chứa nó\\.$",
+      "112": "^        secret: token,$",
+      "113": "^      \\},$",
+      "114": "^      201,$",
+      "115": "^    \\);$"
     }
   },
   {
     "rule": "security-sensitive-value-in-http-response",
-    "path": "apps/pact-broker-api/src/repo/webhook-repo.ts",
+    "path": "libs/pact-broker-api-infrastructure/src/repo/webhook-repo.ts",
     "start": 204,
     "end": 212,
-    "reason": "Webhook execution log: responseStatus/responseBody la COT DB cua bang pact.webhook_executions va dong thoi la field cua DTO route tra ve - khong the doi ten mot ben. Du lieu la nhat ky thuc thi webhook cua TENANT va route GET /webhooks/:id/executions phuc vu dung tenant do (readAuth + tenantId scope). Outbound delivery hien TAT cung (SR-006) nen responseBody hom nay chi chua chuoi tinh; khi bat lai, kenh nay van la thiet ke da duyet.",
+    "reason": "Webhook execution log: responseStatus/responseBody la COT DB cua bang pact.webhook_executions va dong thoi la field cua DTO route tra ve - khong the doi ten mot ben. Du lieu la nhat ky thuc thi webhook cua TENANT va route GET /webhooks/:id/executions phuc vu dung tenant do (readAuth + tenantId scope). Outbound delivery hien TAT cung (SR-006) nen responseBody hom nay chi chua chuoi tinh; khi bat lai, kenh nay van la thiet ke da duyet. Entry di theo file khi repo layer tach sang libs/pact-broker-api-infrastructure (#335) - file di chuyen nguyen ven nen line pin giu nguyen.",
     "lines": {
       "204": "^    return rows\\.map\\(\\(r\\) => \\(\\{$",
       "205": "^      id: r\\.id,$",
@@ -60,6 +60,26 @@
       "242": "^            'pb:webhook': hal\\.link\\(`/webhooks/\\$\\{id\\}`\\),$",
       "243": "^          \\},$",
       "244": "^        \\}\\)\\),$"
+    }
+  },
+  {
+    "rule": "security-sensitive-value-in-http-response",
+    "path": "libs/pact-broker-api-application/src/token-auth.ts",
+    "start": 105,
+    "end": 105,
+    "reason": "Decision core cua machine-token auth ( authorizeToken ) tra TokenDecision chua token bearer da doc tu header - KHONG phai HTTP response: gia tri nay chi di tiep trong process de middleware o app entry quyet dinh 401, va bien `token` o day la gia tri DA DUOC DOC tu request header (no khong roi khoi process qua duong nay). Rule taint match 'token' naming heuristic FP. Commit 401 dong nhat khong bao gio echo token vao response (verify boi integration suite).",
+    "lines": {
+      "105": "^    return \\{ outcome: 'unauthorized', token \\};$"
+    }
+  },
+  {
+    "rule": "security-sensitive-value-in-http-response",
+    "path": "libs/pact-broker-api-application/src/token-auth.ts",
+    "start": 109,
+    "end": 109,
+    "reason": "Cung FP voi entry 105: nhanh token revoking/tenant suspended cua authorizeToken tra cung TokenDecision - token bearer chi vong trong process, khong tren wire.",
+    "lines": {
+      "109": "^    return \\{ outcome: 'unauthorized', token \\};$"
     }
   },
   {

@@ -3,7 +3,7 @@
  * đổi sang `../domain/types`. Mọi relation giữ nguyên tên vì Pact CLI điều
  * hướng qua chúng (xem docs/services/pact-broker/UPSTREAM_MAPPING.md §5).
  */
-import type { HalLinks, HalLink } from '../domain/types';
+import type { HalLinks, HalLink } from './types';
 
 /**
  * Helper dựng HAL _links cho API response

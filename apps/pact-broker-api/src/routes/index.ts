@@ -3,8 +3,8 @@
  * bỏ DO health check (health ở main.ts, không DB), giữ nguyên HAL surface.
  */
 import { Hono } from 'hono';
-import type { AppEnv } from '../domain/types';
-import { HalBuilder, getBaseUrl } from '../domain/hal';
+import type { AppEnv } from '../types';
+import { HalBuilder, getBaseUrl } from '@ecoma-io/pact-broker-api-domain';
 import type { MiddlewareHandler } from 'hono';
 
 /**

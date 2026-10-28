@@ -10,10 +10,10 @@
 import { Hono, type MiddlewareHandler } from 'hono';
 // Named imports, chủ ý — xem ghi chú trong src/domain/validation.ts.
 import { array, boolean, enum as zEnum, object, record, string } from 'zod';
-import type { AppEnv } from '../domain/types';
+import type { AppEnv } from '../types';
 import { currentTenantId } from '../middleware/tenant-context';
-import { HalBuilder, getBaseUrl } from '../domain/hal';
-import { PgWebhookRepo } from '../repo/webhook-repo';
+import { HalBuilder, getBaseUrl } from '@ecoma-io/pact-broker-api-domain';
+import { PgWebhookRepo } from '@ecoma-io/pact-broker-api-infrastructure';
 import { readJsonBodyWithLimit } from '../middleware/validate';
 
 const webhookCreateSchema = object({

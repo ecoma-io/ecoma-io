@@ -1,30 +1,11 @@
 /**
- * Kiểu dữ liệu dùng chung của API, port từ upstream `src/types/index.ts`
- * (phần dùng cho HAL + matrix). Đã lược: `Env` của Workers (thay bằng
- * `AppEnv` trong `src/config.ts`), badge/UI types, DO types.
+ * Kiểu dữ liệu domain của Pact Broker — port từ upstream `src/types/index.ts`
+ * (phần dùng cho HAL + matrix), tách khỏi app entry theo layering chuẩn của
+ * workspace. Đã lược khỏi port gốc: kiểu Hono env (`AppEnv`/`AppVariables` —
+ * thuộc app entry, giờ nằm ở `apps/pact-broker-api/src/types.ts`), badge/UI
+ * types, DO types.
  */
-
-// Kiểu Hono env dùng chung trong app.
-export type AppEnv = {
-  Bindings: Record<string, unknown>;
-  Variables: AppVariables;
-};
-
-export interface AppVariables {
-  requestId: string;
-  /** Tenant đã xác thực (middleware auth gắn vào). */
-  tenantId?: string;
-  /** Tenant name đã xác thực. */
-  tenantName?: string;
-  /** Scopes của machine token (khi dùng token). */
-  scopes?: string[];
-  /** ID của machine token đang gọi (auth middleware gắn vào). */
-  tokenId?: string;
-  /** Pool mỗi isolate — middleware config gắn vào. */
-  pool: import('pg').Pool;
-  /** Config đã kiểm — middleware config gắn vào. */
-  config: import('../config').PactBrokerConfig;
-}
+import type { MatrixSummary, MatrixNotice } from './matrix-summary';
 
 // Cấu trúc link HAL
 export interface HalLink {
@@ -131,14 +112,14 @@ export interface MatrixRow {
 }
 
 export interface MatrixResponse extends HalResource {
-  summary: import('./matrix-summary').MatrixSummary;
-  notices: import('./matrix-summary').MatrixNotice[];
+  summary: MatrixSummary;
+  notices: MatrixNotice[];
   matrix: MatrixRow[];
 }
 
 export interface CanIDeployResponse extends HalResource {
-  summary: import('./matrix-summary').MatrixSummary;
-  notices: import('./matrix-summary').MatrixNotice[];
+  summary: MatrixSummary;
+  notices: MatrixNotice[];
   matrix: MatrixRow[];
 }
 

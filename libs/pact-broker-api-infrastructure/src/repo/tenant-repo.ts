@@ -13,7 +13,7 @@
  * thời vì mọi request tra hash rồi check.
  */
 import type { Pool } from 'pg';
-import { randomToken, sha256Hex } from '../auth/hashing';
+import { randomToken, sha256Hex } from '@ecoma-io/pact-broker-api-application';
 
 export interface TenantRecord {
   id: string;
