@@ -2,10 +2,11 @@
  * Harness D1 thật cho app `web-push-notification-job` — **bản sao riêng**, không import
  * chéo project.
  *
- * ⚠️ **Vì sao không import từ lib.** `libs/web-push-notification-job-infrastructure` có
- * harness riêng cho `d1-job-state-repository.spec.ts`. Import nó từ app là một dependency
- * chạy-test chéo project — và `apps/transactional-mailer-job` đã có bản sao riêng chính vì
- * lý do đó (`src/mail-job-repository.spec.ts` mở đầu bằng đúng câu này). Harness rẻ và
+ * ⚠️ **Vì sao không import từ lib.** `libs/web-push-notification-job-infrastructure` từng có
+ * harness riêng cho `d1-job-state-repository.spec.ts` (suite đã dời vào thư mục này). Import
+ * harness từ lib khác là một dependency chạy-test chéo project — và
+ * `apps/transactional-mailer-job` đã có bản sao riêng chính vì lý do đó
+ * (`src/mail-job-repository.spec.ts` mở đầu bằng đúng câu này). Harness rẻ và
  * một bản sao độc lập là thứ duy nhất bắt được việc hai bên lệch `wrangler.jsonc`.
  *
  * ⚠️ **D1 thật, không fake.** `INSERT OR IGNORE` + `meta.changes`, `UPDATE … WHERE` có guard,
@@ -39,7 +40,7 @@ const { getPlatformProxy } = requireFromSpec('wrangler') as typeof import('wrang
  * `../wrangler.jsonc` bằng URL tương đối với file của nó), nên harness không cần — và giữ một
  * biến không dùng sẽ là lint đỏ vô nghĩa mà không ai đọc.
  */
-const migrationsDir = fileURLToPath(new URL('../migrations', import.meta.url));
+const migrationsDir = fileURLToPath(new URL('../../migrations', import.meta.url));
 
 /** Mốc thời gian tuyệt đối — mọi biên được tính trên giá trị tường minh, không dùng đồng hồ. */
 export const T0 = 1_800_000_000_000;

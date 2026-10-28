@@ -97,6 +97,12 @@ describe('reconcileDeliveries — the a1..a6 decision table on a real D1', () =>
     scope = await seedScope(db);
   });
 
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
+  });
+
   it('a1: marks expired only after expires_at has passed', async () => {
     // ⚠️ `expires_at` của fixture là `T0 + 3.6M`; `AGE_THRESHOLD` là `T0 + 60s` nên chưa hết
     // hạn. Đẩy `expires_at` về trước mốc quét thì a1 phải nổ — và **không** tạo intent, vì một
@@ -425,6 +431,12 @@ describe('reconcileOutbox — (a) only counts, never self-repairs', () => {
     db = await createTestDatabase();
     fixture = buildPorts(db);
     scope = await seedScope(db);
+  });
+
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
   });
 
   it('counts an orphaned pending delivery that no longer has a usable intent', async () => {

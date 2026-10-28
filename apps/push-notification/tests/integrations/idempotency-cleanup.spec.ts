@@ -24,7 +24,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { resetConfigCacheForTest } from '../src/config';
+import { resetConfigCacheForTest } from '../../src/config';
 
 import {
   T0,
@@ -119,7 +119,10 @@ describe('POST /internal/idempotency/cleanup — FR-008 canonical delete conditi
     scope = await seedScope(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 

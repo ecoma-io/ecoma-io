@@ -8,7 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { resetConfigCacheForTest } from '../src/config';
+import { resetConfigCacheForTest } from '../../src/config';
 
 import { callRoute } from './app-env';
 import {
@@ -80,8 +80,11 @@ describe('POST /admin/v1/providers/:id/test — probe thật (WB-4, FR-018)', ()
     vi.stubGlobal('fetch', fetchMock);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.unstubAllGlobals();
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 

@@ -1,5 +1,5 @@
 /**
- * `401` **trước mọi lookup**, đo bằng cách đếm lệnh D1 thật (`apps/push-notification/tests/d1-harness.ts`).
+ * `401` **trước mọi lookup**, đo bằng cách đếm lệnh D1 thật (`apps/push-notification/tests/integrations/d1-harness.ts`).
  *
  * ⚠️ **Vì sao file này gọi `main.ts` thật chứ không chỉ gọi `authenticateRuntimeCaller`.** Yêu cầu
  * của §8.1 là về **thứ tự**: xác thực phải xảy ra trước khi route chạm storage. Một test gọi
@@ -22,7 +22,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { resetConfigCacheForTest } from '../src/config';
+import { resetConfigCacheForTest } from '../../src/config';
 
 import { createTestDatabase, seedScope, type TestDatabase } from './d1-harness';
 import { callRaw, callRoute, callRuntimeClaim } from './app-env';
@@ -46,7 +46,10 @@ describe('401 before the lookup — private delivery runtime API', () => {
     db.probe.reset();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     // ⚠️ `pushConfig` cache ở module scope theo **isolate** (`config.ts`), và vitest chạy một
     // file test trong một isolate. Không xoá cache thì test đổi env sẽ đọc config của test trước
     // — và sẽ xanh sai.

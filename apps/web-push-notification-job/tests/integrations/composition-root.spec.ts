@@ -15,13 +15,13 @@
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import defaultWorker, { handleFetch, handleQueueBatch, queue } from '../src/main';
+import defaultWorker, { handleFetch, handleQueueBatch, queue } from '../../src/main';
 import { RUNTIME_CALLER_PRINCIPAL } from '@ecoma-io/web-push-notification-job-infrastructure';
 import { createD1Harness, type D1Harness } from './d1-harness';
 import type { RuntimeServiceBinding } from '@ecoma-io/web-push-notification-job-infrastructure';
 import { outcomeAck, releaseAck } from '@ecoma-io/push-notification-contracts';
 
-const CONFIG_PATH = new URL('../wrangler.jsonc', import.meta.url).pathname;
+const CONFIG_PATH = new URL('../../wrangler.jsonc', import.meta.url).pathname;
 const SECRET = 'shared-secret-value-for-tests';
 
 /**
@@ -268,7 +268,7 @@ describe('handleFetch route boundary', () => {
   });
 
   it('does not run a sweep for an unauthenticated POST on the real path', async () => {
-    const spy = vi.spyOn(await import('../src/main'), 'handleReconcileRequest');
+    const spy = vi.spyOn(await import('../../src/main'), 'handleReconcileRequest');
 
     const response = await handleFetch(
       baseEnv(),

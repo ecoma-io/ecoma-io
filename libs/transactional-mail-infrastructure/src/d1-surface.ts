@@ -13,7 +13,8 @@
  * Đây là interface **infrastructure**, không phải application port: `@ecoma-io/
  * transactional-mail-application` không import file này và không biết chữ ký D1.
  *
- * `mail-d1.spec` khẳng định compile-time rằng `D1Database` của `@cloudflare/workers-types`
+ * Suite integration `mail-d1.spec` (app transactional-mail) khẳng định compile-time rằng
+ * `D1Database` của `@cloudflare/workers-types`
  * **extends** được từng type ở đây — tức là production code truyền `env.mail` vào factory sẽ
  * typecheck, chứ không phải subset là một ước đoán.
  */
