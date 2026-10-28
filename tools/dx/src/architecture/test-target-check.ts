@@ -107,11 +107,6 @@ export interface TestTargetAllowlistEntry {
  */
 export const KNOWN_TEST_TARGET_VIOLATIONS: readonly TestTargetAllowlistEntry[] = [
   {
-    project: '@ecoma-io/transactional-mailer-job',
-    kind: 'unit-real-dependency-spec',
-    reason: 'temporary: 3 colocated D1 specs under src/; PR #369 moves them to tests/integrations/',
-  },
-  {
     project: '@ecoma-io/transactional-mail',
     kind: 'unit-real-dependency-spec',
     reason:

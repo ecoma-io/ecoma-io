@@ -34,7 +34,8 @@ const requireFromSpec = createRequire(import.meta.url);
 // trong tiến trình, cho D1 binding thật với bound parameter và `meta.changes`.
 const { getPlatformProxy } = requireFromSpec('wrangler') as typeof import('wrangler');
 
-const appDir = dirname(import.meta.dirname);
+// Suite nằm ở `tests/integrations/`, hai cấp dưới root app — đi lên hai cấp mới ra appDir.
+const appDir = dirname(dirname(import.meta.dirname));
 const migrationsDir = join(appDir, 'migrations');
 
 /** Mốc thời gian tuyệt đối — mọi biên được tính trên giá trị tường minh, không dùng đồng hồ. */
