@@ -39,14 +39,13 @@ import type {
   ConnectedApplicationsResponse,
   ConnectedApplicationRevokeResponse,
 } from '@ecoma-io/auth-contracts';
-import type { PostgresClientLike } from '@ecoma-io/auth-infrastructure';
-
 import {
-  insertClientRevocation,
   insertAuditEvent,
+  insertClientRevocation,
   listConnectedApplications,
   revokeGrantActive,
-} from './authorization-store';
+  type PostgresClientLike,
+} from '@ecoma-io/auth-infrastructure';
 
 /** Kết quả dùng chung — status + body JSON (cùng hình dạng `ConsentResult`). */
 export type ConnectedApplicationsResult =

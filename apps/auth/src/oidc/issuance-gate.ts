@@ -9,12 +9,12 @@
  * stub, còn production wiring dùng đúng tham số thật của nó.
  */
 
-import type { PostgresClientLike } from '@ecoma-io/auth-infrastructure';
 import {
   checkRevocationAtIssuance,
   findActiveGrant,
   insertAuditEvent,
-} from '../authorization-store';
+  type PostgresClientLike,
+} from '@ecoma-io/auth-infrastructure';
 import type { AccountStatusResponseValue } from '@ecoma-io/account-contracts';
 import { allowsIssuance } from '@ecoma-io/auth-domain';
 import type { IssuanceGate } from './adapter';

@@ -13,7 +13,6 @@ import {
 import type { PostgresClientLike } from '@ecoma-io/auth-infrastructure';
 import type { Provider } from 'oidc-provider';
 
-import { createAuthorizationStore } from './authorization-store';
 import { runSessionVerified } from './session-verified-handler';
 import { runConsentContext, runConsentDecide } from './consent-handler';
 import { startAuthDatabase, type AuthDatabase } from '../tests/integrations/harness.ts';
@@ -21,7 +20,7 @@ import { startAuthDatabase, type AuthDatabase } from '../tests/integrations/harn
 // `consumeHandleY` gọi TRỰC TIẾP cho test ASR-khác của issue #57 — như một
 // caller tương lai có thể làm (bỏ qua kiểm app-layer), để assert rằng bind SQL
 // tự nó bảo vệ phiên sở hữu transaction.
-import { consumeHandleY } from '@ecoma-io/auth-infrastructure';
+import { consumeHandleY, createAuthorizationStore } from '@ecoma-io/auth-infrastructure';
 
 /**
  * Hai back-channel handlers trên PostgreSQL THẬT: `session/verified` (CAS consume X

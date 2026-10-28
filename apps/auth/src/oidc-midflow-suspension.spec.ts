@@ -49,12 +49,16 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createNonce, signRequest } from '@ecoma-io/auth-contracts';
 import { allowsIssuance } from '@ecoma-io/auth-domain';
-import { createPostgresClient, type PostgresClientLike } from '@ecoma-io/auth-infrastructure';
+import {
+  checkRevocationAtIssuance,
+  createPostgresClient,
+  insertAuditEvent,
+  type PostgresClientLike,
+} from '@ecoma-io/auth-infrastructure';
 
 import { PROVIDER_ROUTES } from './oidc/provider';
 import type { IssuanceGate } from './oidc/adapter';
 import { AccountClient } from './account-client';
-import { checkRevocationAtIssuance, insertAuditEvent } from './authorization-store';
 import { loadAuthConfig, type AuthEnv } from './config';
 import { startAuthDatabase, type AuthDatabase } from '../tests/integrations/harness.ts';
 
@@ -553,7 +557,7 @@ describe('issuance gate at provider level — account suspended mid-flow, betwee
     // tức `details` bị double-encoded (`jsonb_typeof(details) === 'string'`,
     // `details->>'reason'` trả NULL). Bind OBJECT trực tiếp (hoặc object cast)
     // cho jsonb_typeof đúng 'object'. Đây LÀ lệch comment của `adapter.upsert`
-    // đã cảnh báo cho payload oidc_state, nhưng nằm ở `authorization-store.ts`
+    // đã cảnh báo cho payload oidc_state, nhưng nằm ở `authorization-audit-store.ts`
     // (store khác, caller khác) — gap này cần một fix production riêng, ngoài
     // phạm vi test-only của workstream này. Spec đọc qua `details::text` rồi
     // parse HAI LẦN để khẳng định đúng invariant "details mang reason", không

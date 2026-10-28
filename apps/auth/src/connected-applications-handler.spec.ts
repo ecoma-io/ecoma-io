@@ -12,14 +12,13 @@ import postgres from 'postgres';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { PostgresClientLike } from '@ecoma-io/auth-infrastructure';
-import { createPostgresClient } from '@ecoma-io/auth-infrastructure';
-
 import {
+  createPostgresClient,
+  insertClientRevocation,
   listConnectedApplications,
   revokeGrantActive,
-  insertClientRevocation,
-} from './authorization-store';
+  type PostgresClientLike,
+} from '@ecoma-io/auth-infrastructure';
 import {
   parseConnectedApplicationRevoke,
   parseConnectedApplicationsList,

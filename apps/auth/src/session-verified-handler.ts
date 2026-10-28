@@ -37,8 +37,11 @@ import {
 import { allowsIssuance, bytesToBase64Url, hashHandle, needsConsent } from '@ecoma-io/auth-domain';
 import {
   advanceTransactionWithHandle,
+  checkRevocationAtIssuance,
   consumeHandleXAndBindIdentity,
+  findActiveGrant,
   findTransactionByHandleX,
+  insertAuditEvent,
   type PostgresClientLike,
 } from '@ecoma-io/auth-infrastructure';
 import type { Provider } from 'oidc-provider';
@@ -51,11 +54,6 @@ import {
   handleHash,
   saveProviderGrant,
 } from './oidc/interaction';
-import {
-  checkRevocationAtIssuance,
-  findActiveGrant,
-  insertAuditEvent,
-} from './authorization-store';
 
 /**
  * Ghi một hàng audit theo cơ chế "thông báo trong background" (fire-and-forget)
