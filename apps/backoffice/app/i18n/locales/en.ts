@@ -189,6 +189,18 @@ export default {
     },
   },
 
+  onboarding: {
+    title: 'Complete your profile',
+    body: 'Your staff record has no display name yet. Set a display name so colleagues can find you in the staff directory.',
+    setDisplayName: 'Set display name in Account',
+    continue: 'Continue without a display name',
+    twoFactor: {
+      title: 'Two-factor authentication',
+      comingSoon: 'Coming soon — two-factor enrolment is not available yet.',
+    },
+    noDisplayName: 'Display name not set',
+  },
+
   nav: {
     platform: 'Platform',
     overview: 'Overview',

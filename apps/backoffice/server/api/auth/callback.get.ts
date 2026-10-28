@@ -67,6 +67,8 @@ import {
 } from '@ecoma-io/backoffice-application';
 import { readWorkerEnv } from '../../db';
 import { writeLog } from '../../log';
+import { accountClientConfig, fetchAccountProfiles } from '../../account/client';
+import { needsDisplayName } from '../../account/onboarding';
 
 /**
  * Scope đã xin ở login (`openid offline_access`) ⇒ response của `/token` luôn
@@ -309,5 +311,29 @@ export default defineEventHandler(async (event: H3Event): Promise<void> => {
     csrfCookie(csrfValue),
     clearLoginFlowCookie(),
   ]);
+  // Onboarding gate (#325): phiên mới có `needsDisplayName` thì đưa người dùng
+  // sang màn onboarding. Đường này là **soft** — chỉ áp cho login vừa hoàn tất;
+  // người dùng đã skip onboarding hay vào app từ đường khác không bị chặn. Hỏi
+  // `account` ở đây fail-closed theo đúng nghĩa mềm: khi account không trả lời
+  // được thì vào thẳng app (không onboarding), chứ không khoá login — gate cứng
+  // (2FA, giai đoạn 2) sẽ là quyết định review riêng. Không đọc `needsDisplayName`
+  // từ client: quyết định điều hướng thuộc server.
+  try {
+    const accountConfig = accountClientConfig(event);
+    if (accountConfig !== null) {
+      const profiles = await fetchAccountProfiles(accountConfig, [verified.sub]);
+      if (profiles.ok && needsDisplayName(profiles.profiles, verified.sub)) {
+        writeLog({
+          event: 'backoffice_login.onboarding_redirect',
+          route: '/api/auth/callback',
+          status: 302,
+          sub: verified.sub,
+        });
+        return sendRedirect(event, '/onboarding', 302);
+      }
+    }
+  } catch {
+    // Mọi lỗi khi hỏi onboarding không được biến thành lỗi login — phiên đã hợp lệ.
+  }
   return sendRedirect(event, '/', 302);
 });

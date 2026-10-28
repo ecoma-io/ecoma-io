@@ -35,6 +35,21 @@
   "observability": {
     "enabled": true,
   },
+  // Service binding tới shim worker `ecoma-account-bridge` — cùng kiểu khai với
+  // `apps/auth/wrangler.jsonc` (issue #325): binding `ACCOUNT_SERVICE` giữ
+  // nguyên shape contract thật (`fetch(request, init)`), code gọi không biết gì
+  // về việc ở local nó là shim chuyển tiếp HTTP tới container account. Binding
+  // KHÔNG phải authenticator — mọi request qua nó vẫn ký HMAC
+  // `AUTH_INTERNAL_SECRET` như contract nội bộ. Top-level (không khai trong
+  // `env.*`): Worker này hiện chưa dùng identity Cloudflare per-env, và
+  // wrangler không inherit `services` giữa các env — thêm vào env cụ thể khi
+  // làn staging/production bật contract này.
+  "services": [
+    {
+      "binding": "ACCOUNT_SERVICE",
+      "service": "ecoma-account-bridge",
+    },
+  ],
   "dev": {
     "port": 4201,
   },

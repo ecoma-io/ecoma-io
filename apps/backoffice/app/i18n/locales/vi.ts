@@ -160,6 +160,18 @@ const vi: BackofficeMessages = {
     },
   },
 
+  onboarding: {
+    title: 'Hoàn thiện hồ sơ',
+    body: 'Tài khoản của bạn chưa có tên hiển thị. Hãy đặt tên hiển thị để đồng nghiệp tìm thấy bạn trong sổ nhân sự.',
+    setDisplayName: 'Đặt tên hiển thị trong Account',
+    continue: 'Tiếp tục không cần tên hiển thị',
+    twoFactor: {
+      title: 'Xác thực hai yếu tố',
+      comingSoon: 'Sắp có — chưa thể đăng ký xác thực hai yếu tố.',
+    },
+    noDisplayName: 'Chưa đặt tên hiển thị',
+  },
+
   nav: {
     platform: 'Nền tảng',
     overview: 'Tổng quan',
