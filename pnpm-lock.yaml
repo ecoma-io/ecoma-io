@@ -453,8 +453,8 @@ importers:
         specifier: ^6.2.12
         version: 6.2.13
       oidc-provider:
-        specifier: 9.13.0
-        version: 9.13.0(supports-color@10.2.2)
+        specifier: 9.13.1
+        version: 9.13.1(supports-color@10.2.2)
       pg:
         specifier: ^8.23.1
         version: 8.23.1
@@ -2797,10 +2797,13 @@ packages:
     engines: {node: '>= 18'}
     peerDependencies:
       '@intlify/shared': ^9.0.0 || ^10.0.0 || ^11.0.0
+      '@vue/compiler-dom': ^3.0.0
       vue: ^3.0.0
       vue-i18n: ^9.0.0 || ^10.0.0 || ^11.0.0
     peerDependenciesMeta:
       '@intlify/shared':
+        optional: true
+      '@vue/compiler-dom':
         optional: true
       vue:
         optional: true
@@ -9138,8 +9141,8 @@ packages:
   ohash@2.0.12:
     resolution: {integrity: sha512-65S/5gk9YSsaRjcyf7Nfa6h/d3E8/1gslpXfI4W7Dxn/oap8IKRuNT5VXkLQ1YFKIEg4apRY4Pj6aiwFzrDdmw==}
 
-  oidc-provider@9.13.0:
-    resolution: {integrity: sha512-oI9kCQn/7Ssk9mCx+lXb/+MeQeX5YEyn19SqHk9LZOs91ctFZVDBSyO0A0SzlXyyC2vzYE84Ecn9k5//MAZkAg==}
+  oidc-provider@9.13.1:
+    resolution: {integrity: sha512-B5yLJ4lj3gE6OgjySF0Cjj0cePLlP/HdnQyWJ5AMa3pMc75ouNUwYsH5a8qbuyEsImBqB90H7ZIY85a/DKqoSw==}
 
   on-change@6.0.2:
     resolution: {integrity: sha512-08+12qcOVEA0fS9g/VxKS27HaT94nRutUT77J2dr8zv/unzXopvhBuF8tNLWsoLQ5IgrQ6eptGeGqUYat82U1w==}
@@ -21339,7 +21342,7 @@ snapshots:
 
   ohash@2.0.12: {}
 
-  oidc-provider@9.13.0(supports-color@10.2.2):
+  oidc-provider@9.13.1(supports-color@10.2.2):
     dependencies:
       debug: 4.4.3(supports-color@10.2.2)
       jose: 6.2.13
