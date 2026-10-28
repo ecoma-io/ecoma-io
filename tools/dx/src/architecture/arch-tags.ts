@@ -25,6 +25,12 @@
  *
  * 4. **Deployment map** — đối chiếu `DEPLOYMENT_MAP` với đĩa và marker
  *    `ecoma.deployment.status` (xem `validateDeploymentMap`).
+ *
+ * 5. **Layout test-target** — ràng buộc layout test của
+ *    `docs/overview/06-testing.md` lên đĩa trong project root app/lib: thư mục
+ *    mục đích ⇔ target `test-integration`, unit config không include suite
+ *    app-owned, tier unit không boot dependency thật, `passWithNoTests: false`
+ *    trong mọi config integration (xem `validateTestTargets`).
  */
 
 import { execFileSync } from 'node:child_process';
@@ -32,6 +38,7 @@ import { join } from 'node:path';
 
 import { ROOT_DIR } from '../utils.js';
 import { validateDeploymentMap } from './deployment-map-check.js';
+import { validateTestTargets } from './test-target-check.js';
 
 /** Giá trị hợp lệ của mỗi dimension tag kiến trúc bắt buộc. */
 export const ARCH_TAG_DIMENSIONS = {
@@ -155,7 +162,18 @@ export interface ArchTagViolation {
     | 'missing-reason'
     | 'stale-allowlist-entry'
     | 'invalid-target-ref'
-    | 'deployment-status-marker-mismatch';
+    | 'deployment-status-marker-mismatch'
+    // Kinds của lượt test-target (validateTestTargets): cùng hình dạng
+    // { project, kind, detail } nên mọi lượt gom về một danh sách in ra.
+    | 'missing-integration-target'
+    | 'missing-integration-config'
+    | 'integration-config-missing-dir'
+    | 'integration-dir-in-unit-config'
+    | 'integration-pass-with-no-tests'
+    | 'unit-real-dependency-spec'
+    | 'lib-real-dependency-spec'
+    | 'unreadable-test-config'
+    | 'stale-test-target-allowlist-entry';
   detail: string;
 }
 
@@ -728,10 +746,15 @@ export function main(): number {
   // state đó sẽ báo lỗi ảo. Lỗi I/O đĩa để nổ ra thay vì nuốt thành "workspace
   // sạch": fail-closed theo đúng hợp đồng arch-check.
   violations.push(...validateDeploymentMap({ projects: state.projects }));
+  // Lượt test-target đọc thêm ĐĨA trong project root app/lib (vitest config,
+  // package.json, nội dung spec file) — cùng lý do lượt deployment map: state
+  // tổng hợp của unit test không mang dữ liệu đĩa. Lỗi I/O đĩa nổ ra thay vì
+  // nuốt thành "workspace sạch" — fail-closed theo đúng hợp đồng arch-check.
+  violations.push(...validateTestTargets({ projects: state.projects }));
   if (violations.length === 0) {
     console.log(
       `architecture checks OK (${state.projects.size} projects, ` +
-        `deployment map + markers + target refs validated)`,
+        `deployment map + markers + target refs + test targets validated)`,
     );
     return 0;
   }
