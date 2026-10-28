@@ -315,8 +315,8 @@ PG của `apps/auth/src/`. Một fake `Map` cho đúng một winner và vẫn d�
 `SELECT` rồi `UPDATE`/`INSERT` là atomic.
 
 ⚠️ **PostgreSQL đến từ testcontainers.** Mỗi spec file tự dựng **một container**
-`postgres:17-alpine` riêng (`startAuthDatabase` trong `integration-specs/harness.ts`
-của `apps/auth` và trong `tests/integration/harness.ts` của
+`postgres:17-alpine` riêng (`startAuthDatabase` trong `tests/integrations/harness.ts`
+của `apps/auth` và bản copy có chủ đích `src/auth-test-harness.ts` của
 `libs/auth-infrastructure`), provisioning hai role đúng trình tự operator ở
 §"Vai trò của operator" (migrator có DDL, runtime chỉ DML), rồi apply **chính các file
 trong thư mục này** bằng credential `ecoma_auth_migrator` thật — nên nó kiểm adapter
@@ -325,9 +325,12 @@ xanh trên schema thứ hai không nói được gì về production — đó l�
 test đầu dựng cột `code_id`/`scope` trong khi schema thật có
 `id uuid`/`code_hash`/`granted_scopes text[]`.
 
-⚠️ **Không có Docker thì test SKIP, và một skip trông y hệt một pass.** CI đặt
-`ECOMA_REQUIRE_DOCKER=1` cho job `unit-test`, biến một runner vắng Docker thành lỗi
-thật thay vì một nửa suite skip với exit 0. Chạy tay chỉ cần Docker daemon đang chạy:
+⚠️ **Không có Docker thì test ĐỎ ngay lập tức — không có đường skip.** Harness
+probe Docker một lần mỗi lần chạy qua vitest `globalSetup`
+(`tests/integrations/docker-probe.global-setup.ts`), probe bằng chính container
+PostgreSQL mà suite sắp dùng; probe thất bại là **ném lỗi** làm toàn bộ lần chạy
+đỏ với exit khác 0 — vắng Docker là sự cố hạ tầng, không phải kết quả test, và
+không có biến môi trường nào bật tắt hành vi này. Chạy tay chỉ cần Docker daemon đang chạy:
 
 ```bash
 pnpm nx test @ecoma-io/auth-infrastructure --skip-nx-cache

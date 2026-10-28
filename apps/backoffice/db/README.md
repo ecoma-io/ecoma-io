@@ -6,12 +6,12 @@ thuần và migration là file SQL thuần. Cấu trúc và quy ước mirror
 [`apps/account/db/`](../../account/db/README.md) — pattern tham chiếu, không sao
 chép mù.
 
-| Đường dẫn               | Vai trò                                                              |
-| ----------------------- | -------------------------------------------------------------------- |
-| `migrations/*.sql`      | Migration, áp dụng **theo thứ tự tên file** (tên file có tiền tố số) |
-| `migrate.mts`           | Hằng số và helper dùng chung cho runner và test harness              |
-| `apply.mts`             | CLI runner, chạy trong CI                                            |
-| `../integration-specs/` | Test integration trên PostgreSQL thật (testcontainers)               |
+| Đường dẫn                | Vai trò                                                              |
+| ------------------------ | -------------------------------------------------------------------- |
+| `migrations/*.sql`       | Migration, áp dụng **theo thứ tự tên file** (tên file có tiền tố số) |
+| `migrate.mts`            | Hằng số và helper dùng chung cho runner và test harness              |
+| `apply.mts`              | CLI runner, chạy trong CI                                            |
+| `../tests/integrations/` | Test integration trên PostgreSQL thật (testcontainers)               |
 
 ## Thứ tự migration hiện tại
 

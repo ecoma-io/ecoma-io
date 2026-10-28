@@ -57,10 +57,13 @@ jobs:
     name: unit-test
     runs-on: ubuntu-26.04
     timeout-minutes: 30
-    # Target `test` chỉ chạy spec colocated unit/component (contract
-    # `docs/overview/06-testing.md` §4); suite app-owned integration chạy ở job
-    # `integration-test` bên dưới. Tách job để hai tầng test chạy song song trên
-    # hai runner thay vì nối tiếp trong cùng một job.
+    # Target `test` chạy spec colocated với subject trong project sở hữu
+    # (contract `docs/overview/06-testing.md` §4); suite app-owned dưới `tests/`
+    # chạy qua target `test-integration` ở job `integration-test` bên dưới.
+    # Lưu ý: một số project vẫn giữ spec phụ thuộc dependency thật colocated
+    # trong `src/`, nên chúng đang chạy dưới `test` ngay ở job này; dời về tầng
+    # đúng thuộc migration theo issue #357. Tách job để hai tầng test chạy song
+    # song trên hai runner thay vì nối tiếp trong cùng một job.
     steps:
       - name: Start runner resource monitoring
         uses: Garbee/runner-resource-usage@5d478275bca9b56badaca884f6e3858085e2ca18 # main HEAD (upstream chưa có tag)
