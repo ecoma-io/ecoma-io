@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { X509Certificate, createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -66,14 +66,19 @@ export const LOCAL_CA_PEM = readFileSync(LOCAL_CERT_PATH, 'utf8');
  * đổi theo repo là hash đổi theo, không có giá trị hardcode nào phải cập nhật.
  * ⚠️ Hash sai định dạng base64 khiến Chromium log `Invalid SPKI` rồi hành xử
  * như không có flag (mọi cert bị từ chối) — fail-closed, an toàn.
+ *
+ * ⚠️ Đối tượng hash là **SPKI DER** (public key), KHÔNG phải DER của cả
+ * certificate (#374): `spki-list` so hash với public key của cert được serve.
+ * Trên máy dev mà cert đã cài vào OS trust store thì hai cách đều "xanh"
+ * (browser trust qua HĐH, không nhờ pin) — sai im lặng đúng kiểu khó bắt nhất.
+ * `X509Certificate` export đúng DER SPKI, khớp pipeline OpenSSL tham chiếu:
+ * `openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER |
+ * openssl dgst -sha256 -binary | base64`.
  */
 function computeSpkiHash(pem: string): string {
-  const body = pem
-    .replace(/-----BEGIN CERTIFICATE-----/u, '')
-    .replace(/-----END CERTIFICATE-----/u, '')
-    .replace(/\s+/gu, '');
-  const der = Buffer.from(body, 'base64');
-  return createHash('sha256').update(der).digest('base64');
+  const cert = new X509Certificate(pem);
+  const spkiDer = cert.publicKey.export({ type: 'spki', format: 'der' });
+  return createHash('sha256').update(spkiDer).digest('base64');
 }
 
 const SPKI_HASH = computeSpkiHash(LOCAL_CA_PEM);
