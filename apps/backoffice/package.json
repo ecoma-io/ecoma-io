@@ -83,13 +83,19 @@
       "test-integration": {
         "executor": "nx:run-commands",
         "dependsOn": [
-          "build",
           "nuxt-prepare"
         ],
         "options": {
           "cwd": "apps/backoffice",
           "command": "npx vitest run -c vitest.integration.config.mts tests/integrations tests/databases"
-        }
+        },
+        "//": [
+          "BỎ `build`, GIỮ `nuxt-prepare`: suite integration dựng app h3 thủ công và",
+          "import handler/middleware trực tiếp từ `server/**` (TS nguồn), không spec nào",
+          "đọc `.output/` hay `.nuxt` lúc chạy (vitest không typecheck). `nuxt-prepare`",
+          "vẫn cần vì environment/test stack của app dựa trên việc `.nuxt` tồn tại sau",
+          "khi Nuxt generate (cùng lý do target `test` giữ nó)."
+        ]
       },
       "typecheck-db": {
         "executor": "nx:run-commands",

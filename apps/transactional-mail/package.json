@@ -17,13 +17,19 @@
     "targets": {
       "test-integration": {
         "executor": "nx:run-commands",
-        "dependsOn": [
-          "build"
-        ],
+        "dependsOn": [],
         "options": {
           "cwd": "apps/transactional-mail",
           "command": "npx vitest run -c vitest.integration.config.mts tests/integrations"
-        }
+        },
+        "//": [
+          "KHÔNG `build`: suite D1 chạy qua `getPlatformProxy` (workerd in-process) và",
+          "import repository/application trực tiếp từ TS nguồn (export `./src/index.ts`);",
+          "`getPlatformProxy` chỉ đọc binding/migration từ `wrangler.jsonc`, không chạy",
+          "`main: dist/main.js` — ba job app (push-notification, web-push,",
+          "auth-nonce-prune) vốn chạy cùng hình thức không build trước. Không spec nào",
+          "đọc `dist/`; bundle esbuild chỉ tiêu thụ ở làn deploy."
+        ]
       },
       "build": {
         "executor": "@nx/esbuild:esbuild",
