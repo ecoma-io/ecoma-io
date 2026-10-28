@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { X509Certificate, createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -97,14 +97,22 @@ export const LOCAL_CA_PEM = readFileSync(LOCAL_CERT_PATH, 'utf8');
  * cert local cho cờ `--ignore-certificate-errors-spki-list` của Chromium.
  * Tính tại config load: cert đổi → hash đổi → browser trust theo cert MỚI,
  * không có hash hardcode nào phải nhớ cập nhật.
+ *
+ * ⚠️ Đối tượng hash là **SPKI DER** (public key), KHÔNG phải DER của cả
+ * certificate. Phiên bản đầu của hàm này hash cả cert (strip PEM wrapper rồi
+ * SHA-256) — sai chuẩn của cờ: `spki-list` so hash với public key của cert
+ * được serve, không phải với cert. Trên máy dev mà cert đã cài vào trust store
+ * hệ điều hành thì cả hai cách đều "chạy được" (browser trust qua OS chứ
+ * không nhờ pin) — chính là kiểu sai im lặng khó bắt nhất. `X509Certificate`
+ * của `node:crypto` trích public key rồi export đúng DER SPKI, khớp trực tiếp
+ * định dạng OpenSSL tham chiếu:
+ * `openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER |
+ * openssl dgst -sha256 -binary | base64`.
  */
 function computeSpkiHash(pem: string): string {
-  const body = pem
-    .replace(/-----BEGIN CERTIFICATE-----/u, '')
-    .replace(/-----END CERTIFICATE-----/u, '')
-    .replace(/\s+/gu, '');
-  const der = Buffer.from(body, 'base64');
-  return createHash('sha256').update(der).digest('base64');
+  const cert = new X509Certificate(pem);
+  const spkiDer = cert.publicKey.export({ type: 'spki', format: 'der' });
+  return createHash('sha256').update(spkiDer).digest('base64');
 }
 
 const SPKI_HASH = computeSpkiHash(LOCAL_CA_PEM);
