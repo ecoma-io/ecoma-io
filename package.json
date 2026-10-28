@@ -64,7 +64,7 @@
     "nuxt": "^4.0.0",
     "nuxt-content-assets": "^3.0.1",
     "nx": "23.3.1",
-    "oxfmt": "^0.74.0",
+    "oxfmt": "^0.75.0",
     "oxlint": "^1.87.0",
     "pulumi": "3.272.0",
     "rehype-katex": "^7.0.1",
