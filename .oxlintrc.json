@@ -731,15 +731,9 @@
       //
       // Giữ đúng nguyên tắc của block trên: chỉ exemption, không nới rule ở
       // đâu khác; Worker code của app vẫn chịu ràng buộc `runtime:edge`.
-      // Harness test-only của lib (`libs/*/src/*.spec*-adjacent harness`,
-      // hiện ở `auth-infrastructure`) cùng luật: tooling Node chạy
-      // trên runner Vitest, không bundle vào lib edge.
       "files": [
         "apps/*/tests/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}",
-        "libs/*/tests/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}",
-        "libs/auth-infrastructure/src/auth-test-harness.ts",
-        "libs/auth-infrastructure/src/docker-probe.ts",
-        "libs/auth-infrastructure/src/docker-probe.global-setup.ts"
+        "libs/*/tests/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}"
       ],
       "rules": {
         "no-console": "off",

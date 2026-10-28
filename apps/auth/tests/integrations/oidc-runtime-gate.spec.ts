@@ -4,12 +4,12 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import type { PostgresClientLike } from '@ecoma-io/auth-infrastructure';
 
-import { PostgresAdapter } from './adapter';
-import { createProvider } from './provider';
-import { createIssuanceGate } from './runtime';
-import { loadAuthConfig, type AuthEnv } from '../config';
+import { PostgresAdapter } from '../../src/oidc/adapter';
+import { createProvider } from '../../src/oidc/provider';
+import { createIssuanceGate } from '../../src/oidc/runtime';
+import { loadAuthConfig, type AuthEnv } from '../../src/config';
 import { exportPKCS8, generateKeyPair } from 'jose';
-import { startAuthDatabase, type AuthDatabase } from '../../tests/integrations/harness.ts';
+import { startAuthDatabase, type AuthDatabase } from './harness';
 
 /**
  * Anchor test cho đường gate cấp phát PRODUCTION: composition `oidc/runtime.ts`
@@ -31,11 +31,10 @@ import { startAuthDatabase, type AuthDatabase } from '../../tests/integrations/h
  *      xuất hiện sau khi throw (fail-closed đúng nghĩa, đo được trên bảng thật).
  *
  * ⚠️ PostgreSQL thật (testcontainers): khẳng định "không hàng nào xuống
- * `oidc_state`" chỉ có ý nghĩa trên bảng và CHECK thật. Thiếu Docker ⇒ SKIP —
- * skip không phải pass; report phải nêu rõ.
+ * `oidc_state`" chỉ có ý nghĩa trên bảng và CHECK thật. Docker là phụ thuộc
+ * cứng (fail-loud qua docker-probe của config integration — không skip).
  */
 
-/** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
 /** Container riêng của file này, dựng một lần trong `beforeAll`. */
 let db: AuthDatabase;
 

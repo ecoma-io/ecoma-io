@@ -14,11 +14,16 @@ import {
   insertTransaction,
   findTransactionByHandleX,
   transitionTransaction,
-} from './authorization-transaction-store';
-import { MIGRATIONS_DIR, startAuthDatabase, type AuthDatabase } from './auth-test-harness.ts';
+} from '@ecoma-io/auth-infrastructure';
+import { MIGRATIONS_DIR, startAuthDatabase, type AuthDatabase } from './harness';
 
 /**
  * Hợp đồng persistence của `authorization_transactions` trên PostgreSQL THẬT.
+ *
+ * Suite này thuộc `apps/auth` (app sở hữu `db-auth`) thay vì colocated trong
+ * `libs/auth-infrastructure` — 06-testing.md §9 cấm "spec colocated boot
+ * database thật"; đã chuyển theo đúng ý #298 PR-C. Docker là phụ thuộc cứng
+ * (fail-loud qua docker-probe của config integration — không skip với exit 0).
  *
  * ⚠️ Vì sao phải có PostgreSQL thật: toàn bộ điểm C1 là câu SQL của adapter
  * khớp schema thật — đúng tên cột, đúng kiểu (`transaction_id` là `text` sau

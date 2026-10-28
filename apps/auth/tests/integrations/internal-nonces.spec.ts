@@ -1,6 +1,10 @@
 /**
  * `auth.internal_nonces` — kho nonce bền của `auth`, trên PostgreSQL THẬT.
  *
+ * Suite này thuộc `apps/auth` (app sở hữu `db-auth`) thay vì colocated trong
+ * `libs/auth-infrastructure` — 06-testing.md §9 cấm "spec colocated boot
+ * database thật"; đã chuyển theo đúng ý #298 PR-C.
+ *
  * Đây là mặt còn lại của bản sao ở `apps/account/tests/integrations/internal-nonces.spec.ts`,
  * và lý do tồn tại của cả hai kho là **mỗi service sở hữu database của mình**: một
  * nonce đã chiếm ở `db-account` KHÔNG bảo vệ được request đến `auth`, và ngược lại.
@@ -9,9 +13,8 @@
  * ⚠️ Vì sao phải là PostgreSQL thật: tính đúng đắn của `recordNonce` KHÔNG nằm trong
  * chuỗi SQL của ta. Nó nằm ở việc PostgreSQL quyết định thắng thua bằng ràng buộc
  * UNIQUE khi hai transaction cùng chèn một khoá. Một fake `Map` cho đúng một winner
- * và vẫn dạy ta tin rằng `SELECT` rồi `INSERT` là atomic. Không có Docker (nên không
- * có PostgreSQL) thì SKIP, và PR phải nói thẳng phần đó chưa verify — xem
- * `describe.skipIf`.
+ * và vẫn dạy ta tin rằng `SELECT` rồi `INSERT` là atomic. Docker là phụ thuộc cứng
+ * (fail-loud qua docker-probe của config integration — không skip với exit 0).
  *
  * ⚠️ Test này áp `apps/auth/migrations/*.sql` THẬT, không khai một bảng riêng: một
  * bảng do test tự chế là schema thứ hai, và test xanh trên schema thứ hai không nói
@@ -30,7 +33,7 @@ import { join } from 'node:path';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { MAX_NONCE_EXPIRY_EPOCH_SECONDS } from '@ecoma-io/internal-auth-contracts';
+import { MAX_NONCE_EXPIRY_EPOCH_SECONDS } from '@ecoma-io/auth-contracts';
 
 import {
   createPostgresClient,
@@ -38,11 +41,10 @@ import {
   recordNonce,
   type HyperdriveBinding,
   type Queryable,
-} from './postgres';
+} from '@ecoma-io/auth-infrastructure';
 
-import { MIGRATIONS_DIR, startAuthDatabase, type AuthDatabase } from './auth-test-harness.ts';
+import { MIGRATIONS_DIR, startAuthDatabase, type AuthDatabase } from './harness';
 
-/** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
 let db: AuthDatabase;
 
 /** Schema của bảng giả dùng để chứng minh adapter tự qualify `auth.`. */

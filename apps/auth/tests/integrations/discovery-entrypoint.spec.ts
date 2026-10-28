@@ -61,7 +61,6 @@ import { startAuthDatabase, type AuthDatabase } from './harness';
 /* PostgreSQL harness — cùng luật với các suite hàng xóm              */
 /* ------------------------------------------------------------------ */
 
-/** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
 /** Container riêng của file này, dựng một lần trong `beforeAll`. */
 let db: AuthDatabase;
 
