@@ -119,7 +119,7 @@ describe('loadPruneJobConfig', () => {
   it('does not inspect the credential value of a well-shaped binding', () => {
     // Loader không bao giờ nhìn vào giá trị, chỉ nhìn shape — một DSN mang password giả
     // sai (credential thật sai ở tầng Hyperdrive) vẫn đi qua loader; sai credential là
-    // việc của identity preflight bên `prune.ts`, không phải loader.
+    // việc của identity preflight bên application lib (`pruneTarget`), không phải loader.
     const config = loadPruneJobConfig(
       makeEnv({
         [DB_ACCOUNT_BINDING]: {

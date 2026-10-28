@@ -471,6 +471,9 @@ importers:
 
   apps/auth-nonce-prune-job:
     dependencies:
+      '@ecoma-io/auth-nonce-prune-job-application':
+        specifier: workspace:*
+        version: link:../../libs/auth-nonce-prune-job-application
       pg:
         specifier: ^8.23.1
         version: 8.23.1
@@ -725,6 +728,15 @@ importers:
       testcontainers:
         specifier: 12.2.1
         version: 12.2.1(supports-color@10.2.2)
+
+  libs/auth-nonce-prune-job-application:
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
+      pg:
+        specifier: ^8.23.1
+        version: 8.23.1
 
   libs/backoffice-application:
     dependencies:

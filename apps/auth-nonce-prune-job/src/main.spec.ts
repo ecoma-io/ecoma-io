@@ -3,10 +3,10 @@
  *
  * ⚠️ KHÔNG platform proxy (khác `transactional-mailer-job`): job này KHÔNG có D1, không
  * cần `getPlatformProxy` — hai dependency duy nhất của nó là (1) loader config, (2) hai
- * pool `pg`. Pool `pg` thật KHÔNG được dựng trong unit specs: `pruneTarget` được thay
- * bằng fake qua `vi.mock` — composition root chỉ cần hợp đồng của nó ("resolve hoặc
- * throw"), không cần PostgreSQL thật (integration trên PG thật là việc của suite
- * `apps/auth`/`apps/account`).
+ * pool `pg`. Pool `pg` thật KHÔNG được dựng trong unit specs: `pruneTarget` (thuật toán
+ * ở application lib) được thay bằng fake qua `vi.mock` — composition root chỉ cần hợp
+ * đồng của nó ("resolve hoặc throw"), không cần PostgreSQL thật (integration trên PG
+ * thật là việc của suite `apps/auth`/`apps/account`).
  *
  * Phạm vi: những gì chỉ bẻ gãy được ở tầng compose —
  *   - handler `scheduled` chỉ export đúng `scheduled` (KHÔNG `fetch` — không HTTP surface);
@@ -19,6 +19,8 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { pruneTarget, type PruneTargetRun } from '@ecoma-io/auth-nonce-prune-job-application';
+
 import {
   DB_ACCOUNT_BINDING,
   DB_AUTH_BINDING,
@@ -26,10 +28,10 @@ import {
   type PruneJobEnv,
 } from './config';
 import workerDefault, { runOnce } from './main';
-import { pruneTarget, type PruneTargetRun } from './prune';
 
-vi.mock('./prune', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./prune')>();
+vi.mock('@ecoma-io/auth-nonce-prune-job-application', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@ecoma-io/auth-nonce-prune-job-application')>();
   return {
     ...actual,
     pruneTarget:

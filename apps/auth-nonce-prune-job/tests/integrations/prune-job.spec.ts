@@ -17,9 +17,10 @@
  *     và không chạm bảng của service khác.
  *
  * ⚠️ Thuật toán prune không được sửa ở PR này — suite này chứng minh hợp đồng của
- * `src/prune.ts` trên dependency thật, không thay đổi nó. Crash giữa run để lại trạng
+ * `pruneTarget` (application lib `@ecoma-io/auth-nonce-prune-job-application`) trên
+ * dependency thật, không thay đổi nó. Crash giữa run để lại trạng
  * thái nhất quán là hệ quả của "mỗi lô là một transaction riêng đã commit" (unit suite
- * `src/prune.spec.ts` ghim ROLLBACK/release); integration suite ở đây ghim idempotency
+ * `prune.spec.ts` của lib ghim ROLLBACK/release); integration suite ở đây ghim idempotency
  * giữa các run liên tiếp trên PostgreSQL thật.
  */
 
@@ -29,7 +30,7 @@ import { Client } from 'pg';
 
 import type { Pool } from 'pg';
 
-import { pruneTarget, type PruneTarget } from '../../src/prune';
+import { pruneTarget, type PruneTarget } from '@ecoma-io/auth-nonce-prune-job-application';
 
 import { createPrunerPool, startPruneJobDatabase, type PruneJobDatabase } from './harness';
 

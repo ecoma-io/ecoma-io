@@ -27,8 +27,13 @@
 
 import { Pool } from 'pg';
 
+import {
+  pruneTarget,
+  type PruneTarget,
+  type PruneTargetRun,
+} from '@ecoma-io/auth-nonce-prune-job-application';
+
 import { loadPruneJobConfig, PruneJobConfigError, type PruneJobEnv } from './config';
-import { pruneTarget, type PruneTarget, type PruneTargetRun } from './prune';
 
 /** Log một dòng JSON (pattern `logAlert` của transactional-mailer-job) — một target/dòng. */
 function writeLog(event: Record<string, unknown>): void {
