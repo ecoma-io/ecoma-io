@@ -18,6 +18,7 @@ import {
   tagSchema,
   versionSchema,
 } from '@ecoma-io/pact-broker-api-domain';
+import { validatePactStructure } from '@ecoma-io/pact-broker-api-application';
 import { readJsonBodyWithLimit, validateParam } from '../middleware/validate';
 import { PgPactRepo, PgVersionRepo } from '@ecoma-io/pact-broker-api-infrastructure';
 import type { PactContent, PactFull } from '@ecoma-io/pact-broker-api-infrastructure';
@@ -25,7 +26,6 @@ import type { PactContent, PactFull } from '@ecoma-io/pact-broker-api-infrastruc
 // 1 MB per-route cap trên PUT /pacts/... — cao hơn nhiều so với pact thực tế
 // (~100 KB) mà vẫn là trần có ý nghĩa chống lạm dụng token lộ.
 const PACT_PUBLISH_MAX_BYTES = 1 * 1024 * 1024;
-const MAX_INTERACTIONS = 1000;
 /** Trần số consumerVersionSelectors mỗi request for-verification (chống query amplification). */
 const MAX_CONSUMER_SELECTORS = 50;
 
@@ -122,26 +122,11 @@ export function pactRoutes(
     }
     const body = bodyResult.value as PactContent;
 
-    // Validate basic pact structure
-    if (!body.consumer || !body.provider || !body.interactions) {
-      return c.json(
-        { error: 'Bad Request', message: 'Pact must contain consumer, provider, and interactions' },
-        400,
-      );
-    }
-
-    if (!Array.isArray(body.interactions)) {
-      return c.json({ error: 'Bad Request', message: 'interactions must be an array' }, 400);
-    }
-
-    if (body.interactions.length > MAX_INTERACTIONS) {
-      return c.json(
-        {
-          error: 'Bad Request',
-          message: `Pact contains ${body.interactions.length} interactions; the maximum is ${MAX_INTERACTIONS}`,
-        },
-        400,
-      );
+    // Structural check thuộc use case publish — route chỉ dịch rejection
+    // thành 400 với message nguyên văn của use case.
+    const structural = validatePactStructure(body);
+    if (structural.outcome === 'rejected') {
+      return c.json({ error: 'Bad Request', message: structural.message }, 400);
     }
 
     const repo = new PgPactRepo(c.get('pool'));
