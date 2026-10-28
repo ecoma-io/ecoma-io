@@ -43,7 +43,7 @@ import {
   MAX_SECONDS,
   STATEMENT_TIMEOUT_SECONDS,
   retryBackoffSeconds,
-} from './config';
+} from './prune-caps';
 
 /**
  * Mã lỗi của PostgreSQL mang tính **hỏng hóc tạm thời** — duy nhất nhóm này được retry.

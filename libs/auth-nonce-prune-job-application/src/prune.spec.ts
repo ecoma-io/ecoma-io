@@ -27,7 +27,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { BATCH_SIZE, MAX_ATTEMPTS, MAX_BATCHES, MAX_SECONDS } from './config';
+import { BATCH_SIZE, MAX_ATTEMPTS, MAX_BATCHES, MAX_SECONDS } from './prune-caps';
 import { pruneTarget, type PruneTarget, type QueryPool } from './prune';
 
 /** Identity của kho giả — cùng hình `<role>|<trạng thái>` mà server trả string. */

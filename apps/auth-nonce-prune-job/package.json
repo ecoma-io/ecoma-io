@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "dependencies": {
+    "@ecoma-io/auth-nonce-prune-job-application": "workspace:*",
     "pg": "^8.23.1"
   },
   "devDependencies": {
@@ -10,7 +11,7 @@
     "@types/pg": "^8.23.1",
     "testcontainers": "12.2.1"
   },
-  "//": "Không dependency workspace lib nào: logic prune là một hàm riêng của app này (src/prune.ts), và driver `pg` là một dependency runtime duy nhất. Job không chia code với serving path của auth/account — chia code là chia ranh giới app→app mà tag Nx cấm.",
+  "//": "Một dependency lib duy nhất: application lib giữ thuật toán prune (pruneTarget, caps). Toàn bộ I/O của thuật toán đi qua port QueryPool/Sleep, composition root chỉ dựng pool `pg` từ Hyperdrive binding — không có adapter nào đủ concreto để tách infrastructure lib riêng. Job không chia code với serving path của auth/account — chia code là chia ranh giới app→app mà tag Nx cấm.",
   "nx": {
     "tags": [
       "type:composition",

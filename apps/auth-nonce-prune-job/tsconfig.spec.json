@@ -30,6 +30,9 @@
   "references": [
     {
       "path": "./tsconfig.app.json"
+    },
+    {
+      "path": "../../libs/auth-nonce-prune-job-application/tsconfig.lib.json"
     }
   ]
 }

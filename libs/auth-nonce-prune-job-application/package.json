@@ -1,0 +1,25 @@
+{
+  "name": "@ecoma-io/auth-nonce-prune-job-application",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": {
+      "@ecoma-io/source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1",
+    "pg": "^8.23.1"
+  },
+  "nx": {
+    "tags": [
+      "type:application",
+      "scope:auth",
+      "runtime:edge"
+    ]
+  }
+}

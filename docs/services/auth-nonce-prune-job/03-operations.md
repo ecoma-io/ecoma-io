@@ -26,7 +26,8 @@ Hyperdrive binding  — DB_ACCOUNT → Hyperdrive config của db-account
 
 - Worker **không giữ secret nào**: connection string lấy ở runtime qua
   `binding.connectionString` (pattern `apps/account/server/utils/db.ts`), caps
-  là hằng số app trong `src/config.ts` (PN-13 ghi rõ KHÔNG override qua env —
+  là hằng số của application lib `libs/auth-nonce-prune-job-application`
+  (module `prune-caps.ts`; PN-13 ghi rõ KHÔNG override qua env —
   một override chưa review là một ngân sách tự điền).
 - **Mỗi lane phải khai lại binding tường minh trong `env.<lane>`** — Wrangler
   4.151 **không inherit** top-level `hyperdrive` vào named environment (đo trên
@@ -198,8 +199,9 @@ Rollout/rollback chung của Worker version → `docs/overview/02-delivery.md`
   sweep quyền pass, (c) identity preflight một tick đầu tiên trả đúng
   `deletable`. Trước đủ ba điều kiện đó, deploy production là deploy vào một
   run chắc chắn đỏ — chỉ làm khi có chủ ý để chứng minh fail-closed.
-- Thay đổi caps / nhịp / thuật toán → một PR chung đổi `src/config.ts`,
-  `src/config.spec.ts`, `src/prune.ts` (nếu thuật toán), bảng §6 của
+- Thay đổi caps / nhịp / thuật toán → một PR chung đổi `src/config.ts`
+  (loader) hoặc `libs/auth-nonce-prune-job-application/src/prune-caps.ts` +
+  `prune.ts` của lib (nếu thuật toán), `config.spec.ts` tương ứng, bảng §6 của
   `01-architecture.md`, và bảng đó PHẢI khớp code (docs là spec).
 
 ---
@@ -282,7 +284,7 @@ dò qua `wrangler tail` với phiên bản dev tương đương để tái hiệ
   một người với một credential đúng; Worker là hai kho, mỗi kho một preflight
   - một batch + một probe + log JSON. KHÔNG "mượn tay Worker" bằng cách import
     code Worker vào đâu khác hay ngược lại: code của Worker chỉ được nhập từ
-    `src/prune.ts` của nó.
+    application lib `@ecoma-io/auth-nonce-prune-job-application` của nó.
 - **Giới hạn thời gian tay:** operator chạy tay không bị trần 15 phút như
   Worker — nhưng runbook tay chỉ nên chạy vài lô rồi dừng, không thay thế
   Worker trong dài hạn.

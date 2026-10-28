@@ -20,7 +20,8 @@ auth-nonce-prune-job
 - Không D1, không Queue, không KV, không state cục bộ: tiến độ = dữ liệu thật còn
   lại trên từng database (mỗi lô DELETE tự commit).
 - Hai database là của **hai owner khác** (`auth` và `account`); Worker dùng chung
-  thuật toán qua một adapter (`src/prune.ts`), KHÔNG import code của hai app đó.
+  thuật toán qua application lib `@ecoma-io/auth-nonce-prune-job-application`
+  (`libs/auth-nonce-prune-job-application`), KHÔNG import code của hai app đó.
 - Không có runbook dài ở đây: deploy/cron/runbook → [`03-operations.md`](./03-operations.md).
 
 ## Documents

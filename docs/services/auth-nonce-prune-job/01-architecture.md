@@ -164,7 +164,9 @@ lại chỉ lặp lại shape sai).
 
 ## 6. Caps và quỹ thời gian — bảng tính tổng
 
-Hằng số tập trung trong `src/config.ts` (không env override — override chưa
+Hằng số tập trung trong application lib
+(`libs/auth-nonce-prune-job-application`, module `prune-caps.ts`; loader của
+Worker kiểm rồi re-export — không env override — override chưa
 review là một ngân sách tự điền, giống cách script cũ ghim trong script):
 
 | Hằng                        | Giá trị                      | Nguồn                         |
@@ -198,7 +200,7 @@ Hai kho chạy **song song** (`Promise.allSettled`) nên tổng invocation là
 50 giây slack cho jitter của cron và phần tài nguyên chưa được bao trong
 bảng tính. Với script cũ `MAX_SECONDS=600` tổng là 1050s, vượt 900s — vì vậy
 con số này **không** là "giữ nguyên con số cũ", mà là ghim mới và có được
-chốt bằng test trong `src/config.spec.ts`.
+chốt bằng test trong `config.spec.ts` của Worker.
 
 ⚠️ Trần này kiểm **trước** mỗi lô (cùng hình script cũ `SECONDS - started`):
 một lô bắt đầu ngay trước mốc vẫn chạy tới hết lô đó, và phần thừa đó nằm
