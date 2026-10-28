@@ -763,6 +763,21 @@
       // builtin).
       "files": ["apps/home/modules/static-assets-guard.ts"],
       "rules": { "no-restricted-imports": "off", "import/no-nodejs-modules": "off" }
+    },
+    {
+      // System E2E suite (`system-tests/**`) chạy trên Node runner thông qua
+      // Playwright, không bundle vào Worker edge — cùng tính chất với
+      // `deploy/**`, `db/**`, `apps/*/tests/**` và harness
+      // `docker-probe.global-setup.ts` phía trên: tooling Node. `global-setup.ts`
+      // là fail-closed gate: kênh output DUY NHẤT của nó là console (stdout vì
+      // plugin Nx gộp theo stream), và policy ngôn ngữ bắt buộc output chương
+      // trình là tiếng Anh — tắt `no-console` cho toàn cây `system-tests/**` với
+      // đúng rationale của `tools/**`: gate phải in được lỗi + remedy rõ ràng,
+      // exit 1 im lặng là thứ đã từng nuốt mất nguyên một spec file. Chỉ
+      // exemption, không nới rule nào khác; Worker code của app vẫn chịu ràng
+      // buộc runtime:edge như cũ.
+      "files": ["system-tests/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}"],
+      "rules": { "no-console": "off" }
     }
   ]
 }
