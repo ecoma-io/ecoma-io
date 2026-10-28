@@ -18,7 +18,8 @@
  *      phía sau vẫn chạy được (không bị "kẹt vĩnh viễn").
  *
  * ⚠️ PostgreSQL THẬT (testcontainers) vì cả ba kịch bản đều là thứ tự ghi trong
- *.db-auth: test stub sẽ xanh-green ngay cả một CAS sai. Thiếu Docker ⇒ SKIP.
+ *.db-auth: test stub sẽ xanh-green ngay cả một CAS sai. Thiếu Docker ⇒ ĐỎ —
+ * harness probe fail-loud, không có đường skip.
  */
 
 import postgres from 'postgres';
