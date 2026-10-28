@@ -96,31 +96,31 @@
   {
     "rule": "security-sensitive-value-in-http-response",
     "path": "tools/dx/src/deployment/local-platform/local-deploy.ts",
-    "start": 193,
-    "end": 193,
+    "start": 194,
+    "end": 194,
     "reason": "Helper noi bo cua CLI tooling (tools/dx) tra mat khau PostgreSQL cho orchestrator - KHONG phai HTTP response: tools/ khong co HTTP handler, gia tri chi dung noi bo de ghi stack config/.env va truyen vao container qua pulumi.secret (redact). Khong ro ra browser/bundle/URL/public output.",
     "lines": {
-      "193": "^    return \\{ state: 'found', password \\};$"
+      "194": "^    return \\{ state: 'found', password \\};$"
     }
   },
   {
     "rule": "security-sensitive-value-in-http-response",
     "path": "tools/dx/src/deployment/local-platform/local-deploy.ts",
-    "start": 639,
-    "end": 639,
+    "start": 640,
+    "end": 640,
     "reason": "Helper noi bo cua CLI tooling (tools/dx) tra mat khau PostgreSQL cho orchestrator - KHONG phai HTTP response: tools/ khong co HTTP handler, gia tri chi dung noi bo de ghi stack config/.env va truyen vao container qua pulumi.secret (redact). Khong ro ra browser/bundle/URL/public output.",
     "lines": {
-      "639": "^    return \\{ ok: true, password: lookup\\.password, generated: false \\};$"
+      "640": "^    return \\{ ok: true, password: lookup\\.password, generated: false \\};$"
     }
   },
   {
     "rule": "security-sensitive-value-in-http-response",
     "path": "tools/dx/src/deployment/local-platform/local-deploy.ts",
-    "start": 712,
-    "end": 712,
+    "start": 713,
+    "end": 713,
     "reason": "Helper noi bo cua CLI tooling (tools/dx) tra mat khau PostgreSQL cho orchestrator - KHONG phai HTTP response: tools/ khong co HTTP handler, gia tri chi dung noi bo de ghi stack config/.env va truyen vao container qua pulumi.secret (redact). Khong ro ra browser/bundle/URL/public output.",
     "lines": {
-      "712": "^  return \\{ ok: true, password, generated: true \\};$"
+      "713": "^  return \\{ ok: true, password, generated: true \\};$"
     }
   }
 ]

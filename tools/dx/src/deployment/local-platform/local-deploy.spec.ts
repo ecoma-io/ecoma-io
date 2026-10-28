@@ -34,6 +34,7 @@ import { ROOT_DIR } from '../../utils.js';
 import {
   LOCAL_ENV_OWNED_KEYS,
   POSTGRES_PASSWORD_ENV_KEY,
+  ROOT_DOMAIN_ENV_KEY,
   ROOT_HOST_ENV_KEY,
 } from './platform-outputs-contract.js';
 
@@ -539,9 +540,12 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
       );
     }
 
-    // .env được ghi với port từ outputs — apply GIỮ hành vi ghi .env.
+    // .env được ghi với port từ outputs — apply GIỮ hành vi ghi .env, đủ ba key
+    // sở hữu (ROOT_DOMAIN là alias E2E-facing cùng giá trị với ROOT_HOST).
     const envContent = readFileSync(join(root, '.env'), 'utf8');
     expect(envContent).toContain('ROOT_HOST=fbi.com:40001');
+    expect(envContent).toContain('ROOT_DOMAIN=fbi.com:40001');
+    expect(envContent).toContain('POSTGRES_PASSWORD=');
   });
 });
 
@@ -1143,15 +1147,17 @@ describe('resolvePostgresPassword', () => {
 });
 
 describe('upsertLocalEnv — new contract', () => {
-  it('creates file with both owned keys when missing', () => {
+  it('creates file with all three owned keys when missing', () => {
     const root = tempWorktree();
     const { envPath } = upsertLocalEnv(root, {
       [ROOT_HOST_ENV_KEY]: 'fbi.com:40000',
+      [ROOT_DOMAIN_ENV_KEY]: 'fbi.com:40000',
       [POSTGRES_PASSWORD_ENV_KEY]: 'pw-123',
     });
     expect(existsSync(envPath)).toBe(true);
     const content = readFileSync(envPath, 'utf8');
     expect(content).toContain('ROOT_HOST=fbi.com:40000');
+    expect(content).toContain('ROOT_DOMAIN=fbi.com:40000');
     expect(content).toContain('POSTGRES_PASSWORD=pw-123');
   });
 
@@ -1175,15 +1181,40 @@ describe('upsertLocalEnv — new contract', () => {
     );
     upsertLocalEnv(root, {
       [ROOT_HOST_ENV_KEY]: 'fbi.com:40001',
+      [ROOT_DOMAIN_ENV_KEY]: 'fbi.com:40001',
       [POSTGRES_PASSWORD_ENV_KEY]: 'pw-x',
     });
     const content = readFileSync(join(root, '.env'), 'utf8');
     expect(content).toContain('ROOT_HOST=fbi.com:40001');
+    expect(content).toContain('ROOT_DOMAIN=fbi.com:40001');
     expect(content).toContain('POSTGRES_PASSWORD=pw-x');
     expect(content).toContain('# comment giữ nguyên');
     expect(content).toContain('OTHER_KEY=keepme');
     expect(content).toContain('TRAILING=yes');
     expect(content).not.toContain('fbi.com:1');
+  });
+
+  it('appends ROOT_DOMAIN once to a pre-existing .env that predates the key', () => {
+    const root = tempWorktree();
+    // `.env` từ bản deploy trước khi có `ROOT_DOMAIN`: key mới phải được thêm
+    // cuối đúng MỘT lần, còn dòng `ROOT_HOST` hiện có được đè theo giá trị mới
+    // — không nhân bản, không đụng key người dùng.
+    writeFileSync(
+      join(root, '.env'),
+      'USER_VAR=keep\nROOT_HOST=fbi.com:40007\nPOSTGRES_PASSWORD=pw-old\n',
+      'utf8',
+    );
+    upsertLocalEnv(root, {
+      [ROOT_HOST_ENV_KEY]: 'fbi.com:40007',
+      [ROOT_DOMAIN_ENV_KEY]: 'fbi.com:40007',
+      [POSTGRES_PASSWORD_ENV_KEY]: 'pw-old',
+    });
+    const content = readFileSync(join(root, '.env'), 'utf8');
+    expect(content.match(/^ROOT_DOMAIN=.*$/gmu)?.length).toBe(1);
+    expect(content).toContain('ROOT_DOMAIN=fbi.com:40007');
+    expect(content.match(/^ROOT_HOST=.*$/gmu)?.length).toBe(1);
+    expect(content).toContain('USER_VAR=keep');
+    expect(content).toContain('POSTGRES_PASSWORD=pw-old');
   });
 
   it('deleting .env then restoring from canonical config keeps the same password (no rotation)', () => {
@@ -1292,8 +1323,10 @@ describe('localStatus / localDestroy without passphrase for new-format stacks', 
 });
 
 describe('git tracking guards', () => {
-  it('owned env keys include POSTGRES_PASSWORD', () => {
+  it('owned env keys include ROOT_HOST, ROOT_DOMAIN and POSTGRES_PASSWORD', () => {
     expect(LOCAL_ENV_OWNED_KEYS).toContain(POSTGRES_PASSWORD_ENV_KEY);
+    expect(LOCAL_ENV_OWNED_KEYS).toContain(ROOT_HOST_ENV_KEY);
+    expect(LOCAL_ENV_OWNED_KEYS).toContain(ROOT_DOMAIN_ENV_KEY);
   });
 
   it('LOCAL_PASSPHRASE_FILE is gitignored (contract)', () => {

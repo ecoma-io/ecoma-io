@@ -28,8 +28,8 @@ Routing của Traefik phải lọc theo network của worktree (`--providers.doc
 ## Port và URL
 
 - Chỉ Traefik publish host port: Docker cấp **động**, bind `127.0.0.1` — home và PostgreSQL không publish host port nào.
-- `ROOT_HOST` = `fbi.com:<traefik-host-port>`, chỉ suy từ Pulumi outputs sau khi up (`buildRootHost` trong contract). Không hard-code port bao giờ.
-- `.env` là **artifact tiện dụng**: orchestration ghi `ROOT_HOST` sau khi đọc outputs (chỉ đụng key mình sở hữu, giữ nguyên byte còn lại), và không chương trình Pulumi nào đọc `.env`.
+- `ROOT_HOST` = `fbi.com:<traefik-host-port>`, chỉ suy từ Pulumi outputs sau khi up (`buildRootHost` trong contract). Không hard-code port bao giờ. `ROOT_DOMAIN` mang cùng giá trị — key canonical mà system E2E suite đọc để suy origin `https://<sub>.<host[:port]>`; `ROOT_HOST` được giữ cho consumer hiện có (home-deploy v.v.).
+- `.env` là **artifact tiện dụng**: orchestration ghi `ROOT_HOST`, `ROOT_DOMAIN` và `POSTGRES_PASSWORD` sau khi đọc outputs (chỉ đụng key mình sở hữu, giữ nguyên byte còn lại), và không chương trình Pulumi nào đọc `.env`.
 
 ## Invariants
 

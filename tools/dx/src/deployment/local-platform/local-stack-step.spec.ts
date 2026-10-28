@@ -282,7 +282,7 @@ describe('runLocalStackStep up — platform path', () => {
 });
 
 describe('runLocalStackStep env', () => {
-  it('reads outputs and writes .env with ROOT_HOST + POSTGRES_PASSWORD from canonical config', async () => {
+  it('reads outputs and writes .env with ROOT_HOST, ROOT_DOMAIN + POSTGRES_PASSWORD from canonical config', async () => {
     const root = tempWorktree();
     process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
     mkdirSync(join(root, '.pulumi-local-state'), { recursive: true });
@@ -303,6 +303,9 @@ describe('runLocalStackStep env', () => {
     expect(exit).toBe(0);
     const content = readFileSync(join(root, '.env'), 'utf8');
     expect(content).toContain('ROOT_HOST=fbi.com:40020');
+    // ROOT_DOMAIN là alias E2E-facing — đường Nx (step env) ghi cùng bộ key
+    // với đường legacy trong `local-deploy.ts`.
+    expect(content).toContain('ROOT_DOMAIN=fbi.com:40020');
     expect(content).toContain('POSTGRES_PASSWORD=canonical-pw');
     // env là read-only đối với state: KHÔNG up, KHÔNG ensureStack.
     expect(pulumiRunMock.mock.calls.filter(([, , args]) => args[0] === 'up')).toHaveLength(0);

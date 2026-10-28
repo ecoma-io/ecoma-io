@@ -28,6 +28,7 @@ import { dockerResourceName } from './../../local-runtime/deploy-namespace.js';
 import {
   buildRootHost,
   POSTGRES_PASSWORD_ENV_KEY,
+  ROOT_DOMAIN_ENV_KEY,
   ROOT_HOST_ENV_KEY,
 } from './platform-outputs-contract.js';
 import {
@@ -309,11 +310,18 @@ export async function runLocalStackStep(
       return 1;
     }
     const rootHost = buildRootHost(resolution.traefikHostPort);
+    // `ROOT_DOMAIN` cùng giá trị với `ROOT_HOST` — hai key là hai tên gọi cho
+    // cùng một `host[:port]` gốc (`ROOT_HOST` cho consumer hiện có,
+    // `ROOT_DOMAIN` cho system E2E suite). Bước `env` của đường Nx phải ghi đủ
+    // cùng bộ key với đường legacy trong `local-deploy.ts`.
     const { envPath } = upsertLocalEnv(ctx.worktreeRoot, {
       [ROOT_HOST_ENV_KEY]: rootHost,
+      [ROOT_DOMAIN_ENV_KEY]: rootHost,
       [POSTGRES_PASSWORD_ENV_KEY]: canonical.password,
     });
-    console.log(`[local-stack-step] ${ROOT_HOST_ENV_KEY}=${rootHost} đã ghi vào ${envPath}`);
+    console.log(
+      `[local-stack-step] ${ROOT_HOST_ENV_KEY}=${rootHost}, ${ROOT_DOMAIN_ENV_KEY}=${rootHost} đã ghi vào ${envPath}`,
+    );
     return 0;
   }
 

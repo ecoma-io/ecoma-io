@@ -35,6 +35,7 @@ import {
   buildRootHost,
   LOCAL_ENV_OWNED_KEYS,
   POSTGRES_PASSWORD_ENV_KEY,
+  ROOT_DOMAIN_ENV_KEY,
   ROOT_HOST_ENV_KEY,
 } from './platform-outputs-contract.js';
 import {
@@ -878,12 +879,20 @@ async function runApply(
   //    `.env` sẽ dùng mật khẩu khác với mật khẩu Postgres thật. Stack config là
   //    nguồn sự thật canonical; `.env` là bản sao sinh ra, khôi phục được từ
   //    config khi bị xoá.
+  //
+  //    `ROOT_DOMAIN` nhận CÙNG giá trị `outputs.rootHost` với `ROOT_HOST` —
+  //    hai key là hai tên gọi cho cùng một `host[:port]` gốc: `ROOT_HOST`
+  //    phục vụ consumer hiện có (home-deploy v.v.), còn `ROOT_DOMAIN` là key
+  //    canonical mà system E2E suite đọc để suy origin
+  //    `https://<sub>.<host[:port]>`.
   const { envPath } = upsertLocalEnv(ctx.worktreeRoot, {
     [ROOT_HOST_ENV_KEY]: outputs.rootHost,
+    [ROOT_DOMAIN_ENV_KEY]: outputs.rootHost,
     [POSTGRES_PASSWORD_ENV_KEY]: postgresPassword,
   });
   console.log(
-    `[local-deploy] ${ROOT_HOST_ENV_KEY}=${outputs.rootHost} and ` +
+    `[local-deploy] ${ROOT_HOST_ENV_KEY}=${outputs.rootHost}, ` +
+      `${ROOT_DOMAIN_ENV_KEY}=${outputs.rootHost} and ` +
       `${POSTGRES_PASSWORD_ENV_KEY} written to ${envPath}`,
   );
 

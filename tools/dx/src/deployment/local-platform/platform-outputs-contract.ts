@@ -42,6 +42,19 @@ export interface PlatformOutputs {
 /** Environment key chứa `fbi.com:<traefik-host-port>` sau khi platform up. */
 export const ROOT_HOST_ENV_KEY = 'ROOT_HOST';
 
+/**
+ * Environment key canonical dành cho system E2E suite: `host[:port]` gốc của
+ * mọi origin `https://<sub>.<host[:port]>` sau khi platform up.
+ *
+ * Giá trị GIỐNG HỆT `ROOT_HOST` (`outputs.rootHost` = `fbi.com:<port>`) —
+ * hai key là hai tên gọi cho cùng một giá trị vì consumer khác nhau đọc hai
+ * khái niệm khác nhau: `ROOT_HOST` là key hiện có của consumer cũ
+ * (home-deploy v.v.), còn `ROOT_DOMAIN` là key E2E-facing mà suite hệ thống
+ * đọc để suy root domain. Không xoá `ROOT_HOST`: các consumer hiện có vẫn
+ * đang đọc key đó.
+ */
+export const ROOT_DOMAIN_ENV_KEY = 'ROOT_DOMAIN';
+
 /** Environment key chứa mật khẩu PostgreSQL local được sinh cho E2E/dev tools. */
 export const POSTGRES_PASSWORD_ENV_KEY = 'POSTGRES_PASSWORD';
 
@@ -52,7 +65,11 @@ export const POSTGRES_PASSWORD_ENV_KEY = 'POSTGRES_PASSWORD';
  * mọi key khác trong file `.env` hiện có phải giữ nguyên. `.env` là artifact
  * tiện dụng — nguồn sự thật cho giá trị triển khai là Pulumi outputs.
  */
-export const LOCAL_ENV_OWNED_KEYS = [ROOT_HOST_ENV_KEY, POSTGRES_PASSWORD_ENV_KEY] as const;
+export const LOCAL_ENV_OWNED_KEYS = [
+  ROOT_HOST_ENV_KEY,
+  ROOT_DOMAIN_ENV_KEY,
+  POSTGRES_PASSWORD_ENV_KEY,
+] as const;
 
 /** Hostname local mà Traefik route tới home. */
 export const LOCAL_ROOT_HOSTNAME = 'fbi.com';
