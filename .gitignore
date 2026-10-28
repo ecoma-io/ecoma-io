@@ -101,3 +101,10 @@ Pulumi.*.yaml
 # trong process do, con tien trinh con (vd `multiprocessing`) van ghi duoc.
 __pycache__/
 *.py[cod]
+
+# Playwright: output của system-test suites (`system-tests/<category>/<suite>/`).
+# `test-results/` chứa trace/screenshot/video khi test đỏ; `playwright-report/`
+# chứa HTML report. Cả hai là artifact chạy-thật, không phải source — commit là
+# rác review và phình repo. `open: 'never'` trên CI không đổi chuyện ghi file.
+test-results/
+playwright-report/

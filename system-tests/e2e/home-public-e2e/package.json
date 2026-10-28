@@ -1,0 +1,35 @@
+{
+  "name": "@ecoma-io/home-public-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@playwright/test": "^1.37.0"
+  },
+  "nx": {
+    "tags": [
+      "type:tooling",
+      "scope:public",
+      "runtime:native"
+    ],
+    "targets": {
+      "system-test": {
+        "executor": "nx:run-commands",
+        "cache": false,
+        "options": {
+          "cwd": "system-tests/e2e/home-public-e2e",
+          "command": "npx playwright test"
+        },
+        "//": [
+          "Target canonical `system-test` của system-test suite (docs/overview/06-testing.md §4) —",
+          "suite tự định nghĩa cách thực thi của mình. `cache: false` là CONTRACT chứ không phải",
+          "tối ưu (cùng rationale với entry `local-up` của `nx.json`): target không mutate gì trong",
+          "repo, nhưng stack local phía sau là external state sống ngoài inputs của Nx — một cache",
+          "hit sẽ che việc stack đã đổi trạng thái (container recreate, router Traefik chưa đăng ký",
+          "lại) và trả kết quả xanh cho một hệ thống KHÔNG còn chạy như lúc cache được ghi. Suite",
+          "verify cả hệ thống đang chạy thật nên mỗi lần chạy phải chạm stack thật."
+        ]
+      }
+    }
+  }
+}
