@@ -227,6 +227,10 @@ describe('root .dockerignore: required build inputs are included', () => {
     expect(isExcluded('apps/backoffice/.npmrc')).toBe(false);
     expect(isExcluded('apps/backoffice/nuxt.config.ts')).toBe(false);
     expect(isExcluded('libs/backoffice-domain/src/index.ts')).toBe(false);
+    // Hai libs DDD layer mới của backoffice (#316): app import trực tiếp,
+    // Dockerfile COPY — thiếu whitelist là image build chết "not found".
+    expect(isExcluded('libs/backoffice-application/src/index.ts')).toBe(false);
+    expect(isExcluded('libs/backoffice-infrastructure/src/index.ts')).toBe(false);
   });
 
   it('backoffice colocated specs never enter the context — they import the excluded tests/ helpers', () => {
