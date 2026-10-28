@@ -296,6 +296,18 @@ const FINGERPRINT_KEY_HEX = /^[0-9a-f]{64}$/u;
 let cachedConfigPromise: Promise<TransactionalMailConfig> | undefined;
 
 /**
+ * Xoá ô cache của {@link loadTransactionalMailConfig} — **chỉ test dùng**.
+ *
+ * Dùng trong `beforeEach` của `describe('cache')` để mỗi test được cache **lạnh** (cache
+ * LỖI không, nên một test gây lỗi trước đó đã tự xoá ô — nhưng một test ấm nó bằng
+ * `env` hợp lệ thì không), để kết quả của test không phụ thuộc thứ tự chạy (kể cả khi
+ * vitest shuffle). Production không bao giờ gọi: isolate chết thì cache chết cùng.
+ */
+export function resetTransactionalMailConfigCacheForTests(): void {
+  cachedConfigPromise = undefined;
+}
+
+/**
  * Nạp và kiểm toàn bộ cấu hình của `transactional-mail`.
  *
  * @param env Worker `env` (binding + secrets + vars).

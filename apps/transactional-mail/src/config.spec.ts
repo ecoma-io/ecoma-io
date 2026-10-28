@@ -10,7 +10,7 @@
  * hoàn toàn. Hành vi cache được kiểm ở một `describe` riêng ở cuối file.
  */
 
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
   DEFAULT_SKEW_SECONDS,
@@ -26,6 +26,7 @@ import {
   type TransactionalMailConfig,
   type TransactionalMailEnv,
   loadTransactionalMailConfig,
+  resetTransactionalMailConfigCacheForTests,
 } from './config';
 import {
   PERMISSION_DELIVERY_OUTCOME,
@@ -570,9 +571,14 @@ describe('template URL allowlist', () => {
 });
 
 describe('cache', () => {
-  // ⚠️ Cache ở module scope và dùng chung cho **cả suite**, nên thứ tự hai lời gọi ở đây
-  // là một phần của hợp đồng: phải **gây lỗi trước** rồi mới kiểm việc phục hồi. Đảo
-  // thứ tự sẽ biến test thành xanh vì lý do sai (cache đã ấm từ một `env` khác).
+  // Mỗi test tự xoá ô cache của module (`resetTransactionalMailConfigCacheForTests`),
+  // nên kết quả không phụ thuộc thứ tự chạy — kể cả khi vitest shuffle. Test "same
+  // instance" nhờ thế kiểm đúng ý nghĩa của nó: cache LẠNH, hai lời gọi cùng nhận
+  // MỘT promise (không phải hai config trùng giá trị do trùng `env`).
+  beforeEach(() => {
+    resetTransactionalMailConfigCacheForTests();
+  });
+
   it('does not cache a configuration error, so a fixed env reloads', async () => {
     const broken = makeEnv({ MAIL_PUBLISH_LEASE_MS: undefined });
     await expect(loadTransactionalMailConfig(broken)).rejects.toThrow(TransactionalMailConfigError);
