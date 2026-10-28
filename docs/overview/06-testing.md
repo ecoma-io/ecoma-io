@@ -122,8 +122,9 @@ Phân biệt ba khái niệm Nx hay bị lẫn:
   CI phải được thu hồi — quy tắc vệ sinh phía thực thi thuộc `02-delivery.md` §4.
 - **Suite phụ thuộc Docker probe Docker một lần mỗi lần chạy** (vitest `globalSetup`) thay vì để từng spec file tự probe.
   **Một suite bắt buộc Docker phải đỏ khi Docker không có — skip không phải kết quả chấp nhận được:** kết quả xanh không bao
-  giờ được che việc một suite bắt buộc đã không chạy. Biến `ECOMA_REQUIRE_DOCKER=1` biến một lần chạy bị skip thành failure
-  (fail closed); một lần chạy đã skip — kể cả chạy local không có Docker — **không** tính là qua gate bắt buộc nào.
+  giờ được che việc một suite bắt buộc đã không chạy. Probe dùng chính dependency thật mà suite sắp dùng (một container
+  PostgreSQL qua testcontainers) rồi **ném lỗi** khi nó không dựng được, làm toàn bộ lần chạy đỏ — không có đường skip,
+  không có cờ bật tắt; một lần chạy bị chặn vì vắng Docker **không** tính là qua gate bắt buộc nào.
 - **Database test không vượt ranh giới database ownership** (`01` §9 invariant 5, 7, 25): harness thuộc sở hữu của suite hoặc
   project cần nó — mỗi project tự dựng harness của mình (PostgreSQL qua testcontainers, D1 qua wrangler `getPlatformProxy`).
   **Không** có shared test-support library: import chéo deploy unit bị cấm bởi module-boundary rules (`05` §7), nên hai
