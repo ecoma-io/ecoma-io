@@ -18,7 +18,11 @@ COPY patches/ ./patches/
 COPY tools/dx/package.json ./tools/dx/
 COPY apps/backoffice/package.json ./apps/backoffice/
 COPY apps/backoffice/.npmrc ./apps/backoffice/.npmrc
+COPY libs/account-contracts/package.json ./libs/account-contracts/
+COPY libs/internal-auth-contracts/package.json ./libs/internal-auth-contracts/
 COPY libs/backoffice-domain/package.json ./libs/backoffice-domain/
+COPY libs/backoffice-application/package.json ./libs/backoffice-application/
+COPY libs/backoffice-infrastructure/package.json ./libs/backoffice-infrastructure/
 COPY libs/ui-app-shell/package.json ./libs/ui-app-shell/
 COPY libs/ui-ecoma-logo/package.json ./libs/ui-ecoma-logo/
 
@@ -26,7 +30,11 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --ignore-scripts --trust-lockfile
 
 COPY apps/backoffice/ ./apps/backoffice/
+COPY libs/account-contracts/ ./libs/account-contracts/
+COPY libs/internal-auth-contracts/ ./libs/internal-auth-contracts/
 COPY libs/backoffice-domain/ ./libs/backoffice-domain/
+COPY libs/backoffice-application/ ./libs/backoffice-application/
+COPY libs/backoffice-infrastructure/ ./libs/backoffice-infrastructure/
 COPY libs/ui-app-shell/ ./libs/ui-app-shell/
 COPY libs/ui-ecoma-logo/ ./libs/ui-ecoma-logo/
 COPY tsconfig.base.json ./

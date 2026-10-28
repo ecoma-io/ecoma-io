@@ -54,6 +54,8 @@ apps/*
 !apps/pact-broker-app
 libs/*
 !libs/backoffice-domain
+!libs/backoffice-application
+!libs/backoffice-infrastructure
 !libs/ui-app-shell
 !libs/ui-ecoma-logo
 !libs/account-contracts
@@ -137,5 +139,8 @@ apps/account/vitest.config.mts
 apps/account/tsconfig.db.json
 apps/account/tsconfig.spec.json
 apps/account/app/**/*.spec.ts
+# Cùng lý do với các app trên: spec colocated của pact-broker-app import
+# helper `tests/` đã bị loại — vào context là `nuxt build` chết TS2307.
+apps/pact-broker-app/app/**/*.spec.ts
 apps/pact-broker-app/tests
 apps/pact-broker-app/vitest.config.mts
