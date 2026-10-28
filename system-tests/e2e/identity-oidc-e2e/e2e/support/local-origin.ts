@@ -308,6 +308,16 @@ function mailContainer(namespace: string): string {
 }
 
 /**
+ * Escape nháy đơn cho một giá trị trong SQL literal (`''`) — inputs đều do
+ * test sinh ra với format chặt (sub `sub-oidc-e2e-*`, hash hex 64), nhưng
+ * escape vẫn là mặc định đúng: SQL không bao giờ nội suy giá trị bằng nháy
+ * đơn trần.
+ */
+function sqlQuote(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+/**
  * Đảm bảo user test tồn tại trong `db-account`: `INSERT ... ON CONFLICT DO
  * NOTHING` cho `account.users` + `account.email_addresses` với `status
  * 'verified'`. Hình dạng cột theo migration thật (`0001_identity_core.sql`,
@@ -324,6 +334,10 @@ export function seedUser(namespace: string, sub: string, email: string): void {
   // Trust auth trong container postgres (`-U ecoma_local` superuser của platform)
   // — cùng đường seed của `deploys/account-deploy/index.ts`; role runtime không
   // kết nối được qua TCP từ host vì database không publish port.
+  // Conflict target là PARTIAL unique index `(address_hash) WHERE status =
+  // 'verified'` (`0005_email_addresses.sql:82`) — Postgres đòi mệnh đề WHERE
+  // khớp exact khi dùng index làm arbiter; `(user_sub, address_hash)` không
+  // khớp constraint nào và fail lần chạy thứ hai.
   dockerExec(container, [
     'psql',
     '-U',
@@ -333,11 +347,11 @@ export function seedUser(namespace: string, sub: string, email: string): void {
     '-v',
     'ON_ERROR_STOP=1',
     '-c',
-    `INSERT INTO account.users (sub) VALUES ('${sub}') ON CONFLICT (sub) DO NOTHING`,
+    `INSERT INTO account.users (sub) VALUES (${sqlQuote(sub)}) ON CONFLICT (sub) DO NOTHING`,
     '-c',
     `INSERT INTO account.email_addresses (user_sub, address_normalized, address_hash, status, is_sign_in, verified_at)
-     VALUES ('${sub}', '${normalized}', '${addressHash}', 'verified', true, now())
-     ON CONFLICT (user_sub, address_hash) DO UPDATE SET status = 'verified', verified_at = now()`,
+     VALUES (${sqlQuote(sub)}, ${sqlQuote(normalized)}, ${sqlQuote(addressHash)}, 'verified', true, now())
+     ON CONFLICT (address_hash) WHERE (status = 'verified') DO UPDATE SET status = 'verified', verified_at = now()`,
   ]);
 }
 
