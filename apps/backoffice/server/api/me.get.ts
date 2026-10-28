@@ -4,7 +4,8 @@
  * Trả `{ sub, displayName }` — `sub` từ principal đã verify của middleware
  * authn, `displayName` từ cùng batch contract
  * `GET /internal/account/profiles` mà `/api/staff` và `/api/onboarding-status`
- * dùng, qua cùng cache 120s (`server/account/display-name-cache.ts`): sub của
+ * dùng, qua cùng cache 120s (`display-name-cache.ts` của
+ * `@ecoma-io/backoffice-application`): sub của
  * một phiên chỉ là một entry trong batch, nên ba route chia nhau một cache và
  * một lần fetch phục vụ cả ba.
  *
@@ -25,8 +26,10 @@
 
 import { defineEventHandler, setResponseHeader } from 'h3';
 
-import { accountClientConfig, fetchAccountProfiles } from '../account/client';
-import { cachedDisplayName, storeDisplayNames } from '../account/display-name-cache';
+import { cachedDisplayName, storeDisplayNames } from '@ecoma-io/backoffice-application';
+import { accountClientConfig, fetchAccountProfiles } from '@ecoma-io/backoffice-infrastructure';
+
+import { readWorkerEnv } from '../db';
 import { writeLog } from '../log';
 import { requirePrincipal } from '../principal';
 
@@ -40,7 +43,7 @@ export default defineEventHandler(async (event) => {
   const nowMs = Date.now();
   let displayName = cachedDisplayName(sub, nowMs);
   if (displayName === undefined) {
-    const config = accountClientConfig(event);
+    const config = accountClientConfig(readWorkerEnv(event));
     const result = config === null ? null : await fetchAccountProfiles(config, [sub]);
 
     if (result !== null && result.ok) {

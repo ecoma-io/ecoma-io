@@ -13,9 +13,12 @@ import { createApp, createRouter, defineEventHandler, toWebHandler } from 'h3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { accountProfilesResponse } from '@ecoma-io/account-contracts';
+import { resetDisplayNameCacheForTests, storeDisplayNames } from '@ecoma-io/backoffice-application';
+import {
+  ACCOUNT_SERVICE_BINDING_NAME,
+  AUTH_INTERNAL_SECRET_ENV,
+} from '@ecoma-io/backoffice-infrastructure';
 
-import { ACCOUNT_SERVICE_BINDING_NAME, AUTH_INTERNAL_SECRET_ENV } from '../account/client';
-import { resetDisplayNameCacheForTests, storeDisplayNames } from '../account/display-name-cache';
 import { PRINCIPAL_CONTEXT_KEY } from '../principal';
 import staffRoute from './staff.get';
 
@@ -41,25 +44,32 @@ vi.mock('../db', () => ({
 // ⚠️ `vi.mock` thay thế **toàn bộ** module: mọi export mà route import phải có
 // mặt trong factory, kể cả `listStaff` (thiếu nó là TypeError ở route, bị
 // `failClosedOnDatabaseError` nuốt thành 503 — đúng lỗi mà dòng này từng gây).
-vi.mock('@ecoma-io/backoffice-infrastructure', () => ({
-  backofficeHyperdrive: (env: unknown) =>
-    (env as { DB_BACKOFFICE?: unknown })?.DB_BACKOFFICE ?? null,
-  loadPrincipalAuthorization: async () => ({ assignments: [] }),
-  listStaff: async (client: { query: (text: string) => Promise<{ rows: typeof STAFF_ROWS }> }) =>
-    (await client.query('SELECT sub, status FROM backoffice.staff ORDER BY sub')).rows,
-  withBackofficePool: async <T>(_hyperdrive: unknown, callback: (pool: unknown) => Promise<T>) =>
-    callback({
-      connect: async () => ({
-        release: () => undefined,
-        query: async (text: string) => {
-          if (text.includes('FROM backoffice.staff')) {
-            return { rows: STAFF_ROWS, rowCount: STAFF_ROWS.length };
-          }
-          return { rows: [], rowCount: 0 };
-        },
+// Các hàm client account (`accountClientConfig`, `fetchAccountProfiles`) giữ
+// bản **thật** qua `importOriginal` — mock chỉ nhắm phần pool/authorization;
+// signing + validator thật là chủ đề unit suite của chính client trong lib.
+vi.mock('@ecoma-io/backoffice-infrastructure', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@ecoma-io/backoffice-infrastructure')>();
+  return {
+    ...actual,
+    backofficeHyperdrive: (env: unknown) =>
+      (env as { DB_BACKOFFICE?: unknown })?.DB_BACKOFFICE ?? null,
+    loadPrincipalAuthorization: async () => ({ assignments: [] }),
+    listStaff: async (client: { query: (text: string) => Promise<{ rows: typeof STAFF_ROWS }> }) =>
+      (await client.query('SELECT sub, status FROM backoffice.staff ORDER BY sub')).rows,
+    withBackofficePool: async <T>(_hyperdrive: unknown, callback: (pool: unknown) => Promise<T>) =>
+      callback({
+        connect: async () => ({
+          release: () => undefined,
+          query: async (text: string) => {
+            if (text.includes('FROM backoffice.staff')) {
+              return { rows: STAFF_ROWS, rowCount: STAFF_ROWS.length };
+            }
+            return { rows: [], rowCount: 0 };
+          },
+        }),
       }),
-    }),
-}));
+  };
+});
 
 let readEnv: Record<string, unknown> = {};
 

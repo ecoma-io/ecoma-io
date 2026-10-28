@@ -1,5 +1,5 @@
 /**
- * Unit test của quyết định gate onboarding (`server/account/onboarding.ts`) —
+ * Unit test của quyết định gate onboarding (`onboarding.ts`) —
  * logic thuần, không mock gì.
  */
 

@@ -68,3 +68,11 @@ export type {
   UnavailableTokenResult,
   VerifiedAccessToken,
 } from './auth/verify';
+
+export {
+  ACCOUNT_SERVICE_BINDING_NAME,
+  AUTH_INTERNAL_SECRET_ENV,
+  accountClientConfig,
+  fetchAccountProfiles,
+} from './account/client';
+export type { AccountServiceBinding } from './account/client';

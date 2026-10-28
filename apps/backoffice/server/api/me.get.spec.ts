@@ -12,8 +12,8 @@ import { createApp, createRouter, defineEventHandler, toWebHandler } from 'h3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { accountProfilesResponse } from '@ecoma-io/account-contracts';
+import { resetDisplayNameCacheForTests, storeDisplayNames } from '@ecoma-io/backoffice-application';
 
-import { resetDisplayNameCacheForTests, storeDisplayNames } from '../account/display-name-cache';
 import { PRINCIPAL_CONTEXT_KEY } from '../principal';
 import meRoute from './me.get';
 

@@ -1,5 +1,5 @@
 /**
- * Unit test của `server/account/display-name-cache.ts` — TTL tuyệt đối, chính
+ * Unit test của `display-name-cache.ts` — TTL tuyệt đối, chính
  * sách không gia hạn null, và ghi đè entry tươi (06 §9: không dùng `Date.now`
  * thật; thời gian do test truyền).
  */

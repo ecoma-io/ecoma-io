@@ -24,10 +24,12 @@
 
 import { createError, defineEventHandler, setResponseHeader } from 'h3';
 
-import { accountClientConfig, fetchAccountProfiles } from '../account/client';
-import { needsDisplayName } from '../account/onboarding';
-import { requirePrincipal } from '../principal';
+import { needsDisplayName } from '@ecoma-io/backoffice-application';
+import { accountClientConfig, fetchAccountProfiles } from '@ecoma-io/backoffice-infrastructure';
+
+import { readWorkerEnv } from '../db';
 import { writeLog } from '../log';
+import { requirePrincipal } from '../principal';
 
 export default defineEventHandler(async (event) => {
   setResponseHeader(event, 'Cache-Control', 'no-store');
@@ -35,7 +37,7 @@ export default defineEventHandler(async (event) => {
   // Gate của riêng phiên này — principal từ middleware authn, không từ query.
   const principal = requirePrincipal(event);
 
-  const config = accountClientConfig(event);
+  const config = accountClientConfig(readWorkerEnv(event));
   if (config === null) {
     writeLog({
       event: 'onboarding_status.failed',

@@ -44,11 +44,13 @@ import { jwtVerify } from 'jose';
 import type { H3Event } from 'h3';
 
 import {
+  accountClientConfig,
   backofficeHyperdrive,
   backofficeNodeDatabaseUrl,
   createCsrfToken,
   createSessionIdentifier,
   csrfCookie,
+  fetchAccountProfiles,
   hashSessionIdentifier,
   insertSession,
   jwksResolver,
@@ -64,11 +66,10 @@ import {
   consumeLoginFlow,
   hashFlowIdentifier,
   LOGIN_FLOW_COOKIE_NAME,
+  needsDisplayName,
 } from '@ecoma-io/backoffice-application';
 import { readWorkerEnv } from '../../db';
 import { writeLog } from '../../log';
-import { accountClientConfig, fetchAccountProfiles } from '../../account/client';
-import { needsDisplayName } from '../../account/onboarding';
 
 /**
  * Scope đã xin ở login (`openid offline_access`) ⇒ response của `/token` luôn
@@ -319,7 +320,7 @@ export default defineEventHandler(async (event: H3Event): Promise<void> => {
   // (2FA, giai đoạn 2) sẽ là quyết định review riêng. Không đọc `needsDisplayName`
   // từ client: quyết định điều hướng thuộc server.
   try {
-    const accountConfig = accountClientConfig(event);
+    const accountConfig = accountClientConfig(readWorkerEnv(event));
     if (accountConfig !== null) {
       const profiles = await fetchAccountProfiles(accountConfig, [verified.sub]);
       if (profiles.ok && needsDisplayName(profiles.profiles, verified.sub)) {

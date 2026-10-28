@@ -24,6 +24,13 @@
  *
  * Caller quyết định chế độ, client không tự quyết — cùng ranh giới với
  * `read-route.ts`: khung gom phần giống nhau, route tự khai chính sách của mình.
+ *
+ * ## Vì sao hàm này nhận `env` thay vì `H3Event`
+ *
+ * Cùng quy ước với {@link backofficeHyperdrive}: lib infrastructure không
+ * ràng buộc vào framework serving của một app (`H3Event` là kiểu của h3); cách
+ * đọc `env` ra khỏi request là chi tiết composition, phía app làm qua
+ * `readWorkerEnv` rồi truyền **giá trị thường** vào đây.
  */
 
 import {
@@ -33,8 +40,6 @@ import {
   validateAccountProfilesResponse,
   type AccountProfileEntry,
 } from '@ecoma-io/account-contracts';
-
-import { readWorkerEnv } from '../db';
 
 /**
  * Tên binding Service Binding tới `account` — **không** chứa giá trị nào khác
@@ -100,18 +105,18 @@ function readString(value: unknown): string | null {
 /**
  * Đọc cấu hình client từ `env` của Worker.
  *
- * ⚠️ Đọc qua {@link readWorkerEnv} (`event.context.cloudflare.env`), **không**
- * qua `useRuntimeConfig(event).cloudflare` — preset `cloudflare-module` của
- * Nitro không populate khoá đó (đo ở `server/db.ts`), nên đường runtimeConfig là
- * một đường luôn trả `undefined` và fail-closed vô ích.
+ * ⚠️ Phía app đọc `env` qua `readWorkerEnv` (`event.context.cloudflare.env`),
+ * **không** qua `useRuntimeConfig(event).cloudflare` — preset `cloudflare-module`
+ * của Nitro không populate khoá đó (đo ở `server/db.ts`), nên đường runtimeConfig
+ * là một đường luôn trả `undefined` và fail-closed vô ích.
  *
+ * @param env `env` của Worker — đọc ra khỏi request context bởi caller (vd
+ *   `readWorkerEnv` phía app); giữ `unknown` để lib này không ràng buộc cách
+ *   đọc.
  * @returns `null` khi thiếu binding hoặc secret — "chưa cấu hình" là trạng thái
  *   deployment hợp lệ, caller quyết định fail thế nào (không ném ở đây).
  */
-export function accountClientConfig(
-  event: Parameters<typeof readWorkerEnv>[0],
-): AccountClientConfig | null {
-  const env = readWorkerEnv(event);
+export function accountClientConfig(env: unknown): AccountClientConfig | null {
   if (typeof env !== 'object' || env === null) {
     return null;
   }
