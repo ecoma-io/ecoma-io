@@ -23,7 +23,7 @@
  * cả khi delivery `queued` và không còn intent — tức thứ tự kiểm tra, không chỉ tập hành động.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   RECONCILE_ACTION,
@@ -95,6 +95,12 @@ describe('reconcileDeliveries — the a1..a6 decision table on a real D1', () =>
     db = await createTestDatabase();
     fixture = buildPorts(db);
     scope = await seedScope(db);
+  });
+
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
   });
 
   it('a1: marks expired only after expires_at has passed', async () => {
@@ -425,6 +431,12 @@ describe('reconcileOutbox — (a) only counts, never self-repairs', () => {
     db = await createTestDatabase();
     fixture = buildPorts(db);
     scope = await seedScope(db);
+  });
+
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
   });
 
   it('counts an orphaned pending delivery that no longer has a usable intent', async () => {

@@ -1,6 +1,6 @@
 /**
  * Harness D1 thật của suite integration app-owned `tests/integrations/` — đúng mô hình
- * của `libs/transactional-mail-infrastructure/src/mail-d1.spec.ts` nhưng **sở hữu riêng**:
+ * của suite `mail-d1.spec.ts` cùng thư mục này nhưng **sở hữu riêng**:
  * 06-testing.md §1.3/§6 cấm chia sẻ test support giữa hai suite không có lý do tường minh,
  * nên harness này tự dựng state dir, tự apply migration và tự mở proxy — không import
  * harness nào của lib (lib cũng không export harness cho ai cả).
@@ -14,7 +14,7 @@
  *
  * ⚠️ `persist.path` của proxy phải là `<stateDir>/v3`: CLI ghi state vào
  * `<persist-to>/v3/d1/…` còn proxy đọc `<persist.path>/d1/…` — thiếu đuôi `/v3` thì proxy
- * nhìn thấy một database rỗng (đã đo được ở `mail-d1.spec.ts`, không phải suy đoán).
+ * nhìn thấy một database rỗng (đã đo được ở `mail-d1.spec.ts` cùng thư mục, không phải suy đoán).
  *
  * ⚠️ Suite này KHÔNG phụ thuộc Docker: workerd chạy in-process qua devDependency
  * `wrangler`, không container nào được tạo — khác với các suite PostgreSQL

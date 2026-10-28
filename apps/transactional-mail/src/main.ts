@@ -201,7 +201,8 @@ interface QueueLike {
  *
  * ⚠️ Cast tường minh qua `unknown` là **cố ý**: binding thật của Workers có surface rộng
  * hơn subset nhiều, và TS không chứng minh được `D1Database` assignable cho `D1SubsetDatabase`
- * ở call site (spec `mail-d1.spec.ts` là nơi ghim tương thích đó bằng compile-time assert).
+ * ở call site (suite `mail-d1.spec.ts` của app này, dưới `tests/integrations/`, là nơi ghim
+ * tương thích đó bằng compile-time assert).
  * Một helper duy nhất ở đây là chỗ duy nhất cần cast; mọi call site khác gọi qua nó.
  */
 function mailDb(env: TransactionalMailEnv): D1SubsetDatabase {

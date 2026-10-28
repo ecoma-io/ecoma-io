@@ -44,11 +44,11 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 // issue #324) — file spec chạy
 // trên Node runner, không bundle vào Worker edge.
 // oxlint-disable-next-line @nx/enforce-module-boundaries
-import controlPlaneWorker from '../../push-notification/src/main';
+import controlPlaneWorker from '../../../push-notification/src/main';
 // oxlint-disable-next-line @nx/enforce-module-boundaries
-import { resetConfigCacheForTest } from '../../push-notification/src/config';
+import { resetConfigCacheForTest } from '../../../push-notification/src/config';
 
-import { handleQueueBatch, type JobWorkerEnv } from '../src/main';
+import { handleQueueBatch, type JobWorkerEnv } from '../../src/main';
 import { createD1Harness, type D1Harness } from './d1-harness';
 import {
   createCpTestDatabase,
@@ -66,7 +66,7 @@ import { WebCryptoCredentialCipher } from '@ecoma-io/push-notification-infrastru
 /* -------------------------------------------------------------------------------------- */
 
 /** Đường dẫn `wrangler.jsonc` của app job — harness D1 `push-job` đọc binding từ file này. */
-const JOB_CONFIG_PATH = new URL('../wrangler.jsonc', import.meta.url).pathname;
+const JOB_CONFIG_PATH = new URL('../../wrangler.jsonc', import.meta.url).pathname;
 
 /** Shared secret của private delivery runtime API — material test, không phải secret thật. */
 const RUNTIME_SECRET = 'cross-plane-runtime-secret';

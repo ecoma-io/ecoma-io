@@ -35,7 +35,8 @@
  *
  * ⚠️ PostgreSQL THẬT (testcontainers): phần đáng tin cậy là thứ tự ghi trong
  * db-auth — một stub `Queryable` là schema thứ hai, xanh cả khi SQL sai. Thiếu
- * Docker ⇒ SKIP (cùng bộ luật với các suite hàng xóm; skip không phải pass).
+ * Docker ⇒ ĐỎ (cùng bộ luật với các suite hàng xóm; harness probe fail-loud,
+ * không có đường skip).
  */
 
 import postgres from 'postgres';

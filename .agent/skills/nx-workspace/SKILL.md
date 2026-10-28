@@ -121,17 +121,19 @@ example `lint` from `@nx/oxlint` has `executor: "@nx/oxlint:lint"` and no
 The common target names in this workspace come from the plugins configured in
 `nx.json`:
 
-| Target                                                                                                                                                                  | Provided by             |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| `typecheck`                                                                                                                                                             | `@nx/js/typescript`     |
-| `lint`                                                                                                                                                                  | `@nx/oxlint`            |
-| `test`, `test-ci`                                                                                                                                                       | `@nx/vitest`            |
-| `build`, `serve`, `build-static`, `serve-static`, `build-deps`, `watch-deps`                                                                                            | `@nx/nuxt/plugin`       |
-| `e2e`                                                                                                                                                                   | `@nx/playwright/plugin` |
-| `test-integration` (explicit `nx:run-commands` on `@ecoma-io/backoffice`, `@ecoma-io/account`, `@ecoma-io/pact-broker-api`, running `npx vitest run integration-specs`) | project `package.json`  |
+| Target                                                                                                                                                          | Provided by             |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| `typecheck`                                                                                                                                                     | `@nx/js/typescript`     |
+| `lint`                                                                                                                                                          | `@nx/oxlint`            |
+| `test`, `test-ci`                                                                                                                                               | `@nx/vitest`            |
+| `build`, `serve`, `build-static`, `serve-static`, `build-deps`, `watch-deps`                                                                                    | `@nx/nuxt/plugin`       |
+| `e2e`                                                                                                                                                           | `@nx/playwright/plugin` |
+| `test-integration` (explicit `nx:run-commands` in project config, running `npx vitest run -c vitest.integration.config.mts tests/integrations tests/databases`) | project `package.json`  |
 
-`apps/auth` has an `integration-specs/` directory picked up by its `test` target
-but does not define a `test-integration` target yet. `system-test` is the
+App-owned suites live in a project's `tests/integrations/` (component
+interaction on real dependencies) and `tests/databases/` (migration,
+constraint, data-integrity behavior); `test-integration` runs both via the
+project's own `vitest.integration.config.mts`. `system-test` is the
 canonical third target name defined in `docs/overview/06-testing.md` but no
 project implements it today — do not invoke it.
 

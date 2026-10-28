@@ -26,7 +26,7 @@ import type {
  * chỉ là một dòng bị đảo, và assertion trên D1 thật sẽ vẫn xanh vì kết quả cuối cùng giống
  * nhau.
  *
- * Tính thực của statement trên D1 thật được kiểm ở `mail-d1.spec.ts` của lib
+ * Tính thực của statement trên D1 thật được kiểm ở `mail-d1.spec.ts` của app transactional-mail (`apps/transactional-mail/tests/integrations/`)
  * infrastructure — đó là nơi claim/lease/backoff được chứng minh bằng chính D1.
  */
 

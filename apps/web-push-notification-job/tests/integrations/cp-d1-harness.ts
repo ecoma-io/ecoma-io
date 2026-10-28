@@ -30,9 +30,9 @@ process.env['WRANGLER_SEND_METRICS'] = 'false';
 /**
  * Thư mục migration của **app push** — neo bằng `import.meta.url` của file này, không phải cwd
  * của runner: vitest chạy với `root` là thư mục project, và điều hướng bằng `import.meta.dirname`
- * ở vị trí sai từng trỏ đường dẫn vào thư mục không tồn tại (xem `tests/d1-harness.ts`).
+ * ở vị trí sai từng trỏ đường dẫn vào thư mục không tồn tại (xem `tests/integrations/d1-harness.ts`).
  */
-const CP_APP_DIR = join(import.meta.dirname, '..', '..', 'push-notification');
+const CP_APP_DIR = join(import.meta.dirname, '..', '..', '..', 'push-notification');
 
 /** `wrangler.jsonc` của control plane — nguồn duy nhất cho tên binding và database. */
 const CP_WRANGLER_CONFIG_PATH = join(CP_APP_DIR, 'wrangler.jsonc');
@@ -47,7 +47,7 @@ const CP_MIGRATIONS_DIR = join(CP_APP_DIR, 'migrations');
  */
 function parseJsonc(text: string): unknown {
   const requireFromNx = createRequire(
-    resolve(import.meta.dirname, '../../../node_modules/nx/package.json'),
+    resolve(import.meta.dirname, '../../../../node_modules/nx/package.json'),
   );
   const jsoncParse: (input: string) => unknown = requireFromNx('jsonc-parser').parse;
   return jsoncParse(text);

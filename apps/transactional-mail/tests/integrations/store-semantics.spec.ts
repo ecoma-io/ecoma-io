@@ -1,6 +1,6 @@
 /**
  * Semantics store trên **D1 thật** cho những ca mà suite persistence lib
- * (`libs/transactional-mail-infrastructure/src/mail-d1.spec.ts`) chưa có bằng chứng:
+ * (`apps/transactional-mail/tests/integrations/mail-d1.spec.ts`) chưa có bằng chứng:
  *
  * - **Claim đồng thời giữa hai publisher** — hai `claim` chạy `Promise.all` trên những row
  *   còn lease: cách bảo vệ duy nhất là *một* statement có guard (D1 không có row lock,

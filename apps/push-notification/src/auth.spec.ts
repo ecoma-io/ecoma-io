@@ -27,7 +27,7 @@ import {
   readBearerToken,
 } from '@ecoma-io/push-notification-infrastructure';
 
-import { testConfig } from '../tests/fixture-ports';
+import { testConfig } from '../tests/integrations/fixture-ports';
 
 const CONFIG = testConfig();
 

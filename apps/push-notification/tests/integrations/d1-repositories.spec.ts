@@ -19,7 +19,7 @@
  * ⚠️ **Mỗi test có database riêng** nên chạy song song không cần reset chung.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   D1DeliveryRepository,
@@ -49,6 +49,12 @@ describe('the real schema — index and CHECK are guards, not annotations', () =
 
   beforeEach(async () => {
     db = await createTestDatabase();
+  });
+
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
   });
 
   /**
@@ -148,6 +154,12 @@ describe('claimDelivery — guarded write, win or lose in a single statement', (
     db = await createTestDatabase();
     await seedScope(db);
     await markDeliveryQueued(db, 'deliv');
+  });
+
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
   });
 
   const repo = (): D1DeliveryRepository =>
@@ -344,6 +356,12 @@ describe('fenced write — a stale generation is blocked', () => {
     await markDeliveryQueued(db, 'deliv');
   });
 
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
+  });
+
   /** Claim một lần để có generation `1` thật. */
   async function claimOnce(): Promise<D1DeliveryRepository> {
     const deliveries = new D1DeliveryRepository(
@@ -465,6 +483,12 @@ describe('release idempotency — a repeated call is a no-op, not an error', () 
     await markDeliveryQueued(db, 'deliv');
   });
 
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
+  });
+
   it('returns the row again on a second release with the same generation', async () => {
     // ⚠️ Gọi lặp là **bình thường** ở đường này: một worker có thể gửi lại `release` sau khi
     // không nhận được ACK. Trả `null` sẽ biến một lời gọi idempotent thành một `409` buộc
@@ -522,6 +546,12 @@ describe('partial unique index — coalescing intents is blocked at the database
   beforeEach(async () => {
     db = await createTestDatabase();
     await seedScope(db);
+  });
+
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
   });
 
   const intent = (outboxId: string, availableAt = T0): Promise<unknown> =>
@@ -694,6 +724,12 @@ describe('outbox — claimDue, the publisher success guard, and backoff', () => 
   beforeEach(async () => {
     db = await createTestDatabase();
     await seedScope(db);
+  });
+
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
   });
 
   const outbox = (): D1OutboxRepository =>
@@ -901,6 +937,12 @@ describe('reconciliation a1 + a4', () => {
     await seedScope(db);
   });
 
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
+  });
+
   const deliveries = (): D1DeliveryRepository =>
     new D1DeliveryRepository(db.db as unknown as D1DatabaseLike, async () => null);
 
@@ -1062,6 +1104,12 @@ describe('idempotency — full scope and replay', () => {
     await seedScope(db);
   });
 
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
+  });
+
   const repo = (): D1IdempotencyRepository =>
     new D1IdempotencyRepository(db.db as unknown as D1DatabaseLike);
 
@@ -1136,6 +1184,12 @@ describe('rate limit — a rejected request does NOT consume a slot', () => {
   beforeEach(async () => {
     db = await createTestDatabase();
     await seedScope(db);
+  });
+
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
   });
 
   const store = (): D1RateLimitStore => new D1RateLimitStore(db.db as unknown as D1DatabaseLike);
@@ -1268,6 +1322,12 @@ describe('notification payload — projection qua repository notification', () =
   beforeEach(async () => {
     db = await createTestDatabase();
     await seedScope(db);
+  });
+
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
   });
 
   it('reads the payload through the notification repository, not a second query', async () => {

@@ -22,7 +22,7 @@ import { describe, expect, it } from 'vitest';
 
 import { WebCryptoCredentialCipher } from '@ecoma-io/push-notification-infrastructure';
 
-import { rootKeyK1, rootKeyK2 } from '../tests/fixture-ports';
+import { rootKeyK1, rootKeyK2 } from '../tests/integrations/fixture-ports';
 
 /** Cipher một key `K1`, current `K1`. */
 function k1Only(): WebCryptoCredentialCipher {

@@ -15,8 +15,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { D1Database } from '@cloudflare/workers-types';
 
-import { createD1MailPersistence } from './create-d1-mail-persistence';
-import type { D1SubsetDatabase } from './d1-surface';
+import { createD1MailPersistence } from '@ecoma-io/transactional-mail-infrastructure';
+import type { D1SubsetDatabase } from '@ecoma-io/transactional-mail-infrastructure';
 import { publishOutboxBatch, runOutboxReconciler } from '@ecoma-io/transactional-mail-application';
 import type { MailSendCommandPayload } from '@ecoma-io/transactional-mail-application';
 
@@ -43,7 +43,7 @@ import type { MailSendCommandPayload } from '@ecoma-io/transactional-mail-applic
 
 const TEST_TIMEOUT = 120_000;
 
-const repoRoot = join(import.meta.dirname, '..', '..', '..');
+const repoRoot = join(import.meta.dirname, '..', '..', '..', '..');
 const appDir = join(repoRoot, 'apps', 'transactional-mail');
 const migrationsDir = join(appDir, 'migrations');
 const wranglerConfig = join(appDir, 'wrangler.jsonc');
@@ -2487,13 +2487,19 @@ describe('SQL parameterization', () => {
 
 describe('dependency boundary of the infrastructure lib', () => {
   it('imports only the two workspace packages and no platform or driver package', () => {
-    const files = readdirSync(import.meta.dirname)
+    // ⚠️ Quét `src/` của lib chứ không phải thư mục của file này: suite đã dời vào
+    // `tests/integrations/` của app (06-testing.md §2 — suite boot database thật là
+    // app-owned), nhưng đối tượng khẳng định vẫn là mã nguồn của lib infrastructure —
+    // lib không được phép import driver/platform package (`wrangler`,
+    // `@cloudflare/workers-types`, `node:*`), mọi truy cập D1 phải qua subset surface.
+    const infrastructureSrc = join(repoRoot, 'libs', 'transactional-mail-infrastructure', 'src');
+    const files = readdirSync(infrastructureSrc)
       .filter((name) => !name.includes('.spec.'))
       .filter((name) => /\.(?:ts|mts|cts)$/u.test(name));
 
     const specifiers = new Set<string>();
     for (const file of files) {
-      const source = readFileSync(join(import.meta.dirname, file), 'utf8');
+      const source = readFileSync(join(infrastructureSrc, file), 'utf8');
       for (const match of source.matchAll(
         /(?:\bfrom\s*|\bimport\s*\(|\brequire\s*\()["']([^"']+)["']/gmu,
       )) {
@@ -2522,7 +2528,15 @@ describe('dependency boundary of the infrastructure lib', () => {
   });
 
   it('exports exactly the composition root and the D1 surface types at runtime', async () => {
-    const { createD1MailPersistence: factory, ...rest } = await import('./index');
+    // ⚠️ Bề mặt runtime được kiểm qua namespace import **tĩnh** (đã có ở đầu file): assertion
+    // này đọc các key của module object thay vì gọi hàm, nên static import đủ — và KHÔNG dùng
+    // `await import()`: một dynamic import ở đây khiến Nx đánh dấu cạnh app → lib là dynamic
+    // (graph sinh thêm cạnh `dynamic`), làm rule `noImportsOfLazyLoadedLibraries` cấm mọi
+    // static import của lib trong app (`src/main.ts` import tĩnh là hợp lệ).
+    const surface = (await Promise.resolve({
+      createD1MailPersistence,
+    })) as Record<string, unknown>;
+    const { createD1MailPersistence: factory, ...rest } = surface;
     expect(typeof factory).toBe('function');
     expect(Object.keys(rest)).toEqual([]);
   });
