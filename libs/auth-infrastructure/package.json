@@ -18,10 +18,6 @@
     "jose": "^6.2.12",
     "postgres": "^3.4.9"
   },
-  "devDependencies": {
-    "@testcontainers/postgresql": "12.2.1",
-    "testcontainers": "12.2.1"
-  },
   "nx": {
     "tags": [
       "type:infrastructure",

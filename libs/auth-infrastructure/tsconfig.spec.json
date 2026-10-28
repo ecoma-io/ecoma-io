@@ -5,16 +5,12 @@
     "declaration": true,
     "rootDir": ".",
     "outDir": "./out-tsc/vitest",
-    // `es2023` cho `Array#toSorted` trong harness (`unicorn/no-array-sort`
-    // cấm `Array#sort`) — cùng lý do `apps/pact-broker-api` nâng lib.
-    "lib": ["es2023"],
+    // `es2023` cho `Array#toSorted` trong spec còn lại (`signing-key.spec.ts`;
+    // `unicorn/no-array-sort` cấm `Array#sort`) — cùng lý do `apps/pact-broker-api` nâng lib.
+    "lib": ["es2023", "dom"],
     "module": "esnext",
     "moduleResolution": "bundler",
     "forceConsistentCasingInFileNames": true,
-    // Spec import harness bằng phần mở rộng thật (`./auth-test-harness.ts`):
-    // Vitest cần nó khi chạy, và đây là điều kiện để `import.meta.dirname` được type
-    // đúng — cùng cách `tsconfig.db.json` của `apps/account` đã ghi lại.
-    "allowImportingTsExtensions": true,
     "types": ["vitest/globals", "vitest/importMeta", "vite/client", "node", "vitest"]
   },
   "include": [
@@ -25,12 +21,6 @@
     "tests/**/*.ts",
     "src/**/*.test.ts",
     "src/**/*.spec.ts",
-    // Harness + probe Docker test-only: nằm ngoài pattern spec ở trên nhưng
-    // được spec import, nên phải nằm trong file list (composite + files cứng)
-    // hoặc tsc TS6307.
-    "src/auth-test-harness.ts",
-    "src/docker-probe.ts",
-    "src/docker-probe.global-setup.ts",
     "src/**/*.test.tsx",
     "src/**/*.spec.tsx",
     "src/**/*.test.js",

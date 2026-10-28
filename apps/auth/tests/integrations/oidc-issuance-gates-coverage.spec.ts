@@ -36,11 +36,11 @@ import {
   type PostgresClientLike,
 } from '@ecoma-io/auth-infrastructure';
 
-import { PROVIDER_ROUTES } from './oidc/provider';
-import type { IssuanceGate } from './oidc/adapter';
-import { AccountClient } from './account-client';
-import { loadAuthConfig, type AuthEnv } from './config';
-import { startAuthDatabase, type AuthDatabase } from '../tests/integrations/harness.ts';
+import { PROVIDER_ROUTES } from '../../src/oidc/provider';
+import type { IssuanceGate } from '../../src/oidc/adapter';
+import { AccountClient } from '../../src/account-client';
+import { loadAuthConfig, type AuthEnv } from '../../src/config';
+import { startAuthDatabase, type AuthDatabase } from './harness';
 let db: AuthDatabase;
 
 function base() {
@@ -173,7 +173,7 @@ async function bootProvider(pem: string): Promise<void> {
 
   const env = makeEnv(pem);
   const config = await loadAuthConfig(env);
-  const { createProvider } = await import('./oidc/provider');
+  const { createProvider } = await import('../../src/oidc/provider');
   const postgresClient = createPostgresClient(config.hyperdrive);
   const provider = await createProvider({
     config,
@@ -226,7 +226,7 @@ async function walkUpToApproved(params: {
   subject: string;
 }): Promise<WalkUp> {
   const env = makeEnv(params.keypairPem);
-  const { default: app } = await import('./main');
+  const { default: app } = await import('../../src/main');
   const verifierBytes = new Uint8Array(32);
   crypto.getRandomValues(verifierBytes);
   const verifier = Buffer.from(verifierBytes).toString('base64url');

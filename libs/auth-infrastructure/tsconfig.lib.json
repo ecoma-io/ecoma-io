@@ -14,17 +14,7 @@
     "tsBuildInfoFile": "dist/tsconfig.lib.tsbuildinfo"
   },
   "include": ["src/**/*.ts"],
-  "exclude": [
-    "out-tsc",
-    "dist",
-    "src/**/*.test.ts",
-    "src/**/*.spec.ts",
-    // Harness + probe Docker chỉ tồn tại lúc test (test-only Node tooling):
-    // không thuộc bundle lib, và lib build không cần `node`/vitest types.
-    "src/auth-test-harness.ts",
-    "src/docker-probe.ts",
-    "src/docker-probe.global-setup.ts"
-  ],
+  "exclude": ["out-tsc", "dist", "src/**/*.test.ts", "src/**/*.spec.ts"],
   "references": [
     {
       "path": "../auth-domain"

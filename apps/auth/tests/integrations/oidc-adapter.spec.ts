@@ -7,8 +7,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import type { PostgresClientLike } from '@ecoma-io/auth-infrastructure';
 
-import { PostgresAdapter } from './adapter';
-import { startAuthDatabase, type AuthDatabase } from '../../tests/integrations/harness.ts';
+import { PostgresAdapter } from '../../src/oidc/adapter';
+import { startAuthDatabase, type AuthDatabase } from './harness';
 
 /**
  * Spec cho PostgresAdapter (`src/oidc/adapter.ts`) — phần test không được phủ bởi
@@ -20,11 +20,10 @@ import { startAuthDatabase, type AuthDatabase } from '../../tests/integrations/h
  * cùng sự kiện — chỉ test một trong hai là bỏ sót nửa còn lại).
  *
  * ⚠️ Vì sao PostgreSQL thật thay vì stub Queryable: phần lõi của adapter là SQL và
- * CHECK của schema — một stub trả mảng là schema thứ hai, xanh trên sai. Thiếu
- * Docker thì SKIP (khác một pass trông y hệt — report phải nói rõ).
+ * CHECK của schema — một stub trả mảng là schema thứ hai, xanh trên sai. Docker là
+ * phụ thuộc cứng (fail-loud qua docker-probe của config integration — không skip).
  */
 
-/** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
 /** Container riêng của file này, dựng một lần trong `beforeAll`. */
 let db: AuthDatabase;
 
@@ -258,7 +257,7 @@ describe('PostgresAdapter', () => {
         .toSorted();
       // GRANTABLE_KINDS là private — kiểm qua HÀNH VI (gate dispatch test ở trên
       // đã phủ từng kind), còn ở đây ghép text file nguồn với tập schema.
-      const source = readFileSync(join(import.meta.dirname, 'adapter.ts'), 'utf8');
+      const source = readFileSync(join(import.meta.dirname, '../../src/oidc/adapter.ts'), 'utf8');
       const block = /const GRANTABLE_KINDS[^=]*= new Set\(\[([^\]]*)\]\)/u.exec(source);
       expect(block).not.toBeNull();
       const sourceKinds = (block?.[1] ?? '')

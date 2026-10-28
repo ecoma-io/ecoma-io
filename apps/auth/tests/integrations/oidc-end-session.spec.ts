@@ -36,16 +36,15 @@ import postgres from 'postgres';
 import { exportPKCS8, generateKeyPair } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { PROVIDER_ROUTES } from './oidc/provider';
-import { loadAuthConfig, type AuthEnv } from './config';
+import { PROVIDER_ROUTES } from '../../src/oidc/provider';
+import { loadAuthConfig, type AuthEnv } from '../../src/config';
 import { createPostgresClient } from '@ecoma-io/auth-infrastructure';
-import { startAuthDatabase, type AuthDatabase } from '../tests/integrations/harness.ts';
+import { startAuthDatabase, type AuthDatabase } from './harness';
 
 /* ------------------------------------------------------------------ */
 /* PostgreSQL harness — cùng luật với oidc-fullflow.spec.ts            */
 /* ------------------------------------------------------------------ */
 
-/** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
 /** Container riêng của file này, dựng một lần trong `beforeAll`. */
 let db: AuthDatabase;
 
@@ -138,7 +137,7 @@ async function bootProvider(pem: string): Promise<void> {
 
   const env = makeEnv(pem);
   const config = await loadAuthConfig(env);
-  const { createProvider } = await import('./oidc/provider');
+  const { createProvider } = await import('../../src/oidc/provider');
   const postgresClient = createPostgresClient(config.hyperdrive);
   const provider = await createProvider({
     config,

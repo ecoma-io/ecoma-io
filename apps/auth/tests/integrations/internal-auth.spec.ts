@@ -14,20 +14,18 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
  *     là tính chất bảo mật quan trọng nhất của file: nếu lỗi hạ tầng bị nuốt thành
  *     "nonce chưa từng thấy" thì mọi envelope đã ký trở thành replayable trong suốt
  *     thời gian DB chết, và không test tuần tự nào bắt được.
- *  3. **`makeNonceGuard` trên PostgreSQL thật** — chỉ chạy khi runner có Docker.
- *     ⚠️ **Thiếu Docker thì SKIP, và một skip trông y hệt một pass.** PR phải nói rõ
- *     phần đó chưa verify nếu môi trường không có Docker.
+ *  3. **`makeNonceGuard` trên PostgreSQL thật** — Docker là phụ thuộc cứng
+ *     (fail-loud qua docker-probe của config integration — không skip với exit 0).
  *
  * ⚠️ Test này **áp chính các file `apps/auth/migrations/*.sql`**, không khai một bảng
  * riêng: một bảng do test tự chế là schema thứ hai, và test xanh trên schema thứ hai
  * không nói được gì về production.
  *
  * ⚠️ Database PostgreSQL đến từ **testcontainers**, dựng một container riêng cho
- * chính file này (`startAuthDatabase`): suite bên lib
- * (`libs/auth-infrastructure/src/internal-nonces.spec.ts`) dọn và đếm toàn
- * bảng `auth.internal_nonces`, nên một database dùng chung là nguồn xung đột lịch
- * chạy — container riêng làm các test "sở hữu schema" thành đúng, và xoá luôn nhu
- * cầu advisory lock của hình thức cũ.
+ * chính file này (`startAuthDatabase`): suite `internal-nonces.spec.ts` cùng thư
+ * mục dọn và đếm toàn bảng `auth.internal_nonces`, nên một database dùng chung là
+ * nguồn xung đột lịch chạy — container riêng làm các test "sở hữu schema" thành
+ * đúng, và xoá luôn nhu cầu advisory lock của hình thức cũ.
  */
 
 import {
@@ -41,16 +39,15 @@ import {
   verifyRequest,
 } from '@ecoma-io/auth-contracts';
 import { createPostgresClient } from '@ecoma-io/auth-infrastructure';
-import { startAuthDatabase, type AuthDatabase } from '../tests/integrations/harness.ts';
+import { startAuthDatabase, type AuthDatabase } from './harness';
 
 import {
   NONCE_CLAIM_CONNECT_TIMEOUT_SECONDS,
   isAuthenticatedInternalRequest,
   makeNonceGuard,
   signInternalRequest,
-} from './account-client';
+} from '../../src/account-client';
 
-/** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
 let db: AuthDatabase;
 
 /** Secret HMAC dùng chung trong test — không phải secret thật, chỉ để ký/verify. */
@@ -255,16 +252,13 @@ describe('internal-auth contract (auth-side view)', () => {
 
   it('shares no database with the other PostgreSQL specs', () => {
     // Thay cho test "shares one advisory lock" của hình thức cũ: hai suite PG
-    // (spec này và `internal-nonces.spec.ts` bên lib) từng chia sẻ một database
-    // qua biến môi trường, nên chúng cần advisory lock để không giành schema và
-    // dữ liệu. Giờ mỗi spec file tự dựng container riêng (`startAuthDatabase`),
-    // không còn tài nguyên dùng chung nào để giành — và test này ghim chính tính
-    // chất đó trên nguồn: nếu ai đó đưa lại một connection string dùng chung, test
-    // đỏ trước khi khoá cũ được viết lại.
-    const other = readFileSync(
-      join(import.meta.dirname, '../../../libs/auth-infrastructure/src/internal-nonces.spec.ts'),
-      'utf8',
-    );
+    // (spec này và `internal-nonces.spec.ts`) từng chia sẻ một database qua biến
+    // môi trường, nên chúng cần advisory lock để không giành schema và dữ liệu.
+    // Giờ mỗi spec file tự dựng container riêng (`startAuthDatabase`), không còn
+    // tài nguyên dùng chung nào để giành — và test này ghim chính tính chất đó
+    // trên nguồn: nếu ai đó đưa lại một connection string dùng chung, test đỏ
+    // trước khi khoá cũ được viết lại.
+    const other = readFileSync(join(import.meta.dirname, 'internal-nonces.spec.ts'), 'utf8');
     const here = readFileSync(join(import.meta.dirname, 'internal-auth.spec.ts'), 'utf8');
     // Tách chuỗi để pattern không tự khớp chính nguồn chứa nó.
     const legacyEnv = ['AUTH_TEST_', 'PG_'].join('');
@@ -349,7 +343,7 @@ describe('fail closed when the nonce store cannot be reached', () => {
     // Vì đây là bất biến về **cấu trúc** (không còn nhánh nào để chạy), test đọc nguồn:
     // một test hành vi không phân biệt được "không có nhánh" với "có nhánh nhưng chưa
     // được chạm tới". Cùng cách những assert migration trong repo này làm.
-    const source = readFileSync(join(import.meta.dirname, 'account-client.ts'), 'utf8');
+    const source = readFileSync(join(import.meta.dirname, '../../src/account-client.ts'), 'utf8');
 
     expect(source).toMatch(/hyperdrive: \{ connectionString: string \};/u);
     expect(source).not.toMatch(/hyperdrive: \{ connectionString: string \} \| null/u);

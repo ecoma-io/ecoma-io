@@ -2,11 +2,15 @@ import postgres from 'postgres';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { redeemAuthorizationCode } from './authorization-code-cas';
-import { startAuthDatabase, type AuthDatabase } from './auth-test-harness.ts';
+import { redeemAuthorizationCode } from '@ecoma-io/auth-infrastructure';
+import { startAuthDatabase, type AuthDatabase } from './harness';
 
 /**
  * CAS của authorization code trên PostgreSQL THẬT.
+ *
+ * Suite này thuộc `apps/auth` (app sở hữu `db-auth`) thay vì colocated trong
+ * `libs/auth-infrastructure` — 06-testing.md §9 cấm "spec colocated boot
+ * database thật"; đã chuyển theo đúng ý #298 PR-C.
  *
  * ⚠️ Vì sao test này phải có PostgreSQL thật mà không thay bằng fake: tính
  * đúng đắn của CAS KHÔNG nằm trong câu SQL của ta. Nó nằm ở hành vi khoá hàng
@@ -15,8 +19,8 @@ import { startAuthDatabase, type AuthDatabase } from './auth-test-harness.ts';
  * vẫn hoàn toàn sai về điều nó dạy ta tin — cụ thể là tin rằng `SELECT` rồi
  * `UPDATE` là atomic.
  *
- * Vì vậy: không có PostgreSQL thì SKIP, và PR phải nói thẳng là chưa verify
- * được phần đó. Xem `describe.skipIf`.
+ * Docker là phụ thuộc cứng (fail-loud qua docker-probe của config integration
+ * — không skip với exit 0).
  *
  * ⚠️ **Test này áp `apps/auth/migrations/*.sql` THẬT, không khai một bảng riêng.**
  * Lý do là đo được: bản test trước dựng bảng có cột `code_id`/`scope` và xanh

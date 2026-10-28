@@ -24,8 +24,8 @@ import {
   parseConnectedApplicationsList,
   runConnectedApplicationRevoke,
   runConnectedApplicationsList,
-} from './connected-applications-handler';
-import { startAuthDatabase, type AuthDatabase } from '../tests/integrations/harness.ts';
+} from '../../src/connected-applications-handler';
+import { startAuthDatabase, type AuthDatabase } from './harness';
 
 const SUB = 'sub-conn-apps-test-0000000000000000000000000';
 const SUB2 = 'sub-conn-apps-other-00000000000000000000000';

@@ -721,13 +721,6 @@ importers:
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
-    devDependencies:
-      '@testcontainers/postgresql':
-        specifier: 12.2.1
-        version: 12.2.1(supports-color@10.2.2)
-      testcontainers:
-        specifier: 12.2.1
-        version: 12.2.1(supports-color@10.2.2)
 
   libs/auth-nonce-prune-job-application:
     devDependencies:

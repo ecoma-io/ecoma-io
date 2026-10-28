@@ -37,8 +37,8 @@
  *      được bằng JWKS đó.
  *   9. Replay `session/verified` cùng event_id → idempotency §5.1.5a: cùng outcome.
  *
- * ⚠️ Thiếu Docker (nên không có PostgreSQL) ⇒ SKIP toàn bộ — skip không phải pass;
- * report phải nêu.
+ * Docker là phụ thuộc cứng (fail-loud qua docker-probe của config integration —
+ * không skip với exit 0).
  */
 
 import type { Server } from 'node:http';
@@ -50,15 +50,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { signRequest, createNonce } from '@ecoma-io/auth-contracts';
 import { createPostgresClient } from '@ecoma-io/auth-infrastructure';
 
-import { PROVIDER_ROUTES } from './oidc/provider';
-import { loadAuthConfig, type AuthEnv } from './config';
-import { startAuthDatabase, type AuthDatabase } from '../tests/integrations/harness.ts';
+import { PROVIDER_ROUTES } from '../../src/oidc/provider';
+import { loadAuthConfig, type AuthEnv } from '../../src/config';
+import { startAuthDatabase, type AuthDatabase } from './harness';
 
 /* ------------------------------------------------------------------ */
 /* PostgreSQL harness — cùng luật với internal-handlers.spec.ts        */
 /* ------------------------------------------------------------------ */
 
-/** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
 /** Container riêng của file này, dựng một lần trong `beforeAll`. */
 let db: AuthDatabase;
 
@@ -188,7 +187,7 @@ async function bootProvider(pem: string): Promise<void> {
 
   const env = makeEnv(pem);
   const config = await loadAuthConfig(env);
-  const { createProvider } = await import('./oidc/provider');
+  const { createProvider } = await import('../../src/oidc/provider');
   const postgresClient = createPostgresClient(config.hyperdrive);
   const provider = await createProvider({
     config,
@@ -331,7 +330,7 @@ describe('oidc-provider full flow — against a real PostgreSQL (acceptance)', (
     // ── 1. GET /authorize (glue ECOMA, qua app Hono thật) ────────────────
     // Dùng `app.request` cho glue Hono (không cần server thứ hai) và fetch thật
     // cho pipeline provider. Glue + provider chia cùng PostgreSQL.
-    const { default: app } = await import('./main');
+    const { default: app } = await import('../../src/main');
 
     // PKCE thật: verifier + challenge S256.
     const verifierBytes = new Uint8Array(32);
@@ -628,7 +627,7 @@ describe('oidc-provider full flow — against a real PostgreSQL (acceptance)', (
     const { privateKey } = await generateKeyPair('ES256', { extractable: true });
     const pem = await exportPKCS8(privateKey);
     const env = makeEnv(pem);
-    const { default: app } = await import('./main');
+    const { default: app } = await import('../../src/main');
 
     const challenge = Buffer.from(
       await crypto.subtle.digest(
@@ -710,7 +709,7 @@ describe('oidc-provider full flow — against a real PostgreSQL (acceptance)', (
     const { privateKey } = await generateKeyPair('ES256', { extractable: true });
     const pem = await exportPKCS8(privateKey);
     const env = makeEnv(pem);
-    const { default: app } = await import('./main');
+    const { default: app } = await import('../../src/main');
 
     const challenge = Buffer.from(
       await crypto.subtle.digest(

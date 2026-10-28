@@ -13,9 +13,9 @@ import {
 import type { PostgresClientLike } from '@ecoma-io/auth-infrastructure';
 import type { Provider } from 'oidc-provider';
 
-import { runSessionVerified } from './session-verified-handler';
-import { runConsentContext, runConsentDecide } from './consent-handler';
-import { startAuthDatabase, type AuthDatabase } from '../tests/integrations/harness.ts';
+import { runSessionVerified } from '../../src/session-verified-handler';
+import { runConsentContext, runConsentDecide } from '../../src/consent-handler';
+import { startAuthDatabase, type AuthDatabase } from './harness';
 
 // `consumeHandleY` gọi TRỰC TIẾP cho test ASR-khác của issue #57 — như một
 // caller tương lai có thể làm (bỏ qua kiểm app-layer), để assert rằng bind SQL
@@ -32,8 +32,8 @@ import { consumeHandleY, createAuthorizationStore } from '@ecoma-io/auth-infrast
  * thứ tự advance/consume SAI sẽ xanh trên stub nhưng vỡ ngay trên schema thật
  * (CHECK violation). Đúng bài học của `authorization-transaction-store.spec.ts`.
  *
- * ⚠️ Thiếu Docker (nên không có PostgreSQL) thì SKIP — và một skip trông y hệt một
- * pass; report phải nói rõ phần chưa verify nếu môi trường không có Docker.
+ * ⚠️ Docker là phụ thuộc cứng (fail-loud qua docker-probe của config integration
+ * — không skip với exit 0).
  *
  * Provider là STUB HÌNH DẠNG: các handler chỉ dùng `provider.Interaction` qua
  * `attachInteractionResult`, mà hàm đó trả `undefined` khi correlator không tra
@@ -43,7 +43,6 @@ import { consumeHandleY, createAuthorizationStore } from '@ecoma-io/auth-infrast
  * end-to-end trong môi trường Node.
  */
 
-/** Probe một lần ở tầng module — kết quả do `globalSetup` đăng ký qua env. */
 /** Container riêng của file này, dựng một lần trong `beforeAll`. */
 let db: AuthDatabase;
 
