@@ -1,6 +1,7 @@
 import { chromium, request, type FullConfig, type Page } from '@playwright/test';
 
 import { PROTOTYPE_ROUTES, waitForRouteReady } from './support/prototype';
+import { gotoWithReloadRetry } from './support/warm-up';
 
 /**
  * Nóng bốn route prototype **trước** khi chạy test, theo hai vế khác nhau.
@@ -28,6 +29,14 @@ import { PROTOTYPE_ROUTES, waitForRouteReady } from './support/prototype';
  * giai đoạn warm-up và giai đoạn test chỉ còn đúng bốn lần điều hướng, không lần
  * nào bị huỷ.
  *
+ * ⚠️ Reload có thể rơi **giữa một lần `page.goto` của chính warm-up** — đúng race
+ * mà vế 2 tồn tại để "ăn", nhưng chưa từng được bảo vệ: CI đỏ thật với
+ * `net::ERR_ABORTED` tại `warmUpBrowserClient` (issue #224, run 40100840085).
+ * Vì vậy navigation ở đây đi qua `gotoWithReloadRetry`: bắt abort do reload rồi
+ * thử lại, giới hạn bởi cùng trần `WARM_UP_CAP_MS` với `waitForDevServerToSettle`.
+ * Chỉ lỗi abort-due-to-reload được nuốt; lỗi thật (server sập, mất mạng) vẫn
+ * được đẩy lên ngay.
+ *
  * Giới hạn, nói thẳng: đây là **dời** một sự kiện của dev server ra trước khi test
  * chạy, không phải làm cho race đó thành bất khả. Cache dependency đã nóng thì
  * không có reload nào cả, nên vế 2 gần như miễn phí.
@@ -42,7 +51,14 @@ import { PROTOTYPE_ROUTES, waitForRouteReady } from './support/prototype';
  */
 const QUIET_MS = 3_000;
 
-/** Trần chờ của vế warm-up browser; vượt trần là server còn thay trang liên tục. */
+/**
+ * Trần chờ của vế warm-up browser; vượt trần là server còn thay trang liên tục.
+ *
+ * Giờ đây trần này áp cho **cả hai** chỗ chờ của vế 2: chuỗi retry của
+ * `gotoWithReloadRetry` (mặc định theo hằng cùng tên trong `support/warm-up.ts`)
+ * và vòng "khoảng lặng" của `waitForDevServerToSettle` — tổng thời gian warm-up
+ * browser có trần biết trước thay vì chỉ vòng chờ cuối.
+ */
 const WARM_UP_CAP_MS = 30_000;
 
 /**
@@ -79,6 +95,10 @@ async function assertRoutesRespond(baseURL: string): Promise<void> {
  * Vế 2 — tải đủ bốn route bằng browser thật để Vite pre-bundle xong dependency
  * client, rồi chờ dev server thôi thay trang.
  *
+ * `page.goto` bọc bởi `gotoWithReloadRetry`: reload của dev server có thể huỷ
+ * đúng navigation đang bay (đo được trên CI, issue #224), và warm-up là nơi cần
+ * chịu lỗi đó thay vì để nó đỏ cả `globalSetup`.
+ *
  * Viewport mặc định (1280×720, bằng `Desktop Chrome`) là nhánh desktop của shell —
  * đúng nhánh mà suite chạy.
  */
@@ -89,7 +109,7 @@ async function warmUpBrowserClient(baseURL: string): Promise<void> {
     const page = await browser.newPage({ baseURL });
 
     for (const route of PROTOTYPE_ROUTES) {
-      await page.goto(route.path);
+      await gotoWithReloadRetry(page, route.path);
 
       try {
         await waitForRouteReady(page, route.path);
