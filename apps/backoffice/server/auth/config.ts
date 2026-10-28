@@ -14,6 +14,18 @@
  *   `backofficeAuthIssuer` ← `NUXT_BACKOFFICE_AUTH_ISSUER` (vv.), khai ở
  *   `nuxt.config.ts`, không default.
  *
+ * ## Origin fetch nội bộ (tuỳ chọn, local-only)
+ *
+ * `BACKOFFICE_AUTH_INTERNAL_ORIGIN` ← `backofficeAuthInternalOrigin` là
+ * **tuỳ chọn**: khi có mặt, các fetch server-side tới `auth` (token exchange ở
+ * callback, JWKS ở verify) dựng URL từ origin này thay vì từ `issuer`. Lý do
+ * tồn tại: trên local, issuer PHẢI mang port động của Traefik (browser là bên
+ * đi theo URL đó) nhưng container Node KHÔNG resolve được hostname issuer và
+ * không đi ra host loopback được — đường network duy nhất là alias Docker của
+ * WIC auth. Issuer vẫn là danh tính `iss`/authorize; chỉ fetch origin đổi.
+ * Vắng mặt (production Workers) ⇒ mọi URL dựng từ issuer như cũ — hành vi
+ * production giữ nguyên từng byte.
+ *
  * ## Vì sao trả `null` thay vì throw
  *
  * "Chưa cấu hình" là trạng thái deployment hợp lệ (vd. preview chưa cấp
@@ -36,6 +48,7 @@ import { readWorkerEnv } from '../db';
 export const BACKOFFICE_AUTH_ISSUER_ENV = 'BACKOFFICE_AUTH_ISSUER';
 export const BACKOFFICE_AUTH_AUDIENCE_ENV = 'BACKOFFICE_AUTH_AUDIENCE';
 export const BACKOFFICE_AUTH_CLIENT_ID_ENV = 'BACKOFFICE_AUTH_CLIENT_ID';
+export const BACKOFFICE_AUTH_INTERNAL_ORIGIN_ENV = 'BACKOFFICE_AUTH_INTERNAL_ORIGIN';
 
 /**
  * Cấu hình OIDC đã qua kiểm hình dạng.
@@ -60,6 +73,12 @@ export interface BackofficeAuthConfig {
    * identity (#194). BFF dùng nó khi dựng authorize URL và đổi code → token.
    */
   readonly clientId: string;
+  /**
+   * Origin fetch server-side tới `auth` (không path cuối) — **tuỳ chọn**,
+   * `null` khi không cấu hình. Có mặt ⇒ fetch JWKS/token từ origin này;
+   * `null` ⇒ fetch từ `issuer` (hành vi production). Xem JSDoc của module.
+   */
+  readonly internalOrigin: string | null;
 }
 
 /** Hình dạng tối thiểu của `env` mà module này đọc — kiểm trước khi dùng. */
@@ -88,12 +107,13 @@ function readAuthEnv(event: H3Event, envKey: string, configKey: string): string 
 }
 
 /**
- * Đọc cấu hình OIDC của request; `null` khi thiếu bất kỳ biến nào.
+ * Đọc cấu hình OIDC của request; `null` khi thiếu bất kỳ biến bắt buộc nào.
  *
- * ⚠️ Cả ba biến cùng một điều kiện kích hoạt luồng login — thiếu một biến là
- * luồng không dựng được đúng contract (authorize URL sai, token sai audience
- * hay sai client), nên hàm trả `null` **chung** cho mọi dạng thiếu, không lộ
- * biến nào thiếu.
+ * ⚠️ Cả ba biến bắt buộc cùng một điều kiện kích hoạt luồng login — thiếu một
+ * biến là luồng không dựng được đúng contract (authorize URL sai, token sai
+ * audience hay sai client), nên hàm trả `null` **chung** cho mọi dạng thiếu,
+ * không lộ biến nào thiếu. Origin nội bộ là **tuỳ chọn**: vắng ⇒ `null` ở
+ * trường đó, không ảnh hưởng điều kiện mở cổng.
  */
 export function backofficeAuthConfig(event: H3Event): BackofficeAuthConfig | null {
   const issuer = readAuthEnv(event, BACKOFFICE_AUTH_ISSUER_ENV, 'backofficeAuthIssuer');
@@ -102,5 +122,10 @@ export function backofficeAuthConfig(event: H3Event): BackofficeAuthConfig | nul
   if (issuer === null || audience === null || clientId === null) {
     return null;
   }
-  return { issuer, audience, clientId };
+  const internalOrigin = readAuthEnv(
+    event,
+    BACKOFFICE_AUTH_INTERNAL_ORIGIN_ENV,
+    'backofficeAuthInternalOrigin',
+  );
+  return { issuer, audience, clientId, internalOrigin };
 }

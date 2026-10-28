@@ -15,14 +15,24 @@
  *
  * `createRemoteJWKSet` fetch **lazy** ở lần verify đầu — nên ở đây dựng resolver
  * không phát network request nào; assert được mà không cần stub fetch.
+ *
+ * Origin fetch override (`fetchOrigin`) được ghim bằng cách bắt URL mà resolver
+ * sắp fetch: build-url thật của `jose` nằm trong closure không nhìn được, nên
+ * test dựng một URL object từ chính cặp tham số mà `jwksResolver` truyền xuống
+ * — assert là `new URL('/jwks.json', fetchOrigin)` đúng base, còn issuer chỉ
+ * là khóa cache.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import type { JWTVerifyGetKey } from 'jose';
 
 import { JWKS_CACHE_TTL_SECONDS, jwksResolver, resetJwksCacheForTests } from './jwks';
 
 const ISSUER_A = 'https://auth-a.test.ecoma.io';
 const ISSUER_B = 'https://auth-b.test.ecoma.io';
+/** Origin nội bộ giả — hình dạng đúng của biến local (`ecoma-<ns>-auth:4203`). */
+const INTERNAL_ORIGIN = 'http://ecoma-test-auth:4203';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -98,5 +108,71 @@ describe('resetJwksCacheForTests', () => {
     resetJwksCacheForTests();
 
     expect(await jwksResolver(ISSUER_A)).not.toBe(first);
+  });
+});
+
+/**
+ * Bắt URL mà resolver fetch JWKS. `createRemoteJWKSet` dựng resolver mà
+ * KHÔNG fetch (lazy — đo trên jose 6.2.13: fetch chỉ xảy ra ở lần gọi
+ * resolver đầu), nên helper phải gọi resolver với một descriptor `kid` lạ:
+ * jose fetch JWKS (mock trả key set rỗng hợp lệ) rồi ném
+ * `JWKSNoMatchingKey` — ném đó là expected, URL bị bắt là kết quả assert.
+ */
+async function captureJwksUrl(run: () => Promise<unknown>): Promise<string> {
+  const urls: string[] = [];
+  const fetchSpy = vi
+    .spyOn(globalThis, 'fetch')
+    .mockImplementation(async (input: RequestInfo | URL) => {
+      urls.push(input instanceof URL ? input.toString() : String(input));
+      return new Response(JSON.stringify({ keys: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+  try {
+    const resolver = (await run()) as JWTVerifyGetKey;
+    try {
+      // Token là `FlattenedJWSInput` — chỉ shape type quan trọng, jose fetch
+      // JWKS TRƯỚC khi nhìn payload nên giá trị rỗng không bao giờ được dùng.
+      await resolver(
+        { alg: 'ES256', kid: 'capture-test' },
+        { payload: '', protected: '', signature: '' },
+      );
+    } catch {
+      // `JWKSNoMatchingKey` — JWKS rỗng của mock không có key nào; đây là
+      // đường kết thúc expected, điều cần assert là URL đã bị bắt.
+    }
+  } finally {
+    fetchSpy.mockRestore();
+  }
+  return urls[0] ?? '';
+}
+
+describe('jwksResolver — optional fetch origin override', () => {
+  it('builds the JWKS URL from the fetch origin while the issuer stays the cache key', async () => {
+    const url = await captureJwksUrl(() => jwksResolver(ISSUER_A, INTERNAL_ORIGIN));
+
+    // Origin nội bộ quyết định nơi fetch (container local không tới được origin
+    // công khai) — path `/jwks.json` giữ nguyên.
+    expect(new URL(url).origin).toBe(INTERNAL_ORIGIN);
+    expect(new URL(url).pathname).toBe('/jwks.json');
+  });
+
+  it('defaults the JWKS URL to the issuer when no fetch origin is given', async () => {
+    // Production path: `undefined` ⇒ URL từ issuer, hành vi giữ nguyên từng byte.
+    const url = await captureJwksUrl(() => jwksResolver(ISSUER_B));
+
+    expect(new URL(url).origin).toBe(ISSUER_B);
+    expect(new URL(url).pathname).toBe('/jwks.json');
+  });
+
+  it('keeps the cache keyed by the issuer across calls with and without an origin', async () => {
+    // Cache-hit là resolver của issuer bất kể origin truyền vào lần sau —
+    // origin là cấu hình deployment ổn định suốt tiến trình, không phải tham
+    // số per-call; việc nó KHÔNG tham gia khóa cache là quyết định ghi ở JSDoc.
+    const first = await jwksResolver(ISSUER_A, INTERNAL_ORIGIN);
+    const second = await jwksResolver(ISSUER_A);
+
+    expect(second).toBe(first);
   });
 });

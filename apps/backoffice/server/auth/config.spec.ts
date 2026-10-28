@@ -1,12 +1,12 @@
 /**
  * Test của cổng cấu hình OIDC — `backofficeAuthConfig` là điểm mà middleware
  * authn, login và callback cùng đi qua, và `null` của nó là tín hiệu `503`
- * fail-closed ("chưa cấu hình" không phải "cho qua"). Bốn bất biến được ghim:
+ * fail-closed ("chưa cấu hình" không phải "cho qua"). Năm bất biến được ghim:
  *
- * 1. **Đủ cả ba biến mới mở cổng** — thiếu một biến là luồng login không dựng
- *    được đúng contract (authorize URL sai, token sai audience hay sai
- *    client); hàm trả `null` **chung** cho mọi dạng thiếu, không lộ biến nào
- *    thiếu.
+ * 1. **Đủ cả ba biến bắt buộc mới mở cổng** — thiếu một biến là luồng login
+ *    không dựng được đúng contract (authorize URL sai, token sai audience hay
+ *    sai client); hàm trả `null` **chung** cho mọi dạng thiếu, không lộ biến
+ *    nào thiếu.
  * 2. **Env Worker trước, runtimeConfig Nitro sau** — hai runtime của app đọc
  *    cùng một module: Workers đọc `env`, container Node local đọc
  *    runtimeConfig private; env có giá trị thì runtimeConfig không được thắng.
@@ -15,6 +15,10 @@
  * 4. **Không ném khi không có runtimeConfig** — test dựng h3 app trực tiếp
  *    thì `useRuntimeConfig` ném; đường đó phải rơi về `null` như mọi nhánh
  *    chưa cấu hình khác, không phải một lỗi khác hỏng phân loại 503.
+ * 5. **Internal origin là tuỳ chọn** — `BACKOFFICE_AUTH_INTERNAL_ORIGIN`
+ *    không tham gia điều kiện mở cổng; vắng ⇒ `internalOrigin: null` (fetch
+ *    từ issuer như production), có ⇒ chỉ đổi nơi fetch server-side, issuer
+ *    vẫn là danh tính `iss`/authorize.
  */
 
 import type { H3Event } from 'h3';
@@ -23,6 +27,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   BACKOFFICE_AUTH_AUDIENCE_ENV,
   BACKOFFICE_AUTH_CLIENT_ID_ENV,
+  BACKOFFICE_AUTH_INTERNAL_ORIGIN_ENV,
   BACKOFFICE_AUTH_ISSUER_ENV,
   backofficeAuthConfig,
 } from './config';
@@ -46,10 +51,12 @@ function fakeEvent(workerEnv: unknown): H3Event {
 
 describe('backofficeAuthConfig — opens only on the full triple', () => {
   it('accepts the complete configuration from the Worker env', () => {
+    // Internal origin vắng ⇒ `null` — tuỳ chọn không được bịa thành giá trị.
     expect(backofficeAuthConfig(fakeEvent(FULL_ENV))).toEqual({
       issuer: 'https://auth.test.ecoma.io',
       audience: 'https://api.test.ecoma.io/backoffice',
       clientId: 'backoffice-test',
+      internalOrigin: null,
     });
   });
 
@@ -116,6 +123,7 @@ describe('backofficeAuthConfig — env precedence and no-runtimeConfig path', ()
       issuer: 'https://auth.node.test',
       audience: 'https://api.node.test/backoffice',
       clientId: 'backoffice-node',
+      internalOrigin: null,
     });
   });
 
@@ -138,5 +146,53 @@ describe('backofficeAuthConfig — env precedence and no-runtimeConfig path', ()
     });
 
     expect(backofficeAuthConfig(fakeEvent(undefined))).toBeNull();
+  });
+});
+
+describe('backofficeAuthConfig — optional internal fetch origin', () => {
+  it('carries the internal origin from the Worker env while the issuer stays the iss identity', () => {
+    // Local: issuer giữ port động (browser/`iss`), fetch đi qua alias nội bộ.
+    expect(
+      backofficeAuthConfig(
+        fakeEvent({
+          ...FULL_ENV,
+          [BACKOFFICE_AUTH_INTERNAL_ORIGIN_ENV]: 'http://ecoma-w0123456789ab-auth:4203',
+        }),
+      ),
+    ).toEqual({
+      issuer: 'https://auth.test.ecoma.io',
+      audience: 'https://api.test.ecoma.io/backoffice',
+      clientId: 'backoffice-test',
+      internalOrigin: 'http://ecoma-w0123456789ab-auth:4203',
+    });
+  });
+
+  it('reads the internal origin from the Nitro runtimeConfig fallback', () => {
+    vi.stubGlobal('useRuntimeConfig', () => ({
+      backofficeAuthIssuer: 'https://auth.node.test',
+      backofficeAuthAudience: 'https://api.node.test/backoffice',
+      backofficeAuthClientId: 'backoffice-node',
+      backofficeAuthInternalOrigin: 'http://ecoma-node-auth:4203',
+    }));
+
+    expect(backofficeAuthConfig(fakeEvent(undefined))?.internalOrigin).toBe(
+      'http://ecoma-node-auth:4203',
+    );
+  });
+
+  it('treats an empty internal origin as absent — same as unset', () => {
+    // Default build-time của runtimeConfig là chuỗi rỗng; coi nó là "đã cấu
+    // hình origin rỗng" là dựng fetch URL `new URL('/token', '')` ném sai loại.
+    expect(
+      backofficeAuthConfig(fakeEvent({ ...FULL_ENV, [BACKOFFICE_AUTH_INTERNAL_ORIGIN_ENV]: '' }))
+        ?.internalOrigin,
+    ).toBeNull();
+  });
+
+  it('still opens with a missing internal origin — the gate stays on the mandatory triple', () => {
+    // Internal origin là tuỳ chọn: không có mặt nó không được đổi điều kiện
+    // mở cổng (mutation control: thêm nó vào điều kiện bắt buộc là toàn bộ
+    // production không đặt biến bị 503).
+    expect(backofficeAuthConfig(fakeEvent(FULL_ENV))).not.toBeNull();
   });
 });

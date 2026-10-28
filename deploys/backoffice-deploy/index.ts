@@ -5,6 +5,12 @@
  * Mirror `deploys/home-deploy/index.ts` (cùng ownership labels, namespace, stack
  * reference, fail-closed). Khác biệt: router rule `Host(office.fbi.com)` và
  * image build từ `apps/backoffice` với preset `node-server`.
+ *
+ * Cấu hình OIDC BFF (issue #356): container nhận đủ bộ `NUXT_BACKOFFICE_AUTH_*`
+ * (issuer/audience GHIM cùng chuỗi mà auth-deploy cấp cho provider qua cùng hai
+ * output platform — so `iss`/`aud` exact khớp) + origin fetch nội bộ
+ * `ecoma-<ns>-auth:4203` cho JWKS/token exchange, + data mode `prototype` cho
+ * bề mặt UI demo. Thiếu bộ OIDC là middleware authn 503 mọi `/api/**`.
  */
 
 import * as command from '@pulumi/command';
@@ -24,8 +30,23 @@ import { shellQuote, sqlQuote } from '../../tools/dx/src/local-runtime/shell-quo
 import { ownershipLabels } from '../../tools/dx/src/deployment/local-platform/deploy-labels';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
 import type { PlatformOutputs } from '../../tools/dx/src/deployment/local-platform/platform-outputs-contract';
+// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
+import { LOCAL_BACKOFFICE_CLIENT_ID } from '../../tools/dx/src/deployment/local-platform/local-auth-contract';
 
 const BACKOFFICE_INTERNAL_PORT = 3000;
+
+/**
+ * Cổng HTTP nội bộ của worker `ecoma-auth` trong WIC của auth-deploy — GIÁ TRỊ
+ * GHIM ở stack đó (`AUTH_INTERNAL_PORT`, nguồn số duy nhất là `dev.port` của
+ * `apps/auth/wrangler.jsonc`), copy tại đây vì hai stack là hai Pulumi program
+ * độc lập; lệch giá trị là connection refused ở lần fetch JWKS/token đầu tiên.
+ * Alias `ecoma-<ns>-auth` + port này là đường duy nhất container Node tới được
+ * auth: hostname `auth.<rootHostname>` KHÔNG resolve được trong container
+ * (không có /etc/hosts entry) và host port của Traefik chỉ bind 127.0.0.1 trên
+ * host — cùng pattern `AUTH_INTERNAL_PORT_OF_AUTH_WIC` mà account-deploy dùng
+ * cho `NUXT_AUTH_SERVICE_URL`.
+ */
+const AUTH_INTERNAL_PORT_OF_AUTH_WIC = 4203;
 
 const traefikPrefix = (ns: string): string => `backoffice-${ns}`;
 
@@ -54,6 +75,7 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
 const networkName = requirePlatformOutput('networkName');
 const platformNamespace = requirePlatformOutput('namespace');
 const rootHostname = requirePlatformOutput('rootHostname');
+const traefikHostPort = requirePlatformOutput('traefikHostPort');
 
 // Mật khẩu hai role local — do orchestration sinh và truyền qua --config.
 const runtimePassword = conf.require('runtimePassword');
@@ -135,6 +157,37 @@ const backoffice = new docker.Container(
       `PORT=${BACKOFFICE_INTERNAL_PORT}`,
       'NODE_ENV=production',
       pulumi.interpolate`NITRO_BACKOFFICE_DATABASE_URL=${backofficeDatabaseUrl}`,
+      // Ba biến OIDC (ADR-0012) — thiếu MỘT biến là middleware authn 503 cho
+      // mọi `/api/**` (fail-closed, `server/auth/config.ts` trả `null`).
+      //
+      // Issuer/audience GHIM CÙNG CHUỖI với auth-deploy: cả hai stack dựng từ
+      // cùng hai output platform (`rootHostname` + `traefikHostPort`), nên phép
+      // so `iss`/`aud` exact giữa token do auth mint và cấu hình verify của
+      // backoffice khớp theo cấu trúc, không phải theo may mắn. Port động là
+      // BẮT BUỘC trong chuỗi: browser chỉ tới được origin có port (443 không
+      // listen), và oidc-provider mint `iss` từ chính chuỗi này. Trade-off
+      // local-only (port đổi là issuer đổi) được ghi ở JSDoc `issuerLocal` của
+      // auth-deploy — không lặp lại ở đây.
+      pulumi.interpolate`NUXT_BACKOFFICE_AUTH_ISSUER=https://auth.${rootHostname}:${traefikHostPort}`,
+      pulumi.interpolate`NUXT_BACKOFFICE_AUTH_AUDIENCE=https://api.${rootHostname}:${traefikHostPort}`,
+      // client_id public đã seed bên auth-deploy — MỘT nguồn sự thật trong
+      // `local-auth-contract`, hai stack import cùng hằng; lệch giá trị là
+      // authorize `invalid_client` nên không copy chuỗi.
+      `NUXT_BACKOFFICE_AUTH_CLIENT_ID=${LOCAL_BACKOFFICE_CLIENT_ID}`,
+      // Origin fetch server-side: JWKS (`/jwks.json`) và token exchange
+      // (`/token`) chạy TRONG container Node, mà container không resolve được
+      // `auth.<rootHostname>` và không đi ra host loopback được — đường duy
+      // nhất là alias Docker của WIC auth trên platform network (plain HTTP;
+      // TLS không có trên chặng này, cùng ngữ nghĩa service binding production).
+      // Chuỗi issuer vẫn là danh tính `iss`/authorize — chỉ fetch origin đổi.
+      // Production Workers KHÔNG đặt biến này (fetch qua issuer như cũ).
+      pulumi.interpolate`NUXT_BACKOFFICE_AUTH_INTERNAL_ORIGIN=http://ecoma-${ns}-auth:${AUTH_INTERNAL_PORT_OF_AUTH_WIC}`,
+      // Data mode `prototype` — bảng adapter của app chỉ có hai factory:
+      // `prototype` (fixture client-side) và unavailable; chưa có mode UI nào
+      // đọc DB thật, còn `/api/**` phục vụ dữ liệu DB thật độc lập với mode
+      // này. `disabled` là app vào trạng thái "không khả dụng" vô ích trên
+      // local. Staging ghim cùng giá trị cùng lý do (`wrangler.jsonc`).
+      `NITRO_PUBLIC_BACKOFFICE_DATA_MODE=prototype`,
     ],
     labels: [
       ...Object.entries(labels).map(([label, value]) => ({ label, value })),

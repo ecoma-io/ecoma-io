@@ -95,12 +95,18 @@ function cachedResolver(issuer: string, nowMs: number): JWTVerifyGetKey | null {
  * Fetch JWKS của issuer và dựng resolver — ném khi `auth` không trả lời được
  * (caller phân loại `503`).
  *
+ * URL JWKS được dựng từ `fetchOrigin` — **không phải** issuer — vì trên local
+ * container Node không đi ra được origin công khai của issuer (hostname không
+ * resolve, host port bind loopback); issuer chỉ còn vai trò danh tính, còn
+ * fetch đi qua origin nội bộ do deploy layer cấp. Production truyền
+ * `undefined` (mặc định) và URL rơi về issuer như cũ.
+ *
  * `createRemoteJWKSet` fetch **lazy** ở lần verify đầu, không phải lúc gọi
  * hàm — vì vậy cả timeout lẫn lỗi network nằm ở `jwtVerify`, và việc này
  * thuộc về phân loại lỗi của caller (`503` theo ADR-0011), không phải ở đây.
  */
-async function fetchResolver(issuer: string): Promise<JWTVerifyGetKey> {
-  const jwksUrl = new URL('/jwks.json', issuer).toString();
+async function fetchResolver(issuer: string, fetchOrigin?: string): Promise<JWTVerifyGetKey> {
+  const jwksUrl = new URL('/jwks.json', fetchOrigin ?? issuer).toString();
   return createRemoteJWKSet(new URL(jwksUrl), { cooldownDuration: JOSE_COOLDOWN_MS });
 }
 
@@ -110,8 +116,16 @@ async function fetchResolver(issuer: string): Promise<JWTVerifyGetKey> {
  *
  * ⚠️ Hàm này **không bao giờ** trả resolver của issuer khác: khoá cache là
  * issuer, và `fetchResolver` dựng URL từ chính issuer được truyền vào.
+ *
+ * @param issuer Issuer của `auth` — khóa cache và là base URL JWKS mặc định.
+ * @param fetchOrigin Tuỳ chọn: origin dựng URL fetch thay cho issuer (không
+ *   path cuối). KHÔNG tham gia khóa cache — cache vẫn theo issuer, nên hai lần
+ *   gọi cùng issuer với origin khác nhau nhận cùng resolver và origin hiệu
+ *   lực là origin của lần dựng đầu. Caller thật không bao giờ rơi vào trường
+ *   hợp đó: origin là cấu hình deployment ổn định suốt tiến trình (production
+ *   không đặt — luôn `undefined`; local đặt từ lúc container boot).
  */
-export function jwksResolver(issuer: string): Promise<JWTVerifyGetKey> {
+export function jwksResolver(issuer: string, fetchOrigin?: string): Promise<JWTVerifyGetKey> {
   const nowMs = Date.now();
   const cached = cachedResolver(issuer, nowMs);
   if (cached !== null) {
@@ -123,7 +137,7 @@ export function jwksResolver(issuer: string): Promise<JWTVerifyGetKey> {
     return inflight;
   }
 
-  const fetchPromise = fetchResolver(issuer)
+  const fetchPromise = fetchResolver(issuer, fetchOrigin)
     .then((resolver) => {
       cacheByIssuer.set(issuer, { resolver, createdAtMs: Date.now() });
       return resolver;

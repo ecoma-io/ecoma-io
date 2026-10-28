@@ -69,6 +69,8 @@ import {
 } from '../../tools/dx/src/deployment/local-platform/deploy-labels';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
 import type { PlatformOutputs } from '../../tools/dx/src/deployment/local-platform/platform-outputs-contract';
+// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
+import { LOCAL_BACKOFFICE_CLIENT_ID } from '../../tools/dx/src/deployment/local-platform/local-auth-contract';
 
 /**
  * Image Node pin (theo DIGEST) để chạy migration runner trong container gắn
@@ -236,15 +238,6 @@ const migrate = new command.local.Command(
 );
 
 /**
- * Client ID của client backoffice trên lane local — cùng một giá trị mà
- * `BACKOFFICE_AUTH_CLIENT_ID` phía backoffice sẽ cấu hình khi luồng BFF được
- * wire vào local lane. Hằng ở đây (không sinh ngẫu nhiên): client_id là định
- * danh công khai trong giao thức OAuth, không phải secret, và phải ổn định
- * qua các lần up để row cũ không bị bỏ lại mồ côi redirect URI.
- */
-const LOCAL_BACKOFFICE_CLIENT_ID = 'ecoma-backoffice-local';
-
-/**
  * Redirect URI đăng ký cho client backoffice local: callback BFF là thành phần
  * path cố định `/api/auth/callback` của chính app backoffice
  * (`apps/backoffice/server/api/auth/login.get.ts` — `callbackRedirectUri` ghép
@@ -356,13 +349,37 @@ const hyperdriveLocalConnectionString = pulumi.interpolate`postgresql://ecoma_au
 
 /**
  * Cặp AUTH_ISSUER/AUTH_AUDIENCE giá trị local: issuer là origin HTTPS mà
- * Traefik serve (`auth.<rootHostname>`) — provider khởi tạo với ĐÚNG origin
- * này (resume URL, JWKS `iss`, cookies scope đều quy về origin ấy, xem
- * `oidc-fullflow.spec.ts` §bootProvider); audience là resource indicator chỉ
- * cần nhất quán trong local (config requireSecret, không syntax-check).
+ * Traefik serve (`auth.<rootHostname>:<traefikHostPort>`) — provider khởi tạo
+ * với ĐÚNG origin này (resume URL, JWKS `iss`, cookies scope đều quy về origin
+ * ấy, xem `oidc-fullflow.spec.ts` §bootProvider); audience là resource
+ * indicator chỉ cần nhất quán trong local (config requireSecret, không
+ * syntax-check).
+ *
+ * ⚠️ Vì sao issuer PHẢI mang port động: bốn mối quan hệ cùng quy về chuỗi này.
+ *
+ * (a) **Browser flows cần port trong URL** — port 443 KHÔNG listen trên host
+ *     (Traefik chỉ publish MỘT host port động, bind 127.0.0.1); mọi URL browser
+ *     dùng (`/authorize` redirect, discovery, JWKS) đều đi qua
+ *     `https://auth.<host>:<port>`. Issuer thiếu port là browser bị redirect về
+ *     một origin không tồn tại.
+ *
+ * (b) **oidc-provider mint `iss` từ hằng này** (`AUTH_ISSUER` → `config.issuer`)
+ *     — verifier phía `backoffice` cấu hình ĐÚNG chuỗi (cùng output
+ *     `rootHostname`/`traefikHostPort` qua `NUXT_BACKOFFICE_AUTH_*`) thì phép so
+ *     `iss` exact khớp. Hai bên lệch một chữ (thiếu port) là mọi token `invalid`.
+ *
+ * (c) **Traefik match `Host()` bỏ qua port** — rule `Host(auth.<rootHostname>)`
+ *     không đổi; port của Host header không tham gia so khớp, nên routing chưa
+ *     cần biết issuer có port.
+ *
+ * (d) **Trade-off local-only**: port động đổi qua lần recreate platform là
+ *     issuer đổi — token đã mint theo issuer cũ hết hiệu lực (verify fail
+ *     `iss`), chấp nhận được ở local; KHÔNG phải pattern cho staging/production
+ *     (issuer production là origin ổn định không port). Cùng hệ quả với
+ *     redirect URI đã seed: port mới là URI mới, URI cũ vô hại còn trong bảng.
  */
-const issuerLocal = pulumi.interpolate`https://auth.${rootHostname}`;
-const audienceLocal = pulumi.interpolate`https://api.${rootHostname}`;
+const issuerLocal = pulumi.interpolate`https://auth.${rootHostname}:${traefikHostPort}`;
+const audienceLocal = pulumi.interpolate`https://api.${rootHostname}:${traefikHostPort}`;
 
 /**
  * Volume RW duy nhất của WIC: state wrangler (`--persist-to` của HAI worker —
@@ -583,7 +600,12 @@ const wic = new docker.Container(
       pulumi.interpolate`AUTH_ISSUER=${issuerLocal}`,
       pulumi.interpolate`AUTH_AUDIENCE=${audienceLocal}`,
       pulumi.interpolate`AUTH_COOKIE_KEYS=${pulumi.secret(cookieKeys)}`,
-      pulumi.interpolate`AUTH_ACCOUNT_BASE_URL=https://account.${rootHostname}`,
+      // Origin browser-facing của account — CÙNG luật port động với issuer
+      // phía trên: provider dựng interactions/continue URL từ hằng này và
+      // browser là bên đi theo URL, nên thiếu port là browser rơi vào origin
+      // không listen. Account container chỉ nhìn `Host()` (bỏ port) nên
+      // routing không đổi.
+      pulumi.interpolate`AUTH_ACCOUNT_BASE_URL=https://account.${rootHostname}:${traefikHostPort}`,
       pulumi.interpolate`BRIDGE_TARGET_ORIGIN=http://${dockerResourceName(ns, 'account')}:3000`,
     ],
     labels: [

@@ -46,6 +46,13 @@ export default defineNuxtConfig({
     backofficeAuthIssuer: '',
     backofficeAuthAudience: '',
     backofficeAuthClientId: '',
+    // Origin fetch server-side tới `auth` — **tuỳ chọn** (đối lập ba biến trên):
+    // rỗng = mọi fetch JWKS/token dựng URL từ issuer như production; có giá trị
+    // (local: `http://ecoma-<ns>-auth:4203` do backoffice-deploy cấp) = fetch
+    // từ origin nội bộ vì container không resolve được hostname issuer. Issuer
+    // vẫn là danh tính `iss`/authorize — chỉ fetch origin đổi. Xem JSDoc của
+    // `server/auth/config.ts`.
+    backofficeAuthInternalOrigin: '',
     public: {
       backofficeDataMode: BACKOFFICE_DATA_MODE_DISABLED,
       // URL trang profile của `account` (origin + path, vd
