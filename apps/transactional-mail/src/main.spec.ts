@@ -6,7 +6,7 @@
  * statement (2) không chạy — `budget-exhausted` phải dừng hẳn).
  *
  * Nguồn canonical: `docs/services/transactional-mail/01-architecture.md` §6.1–§6.2.2, §6.5,
- * §7.2; `02-requirements.md` FR-001. Harness migrations theo `mail-d1.spec.ts` (wrangler
+ * §7.2; `02-requirements.md` FR-001. Harness migrations theo `mail-d1.spec.ts` (`tests/integrations/`, wrangler
  * CLI `d1 migrations apply` — đúng công cụ production dùng).
  *
  * Ranh giới của suite này: KHÔNG chứng minh exactly-once provider, KHÔNG chứng minh

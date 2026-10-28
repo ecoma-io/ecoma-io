@@ -19,7 +19,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { resetConfigCacheForTest } from '../src/config';
+import { resetConfigCacheForTest } from '../../src/config';
 
 import { callRoute } from './app-env';
 import { APP, createTestDatabase, seedScope, type TestDatabase } from './d1-harness';
@@ -122,7 +122,10 @@ describe('POST /admin/v1/providers — create (FR-005, §6.1)', () => {
     await seedScope(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 
@@ -177,7 +180,10 @@ describe('PATCH /admin/v1/providers/:providerId — update and enable/disable (F
     await seedScope(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 
@@ -285,7 +291,10 @@ describe('PATCH enable — fail-closed preconditions (§6.1)', () => {
     await seedScope(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 
@@ -438,7 +447,10 @@ describe('POST hold / release — emergency hold (§6.5)', () => {
     await seedScope(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 
@@ -485,7 +497,10 @@ describe('POST /admin/v1/providers/:providerId/rotate-credential — rotation (F
     await seedScope(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 
@@ -626,7 +641,10 @@ describe('DELETE /admin/v1/providers/:providerId — logical revoke (FR-017)', (
     await seedScope(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 
@@ -671,7 +689,10 @@ describe('POST /admin/v1/deliveries/:deliveryId/retry — failed → queued (§5
     );
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 
@@ -772,7 +793,10 @@ describe('POST /admin/v1/deliveries/:deliveryId/republish — a new intent witho
     await seedScope(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 
@@ -853,7 +877,10 @@ describe('POST /internal/deliveries/:deliveryId/{release,outcome} — fenced 409
     await seedScope(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 

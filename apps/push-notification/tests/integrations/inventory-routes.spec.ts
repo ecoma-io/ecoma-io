@@ -2,7 +2,7 @@
  * Sáu route Application API của inventory — `POST/GET/DELETE /v1/devices` và
  * `POST/PATCH/DELETE /v1/subscriptions` (FR-002, FR-003, FR-004, FR-020; §4.1).
  *
- * ⚠️ **Vì sao file này ở `apps/push-notification/tests/` chứ không ở lib.** Nó gọi `worker.fetch`
+ * ⚠️ **Vì sao file này ở `apps/push-notification/tests/integrations/` chứ không ở lib.** Nó gọi `worker.fetch`
  * thật (`../src/main`), nên nó chạm **cả** application lẫn infrastructure. Hướng phụ thuộc ở đây
  * là `infrastructure → application` (adapter hiện thực port của application), nên một test
  * trong `libs/push-notification-application` mà import infrastructure sẽ **đóng vòng** Nx và
@@ -20,9 +20,9 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { resetConfigCacheForTest, type PushWorkerEnv } from '../src/config';
+import { resetConfigCacheForTest, type PushWorkerEnv } from '../../src/config';
 
-import worker from '../src/main';
+import worker from '../../src/main';
 import { applicationHeaders, callRoute, completeEnv, type WorkerExecutionContext } from './app-env';
 import {
   APP,
@@ -138,7 +138,10 @@ describe('POST /v1/devices — device registration (FR-002)', () => {
     await seedScope(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 
@@ -255,7 +258,10 @@ describe('GET /v1/devices/:id — reading a device (FR-002)', () => {
     scope = await seedScope(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 
@@ -307,7 +313,10 @@ describe('DELETE /v1/devices/:id — logical revoke with cascade (FR-004)', () =
     scope = await seedScope(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 
@@ -436,7 +445,10 @@ describe('POST /v1/subscriptions — registration and endpoint validation (FR-00
     scope = await seedScope(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 
@@ -601,7 +613,10 @@ describe('POST /v1/subscriptions — dedupe by endpoint_hash (FR-003, FR-004)', 
     scope = await seedScope(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 
@@ -844,7 +859,10 @@ describe('PATCH /v1/subscriptions/:id — user disable (FR-004)', () => {
     scope = await seedScope(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 
@@ -960,7 +978,10 @@ describe('DELETE /v1/subscriptions/:id — user unregister (FR-004, FR-020)', ()
     scope = await seedScope(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 
@@ -1032,7 +1053,10 @@ describe('audit vocabulary stays inside the FR-020 closed set', () => {
     await seedScope(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 
@@ -1083,7 +1107,10 @@ describe('GET /admin/v1/providers/:providerId — provider read single (FR-017)'
     await seedScope(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 
@@ -1149,7 +1176,10 @@ describe('GET /admin/v1/providers/:providerId/credentials — public VAPID key d
     await seedScope(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 
@@ -1212,7 +1242,10 @@ describe('POST /internal/revalidate-endpoints — revalidation sweep (FR-003)', 
     await seedScope(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // ⚠️ Huỷ instance workerd của database test — mỗi `createTestDatabase` là một tiến trình;
+    // không huỷ là rò tiến trình suốt lần chạy (06-testing.md §6: suite tự dọn).
+    await db.dispose();
     resetConfigCacheForTest();
   });
 

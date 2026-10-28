@@ -46,7 +46,7 @@ import { vapidTestKeyPair } from './vapid-test-keys';
  * harness chạy trên Node runner (Vitest) nên được phép `node:fs`/`node:path`, và nó đọc file
  * thật để assert trên schema của production thay vì trên một schema viết tay trong test.
  */
-const APP_DIR = join(import.meta.dirname, '..');
+const APP_DIR = join(import.meta.dirname, '..', '..');
 
 /** Thư mục migration — nằm cạnh `src/` của app. */
 const MIGRATIONS_DIR = join(APP_DIR, 'migrations');
@@ -69,7 +69,7 @@ const WRANGLER_CONFIG_PATH = join(APP_DIR, 'wrangler.jsonc');
  */
 function parseJsonc(text: string): unknown {
   const requireFromNx = createRequire(
-    resolve(import.meta.dirname, '../../../node_modules/nx/package.json'),
+    resolve(import.meta.dirname, '../../../../node_modules/nx/package.json'),
   );
   const jsoncParse: (input: string) => unknown = requireFromNx('jsonc-parser').parse;
   return jsoncParse(text);
@@ -189,6 +189,8 @@ export interface TestDatabase {
   count(sql: string, ...bindings: readonly unknown[]): Promise<number>;
   /** Chạy một lệnh ghi không cần kết quả. */
   run(sql: string, ...bindings: readonly unknown[]): Promise<void>;
+  /** Huỷ instance workerd cục bộ của database này — gọi trong `afterEach` (06-testing.md §6). */
+  dispose(): Promise<void>;
 }
 
 /**
@@ -196,7 +198,8 @@ export interface TestDatabase {
  *
  * ⚠️ Mỗi lần gọi tạo một database **riêng**: `getPlatformProxy` với `persist: false` trả một
  * instance mới mỗi lần, nên test này cô lập hoàn toàn với test khác và có thể chạy song song
- * mà không cần reset chung.
+ * mà không cần reset chung. Đổi lại caller **phải** gọi `dispose` (trong `afterEach`) — mỗi
+ * instance là một tiến trình workerd; không huỷ là rò tiến trình suốt lần chạy.
  */
 export async function createTestDatabase(): Promise<TestDatabase> {
   const binding = readD1BindingName();
@@ -210,6 +213,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   });
   const db = proxy.env[binding];
   if (db === undefined) {
+    await proxy.dispose();
     throw new Error(`wrangler.jsonc khai binding \`${binding}\` nhưng proxy không cấp binding đó.`);
   }
 
@@ -238,6 +242,13 @@ export async function createTestDatabase(): Promise<TestDatabase> {
     db,
     probe: countQueries(db),
     rows: readRows,
+    // ⚠️ `getPlatformProxy` khởi động một instance workerd riêng cho mỗi lần gọi, và harness
+    // trước đây không bao giờ trả proxy về cho caller — tức mỗi `createTestDatabase` để lại
+    // một workerd không được huỷ, và một file suite với N test là N instance sống đến hết
+    // lần chạy. `dispose` bọc `proxy.dispose()` để suite tự dọn trong `afterEach`
+    // (06-testing.md §6: suite tự dọn sau khi chạy), đúng mô hình `dispose` của
+    // `tests/integrations/d1-harness.ts` của `web-push-notification-job`.
+    dispose: () => proxy.dispose(),
     // ⚠️ Không dùng `this.rows`: một object literal trả về từ hàm được TypeScript suy rộng
     // thành `TestDatabase | PromiseLike<TestDatabase>` ở vị trí có kiểu context, và `this` mất
     // kiểu. Gọi hàm cục bộ `readRows` là cách đúng và tránh được cả việc đó.

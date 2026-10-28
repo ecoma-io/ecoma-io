@@ -8,15 +8,25 @@
 //
 // ⚠️ Suite này KHÔNG import gì từ project khác: harness là bản sao riêng của app này, đúng
 // lý do `apps/transactional-mailer-job/src/mail-job-repository.spec.ts` có bản sao riêng.
+//
+// ⚠️ Suite sống ở `tests/integrations/` của app chứ không colocated trong lib (06-testing.md
+// §2: suite boot database thật thuộc app-owned suite, không phải spec colocated): lib chỉ còn
+// unit spec, còn bằng chứng "repository chạy trên D1 thật với schema thật" là app-owned —
+// database `push-job` sở hữu bởi app, và import qua public surface của lib
+// (`@ecoma-io/web-push-notification-job-infrastructure`) đủ cho mọi assertion.
 
 import { createRequire } from 'node:module';
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { D1JobStateRepository, MalformedJobStateError, type D1DatabaseLike } from './index';
+import {
+  D1JobStateRepository,
+  MalformedJobStateError,
+  type D1DatabaseLike,
+} from '@ecoma-io/web-push-notification-job-infrastructure';
 import type {
   JobRecord,
   StoredDeliveryEnvelope,
@@ -28,8 +38,7 @@ process.env['WRANGLER_SEND_METRICS'] = 'false';
 const requireFromSpec = createRequire(import.meta.url);
 const { getPlatformProxy } = requireFromSpec('wrangler') as typeof import('wrangler');
 
-const libDir = dirname(import.meta.dirname);
-const appDir = join(libDir, '..', '..', 'apps', 'web-push-notification-job');
+const appDir = join(import.meta.dirname, '..', '..');
 const migrationsDir = join(appDir, 'migrations');
 
 /** Mốc thời gian tuyệt đối — mọi biên được tính trên giá trị tường minh, không dùng đồng hồ. */

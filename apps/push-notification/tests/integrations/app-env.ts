@@ -26,10 +26,10 @@
  * (`credential_decryption_failed`) làm đỏ test.
  */
 
-import type { PushWorkerEnv } from '../src/config';
+import type { PushWorkerEnv } from '../../src/config';
 import type { TestDatabase } from './d1-harness';
 
-import worker from '../src/main';
+import worker from '../../src/main';
 
 import { ROOT_KEY_K1_BASE64 } from './credential-root-key';
 

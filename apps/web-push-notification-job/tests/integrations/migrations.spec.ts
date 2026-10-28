@@ -13,7 +13,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createD1Harness, migrationFiles, migrationStatements, type D1Harness } from './d1-harness';
 
-const CONFIG_PATH = new URL('../wrangler.jsonc', import.meta.url).pathname;
+const CONFIG_PATH = new URL('../../wrangler.jsonc', import.meta.url).pathname;
 
 let harness: D1Harness;
 
