@@ -32,8 +32,13 @@
       },
       "test": {
         "dependsOn": [
-          "build",
           "nuxt-prepare"
+        ],
+        "//": [
+          "KHÔNG `build`: lane unit chạy TS nguồn (config unit exclude",
+          "`tests/integrations/**`), không spec unit nào đọc `.output/` —",
+          "`nitro-routes.spec.ts` duy nhất đọc bundle Nitro build thật và nó thuộc",
+          "`test-integration` bên dưới, nơi `build` được giữ lại."
         ]
       },
       "db:migrate": {
