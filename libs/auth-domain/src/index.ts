@@ -41,7 +41,6 @@ export {
 } from './transaction';
 
 export {
-  DEFAULT_SCOPE,
   MAX_NONCE_LENGTH_BYTES,
   MAX_STATE_LENGTH_BYTES,
   SUPPORTED_GRANT_TYPES,

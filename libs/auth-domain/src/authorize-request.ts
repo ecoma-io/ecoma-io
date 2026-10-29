@@ -31,24 +31,15 @@ export interface AuthorizationRequest {
 }
 
 /**
- * Scope mặc định khi client không yêu cầu gì.
- *
- * ⚠️ Đây là giả định lịch sự, KHÔNG phải chính sách đã duyệt. Scope set cuối
- * cùng phải được lọc qua `allowed_scopes` của client; scope không nằm trong
- * danh sách đó là `invalid_scope`, không phải "cứ cho qua rồi lọc sau".
+ * `scope` là tham số BẮT BUỘC (OIDC Core: scope REQUIRED trong yêu cầu xác
+ * thực): thiếu, rỗng hay toàn khoảng trắng đều bị từ chối ngay — client phải
+ * nói rõ muốn gì, không có scope mặc định ngầm.
  */
-export const DEFAULT_SCOPE = ['openid'] as const;
-
-/** `scope` rỗng hoặc toàn khoảng trắng bị từ chối — client phải nói rõ muốn gì. */
 function parseScope(rawScope: string | undefined): readonly string[] {
   if (rawScope === undefined || rawScope.trim() === '') {
-    return DEFAULT_SCOPE;
+    throw OAuthProtocolError.directInvalidRequest('scope is required');
   }
-  const parts = rawScope.split(/\s+/u).filter((part) => part !== '');
-  if (parts.length === 0) {
-    throw OAuthProtocolError.invalidRequest('scope rong');
-  }
-  return parts;
+  return rawScope.split(/\s+/u).filter((part) => part !== '');
 }
 
 /**
