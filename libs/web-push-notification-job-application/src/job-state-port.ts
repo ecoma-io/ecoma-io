@@ -3,7 +3,7 @@
  * **không** phải logical delivery state.
  *
  * ⚠️ **Vì sao bốn nhóm là bốn method, không phải một `put(JobState)`.** Ranh giới
- * `docs/services/web-push-notification-job/01-architecture.md` §11b là: worker **MUST**
+ * `docs/solutions/web-push-notification-job/01-architecture.md` §11b là: worker **MUST**
  * ghi đủ (1) attempt record idempotent theo `(delivery_id, attempt)`, (2) processed marker,
  * (3) **envelope của lần consume đầu** đủ bảy field, (4) reconciliation data. Một
  * `put(state)` gộp cả bốn thành một object làm mất đúng tính chất quan trọng nhất của chúng:

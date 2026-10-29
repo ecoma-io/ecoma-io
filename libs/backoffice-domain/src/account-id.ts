@@ -4,10 +4,10 @@
  * hồ sơ danh tính của `account`.
  *
  * Source of truth:
- * - `docs/services/backoffice/01-architecture.md` §3, §4.1: một staff member
+ * - `docs/domains/staff-access/01-architecture.md` §3, §4.1: một staff member
  *   gắn đúng một Account ID; Account ID là **reference**, không FK xuyên
  *   database; **email KHÔNG phải primary identity key**.
- * - `docs/overview/01-architecture.md` §4 và invariant 7: danh tính xuyên
+ * - `docs/architecture/01-architecture.md` §4 và invariant 7: danh tính xuyên
  *   service là `sub`, không tái sử dụng, không tái phát hành.
  *
  * ⚠️ **Tự viết, không import `@ecoma-io/account-domain`.** Hình thức giống
@@ -15,7 +15,7 @@
  * entropy** — đó là yêu cầu, không phải trùng hợp (xem chú thích của
  * {@link BACKOFFICE_ACCOUNT_ID_ENTROPY_CHARS}). Ranh giới phụ thuộc là quy tắc
  * module-boundary (một BC không import implementation của BC khác —
- * `docs/overview/05-code-architecture.md` §3), nên lib này khai báo riêng
+ * `docs/architecture/05-code-architecture.md` §3), nên lib này khai báo riêng
  * định danh mà nó sở hữu; test `account-id.spec.ts` ghim hai bên bằng cách đọc
  * file nguồn của producer, không bằng cạnh import.
  *

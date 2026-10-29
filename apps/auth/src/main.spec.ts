@@ -122,7 +122,7 @@ describe('GET /ready', () => {
 
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: 'service_unavailable' });
-    // `Retry-After` là một phần của hợp đồng 503 (docs/overview/03-operations.md §3.2).
+    // `Retry-After` là một phần của hợp đồng 503 (docs/architecture/03-operations.md §3.2).
     expect(Number(response.headers.get('retry-after'))).toBeGreaterThanOrEqual(1);
     expect(lines).toHaveLength(1);
     expect(JSON.parse(lines[0] ?? '')).toEqual({
@@ -597,7 +597,7 @@ describe('POST /internal/session/verified — authenticate first, business logic
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: 'service_unavailable' });
     // ⚠️ `Retry-After` là phần của hợp đồng 503 của nền tảng
-    // (`docs/overview/03-operations.md` §3.2): thiếu nó thì phía gọi không phân biệt
+    // (`docs/architecture/03-operations.md` §3.2): thiếu nó thì phía gọi không phân biệt
     // được sự cố tạm thời với sự cố vĩnh viễn. Test này ghim cả **sự có mặt** lẫn
     // **định dạng** (số giây) — một header rỗng cũng thoả `not.toBeNull()`.
     const retryAfter = response.headers.get('retry-after');
@@ -707,7 +707,7 @@ describe('internal rejection log', () => {
 
   it('never writes the signature header value into the log', async () => {
     // ⚠️ Chữ ký HMAC là giá trị **còn tái dùng được trong cửa sổ skew**, và một dòng log
-    // sống lâu hơn request rất nhiều. Hợp đồng ở `docs/services/auth/03-operations.md` §3
+    // sống lâu hơn request rất nhiều. Hợp đồng ở `docs/domains/auth/03-operations.md` §3
     // cấm ghi nó; `reason` mới là thứ đủ để phân loại sự cố.
     //
     // Bất biến này chỉ đo được bằng một chữ ký **nhận ra được** trong dòng log, nên ca

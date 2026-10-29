@@ -1,6 +1,6 @@
 /**
  * Primitive dùng chung cho contract của cặp service `push-notification` /
- * `web-push-notification-job` (`docs/services/push-notification/01-architecture.md` §4.2).
+ * `web-push-notification-job` (`docs/domains/push-notification/01-architecture.md` §4.2).
  *
  * ⚠️ **`Transport` và provider type là hai abstraction khác nhau** và bị lẫn nhau đúng một
  * cách: gán `"web-push"` (provider type) vào `transport`. Đó là lỗi contract nguy hiểm vì
@@ -712,7 +712,7 @@ export function isRfc3339Timestamp(value: unknown): value is string {
   return true;
 }
 
-/** Delivery state (canonical → `docs/services/push-notification/02-requirements.md` FR-015). */
+/** Delivery state (canonical → `docs/domains/push-notification/02-requirements.md` FR-015). */
 export const DELIVERY_STATUS_VALUES = [
   'pending',
   'queued',
@@ -791,7 +791,7 @@ export const NON_TERMINAL_DELIVERY_STATUS_VALUES: readonly NonTerminalDeliverySt
   );
 
 /**
- * Subscription lifecycle (canonical → `docs/services/push-notification/02-requirements.md` FR-004).
+ * Subscription lifecycle (canonical → `docs/domains/push-notification/02-requirements.md` FR-004).
  *
  * Tập này là **đóng**: `invalidated` **KHÔNG** phải một state của subscription — nó từng được
  * dùng lẫn cho `status` trong ack của `invalidate` và nếu ghi vào cột `status` sẽ tạo state

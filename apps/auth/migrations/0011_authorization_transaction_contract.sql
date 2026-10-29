@@ -4,7 +4,7 @@
 -- Phạm vi: kiểu `transaction_id`, CHECK state machine, nullability của
 --          `client_state`; đồng bộ kiểu FK của `authorization_codes`,
 --          `oauth_consent_decisions` và cột `authorization_audit_events`.
--- Thiết kế → docs/services/auth/01-architecture.md §5.6 (entropy ≥ 256 bit),
+-- Thiết kế → docs/domains/auth/01-architecture.md §5.6 (entropy ≥ 256 bit),
 --            §5.1.2 (sáu trạng thái canonical), §5.1.1 (already_processed là
 --            OUTCOME của contract back-channel, không phải persisted state).
 -- Issue     → #298 (C1), findings #1/#15/#16/#21 của #181.

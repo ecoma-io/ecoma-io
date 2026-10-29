@@ -289,7 +289,7 @@ async function callWithRetry<T>(
  * -------------------------------------------------------------------------------------------- */
 
 /**
- * Câu DELETE một lô — hình dạng đếm được từ `docs/services/auth/03-operations.md` §3.3:
+ * Câu DELETE một lô — hình dạng đếm được từ `docs/domains/auth/03-operations.md` §3.3:
  *   `WITH deleted AS (DELETE … WHERE nonce = ANY (ARRAY(SELECT … LIMIT n)) RETURNING 1)
  *    SELECT count(*) FROM deleted`
  *

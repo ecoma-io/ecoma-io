@@ -383,7 +383,7 @@ describe('internal-auth middleware — key selection by kid', () => {
 
   /**
    * Pha **nạp trước** (preload) của runbook xoay secret — bước 2 trong
-   * `docs/services/auth/03-operations.md` §3.3.
+   * `docs/domains/auth/03-operations.md` §3.3.
    *
    * ⚠️ Ở pha này slot `previous` chứa khoá **MỚI**, không phải khoá cũ: Worker đã
    * verify được khoá mới (đối tác sắp ký bằng nó) nhưng **vẫn ký bằng khoá hiện hành**.

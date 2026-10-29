@@ -1,15 +1,15 @@
 -- 0002_push_delivery_outbox.sql — schema "delivery" của D1 `push`: Push Notification,
 -- Push Delivery, transactional outbox, và bảng idempotency của API.
 --
--- Nguồn: docs/services/push-notification/01-architecture.md §5.4 (Notification),
+-- Nguồn: docs/domains/push-notification/01-architecture.md §5.4 (Notification),
 --        §5.6 (Delivery state + lease/fencing + guarded conditional write),
 --        §6.1 (outbox model + predicate claim + chống dồn intent), §6.2 (publisher),
 --        §6.3 (envelope 7 field — payload materialize tại control plane), §7 (delivery
 --        idempotency), §8.1 (claim/release/outcome/invalidate);
---        docs/services/push-notification/02-requirements.md FR-008 (API idempotency +
+--        docs/domains/push-notification/02-requirements.md FR-008 (API idempotency +
 --        Expiry + payload budget), FR-012 (delivery creation), FR-013 (outbox + envelope),
 --        FR-015 (state machine), FR-021 (rate limit);
---        docs/services/push-notification/03-operations.md §4.2 (c) (decision table a1–a6),
+--        docs/domains/push-notification/03-operations.md §4.2 (c) (decision table a1–a6),
 --        §8 (index bắt buộc).
 --
 -- ⚠️ **Payload KHÔNG nằm ở `push_deliveries` và cũng không nằm ở `push_outbox`.** §6.3 nói

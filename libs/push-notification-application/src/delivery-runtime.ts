@@ -1,7 +1,7 @@
 /**
  * Private delivery runtime API — `claim` · `release` · `outcome` · `invalidate`.
  *
- * Canonical: `docs/services/push-notification/01-architecture.md` §8.1. Đây là **bốn**
+ * Canonical: `docs/domains/push-notification/01-architecture.md` §8.1. Đây là **bốn**
  * operation duy nhất của interface đó (operation set đóng), và cả bốn dùng một nguyên tắc
  * chung:
  *

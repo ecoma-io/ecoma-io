@@ -1,7 +1,7 @@
 /**
  * Admin API — provider lifecycle, credential rotation, emergency hold, provider test.
  *
- * Canonical: `docs/services/push-notification/02-requirements.md` FR-017 (capability list),
+ * Canonical: `docs/domains/push-notification/02-requirements.md` FR-017 (capability list),
  * FR-018 (provider test), FR-020 (audit) · `03-operations.md` §6 (provider operations),
  * §7.2 (credential rotation) · `01-architecture.md` §5.3 (provider, one active primary).
  *

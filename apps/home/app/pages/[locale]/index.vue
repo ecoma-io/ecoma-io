@@ -109,7 +109,7 @@ function surfaceHref(target: PublicLocale, mount: 'docs' | 'blog' | 'legal', pat
 }
 
 /* Root `/` không emit SEO metadata — `/` chỉ là locale-resolution entry point,
- * không serve content (`docs/overview/01-architecture.md` A13), và `<head>`
+ * không serve content (`docs/architecture/01-architecture.md` A13), và `<head>`
  * của nó thuộc về redirect 302 tới `/en`, không phải một trang.
  *
  * `canonical` và `hreflang` là URL tuyệt đối dưới production origin

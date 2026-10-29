@@ -2,7 +2,7 @@
  * Provider port nội bộ của worker `transactional-mailer-job` — seam **duy nhất**
  * mà worker core dùng để giao một delivery ra provider.
  *
- * Nguồn canonical: `docs/services/transactional-mailer-job/01-architecture.md`
+ * Nguồn canonical: `docs/solutions/transactional-mailer-job/01-architecture.md`
  * §11.1 (contract và bảng chiếu error matrix), §11.2 (trách nhiệm adapter); yêu
  * cầu FR-005 ở `02-requirements.md`. Khối type ở §11.1 là canonical **cho tới
  * khi** port được materialize; từ file này trở đi **đây** là bản canonical của

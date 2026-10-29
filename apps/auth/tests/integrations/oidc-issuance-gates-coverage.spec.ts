@@ -16,7 +16,7 @@
  * offline): access token là JWT ES256 TTL 300s, verify offline bằng JWKS;
  * `token_revocations` chỉ chặn CẤP MỚI tại `auth`, không vô hiệu token đã cấp ở
  * resource server verify offline. Suite này chỉ assert "không cấp mới", không bao
- * giờ assert token cũ bị vô hiệu (docs/services/auth 03-operations.md §11.1).
+ * giờ assert token cũ bị vô hiệu (docs/domains/auth 03-operations.md §11.1).
  *
  * Thiếu Docker ⇒ SKIP.
  */

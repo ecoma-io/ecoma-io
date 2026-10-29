@@ -1,6 +1,6 @@
 -- 0005_quarantine_lifecycle_reason.sql — mở rộng `quarantine.reason` cho lifecycle ingest.
 --
--- Nguồn: docs/services/transactional-mailer-job/01-architecture.md §11.3; cùng quy tắc
+-- Nguồn: docs/solutions/transactional-mailer-job/01-architecture.md §11.3; cùng quy tắc
 -- sanitize với 0002: bảng chỉ lưu reason (enum đóng), KHÔNG lưu payload/raw body.
 --
 -- Ingest lifecycle event reject payload hỏng (`quarantined` path) theo đúng mô hình

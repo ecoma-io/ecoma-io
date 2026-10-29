@@ -2,7 +2,7 @@ import { copyJsonCompatible, isPlainObject, scanJsonDataObject } from './shared'
 
 /**
  * `payload` của `Delivery Command` — nội dung hiển thị do application cấp, materialize tại
- * control plane (`docs/services/push-notification/02-requirements.md` FR-013).
+ * control plane (`docs/domains/push-notification/02-requirements.md` FR-013).
  *
  * ⚠️ **`data` là opaque với worker.** "Opaque" nghĩa là worker **không diễn giải nội dung**
  * (worker §15) — **không** nghĩa là bỏ qua tính hợp lệ JSON: envelope được serialize thành

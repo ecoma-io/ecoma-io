@@ -2,7 +2,7 @@
  * Testcontainers + PostgreSQL thật cho integration test PG của `apps/auth`.
  *
  * ⚠️ Docker là phụ thuộc cứng: vắng Docker, suite phải ĐỎ fail-loud, không
- * được skip với exit 0 (docs/overview/06-testing.md §6) — skip im lặng chính
+ * được skip với exit 0 (docs/architecture/06-testing.md §6) — skip im lặng chính
  * là thứ che mất test. Mọi thứ Docker ở đây nằm sau dynamic import, và
  * {@link probeDocker} ném lỗi thay vì skip khi probe thất bại.
  *
@@ -98,7 +98,7 @@ const DOCKER_PROBE_ENV = 'ECOMA_AUTH_DOCKER_PROBE';
  * - **Ném lỗi** làm toàn bộ lần chạy đỏ ngay lập tức: Docker là phụ thuộc cứng
  *   của suite PostgreSQL, vắng Docker là sự cố hạ tầng — suite phải ĐỎ, không
  *   được skip với exit 0 (skip im lặng chính là thứ che mất test).
- *   docs/overview/06-testing.md §6 chốt chính sách fail-loud này.
+ *   docs/architecture/06-testing.md §6 chốt chính sách fail-loud này.
  */
 export function probeDocker(): Promise<void> {
   const flag = process.env[DOCKER_PROBE_ENV];

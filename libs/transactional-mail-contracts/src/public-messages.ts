@@ -2,7 +2,7 @@
  * Public API `POST /v1/messages` — contract giữa ứng dụng gọi (consumer) và
  * `transactional-mail` (provider).
  *
- * Nguồn: `docs/services/transactional-mail/02-requirements.md` FR-001–FR-003 + SR-001
+ * Nguồn: `docs/domains/transactional-mail/02-requirements.md` FR-001–FR-003 + SR-001
  * (canonical: bảng response 8 trường, error envelope 11 `code`, ví dụ request/response).
  *
  * Lưu ý quan trọng:

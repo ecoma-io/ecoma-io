@@ -18,8 +18,8 @@
  * Vì thuần schema/validation, project mang tag `runtime:universal` — không dùng API nào
  * riêng của Workers, browser hay Node (không WebCrypto, không `node:*`).
  *
- * Canonical docs: `docs/services/push-notification/01-architecture.md` §8.1 ·
- * `docs/services/push-notification/02-requirements.md` FR-013 · `docs/services/web-push-notification-job/01-architecture.md` §5, §7.
+ * Canonical docs: `docs/domains/push-notification/01-architecture.md` §8.1 ·
+ * `docs/domains/push-notification/02-requirements.md` FR-013 · `docs/solutions/web-push-notification-job/01-architecture.md` §5, §7.
  */
 
 export {

@@ -2,26 +2,26 @@
  * Lifecycle của Push Subscription.
  *
  * Source of truth:
- * - `docs/services/push-notification/02-requirements.md` FR-004 (Subscription Lifecycle):
+ * - `docs/domains/push-notification/02-requirements.md` FR-004 (Subscription Lifecycle):
  *   "Subscription **MUST** có lifecycle `active`, `disabled`, `expired`. Chỉ `active` đủ
  *   điều kiện tạo `Push Delivery`. Service **MUST** hỗ trợ disable khi: user unregister,
  *   administrator disable, delivery worker xác định subscription không còn hợp lệ."
- * - `docs/services/push-notification/02-requirements.md` FR-016 (Invalid Subscription
+ * - `docs/domains/push-notification/02-requirements.md` FR-016 (Invalid Subscription
  *   Handling): "Khi delivery worker xác định subscription không còn hợp lệ, subscription
  *   **MUST** disable/expire. Service **MUST NOT** tạo delivery mới cho subscription đã
  *   xác định không hợp lệ."
- * - `docs/services/push-notification/01-architecture.md` §5.2 (Subscription có
+ * - `docs/domains/push-notification/01-architecture.md` §5.2 (Subscription có
  *   trạng thái `active`, `disabled`, `expired`; diagram chỉ có `active → disabled`
  *   và `active → expired`; "Subscription không còn hợp lệ (`disabled`/`expired`)
  *   **không** tiếp tục nhận delivery mới").
- * - `docs/services/push-notification/01-architecture.md` §8.1 (invalidate: idempotent;
+ * - `docs/domains/push-notification/01-architecture.md` §8.1 (invalidate: idempotent;
  *   "Invalidate **chỉ** đổi subscription state (`active → disabled`)"; "gọi lặp với cùng
  *   `subscription_id` đã `disabled` trả **cùng** `200`").
  *
  * Quyết định domain suy ra:
  * - `disabled` và `expired` là trạng thái đóng: §5.2 chỉ khai báo hai transition
  *   `active → disabled` và `active → expired`, và không tài liệu nào trong
- *   `docs/services/push-notification/` mô tả một đường quay lại `active` — nên model
+ *   `docs/domains/push-notification/` mô tả một đường quay lại `active` — nên model
  *   ở đây **không** có transition đó. Đăng ký lại sau khi hủy là subscription mới —
  *   thuộc application layer, ngoài phạm vi domain library này.
  * - `disableSubscription` áp lên subscription đã `disabled` là idempotent (trả
@@ -30,7 +30,7 @@
  *   invalidate **chỉ** đổi `active → disabled`, và `expired` không có transition đi ra
  *   theo §5.2.
  * - Emergency hold KHÔNG nằm ở đây: hold là flag trên Provider (xem `provider.ts`),
- *   là operation riêng tách biệt với `disable` theo `docs/services/push-notification/03-operations.md`
+ *   là operation riêng tách biệt với `disable` theo `docs/domains/push-notification/03-operations.md`
  *   §6.5; docs cũng chỉ mô tả hold chặn delivery, không mô tả nó sửa subscription state.
  */
 

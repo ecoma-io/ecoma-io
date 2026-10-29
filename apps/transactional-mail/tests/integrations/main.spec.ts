@@ -5,7 +5,7 @@
  * Queue binding giả, và redispatch adapter hai statement (statement (1) trả 0 hàng ⇒
  * statement (2) không chạy — `budget-exhausted` phải dừng hẳn).
  *
- * Nguồn canonical: `docs/services/transactional-mail/01-architecture.md` §6.1–§6.2.2, §6.5,
+ * Nguồn canonical: `docs/domains/transactional-mail/01-architecture.md` §6.1–§6.2.2, §6.5,
  * §7.2; `02-requirements.md` FR-001. Harness migrations theo `mail-d1.spec.ts` (`tests/integrations/`, wrangler
  * CLI `d1 migrations apply` — đúng công cụ production dùng).
  *
@@ -874,7 +874,7 @@ describe('internal delivery routes on real D1 (§7.2, §6.2.2)', () => {
 });
 
 describe('scheduled handler (publish loop + redispatch budget A)', () => {
-  // Invariant 12 (`docs/overview/01-architecture.md`): không correctness write nào qua
+  // Invariant 12 (`docs/architecture/01-architecture.md`): không correctness write nào qua
   // `ctx.waitUntil()`. Scheduled của control plane mail khai `ctx` nhưng chỉ `void ctx` —
   // publish (QUEUE.send + markPublished) là correctness write và phải nằm trong promise trả
   // về. ExecutionContext bẫy ném thay vì ghi nhận: một lời gọi `waitUntil` duy nhất là đỏ.

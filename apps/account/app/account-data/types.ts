@@ -118,7 +118,7 @@ export type NotificationPreferences = {
  * Chế độ challenge mà `/login` được phép render.
  *
  * ⚠️ Tài liệu **chưa chốt** cơ chế email challenge (email link hay one-time
- * code) — xem `docs/services/account/01-architecture.md` §10. Vì vậy kiểu này
+ * code) — xem `docs/domains/account/01-architecture.md` §10. Vì vậy kiểu này
  * chỉ **mô tả** chế độ mà implementation thật trả về; UI không giả định. Bước
  * nhập code chỉ render khi adapter nói `'code'`.
  */

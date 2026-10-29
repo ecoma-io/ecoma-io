@@ -1,4 +1,4 @@
-# Cache Service — Architecture
+# Remote Cache Service — Architecture
 
 > Ranh giới hệ thống của `cache` (disposable, không phải correctness dependency) nằm ở [`docs/architecture/01-architecture.md`](../../architecture/01-architecture.md) A18 và invariant 22. File này chỉ thiết kế của riêng service.
 > Platform fact (Workers runtime limits): [`docs/architecture/04-platform-facts.md`](../../architecture/04-platform-facts.md) §2.2.
@@ -74,7 +74,13 @@ Các lớp module tách trách nhiệm, dependency đi **một chiều**:
 
 ## 3. Public interface
 
-Nx protocol giữ nguyên, không mở rộng:
+Giao thức adapter **Nx** (MVP) — bất biến dưới đây là của adapter Nx, không phải của toàn domain; protocol khác (Gradle/Turborepo/…) là adapter riêng với bất biến riêng (roadmap Phase 7):
+
+```http
+GET /v1/cache/{hash}
+PUT /v1/cache/{hash}
+Authorization: Bearer <token>
+```
 
 ```http
 GET /v1/cache/{hash}
@@ -213,7 +219,7 @@ Kiến trúc ưu tiên **một deployable Worker nhỏ** thay vì distributed in
 
 ## 13. Architectural invariants
 
-1. Public cache protocol remains Nx-compatible.
+1. The Nx adapter stays Nx-protocol-compatible; future protocols (Gradle, Turborepo, Bazel, Moonrepo) are separate adapters, not extensions of the Nx one.
 2. Data plane không phụ thuộc database trong hot path.
 3. Artifact được stream, không full-buffer trong Worker.
 4. Cache object immutable.

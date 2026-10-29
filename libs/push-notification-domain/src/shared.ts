@@ -2,10 +2,10 @@
  * Kiến trúc dùng chung cho domain library Push Notification Service.
  *
  * Source of truth:
- * - `docs/services/push-notification/01-architecture.md` §4.2 (Transport = web | app);
+ * - `docs/domains/push-notification/01-architecture.md` §4.2 (Transport = web | app);
  *   §5.1 (identity theo `subscription_id`, `device_id` bắt buộc);
  *   §5.6 (kiến trúc delivery/lease/generation).
- * - `docs/services/push-notification/02-requirements.md` FR-001–FR-002 (Transport/Provider
+ * - `docs/domains/push-notification/02-requirements.md` FR-001–FR-002 (Transport/Provider
  *   là hai khái niệm khác nhau; web-push là ProviderType, không phải Transport).
  *
  * Quyết định domain suy ra:

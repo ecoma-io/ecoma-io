@@ -6,9 +6,9 @@
  * cho identifier/token/secret hay payload tuỳ ý.
  *
  * Ràng buộc nguồn ở phía `backoffice`:
- * - invariant 7 (`docs/services/backoffice/01-architecture.md` §9): audit record
+ * - invariant 7 (`docs/domains/staff-access/01-architecture.md` §9): audit record
  *   KHÔNG chứa token/secret/PII.
- * - invariant 35 (`docs/overview/01-architecture.md` §9): không bí mật đứng cạnh
+ * - invariant 35 (`docs/architecture/01-architecture.md` §9): không bí mật đứng cạnh
  *   actor/target/action.
  *
  * Một error object đi thẳng ra log, ra response BFF và ra authorization audit —

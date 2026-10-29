@@ -3,7 +3,7 @@
  * acceptance mà provider phát ra sau khi `send()` đã trả (`delivered`, `deferred`,
  * `bounced`, `failed`, `rejected`, `complained`).
  *
- * Nguồn: `docs/services/transactional-mailer-job/01-architecture.md` §11.3.
+ * Nguồn: `docs/solutions/transactional-mailer-job/01-architecture.md` §11.3.
  *
  * ## "Trung tính" nghĩa là gì
  *
@@ -29,7 +29,7 @@
  *   quan sát riêng (§11.3), mọi transition state machine hiện có không đọc bảng event.
  *
  * Không import gì ngoài type nội bộ — application layer không chạm D1, Cloudflare,
- * Hono hay infrastructure (`docs/overview/05-code-architecture.md` §5).
+ * Hono hay infrastructure (`docs/architecture/05-code-architecture.md` §5).
  */
 
 /** Sáu loại lifecycle event đã chốt cho model trung tính (§11.3). */

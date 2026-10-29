@@ -30,7 +30,7 @@
 --   * Tie-break `id DESC` của upstream (`datetime('now')` độ phân giải giây)
 --     được giữ: `created_at` thành `timestamptz` microsecond nhưng hai row
 --     trong cùng transaction vẫn tie — mọi truy vấn "latest" phải
---     `ORDER BY created_at DESC, id DESC` (`docs/overview/…` không ghi điều
+--     `ORDER BY created_at DESC, id DESC` (`docs/architecture/…` không ghi điều
 --     này; nó nằm trong test `latest-version-ordering` khi port).
 
 BEGIN;
@@ -95,7 +95,7 @@ COMMENT ON COLUMN pact.tenants.name IS
 -- ---------------------------------------------------------------------------
 -- `sub` là tham chiếu opaque sang identity, không FK (quy ước chung).
 -- Role là dữ liệu CỦA broker: không suy ra từ backoffice hay scope nào khác
--- (A21 của docs/overview/01-architecture.md §2.2).
+-- (A21 của docs/architecture/01-architecture.md §2.2).
 
 CREATE TABLE IF NOT EXISTS pact.tenant_members (
   tenant_id uuid NOT NULL REFERENCES pact.tenants (id) ON DELETE RESTRICT,

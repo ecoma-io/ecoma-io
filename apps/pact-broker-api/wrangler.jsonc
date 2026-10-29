@@ -19,7 +19,7 @@
   // fail-closed ở `src/config.ts`. Tên binding phải khớp đúng những gì
   // `src/config.ts` đọc (`env.HYPERDRIVE`) — comment trước đây ghi "DB" là
   // dự định cũ chưa khớp code. Migration KHÔNG chạy qua binding này — chúng
-  // chạy từ CI runner bằng chuỗi kết nối trực tiếp (docs/services/
+  // chạy từ CI runner bằng chuỗi kết nối trực tiếp (docs/domains/pact-broker/  # line-split ref:
   // pact-broker/03-operations.md §2), vì Hyperdrive không hỗ trợ advisory lock.
   "hyperdrive": [
     {

@@ -1,5 +1,5 @@
 {
-  "//": "Cron-trigger Worker dọn nonce hết hạn cho HAI database nội bộ (`db-auth`, `db-account`) — thay GitHub Action `.github/workflows/identity-nonce-prune.yaml`. KHÔNG có route, KHÔNG có hostname, KHÔNG có fetch export, KHÔNG có queue, KHÔNG có D1. Reference: docs/services/auth-nonce-prune-job/01-architecture.md.",
+  "//": "Cron-trigger Worker dọn nonce hết hạn cho HAI database nội bộ (`db-auth`, `db-account`) — thay GitHub Action `.github/workflows/identity-nonce-prune.yaml`. KHÔNG có route, KHÔNG có hostname, KHÔNG có fetch export, KHÔNG có queue, KHÔNG có D1. Reference: docs/solutions/auth-nonce-prune-job/01-architecture.md.",
   //
   // KHÔNG bật `nodejs_compat`: app mang tag `runtime:edge` và .oxlintrc.json chặn
   // import Node builtin trong code của app. Driver `pg` tự dùng shim Node mà

@@ -4,7 +4,7 @@
  * Ba tính chất phải giữ, và chúng là lý do file này tồn tại:
  *
  * 1. **Không phải authoritative catalog.** Không bản nào của file này được
- *    sao chép sang tài liệu kiến trúc: `docs/services/backoffice/*` là nơi giữ
+ *    sao chép sang tài liệu kiến trúc: `docs/domains/staff-access/*` là nơi giữ
  *    thiết kế, còn đây là dữ liệu để **nhìn**. Permission và role dưới đây được
  *    **minh hoạ**, không phải quyết định governance — `01-architecture.md` §4.3
  *    ghi rõ tài liệu "không phát minh permission cụ thể nào", và prototype này

@@ -1,7 +1,7 @@
 -- 0001_mail_templates.sql — bảng `mail_templates`: bản khai báo template trong D1 `mail`.
 --
--- Nguồn: docs/services/transactional-mail/01-architecture.md §4.1;
---        docs/services/transactional-mail/02-requirements.md FR-003.
+-- Nguồn: docs/domains/transactional-mail/01-architecture.md §4.1;
+--        docs/domains/transactional-mail/02-requirements.md FR-003.
 --
 -- ⚠️ `variables_schema_json` là **metadata** khai báo tên/kiểu/giới hạn của biến theo TỪNG
 -- template version (subset JSON có version: `schema_version` + `variables{name,type,required,

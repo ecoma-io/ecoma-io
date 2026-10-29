@@ -4,7 +4,7 @@
  * ## Vì sao đây là HTTP fetch chứ không phải Service Binding
  *
  * Contract public của `transactional-mail` là `POST /v1/messages` trên Worker
- * public của service đó (`docs/services/transactional-mail/01-architecture.md`
+ * public của service đó (`docs/domains/transactional-mail/01-architecture.md`
  * §5, §7.1). Binding service-to-service cho đường này là **hạ tầng chưa provision**
  * — receiver hiện serve HTTP thật, nhưng đường gọi công khai giữa hai deploy unit
  * vẫn là HTTP fetch tới origin (`runtimeConfig.mailServiceUrl`). Adapter vì vậy

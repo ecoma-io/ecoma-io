@@ -1,14 +1,14 @@
 -- 0001_push_core.sql — schema "identity + configuration" của D1 `push`: Device, Push
 -- Subscription, Push Provider (+ credential, app mapping), Routing Policy, Audit.
 --
--- Nguồn: docs/services/push-notification/01-architecture.md §5.1 (Device), §5.2
+-- Nguồn: docs/domains/push-notification/01-architecture.md §5.1 (Device), §5.2
 --        (Subscription), §5.3 (Provider + disable semantics + provider selection),
 --        §5.5 (Transport Priority), §9 (ba loại secret), §11 (correlation), §12 (ownership);
---        docs/services/push-notification/02-requirements.md FR-001 (app isolation),
+--        docs/domains/push-notification/02-requirements.md FR-001 (app isolation),
 --        FR-002 (device), FR-003 (endpoint validation), FR-004 (subscription lifecycle),
 --        FR-005/FR-007 (provider scope per app), FR-006 (credential + key rotation),
 --        FR-017/FR-019/FR-020 (admin API, auth, audit);
---        docs/services/push-notification/03-operations.md §6.1, §6.5 (hold),
+--        docs/domains/push-notification/03-operations.md §6.1, §6.5 (hold),
 --        §7.2 (VAPID rotation theo `vapid_key_id`), §8 (inventory + index bắt buộc).
 --
 -- Mọi timestamp là **epoch millis INTEGER** (`CAST(unixepoch('subsec') * 1000 AS INTEGER)` là

@@ -26,7 +26,7 @@ export const MAX_BATCHES = 50;
  * Bảng tính đường xấu nhất **một kho** (mỗi lần gọi `pg` bị bao bởi `statement_timeout`
  * 60s + `lock_timeout` 30s + `connect_timeout` 10s, retry tối đa `MAX_ATTEMPTS` với
  * backoff 5s + 10s → một call ≤ 3 × 70 + 15 = **225 giây**; script cũ ghi mốc cùng một
- * cách — `docs/services/auth/03-operations.md` §3.3):
+ * cách — `docs/domains/auth/03-operations.md` §3.3):
  *
  *   phần                   ≤ …
  *   checkpoint cuối trần   ≤ MAX_SECONDS  (chỉ số này khống chế thời lượng của vòng lô,

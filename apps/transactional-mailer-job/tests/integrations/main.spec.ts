@@ -16,7 +16,7 @@
  *   - `scheduled` handler: ba sweep, mỗi sweep tự bắt lỗi; report sweep báo nốt pending;
  *   - đường end-to-end: command → lookup → FakeMailProvider → persist → report inline.
  *
- * Nguồn canonical: `docs/services/transactional-mailer-job/01-architecture.md` §9.2, §9.5;
+ * Nguồn canonical: `docs/solutions/transactional-mailer-job/01-architecture.md` §9.2, §9.5;
  * `02-requirements.md` FR-004/FR-005.
  *
  * Ranh giới: KHÔNG chứng minh exactly-once provider, KHÔNG chứng minh behaviour Cloudflare
@@ -280,7 +280,7 @@ describe('queue handler: command → lookup → provider → persist → report 
   });
 
   it('defers nothing past its returned promise: a throwing waitUntil is never called and D1 is visible immediately', async () => {
-    // Invariant 12 (`docs/overview/01-architecture.md`): không correctness write nào được
+    // Invariant 12 (`docs/architecture/01-architecture.md`): không correctness write nào được
     // đẩy qua `ctx.waitUntil()` — WK3: `waitUntil` chỉ kéo dài 30s sau response và bị cancel
     // không retry, nên một write ở đó là write có thể mất. Handler hiện tại `void ctx`;
     // ExecutionContext bẫy dưới ném thay vì ghi nhận, nên nếu ai thêm lại một `waitUntil`

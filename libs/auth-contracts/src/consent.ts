@@ -1,6 +1,6 @@
 /**
  * Contract consent và connected applications — provider `auth`, consumer `account`
- * (`docs/services/auth/01-architecture.md` §5.1.7).
+ * (`docs/domains/auth/01-architecture.md` §5.1.7).
  *
  * Trước đây nhóm type này là khai báo cục bộ của shim
  * `@ecoma-io/identity-auth-contracts` (`internal-contracts.ts`, đã xoá ở issue #324),

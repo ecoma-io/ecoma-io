@@ -2,7 +2,7 @@
 
 `backoffice` là **composition: UI quản trị + BFF** phục vụ vận hành nội bộ. Nó phối hợp các API của các bounded context — Staff Access cho nhân sự/quyền, Pact Broker và Remote Cache cho nghiệp vụ sản phẩm — và **không sở hữu database nghiệp vụ** thay cho bất kỳ domain nào.
 
-> **Trạng thái:** `apps/backoffice` hiện là Nuxt app UI prototype (`ssr: false`, AppShell, i18n `en`/`vi`/`zh-CN`) với dữ liệu mẫu trong bộ nhớ; các trang staff/roles/permissions chưa có persistence thật và app chưa đi qua pipeline release — lý do vẫn còn nguyên ở [`architecture/02-delivery.md`](../../architecture/02-delivery.md) §7.5. Ngày nay app còn sở hữu luôn nghiệp vụ staff/RBAC (migrations 0001–0006, auth runtime); tách nghiệp vụ đó sang Staff Access là **target architecture** — xem [`docs/domains/staff-access/README.md`](../../domains/staff-access/README.md) §4.
+> **Trạng thái:** `apps/backoffice` là Nuxt app (`ssr: false`, AppShell, i18n `en`/`vi`/`zh-CN`). Ba trang staff/roles/permissions vẫn đọc dữ liệu mẫu trong bộ nhớ (`mock-adapter`), nhưng phía server **đã có auth runtime và persistence thật**: migrations `0001–0006` (staff/RBAC/bff-sessions), binding `DB_BACKOFFICE`, authn middleware và authorization check. App chưa đi qua pipeline release — lý do vẫn còn nguyên ở [`architecture/02-delivery.md`](../../architecture/02-delivery.md) §7.5. Ngày nay app còn sở hữu luôn nghiệp vụ staff/RBAC; tách nghiệp vụ đó sang Staff Access là **target architecture** — xem [`docs/domains/staff-access/README.md`](../../domains/staff-access/README.md) §4.
 
 ## 1. Vai trò composition
 

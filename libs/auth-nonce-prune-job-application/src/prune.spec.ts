@@ -9,7 +9,7 @@
  * mà một fake pool điều khiển được chính xác từng câu trả lời.
  *
  * Hợp đồng của mọi assert: **hợp đồng của `PRUNE_SCRIPT`** (workflow cũ bị xoá bởi PR
- * này; nguồn là `docs/services/auth-nonce-prune-job/01-architecture.md` §5 và comment
+ * này; nguồn là `docs/solutions/auth-nonce-prune-job/01-architecture.md` §5 và comment
  * đầu file `src/prune.ts`):
  *   - dừng bình thường khi lô rỗng (kho sạch — chạy lại phải `ok`);
  *   - dừng khi lô trả < `BATCH_SIZE` (không thêm vòng chắc chắn trả 0);

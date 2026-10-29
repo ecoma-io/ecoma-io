@@ -1,4 +1,4 @@
-# Cache Service — Requirements
+# Remote Cache Service — Requirements
 
 > Invariant kiến trúc: [`01-architecture.md`](./01-architecture.md) §13. Ranh giới hệ thống: [`docs/architecture/01-architecture.md`](../../architecture/01-architecture.md) A18, invariant 22.
 > File này chỉ chứa requirements (what/constraint + non-goals). `MUST` / `MUST NOT` / `SHOULD` giữ nguyên nghĩa. Mỗi requirement bắt buộc đều có một dòng verify trong §6.

@@ -2,7 +2,7 @@
  * **Error matrix** của delivery plane, dùng chung bởi classification và bởi use case.
  *
  * ⚠️ **Vì sao đây là một bảng và không phải chuỗi `if` trong pipeline.** Bảng matrix là
- * canonical (`docs/services/push-notification/03-operations.md` §5, dùng chung cả hai plane),
+ * canonical (`docs/domains/push-notification/03-operations.md` §5, dùng chung cả hai plane),
  * và nó ánh xạ **một** kết quả của adapter thành **một** cặp hành động cụ thể. Viết chuỗi
  * `if` trong use case nghĩa là mỗi `failureClass` mới phải được nhớ ở một chỗ khác — và lỗi
  * nguy hiểm nhất ở đây không phải quên thêm nhánh, mà là **invalidate nhầm**: chỉ

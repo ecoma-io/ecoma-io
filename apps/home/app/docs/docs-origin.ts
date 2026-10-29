@@ -2,7 +2,7 @@
  * Production origin của public surface Docs (trong app hợp nhất).
  *
  * Canonical và `hreflang` **phải** là URL tuyệt đối dưới production domain
- * (`docs/overview/01-architecture.md` §7/A13): `ecoma.io` là production public
+ * (`docs/architecture/01-architecture.md` §7/A13): `ecoma.io` là production public
  * domain, `ecoma.io.vn` là non-production cho staging + preview. Canonical
  * tương đối được crawler resolve theo **hostname của request đang phục vụ nó**
  * — nghĩa là một bản staging, preview hay `localhost` sẽ tự khai mình là

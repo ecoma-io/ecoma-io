@@ -37,7 +37,7 @@ import type { MailSendCommandPayload } from '@ecoma-io/transactional-mail-applic
  * còn proxy đọc `<persist.path>/d1/…` — thiếu đuôi `/v3` thì proxy nhìn thấy một database
  * rỗng (đã đo được, không phải suy đoán).
  *
- * Nguồn canonical: `docs/services/transactional-mail/01-architecture.md` §4, §6.1–§6.2.2,
+ * Nguồn canonical: `docs/domains/transactional-mail/01-architecture.md` §4, §6.1–§6.2.2,
  * §7.4; `02-requirements.md` FR-002, FR-004, FR-006, FR-007.
  */
 

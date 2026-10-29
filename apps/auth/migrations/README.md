@@ -28,7 +28,7 @@ Mục lục:
 
 Migration chạy **từ CI runner**, bằng một PostgreSQL client kết nối thẳng database, dùng role
 `ecoma_auth_migrator`, và **giữ advisory lock**. Hyperdrive không hỗ trợ advisory lock
-(`docs/overview/04-platform-facts.md` HD6), nên đường này **không thể** chạy từ trong Worker —
+(`docs/architecture/04-platform-facts.md` HD6), nên đường này **không thể** chạy từ trong Worker —
 đó là lý do nó là một bước CI, không phải serving path.
 
 Runbook (trình tự cụ thể, lặp lại được):
@@ -78,7 +78,7 @@ không nằm chung transaction".
 Các file ở đây **không tạo role chủ**. Việc tạo database, ba role gốc (owner/migrator/runtime)
 và thu cross-connect là **bước operator, ngoài CI** — đây là lựa chọn của workstream `account`,
 và unit này **bám theo đúng lựa chọn đó** (auth 03-operations.md §3 mô tả cùng mô hình ba tầng;
-đọc thêm `docs/services/account/03-operations.md` §3). Lý do giữ ngoài migration: role/database
+đọc thêm `docs/domains/account/03-operations.md` §3). Lý do giữ ngoài migration: role/database
 là hạ tầng, không phải schema; chúng phải tồn tại trước để migration **có người chạy và nơi chạy**.
 
 ⚠️ Ngoại lệ kiểu file: `0014_nonce_pruner_role.sql` **có** khối `DO $$` tạo role, nhưng đó chỉ
@@ -193,7 +193,7 @@ SELECT has_database_privilege('ecoma_auth_runtime', 'db-account', 'CONNECT');  -
 
 Đây là một **phát hiện trái với tài liệu**: tài liệu nói trên chỉ thu của role, mà thực
 nghiệm trên PostgreSQL 17 cho thấy chưa đủ. Migration này và runbook áp dụng **cả hai câu**;
-xem thêm issue/PR mở ở `docs/overview` nếu muốn cập nhật tài liệu cho khớp.
+xem thêm issue/PR mở ở `docs/architecture` nếu muốn cập nhật tài liệu cho khớp.
 
 ---
 
@@ -296,10 +296,10 @@ SELECT has_schema_privilege('ecoma_auth_nonce_pruner', 'auth', 'CREATE');     --
 
 ---
 
-File nền tảng: `docs/services/auth/01-architecture.md` (mô hình dữ liệu §3.2, CAS §3.3,
+File nền tảng: `docs/domains/auth/01-architecture.md` (mô hình dữ liệu §3.2, CAS §3.3,
 consent≠grant §3.4, signing keys §3.5, no-FK §3.6, máy trạng thái §5.1.2), `02-requirements`
 (FR/NFR/SR/AC), `03-operations` (role §3, chặn chéo §3.1, migration §3.2), và
-`docs/overview/02-delivery.md` §3 (migration từ CI runner).
+`docs/architecture/02-delivery.md` §3 (migration từ CI runner).
 
 ---
 

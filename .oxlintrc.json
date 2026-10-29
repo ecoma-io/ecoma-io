@@ -664,7 +664,7 @@
     {
       // Migration runner của service (`apps/account/db/**`) chạy ở **CI runner**
       // bằng PostgreSQL client kết nối thẳng, không chạy trong Worker: Hyperdrive
-      // không hỗ trợ advisory lock (`docs/overview/04-platform-facts.md` HD6), mà
+      // không hỗ trợ advisory lock (`docs/architecture/04-platform-facts.md` HD6), mà
       // giữ lock là bước quan trọng nhất của runner. Nó cần `node:fs` để đọc file
       // SQL và `console.log` để báo từng migration đã apply — cùng tính chất với
       // `deploy/**` phía trên: tooling Node-only, không được bundle vào edge.

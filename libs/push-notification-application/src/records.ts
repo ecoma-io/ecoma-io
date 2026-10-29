@@ -1,9 +1,9 @@
 /**
  * Value object và vocabulary mà **use case** của `push-notification` dùng.
  *
- * Source of truth: `docs/services/push-notification/01-architecture.md` §5 (domain model),
+ * Source of truth: `docs/domains/push-notification/01-architecture.md` §5 (domain model),
  * §5.6 (state/lease/fencing), §6.1 (outbox), §7 (delivery idempotency), §8.1 (runtime API);
- * `docs/services/push-notification/02-requirements.md` FR-001..FR-021.
+ * `docs/domains/push-notification/02-requirements.md` FR-001..FR-021.
  *
  * ⚠️ **Vì sao file này khai lại `Transport`/`ProviderType` mà không import từ
  * `@ecoma-io/push-notification-domain`.** Thực ra application layer **có** import được

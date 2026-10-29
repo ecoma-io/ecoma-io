@@ -1,8 +1,8 @@
 -- 0007_mail_content_redaction.sql — cho phép redact content đã quá hạn retention.
 --
--- Nguồn: docs/services/transactional-mail/02-requirements.md FR-007 ("Message terminal quá
+-- Nguồn: docs/domains/transactional-mail/02-requirements.md FR-007 ("Message terminal quá
 --        hạn retention → content bị xoá/redact, metadata còn"); §5.3 của
---        docs/services/transactional-mail/03-operations.md (chu kỳ retention).
+--        docs/domains/transactional-mail/03-operations.md (chu kỳ retention).
 --
 -- ⚠️ VÌ SAO FILE NÀY TỒN TẠI — và vì sao nó là một rebuild bảng.
 --

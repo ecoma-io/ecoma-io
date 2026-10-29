@@ -91,7 +91,7 @@ export function createIssuanceGateFromDeps(deps: IssuanceGateDeps): IssuanceGate
       // Điều kiện 4 (§5.1.0) — grant còn hiệu lực. `oauth_grants` là quyền hiện
       // hành (§3.4) và là nơi thu hồi grant sống (`status = 'revoked'`, 0003):
       // một grant bị thu hồi KHÔNG cần hàng `token_revocations` nào để bị chặn —
-      // phủ đúng hàng 9 và hàng 14 của state machine (docs/services/auth §5.1.2)
+      // phủ đúng hàng 9 và hàng 14 của state machine (docs/domains/auth §5.1.2)
       // cho trường hợp "grant thu hồi giữa consent-decide và resume, không có
       // kiện revocation nào được ghi". Chỉ áp dụng khi artifact mang `grantId`:
       // authorization code và refresh rotation luôn mang; AccessToken JWT không

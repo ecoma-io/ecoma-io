@@ -1,7 +1,7 @@
 /**
  * Adapter provider thật: Resend HTTP API (`POST {endpoint}`), đứng sau
  * {@link MailProviderPort} — seam duy nhất mà worker core dùng để giao một delivery
- * ra provider (`docs/services/transactional-mailer-job/01-architecture.md` §11.1).
+ * ra provider (`docs/solutions/transactional-mailer-job/01-architecture.md` §11.1).
  *
  * Đây là **chỗ duy nhất** chứa chi tiết vendor: wire protocol của Resend không rò
  * lên trên port, và port không biết Resend tồn tại (§11.2).
@@ -214,7 +214,7 @@ const ERROR_CODES = {
 const MS_PER_SECOND = 1_000;
 
 /**
- * Trần 24 giờ cho `Retry-After` (`docs/overview/04-platform-facts.md` QU8, §11.1).
+ * Trần 24 giờ cho `Retry-After` (`docs/architecture/04-platform-facts.md` QU8, §11.1).
  *
  * `retryAfterMs` là **sàn** cho lần thử kế tiếp: sàn vượt retention của Queue thì retry
  * bị xoá trước khi chạy và delivery rơi vào đường reconciler tốn slot ngân sách A. Clamp

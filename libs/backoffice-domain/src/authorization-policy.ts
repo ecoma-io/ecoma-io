@@ -3,7 +3,7 @@
  * dữ liệu authorization ĐÃ được đồng bộ về backend, KHÔNG I/O, KHÔNG đọc đồng
  * hồ, KHÔNG decode token.
  *
- * Source of truth (docs/services/backoffice/):
+ * Source of truth (docs/domains/staff-access/):
  * - `01-architecture.md` §5: deny-by-default; thiếu/sai/mơ hồ authorization
  *   state ⇒ fail closed, không có degraded allow path (T-14, AC-002).
  * - `01-architecture.md` §6 + ADR-0002: token validity ≠ privilege currency —

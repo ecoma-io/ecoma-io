@@ -65,7 +65,7 @@ export const RUNTIME_API_SHARED_SECRET_ENV = 'RUNTIME_API_SHARED_SECRET';
  * Principal mà delivery worker tự khai khi gọi private API.
  *
  * ⚠️ Control plane **không** tin giá trị này ( nó chỉ dùng nó để so với principal gắn với
- * credential); `docs/services/push-notification/01-architecture.md` §8.1 và §11 yêu cầu đúng
+ * credential); `docs/domains/push-notification/01-architecture.md` §8.1 và §11 yêu cầu đúng
  * chuỗi này. Nếu operator cấu hình `RUNTIME_API_EXPECTED_PRINCIPAL` ở control plane khác, mọi
  * request trả `401` — và đó là một lỗi cấu hình hiển thị được, không phải một lỗi âm thầm.
  */

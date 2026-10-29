@@ -10,13 +10,8 @@ Nguyên tắc và cấu trúc kiến trúc chung của toàn hệ thống Ecoma 
 | [`04-platform-facts.md`](./04-platform-facts.md)       | Verified external platform facts (Cloudflare, PostgreSQL, …) — có nguồn và ngày xác minh                                                                                                                                              |
 | [`05-code-architecture.md`](./05-code-architecture.md) | Nx project structure, bounded context ↔ scope, DDD layers, dependency rules, contracts                                                                                                                                                |
 | [`06-testing.md`](./06-testing.md)                     | Testing architecture — taxonomy, ownership/layout, Nx target contracts, test environment                                                                                                                                              |
+| [`roadmap.md`](./roadmap.md)                           | Implementation roadmap Phase 1–7 — task IDs, dependencies, contract freeze points (plan, không phải architecture policy)                                                                                                              |
 
 ## Ba trục tài liệu
 
-| Trục                                         | Trả lời                                             | Canonical cho                                                                         |
-| -------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| [`architecture/`](./README.md) (thư mục này) | Hệ thống tổ chức ra sao, quy tắc gì                 | System policy, decision, invariant, platform fact, delivery/testing/code architecture |
-| [`domains/`](../domains/README.md)           | Context nào sở hữu trách nhiệm/dữ liệu/contract nào | Ngôn ngữ domain, catalog bounded context, context map, ranh giới chưa chốt            |
-| [`solutions/`](../solutions/README.md)       | Application/service nào hiện thực, bằng cách nào    | Thiết kế, requirement, runbook của từng composition/deploy unit                       |
-
-Ba trục là ba góc nhìn, không phải ba bản mô tả lặp lại cùng một hệ thống. Mỗi fact/decision có đúng một canonical location — bảng đầy đủ ở [`docs/AGENTS.md`](../AGENTS.md) §4.
+Bảng ba trục (`architecture/` · `domains/` · `solutions/`) và canonical location của từng loại nội dung → [`docs/README.md`](../README.md) và [`docs/AGENTS.md`](../AGENTS.md) §4. Thư mục này là trục **architecture**; ba trục là ba góc nhìn khác nhau, không phải ba bản mô tả lặp lại cùng một hệ thống.

@@ -4,6 +4,8 @@ Roadmap triển khai các phase sau Phase 0. Phase 0 chỉ audit + tài liệu; 
 
 ## Phase 1 — Staff Access contracts và service
 
+> **Quy ước xuyên phase:** mọi task xây deploy unit mới (Staff Access service P1.4, outbox relay P2.2, reconciliation job P2.4, remote-cache app P4.x) bao gồm cả việc đứng lên deploy unit đó: Nx project, `deploy-eligibility` entry trong deployment map, và đường deploy local. Deploy production/staging **không** nằm trong các phase này — xem mục "Deploy infra prerequisite" cuối file.
+
 - **P1.1** Chốt domain model Staff Access (staff, role, permission, assignment, entitlement, audit) và schema ownership (target `db-staff-access`).
 - **P1.2** Chốt API/event contracts: management API cho staff/role/permission/assignment, entitlement read model cho sản phẩm, audit query.
 - **P1.3** Chốt entitlement model khác với authorization: entitlement = product availability; authorization = per-resource/per-operation.
@@ -26,12 +28,12 @@ Roadmap triển khai các phase sau Phase 0. Phase 0 chỉ audit + tài liệu; 
 
 ## Phase 3 — Pact Broker integration
 
-- **P3.1** Bootstrap `ecoma-internal` tenant tường minh (deploy pipeline / bootstrap script), không cấp membership khi signup/login.
+- **P3.1** Bootstrap `ecoma-internal` tenant tường minh qua **bootstrap script độc lập** (không phụ thuộc deploy pipeline — pipeline staging/production chưa tồn tại, xem `02-delivery.md` §12; khi pipeline được xây ở phase khác thì script này được gọi từ đó), không cấp membership khi signup/login.
 - **P3.2** Provision entitlement → membership nội bộ chỉ bắt đầu với quyền Member trừ khi có quy trình cấp quyền quản trị rõ ràng.
 - **P3.3** Đảm bảo revoke entitlement không ảnh hưởng customer membership/machine credentials độc lập.
 - **P3.4** Test machine credential lifecycle và tenant isolation.
-- **Depends on:** P1.2, P2.2.
-- **Parallel:** P3.1 song song với P1; P3.2/P3.3 sau P2.3; P3.4 sau P3.2.
+- **Depends on:** P1.2, P2.2, P2.5 (SLA mechanism phải lock trước Phase 3 rollout — freeze point).
+- **Parallel:** P3.1 song song với P1 (không phụ thuộc SLA); P3.2/P3.3 sau P2.3 **và** P2.5; P3.4 sau P3.2.
 
 ## Phase 4 — Remote Cache Nx MVP
 
@@ -55,9 +57,9 @@ Roadmap triển khai các phase sau Phase 0. Phase 0 chỉ audit + tài liệu; 
 
 ## Phase 6 — Test, local stack và CI integration
 
-- **P6.1** Unit tests nhanh với mock boundary phù hợp.
-- **P6.2** Integration tests persistence/API/messaging thực.
-- **P6.3** Tách E2E projects theo app/context phù hợp.
+- **P6.1** Unit tests nhanh với mock boundary phù hợp (`test` target).
+- **P6.2** Integration tests persistence/API/messaging thực (`test-integration` target).
+- **P6.3** E2E xuyên deploy unit là suite độc lập trong `system-tests/e2e/<suite>/` (Nx project riêng, target `system-test`) — không nhét vào suite app-owned; E2E một app thì colocated theo `06-testing.md` §2.
 - **P6.4** Local deployment theo Nx dependency graph và quy trình đã thống nhất.
 - **P6.5** E2E xuyên service: grant entitlement, dùng sản phẩm, revoke access.
 - **P6.6** Test duplicate/out-of-order events, recovery, cross-tenant isolation, machine credentials.
@@ -69,7 +71,7 @@ Roadmap triển khai các phase sau Phase 0. Phase 0 chỉ audit + tài liệu; 
 - **P7.1** Đo throughput, concurrency, hit ratio, bandwidth, storage cost của Nx MVP.
 - **P7.2** Rate/resource limiting, quotas, retention, audit, vận hành.
 - **P7.3** Xác định protocol adapter tiếp theo bằng nhu cầu thị trường (Gradle → Turborepo → Bazel/Moonrepo) — mỗi protocol một phase riêng.
-- **Depends on:** P4.5 + production traffic data.
+- **Depends on:** P4.5 + production traffic data (đòi hỏi deploy production đã tồn tại — xem "Deploy infra prerequisite").
 - **Parallel:** P7.1/P7.2 song song; P7.3 sau P7.1.
 
 ## Dependency summary
@@ -89,9 +91,14 @@ Phase 6 depends on Phase 2, 3, 4, 5.
 - Remote Cache control-plane API (P4.1) lock trước Phase 5 integration.
 - Revocation SLA mechanism (P2.5) lock trước Phase 3 rollout.
 
+## Deploy infra prerequisite (không thuộc phase nào ở đây)
+
+Staging/production pipeline, delivery runner và migration runner **chưa tồn tại** (`02-delivery.md` §12 preamble). P3.1 chỉ đứng khi có bootstrap script độc lập; P7.1/P7.3 (đo production traffic) và bất kỳ rollout thật nào phải chờ deploy infra được xây — xây nó là một phase/workstream riêng do deploy team sở hữu, không gán vào Phase 1–7 này.
+
 ## Open decisions cần giải quyết trong Phase 1–2 (không phải Phase 0)
 
 - Cơ chế cụ thể đáp ứng revocation ≤5s (ADR-0002 target, chưa chốt).
 - Relay outbox: Worker relay / Queue / NATS (01 §10).
 - Remote Cache control-plane storage engine (PostgreSQL vs D1) — open decision.
 - Remote Cache usage rights: MVP dùng API key riêng; entitlement integration deferred.
+- Remote Cache quota-exceeded write behavior: hành vi khi write vượt quota (429/403, non-fatal cho caller — cache miss phải dẫn đến build bình thường) phải được pin trước khi implement P4.3.

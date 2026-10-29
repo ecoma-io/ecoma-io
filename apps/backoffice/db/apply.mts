@@ -4,7 +4,7 @@
  * Chạy từ **CI runner** bằng PostgreSQL client kết nối thẳng với credential
  * `_migrator_`, **không** chạy từ trong Worker — cùng vừa tính chất với
  * `apps/account/db/apply.mts`: Hyperdrive không hỗ trợ advisory lock
- * (`docs/overview/04-platform-facts.md` HD6), mà advisory lock là cơ chế chính
+ * (`docs/architecture/04-platform-facts.md` HD6), mà advisory lock là cơ chế chính
  * chặn hai runner chạy song song.
  *
  * ## Biến môi trường

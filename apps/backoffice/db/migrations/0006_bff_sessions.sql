@@ -6,7 +6,7 @@
 -- nguyên vẹn, DB chỉ thấy `id_hash = SHA-256(id)`.
 --
 -- ⚠️ Bảng này là **ephemeral protocol state** (invariant 26 của
--- `docs/overview/01-architecture.md` §9) nhưng vẫn nằm ở PostgreSQL — không
+-- `docs/architecture/01-architecture.md` §9) nhưng vẫn nằm ở PostgreSQL — không
 -- KV, không Worker memory. TTL do tầng app enforce (idle 12h + absolute 7d,
 -- `server/auth/session-store.ts`); DB không xoá gì tự động — prune là việc
 -- vận hành sau, không phải điều kiện correctness (một hàng hết hạn là hàng

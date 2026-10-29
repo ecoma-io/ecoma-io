@@ -1,12 +1,12 @@
 /**
  * Model dữ liệu của job execution state (D1 `mail-job`).
  *
- * Nguồn canonical: `docs/services/transactional-mailer-job/01-architecture.md` §7, §9.2.1,
+ * Nguồn canonical: `docs/solutions/transactional-mailer-job/01-architecture.md` §7, §9.2.1,
  * §9.5. File này **không** định nghĩa lại semantics — chỉ dựng enum đóng, record type và
  * hai loại lỗi mà mọi tầng dưới phải dùng thay vì ném `Error` chung chung.
  *
  * Không có import nào ở đây ngoài type nội bộ: application layer không được chạm D1,
- * Cloudflare, Hono hay infrastructure (`docs/overview/05-code-architecture.md` §5).
+ * Cloudflare, Hono hay infrastructure (`docs/architecture/05-code-architecture.md` §5).
  */
 
 /** Enum đóng của `mail_jobs.status` (§7). */

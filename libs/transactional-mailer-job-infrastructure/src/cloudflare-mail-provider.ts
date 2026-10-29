@@ -1,7 +1,7 @@
 /**
  * Adapter provider thật: Cloudflare Email Sending (binding `send_email`), đứng sau
  * {@link MailProviderPort} — seam duy nhất mà worker core dùng để giao một delivery
- * ra provider (`docs/services/transactional-mailer-job/01-architecture.md` §11.1).
+ * ra provider (`docs/solutions/transactional-mailer-job/01-architecture.md` §11.1).
  *
  * Đây là **chỗ duy nhất** chứa chi tiết vendor của Cloudflare: shape `send()`, bộ mã
  * lỗi `E_*` và semantics của binding không rò lên trên port, và port không biết

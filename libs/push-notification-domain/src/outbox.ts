@@ -2,7 +2,7 @@
  * Push Outbox: trạng thái record, predicate claim, và chống dồn intent.
  *
  * Source of truth:
- * - `docs/services/push-notification/01-architecture.md` §6.1 (model record; predicate
+ * - `docs/domains/push-notification/01-architecture.md` §6.1 (model record; predicate
  *   claim; **tối đa một** record "đang chờ publish" (`pending`/`publishing`) cho mỗi
  *   `delivery_id`, enforce bằng partial unique index ở D1 — **không** chỉ bằng
  *   read-then-write ở application; `published` là terminal của record; `failed`
@@ -10,7 +10,7 @@
  *   Publisher; publish thành công ghi outbox `published` **và** delivery `queued`
  *   trong **cùng** `db.batch()`; `Queue.send()` thất bại thì delivery **giữ**
  *   `pending`; record `failed` → delivery kẹt `pending` chờ operator).
- * - `docs/services/push-notification/02-requirements.md` FR-013 (Notification,
+ * - `docs/domains/push-notification/02-requirements.md` FR-013 (Notification,
  *   Delivery, Outbox Entry persist trong cùng một `db.batch()`; D1 commit và Queue
  *   publish **không** atomic — duplicate publish phải được chấp nhận).
  *

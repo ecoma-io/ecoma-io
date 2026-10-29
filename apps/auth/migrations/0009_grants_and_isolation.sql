@@ -1,8 +1,8 @@
 -- 0009_grants_and_isolation.sql — quyền tối thiểu cho runtime, chặn chéo database.
 --
 -- Phạm vi: grant quyền trên `db-auth`, chặn `CONNECT` sang `db-account`.
--- Vận hành → docs/services/auth/03-operations.md §3, §3.1
---          → docs/services/auth/02-requirements.md NFR-002, NFR-002a, NFR-002b, AC-025..AC-028.
+-- Vận hành → docs/domains/auth/03-operations.md §3, §3.1
+--          → docs/domains/auth/02-requirements.md NFR-002, NFR-002a, NFR-002b, AC-025..AC-028.
 --
 -- ⚠️ **CHẠY BẰNG ROLE `ecoma_auth_migrator` HOẶC CAO HƠN.** File này không tạo role — xem
 --    `README.md` §"Vai trò của operator" để biết vì sao, và bước 0 của runbook.

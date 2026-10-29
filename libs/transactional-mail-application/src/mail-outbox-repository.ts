@@ -6,7 +6,7 @@ import type { MailOutboxRecord } from './records';
  * Claim là **optimistic** và nguyên tử trong một statement: `UPDATE … WHERE id IN (SELECT …
  * ORDER BY available_at, created_at LIMIT ?) AND (<điều kiện claim>) RETURNING …`
  * (`01-architecture.md` §6.2). D1 không có row lock hay mức isolation được tài liệu
- * (`docs/overview/04-platform-facts.md` DB11), nên *một* statement có guard là đơn vị bảo vệ
+ * (`docs/architecture/04-platform-facts.md` DB11), nên *một* statement có guard là đơn vị bảo vệ
  * duy nhất: hai publisher gọi cùng lúc sẽ nhận hai tập row rời nhau, không trùng.
  */
 export interface ClaimMailOutboxInput {

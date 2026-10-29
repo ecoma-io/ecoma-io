@@ -12,7 +12,7 @@
  *      THƯỜNG XUYÊN không có hàng `token_revocations` nào: hàng `oauth_grants`
  *      `status = 'revoked'` là bằng chứng duy nhất. Gateway phát hành
  *      (issuance-gate) phải chặn cả hai trường hợp này — hàng 9/14 của state
- *      machine (docs/services/auth §5.1.2) cho nhánh không có kiện revocation.
+ *      machine (docs/domains/auth §5.1.2) cho nhánh không có kiện revocation.
  *   3. ASR (account_session_ref) rotate giữa `consent/context` và `decide` —
  *      decide với ASR cũ bị từ chối, Y KHÔNG bị tiêu thụ, decide với ASR đúng
  *      phía sau vẫn chạy được (không bị "kẹt vĩnh viễn").
@@ -412,7 +412,7 @@ describe('mid-flow state changes — issuance controls stay closed', () => {
 
       // (2) Grant bị revoke giữa decide và thời điểm cấp code — KHÔNG có kiện
       //     `token_revocations` nào: hàng `oauth_grants.status` là bằng chứng
-      //     duy nhất (hàng 9/14 của state machine, docs/services/auth §5.1.2).
+      //     duy nhất (hàng 9/14 của state machine, docs/domains/auth §5.1.2).
       await runtime.unsafe(
         `UPDATE auth.oauth_grants SET status = 'revoked', revoked_at = now(),
            revoked_reason = 'midflow-revoke-grant'

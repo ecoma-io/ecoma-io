@@ -3,13 +3,13 @@
  * directory của `backoffice`.
  *
  * Source of truth:
- * - `docs/services/backoffice/01-architecture.md` §3 (trục tách đôi) và §4.2
+ * - `docs/domains/staff-access/01-architecture.md` §3 (trục tách đôi) và §4.2
  *   (staff status là trục KHÁC account status).
- * - `docs/overview/01-architecture.md` invariant 8 và invariant 31.
+ * - `docs/architecture/01-architecture.md` invariant 8 và invariant 31.
  *
  * ⚠️ **Hai trục độc lập, không suy ra nhau:**
  * - `account.status` (`active` | `suspended` | `deleted`) do `account` sở hữu
- *   (`docs/services/account/01-architecture.md`). Suspend account ở `account`
+ *   (`docs/domains/account/01-architecture.md`). Suspend account ở `account`
  *   KHÔNG tự viết lại staff status ở `backoffice` — không có đường ghi ngầm
  *   nào giữa hai bên (`01` §4.2).
  * - `terminated` ở `backoffice` KHÔNG tự suspend account.

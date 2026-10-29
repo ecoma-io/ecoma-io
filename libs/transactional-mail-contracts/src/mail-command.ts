@@ -2,7 +2,7 @@
  * Queue command `mail.send` — canonical contract giữa `transactional-mail` (producer)
  * và `transactional-mailer-job` (consumer).
  *
- * Nguồn duy nhất: `docs/services/transactional-mail/01-architecture.md` §5
+ * Nguồn duy nhất: `docs/domains/transactional-mail/01-architecture.md` §5
  * ("Command contract: `{ version, delivery_id }` — chỉ hai field").
  *
  * ⚠️ Command là **wake-up signal**, không phải authorization token. Không bao giờ đưa
@@ -10,7 +10,7 @@
  * đều bị cấm (`forbidden-field`).
  *
  * `delivery_id` phải là non-empty string. **Không** hard-code tiền tố `dlv_` tại đây:
- * ID strategy vẫn là quyết định mở (`docs/overview/01-architecture.md` §10) — việc
+ * ID strategy vẫn là quyết định mở (`docs/architecture/01-architecture.md` §10) — việc
  * thêm ràng buộc tiền tố sẽ biến một quyết định đang mở thành contract chính thức.
  * Nếu cần, consumer sẽ quarantine với lý do `forbidden-field`/`missing-delivery-id`
  * theo chính sách vận hành hiện hành.
@@ -92,7 +92,7 @@ export type MailSendCommandValidation = MailSendCommandValidationOk | MailSendCo
  * 5. `unsupported-version` — version !== 1 (hoặc không phải number)
  *
  * Thứ tự này giúp worker có thể quarantine đúng lý do mà tài liệu quy định
- * (`docs/services/transactional-mailer-job/03-operations.md` §3 liệt kê
+ * (`docs/solutions/transactional-mailer-job/03-operations.md` §3 liệt kê
  * `missing-delivery-id`, `unparseable-body`, `unsupported-version`, `forbidden-field`).
  */
 export function validateMailSendCommand(payload: unknown): MailSendCommandValidation {

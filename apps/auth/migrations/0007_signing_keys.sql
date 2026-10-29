@@ -1,8 +1,8 @@
 -- 0007_signing_keys.sql — metadata của signing key. KHÔNG private key.
 --
 -- Phạm vi: `signing_keys`.
--- Thiết kế → docs/services/auth/01-architecture.md §3.2, §3.5, §6.5
---          → docs/services/auth/02-requirements.md FR-023..FR-025, T-13.
+-- Thiết kế → docs/domains/auth/01-architecture.md §3.2, §3.5, §6.5
+--          → docs/domains/auth/02-requirements.md FR-023..FR-025, T-13.
 --
 -- ⚠️⚠️ **BẢNG NÀY KHÔNG BAO GIỜ ĐƯỢC CHỨA PRIVATE KEY.** ⚠️⚠️
 --

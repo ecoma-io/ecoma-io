@@ -1,8 +1,8 @@
 // Tích hợp contract persistence trên D1 THẬT (miniflare/workerd qua
 // `wrangler.getPlatformProxy`), không mock: conditional UPDATE, `meta.changes`, lease và
 // fencing chỉ có ý nghĩa khi chạy trên engine SQL thật cùng schema migration thật.
-// Nguồn canonical: docs/services/transactional-mailer-job/01-architecture.md §9.2.1,
-// §9.2.2, §9.5, §10; docs/services/transactional-mailer-job/03-operations.md §3.1.
+// Nguồn canonical: docs/solutions/transactional-mailer-job/01-architecture.md §9.2.1,
+// §9.2.2, §9.5, §10; docs/solutions/transactional-mailer-job/03-operations.md §3.1.
 //
 // Suite này KHÔNG wire runtime: không Queue consumer, không provider call, không
 // scheduled handler — đúng ranh giới J1.

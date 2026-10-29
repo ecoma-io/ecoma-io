@@ -7,7 +7,7 @@
  * (`libs/transactional-mailer-job-infrastructure/src/internal-delivery-gateway.ts`). Orchestration
  * **không** import client trực tiếp — dependency direction: application không biết transport.
  *
- * Phân loại lỗi tuân theo `docs/services/transactional-mailer-job/02-requirements.md` FR-004
+ * Phân loại lỗi tuân theo `docs/solutions/transactional-mailer-job/02-requirements.md` FR-004
  * và `01-architecture.md` §9.2.2: `401`/`403` là lỗi internal-auth/authz của **chính worker**,
  * không bao giờ được đổi thành provider credential error; `404` là delivery không tồn tại;
  * `400` là contract violation; mọi lỗi network/timeout/`429`/`5xx` là transient.
@@ -47,7 +47,7 @@ export type OutcomeReportRequest = {
 
 /**
  * Kết quả `POST .../outcome` sau khi đã phân loại — body quyết định kết quả, **không** phải
- * HTTP 200 (`docs/services/transactional-mail/01-architecture.md` §6.2.2).
+ * HTTP 200 (`docs/domains/transactional-mail/01-architecture.md` §6.2.2).
  */
 export type OutcomeReportResult =
   | { readonly kind: 'applied'; readonly status: string }

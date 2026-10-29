@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
  * TRƯỚC KHI suite chạy, không phải trong từng test.
  *
  * Hợp đồng: stack không có là KẾT QUẢ ĐỎ, không bao giờ là skip (cùng triết lý
- * fail-closed `ECOMA_REQUIRE_DOCKER` của `docs/overview/06-testing.md` §6).
+ * fail-closed `ECOMA_REQUIRE_DOCKER` của `docs/architecture/06-testing.md` §6).
  *
  * ## Probe kiểm ĐÚNG hợp đồng của suite này
  *

@@ -9,7 +9,7 @@
  *
  * ⚠️ **`code` khác `language`.** `code` là giá trị hợp lệ của
  * `user_preferences.locale` trong `db-account` (`en` | `vi` | `zh-CN`, xem
- * `docs/services/account/01-architecture.md` §3.3). `language` là BCP-47 dùng
+ * `docs/domains/account/01-architecture.md` §3.3). `language` là BCP-47 dùng
  * cho `<html lang>` và `hreflang` (`zh-Hans`, không phải `zh-CN`). Trộn hai
  * giá trị này là lỗi thường gặp: `zh-CN` ở `lang` vẫn hợp lệ nhưng `hreflang`
  * cần `zh-Hans` để crawler hiểu đúng biến thể chữ Hán.

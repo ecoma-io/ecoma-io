@@ -381,7 +381,7 @@ export default defineEventHandler(async (event: H3Event): Promise<void> => {
  * cho "khoá mới nhưng chưa dùng để ký". Vì vậy khi xoay secret, khoá mới phải được
  * nạp trước vào slot `previous` ở **cả hai** Worker, rồi mới chuyển `current` — nếu
  * chỉ nạp trước ở một bên, bên đó ký bằng khoá mới và làm hỏng hướng ngược lại. Runbook
- * ở `docs/services/auth/03-operations.md` §3.3.
+ * ở `docs/domains/auth/03-operations.md` §3.3.
  */
 function buildInternalSecretsByKid(
   config: ReturnType<typeof useRuntimeConfig>,

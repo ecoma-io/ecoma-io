@@ -25,7 +25,7 @@
  *   xác thực chứ không lấy từ body (§8.2) — xem route `POST /v1/notifications`.
  *
  * ⚠️ **Cloudflare không phân biệt Service Binding với internet**
- * (`docs/overview/04-platform-facts.md`), nên route `/internal/**` xác thực ở tầng ứng dụng
+ * (`docs/architecture/04-platform-facts.md`), nên route `/internal/**` xác thực ở tầng ứng dụng
  * chứ không dựa vào "chỉ binding mới gọi được". Đây là lý do `requireRuntime` tồn tại.
  *
  * ⚠️ **`export default { fetch }`, không `export default worker`.** Một Worker có thể có
@@ -519,8 +519,8 @@ function authenticateApplication(
  * Header mang shared secret của private delivery runtime API.
  *
  * ⚠️ **Tên header là `authorization`, giá trị nguyên văn — không có scheme `Bearer`.**
- * Đây là contract của `docs/services/push-notification/01-architecture.md` §8.1 và
- * `docs/services/web-push-notification-job/01-architecture.md` §5.4: cả hai ghi rõ secret đi
+ * Đây là contract của `docs/domains/push-notification/01-architecture.md` §8.1 và
+ * `docs/solutions/web-push-notification-job/01-architecture.md` §5.4: cả hai ghi rõ secret đi
  * trong `Authorization`, và client `web-push-notification-job` gửi đúng vậy.
  *
  * ⚠️ **Vì vậy `requireRuntime` cố ý KHÔNG dùng `authenticateBearer`.** `authenticateBearer` bóc

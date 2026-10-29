@@ -2,7 +2,7 @@
  * Tenant repo — ensureDefaultTenant race-safe + membership/RBAC + machine
  * token management (Phase 2).
  *
- * ensureDefaultTenant — 4 bước (docs/services/pact-broker/01-architecture.md
+ * ensureDefaultTenant — 4 bước (docs/domains/pact-broker/01-architecture.md
  * §4): INSERT ON CONFLICT DO NOTHING RETURNING → select lại nếu RETURNING
  * rỗng → fail-closed nếu tenant ở trạng thái deleted/suspended → DO NOTHING
  * cho membership owner. Race giữa hai bootstrap đồng thời chỉ cho một INSERT

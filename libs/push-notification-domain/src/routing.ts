@@ -2,14 +2,14 @@
  * Transport priority và chọn subscription để tạo delivery — phạm vi theo **Device**.
  *
  * Source of truth:
- * - `docs/services/push-notification/02-requirements.md` FR-010 (mặc định `app > web`;
+ * - `docs/domains/push-notification/02-requirements.md` FR-010 (mặc định `app > web`;
  *   priority **chỉ** áp dụng giữa các subscription thuộc **cùng một** logical `Device`;
  *   **MUST NOT** áp dụng giữa hai `Device` khác nhau của cùng `User`), FR-011
  *   (`MUST NOT` coi hai subscription cùng `User` là cùng `Device`; `MUST NOT` dùng IP,
  *   User-Agent, network, browser name để xác định device equality), FR-002 (mỗi
  *   `Device` có thể có nhiều `Push Subscription`; device identity không suy luận bằng
  *   IP/User-Agent).
- * - `docs/services/push-notification/01-architecture.md` §5.3–§5.4 (routing:
+ * - `docs/domains/push-notification/01-architecture.md` §5.3–§5.4 (routing:
  *   resolve → filter → policy → transport → provider), §8.1 (`ineligible_subscription`
  *   khi subscription `disabled`/`expired`).
  *

@@ -22,7 +22,7 @@
 /**
  * Kết quả một statement. Chỉ khai `results` — đúng field duy nhất mà implementation đọc.
  *
- * Cố ý **không** khai `meta.changes`: `docs/overview/04-platform-facts.md` DB3 ghi `meta.changes`
+ * Cố ý **không** khai `meta.changes`: `docs/architecture/04-platform-facts.md` DB3 ghi `meta.changes`
  * là số hàng thật sự đổi, nhưng bản local `wrangler d1 execute --file` không điền field đó, còn
  * `getPlatformProxy` thì có. Một implementation dựa vào `meta.changes` sẽ hoạt động trên một
  * harness và sai im lặng trên harness kia. Mọi quyết định "có ghi hay không" ở đây đi qua
@@ -53,7 +53,7 @@ export interface D1SubsetDatabase {
 
   /**
    * Một transaction: hoặc toàn bộ statement thành công, hoặc không có gì được ghi
-   * (`docs/overview/04-platform-facts.md` DB2).
+   * (`docs/architecture/04-platform-facts.md` DB2).
    *
    * Dùng **chỉ** ở hai chỗ mà hai bảng phải đổi cùng nhau: tạo message + outbox, và đóng
    * outbox + đặt message `queued`. Mọi conditional update còn lại là **một** statement, nên

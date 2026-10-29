@@ -1,4 +1,4 @@
-# Cache Service — Operations
+# Remote Cache Service — Operations
 
 > **Policy của toàn hệ thống** (Git, CI/CD, deploy order, rollback, secrets, trust boundary) nằm ở [`02-delivery.md`](../../architecture/02-delivery.md). File này chỉ mô tả **cách riêng `cache` tuân thủ** policy đó.
 > Invariant kiến trúc: [`01-architecture.md`](./01-architecture.md). Tiêu chí kiểm chứng: [`02-requirements.md`](./02-requirements.md).

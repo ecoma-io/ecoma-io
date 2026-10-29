@@ -1,8 +1,8 @@
 -- 0006_token_revocations.sql — revocation control plane.
 --
 -- Phạm vi: `token_revocations`.
--- Thiết kế → docs/services/auth/01-architecture.md §3.2, §6.4, §6.5
---          → docs/services/auth/02-requirements.md FR-017..FR-022, FR-024b.
+-- Thiết kế → docs/domains/auth/01-architecture.md §3.2, §6.4, §6.5
+--          → docs/domains/auth/02-requirements.md FR-017..FR-022, FR-024b.
 --
 -- ⚠️ **Đây là control plane thu hồi DUY NHẤT** (FR-017a). Không có nguồn sự thật thứ hai cho
 --    trạng thái thu hồi: `oauth_grants.status`, `refresh_token_families.status` và

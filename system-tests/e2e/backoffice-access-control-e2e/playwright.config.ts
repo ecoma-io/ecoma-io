@@ -44,7 +44,7 @@ import { defineConfig, devices } from '@playwright/test';
  * Target `e2e` bị ĐÈ bằng stub `echo` trong `package.json` (project config thắng
  * target plugin suy ra) — CI job `e2e` chạy `nx affected -t e2e` trên runner
  * không có stack, chạy thật là đỏ toàn bộ suite cho một hệ thống không tồn tại
- * ở đó. Suite thực thi qua target `system-test` (docs/overview/06-testing.md).
+ * ở đó. Suite thực thi qua target `system-test` (docs/architecture/06-testing.md).
  * Copy CẢ HAI lớp: config no-throw + stub `e2e`.
  */
 

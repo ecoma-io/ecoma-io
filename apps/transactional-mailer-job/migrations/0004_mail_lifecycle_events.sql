@@ -1,6 +1,6 @@
 -- 0004_mail_lifecycle_events.sql — lớp quan sát lifecycle event của provider (D1 `mail-job`).
 --
--- Nguồn: docs/services/transactional-mailer-job/01-architecture.md §11.3.
+-- Nguồn: docs/solutions/transactional-mailer-job/01-architecture.md §11.3.
 --
 -- Bảng này là **lớp quan sát riêng**, không tham gia state machine: mọi transition của
 -- `mail_jobs` (§9.2.2) không đọc bảng này, và event KHÔNG đè `status`/`last_error` hay

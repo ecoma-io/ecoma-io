@@ -41,7 +41,7 @@ const app = new Hono();
 /**
  * `Retry-After` cho nhánh `503` khi kho nonce/DB không gọi được — đơn vị **giây**.
  *
- * `docs/overview/03-operations.md` §3.2 chốt "DB không lấy được connection ⇒ 503 +
+ * `docs/architecture/03-operations.md` §3.2 chốt "DB không lấy được connection ⇒ 503 +
  * `Retry-After`", nên header này là phần của hợp đồng trạng thái, không phải tuỳ chọn
  * hiển thị.
  */
@@ -139,7 +139,7 @@ app.get('/health', (c) =>
  * (cùng một nguyên nhân mà `loadAuthConfig` ném ở request đầu) hoặc `db-auth`
  * không trả lời được thì **không phát hành** token nào — hợp đồng của `auth`
  * không có degraded path (control point fail-closed lúc phát hành,
- * `docs/overview/01-architecture.md` §6.0). Một readiness trả 200 trong khi
+ * `docs/architecture/01-architecture.md` §6.0). Một readiness trả 200 trong khi
  * dependency chết là đẩy failure xuống thành lỗi 503 rải rác ở từng request
  * thật. Readiness **không** log chi tiết lỗi DB vào response: response đi qua
  * mạng công cộng; nguyên nhân nằm ở log với mã ổn định — như `ready.get.ts`

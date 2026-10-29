@@ -39,7 +39,7 @@
  * chung hai DB, và **account stack sở hữu password của nó** — stack này
  * guard-create khi thiếu nhưng KHÔNG BAO GIỜ `ALTER ROLE ecoma_owner PASSWORD`
  * (hai stack cùng ALTER một password là race xoá mật khẩu nhau). SQL
- * provisioning theo `docs/services/auth/03-operations.md` §3.1/§3.2 và
+ * provisioning theo `docs/domains/auth/03-operations.md` §3.1/§3.2 và
  * `apps/auth/migrations/README.md` §"Vai trò của operator": revoke chéo điều
  * kiện hoá theo `pg_database` (REVOKE trên database không tồn tại là lỗi),
  * PUBLIC trước per-role sau.

@@ -1,18 +1,18 @@
 -- 0004_self_elevation_guard.sql — guard chống self-elevation ở tầng database.
 --
 -- Source of truth đã đọc trước khi viết:
---   * `docs/services/backoffice/01-architecture.md` §7 ("Cấm: tự gán role
+--   * `docs/domains/staff-access/01-architecture.md` §7 ("Cấm: tự gán role
 --     (self-assignment), tự nâng quyền (self-elevation), cấp quyền vượt quá
 --     quyền của chính mình"), §9 invariant 10 (catalog sealed), 11 (least
 --     privilege), 12 (audit append-only).
---   * `docs/services/backoffice/02-requirements.md` SR-005 (cấm
+--   * `docs/domains/staff-access/02-requirements.md` SR-005 (cấm
 --     self-assignment/self-elevation), SR-010 (least-privilege credential),
 --     SR-013 (audit đủ 7 trường), SR-015 (audit append-only), SR-020 (catalog
 --     là nguồn sự thật duy nhất), T-01 (self-grant), AC-006.
---   * `docs/services/backoffice/adr/0003-bootstrap-first-admin-recovery.md` —
+--   * `docs/domains/staff-access/adr/0003-bootstrap-first-admin-recovery.md` —
 --     bootstrap/recovery là procedure IaC/manual SQL bằng credential
 --     `ecoma_owner` (ADR-0001), **không** phải code path nào của `backoffice`.
---   * `docs/services/backoffice/adr/0004-custom-role-administration.md` — giai
+--   * `docs/domains/staff-access/adr/0004-custom-role-administration.md` — giai
 --     đoạn này **chỉ có system-defined role**; nội dung của role là governance
 --     action có audit, **không** phải thao tác runtime của admin.
 --   * `apps/backoffice/db/migrations/0002_roles_and_grants.sql` — grant runtime

@@ -4,7 +4,7 @@
  *
  * ⚠️ **Đây là file quan trọng nhất của tầng infrastructure.** Mọi claim ở đây là guarded
  * conditional write mà §5.6 yêu cầu: predicate **nằm trong** statement, thắng/thua quyết định
- * bằng số hàng **thật sự** đổi (`docs/overview/04-platform-facts.md` DB3), và
+ * bằng số hàng **thật sự** đổi (`docs/architecture/04-platform-facts.md` DB3), và
  * `dispatch_generation` tăng **trong cùng statement**. Không có một `SELECT` nào trong đường
  * claim.
  *
@@ -120,7 +120,7 @@ export class D1NotificationRepository implements NotificationRepository {
     // idempotency record. FR-008 yêu cầu idempotency record nằm trong cùng batch và §6.1 yêu
     // cầu outbox intent nằm trong cùng batch — đó là hai ràng buộc **về hình dạng lời gọi**, và
     // `db.batch()` là cách duy nhất biểu diễn chúng với D1 (không có `BEGIN`/`COMMIT`,
-    // `docs/overview/04-platform-facts.md` DB2).
+    // `docs/architecture/04-platform-facts.md` DB2).
     //
     // ⚠️ **Intent được ghép theo `delivery_id`, không theo chỉ số mảng.** `outboxIntents` là
     // một mảng riêng trong input, và khớp theo vị trí sẽ là một ghép âm thầm sai lệch khi use

@@ -41,7 +41,7 @@ Bounded context chưa có thư mục tài liệu riêng (`llm`, `payment`) — t
 
 Application/composition/deploy unit — index đầy đủ → [Solutions](./solutions/README.md):
 
-- [Backoffice](./solutions/backoffice/README.md) — composition/UI + BFF vận hành nội bộ; **không** sở hữu database nghiệp vụ (staff/RBAC thuộc Staff Access).
+- [Backoffice](./solutions/backoffice/README.md) — composition/UI + BFF vận hành nội bộ; **không** sở hữu database nghiệp vụ (staff/RBAC thuộc Staff Access — target; hiện tại app `backoffice` vẫn sở hữu theo A21–A24).
 - [Remote Cache](./solutions/remote-cache/README.md) — self-hosted Nx remote cache (target: multi-tenant SaaS bounded context, Nx-first); disposable build state theo A18, roadmap mở rộng protocol → [Roadmap](./architecture/roadmap.md) Phase 7.
 - [Local Platform](./solutions/local-platform/README.md) — hạ tầng Docker local dùng chung (network, Traefik, PostgreSQL) mỗi worktree một bộ, và đường deploy local của deploy unit; đặt trong `solutions/` vì nó phục vụ **mọi** service, không phải vì nó là một — ngoại lệ này được ghi ở [`AGENTS.md`](./AGENTS.md) §3.
 - [Transactional Mailer Job](./solutions/transactional-mailer-job/README.md) — delivery plane của `transactional-mail` (Cloudflare Queue + D1 `mail-job`).

@@ -6,9 +6,9 @@
  * của **hành vi end-to-end**: một test gọi `deleteEligible` trực tiếp sẽ không phát hiện
  * được route chưa tồn tại, route dùng nhầm `queue_retention`, hay route xác thực sau khi đã
  * chạm D1. Assertion "401 trước lookup" của hai test đầu đến từ cùng requirement của mọi
- * route internal (`docs/services/push-notification/01-architecture.md` §8.2/FR-019).
+ * route internal (`docs/domains/push-notification/01-architecture.md` §8.2/FR-019).
  *
- * ⚠️ Canonical điều kiện (`docs/services/push-notification/02-requirements.md` FR-008):
+ * ⚠️ Canonical điều kiện (`docs/domains/push-notification/02-requirements.md` FR-008):
  *  (i) mọi `Push Delivery` của notification đó đã terminal (`delivered`/`failed`/`expired`
  *      /`cancelled`);
  *  (ii) không còn outbox record `pending`/`publishing` nào cho bất kỳ delivery nào của

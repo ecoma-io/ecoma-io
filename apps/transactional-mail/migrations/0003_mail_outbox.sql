@@ -1,7 +1,7 @@
 -- 0003_mail_outbox.sql — bảng `mail_outbox`: outbox row cho mỗi logical delivery.
 --
--- Nguồn: docs/services/transactional-mail/01-architecture.md §4.3, §6.1–§6.5;
---        docs/services/transactional-mail/02-requirements.md FR-004, NFR-003.
+-- Nguồn: docs/domains/transactional-mail/01-architecture.md §4.3, §6.1–§6.5;
+--        docs/domains/transactional-mail/02-requirements.md FR-004, NFR-003.
 --
 -- ⚠️ Hai lớp state tách nhau (§6.2.1). Bảng này là lớp publish state — "Queue command đã được
 -- send chưa" — và KHÔNG BAO GIỜ ghi đè lên delivery outcome của `mail_messages`. Publisher chỉ

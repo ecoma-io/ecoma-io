@@ -2,7 +2,7 @@
 // runtime (Node 24 có sẵn), không mock: phần lớn giá trị của suite nằm ở việc `Request`
 // **thực sự** canonical hoá URL và `Headers` **thực sự** gộp/tách header — một fake tay
 // không bắt được dot-segment hay header trùng tên.
-// Nguồn canonical: docs/services/push-notification/01-architecture.md §8.1 (bốn operation,
+// Nguồn canonical: docs/domains/push-notification/01-architecture.md §8.1 (bốn operation,
 // `200`/`409` của claim, fenced write), §11 (contract violation → bounded retry → DLQ).
 
 import { describe, expect, it, vi } from 'vitest';

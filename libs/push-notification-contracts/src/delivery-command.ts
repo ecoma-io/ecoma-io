@@ -2,8 +2,8 @@
  * `DeliveryCommandV1` — envelope Queue `ecoma-push-delivery`, contract giữa control plane
  * (`push-notification`) và delivery plane (`web-push-notification-job`).
  *
- * Canonical → `docs/services/push-notification/02-requirements.md` FR-013; mô tả phía worker
- * → `docs/services/web-push-notification-job/01-architecture.md` §5.
+ * Canonical → `docs/domains/push-notification/02-requirements.md` FR-013; mô tả phía worker
+ * → `docs/solutions/web-push-notification-job/01-architecture.md` §5.
  *
  * ⚠️ **Đây là contract mà cả hai plane phải đọc giống nhau, và nó là lớp bảo vệ duy nhất
  * cho hai bất biến:**

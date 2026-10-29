@@ -1,8 +1,8 @@
 -- 0001_schema_and_oauth_clients.sql — schema của `db-auth`, và đăng ký client.
 --
 -- Phạm vi: schema `auth`, `oauth_clients`, `client_redirect_uris`.
--- Thiết kế → docs/services/auth/01-architecture.md §3.2
---          → docs/services/auth/02-requirements.md FR-001..FR-004.
+-- Thiết kế → docs/domains/auth/01-architecture.md §3.2
+--          → docs/domains/auth/02-requirements.md FR-001..FR-004.
 --
 -- =============================================================== QUY ƯỚC ==================================
 -- Quy ước bất biến cho mọi file trong thư mục này:

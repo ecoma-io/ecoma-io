@@ -1,5 +1,7 @@
 # Backoffice — Requirements
 
+> 📌 Thư mục này là bounded context **Staff Access** (đích — Phase 1, xem [`README.md`](./README.md) §4): yêu cầu dưới đây theo sau nghiệp vụ staff/RBAC khi được tách khỏi `backoffice` (A21–A24). Ngày nay mã nguồn RBAC chưa tồn tại; app `backoffice` là nơi dự kiến host ban đầu.
+
 > Phạm vi: yêu cầu bảo mật, threat model, acceptance matrix, non-goals và tham chiếu của `backoffice`.
 > Thiết kế → [`01-architecture.md`](./01-architecture.md) · system boundary → [`../../architecture/01-architecture.md`](../../architecture/01-architecture.md) §2.2 · §8 A21–A24 · §9 · §10 · format tham chiếu → [`../account/02-requirements.md`](../account/02-requirements.md) · [`../auth/02-requirements.md`](../auth/02-requirements.md).
 > ⚠️ **Chưa có mã nguồn triển khai RBAC.** `apps/backoffice` là Nuxt app + AppShell với một **UI prototype** dùng dữ liệu mẫu (trạng thái bề mặt ở [`README.md`](./README.md)); **chưa có** xác thực, staff, role/permission hay database binding. Mọi yêu cầu dưới đây là **đặc tả**, không phải hành vi đang chạy, và **chưa có test nào chứng minh** chúng. App **có** test riêng — `app/backoffice-data/prototype-fixture.spec.ts`, `app/i18n/catalogs.spec.ts`, `app/app-shell-head.spec.ts`, `app/assets/css/styles.spec.ts` — nhưng đó là test cho prototype và hạ tầng UI (dữ liệu mẫu, catalog i18n, shell, nguồn Tailwind), **không** phải bằng chứng cho bất kỳ SR hay AC nào dưới đây.

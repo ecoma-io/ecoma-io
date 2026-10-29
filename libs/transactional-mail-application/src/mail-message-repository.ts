@@ -129,7 +129,7 @@ export type ApplyMailDeliveryOutcomeResult =
 export interface MailMessageRepository {
   /**
    * Tạo message + outbox row trong **một** `db.batch()` — hoặc cả hai, hoặc không
-   * (`01-architecture.md` §6.1, `docs/overview/04-platform-facts.md` DB2).
+   * (`01-architecture.md` §6.1, `docs/architecture/04-platform-facts.md` DB2).
    *
    * Thuật toán: statement 1 `INSERT … ON CONFLICT (principal_id, idempotency_key) DO NOTHING
    * RETURNING`; statement 2 `INSERT INTO mail_outbox … SELECT … FROM mail_messages WHERE

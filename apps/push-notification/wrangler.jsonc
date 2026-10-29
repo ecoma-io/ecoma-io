@@ -4,9 +4,9 @@
   // Delivery, Outbox) và publish Delivery Command sang Queue qua transactional
   // outbox. Routing LUÔN xảy ra trước khi enqueue.
   //
-  // Reference: docs/services/push-notification/01-architecture.md §12,
-  // docs/services/push-notification/03-operations.md §4–§5,
-  // docs/overview/01-architecture.md (service map `push-notification`).
+  // Reference: docs/domains/push-notification/01-architecture.md §12,
+  // docs/domains/push-notification/03-operations.md §4–§5,
+  // docs/architecture/01-architecture.md (service map `push-notification`).
   //
   // KHÔNG bật `nodejs_compat`: project mang tag `runtime:edge` và
   // .oxlintrc.json chặn import Node.js builtin trong mọi project `runtime:edge`.
@@ -31,10 +31,10 @@
   // qua private delivery interface — push 01 §12.1, job 01 §6).
   //
   // `database_id` cố ý KHÔNG khai báo ở đây: chưa provisioning. Resource D1 do
-  // provisioning hạ tầng tạo và cung cấp `database_id` (docs/overview/02-delivery.md
+  // provisioning hạ tầng tạo và cung cấp `database_id` (docs/architecture/02-delivery.md
   // §9.1) — **không** tự tạo D1 bằng `wrangler d1 create`. Wrangler chỉ được chạy
   // migration (`wrangler d1 migrations apply`).
-  // Binding + vòng đời D1 của service: xem docs/services/push-notification/03-operations.md §2.
+  // Binding + vòng đời D1 của service: xem docs/domains/push-notification/03-operations.md §2.
   "d1_databases": [
     {
       "binding": "push",
@@ -43,7 +43,7 @@
   ],
 
   // Producer của Queue `ecoma-push-delivery` (tên Queue theo
-  // docs/services/push-notification/03-operations.md §5.1). Consumer + DLQ
+  // docs/domains/push-notification/03-operations.md §5.1). Consumer + DLQ
   // khai báo ở apps/web-push-notification-job/wrangler.jsonc.
   //
   // KHÔNG có trigger cron ở đây: tham số vận hành của Outbox Publisher

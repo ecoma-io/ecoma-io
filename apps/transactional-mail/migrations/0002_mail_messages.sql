@@ -1,7 +1,7 @@
 -- 0002_mail_messages.sql — bảng `mail_messages`: lá thư đã render trong D1 `mail`.
 --
--- Nguồn: docs/services/transactional-mail/01-architecture.md §4.2, §6.2, §6.2.2;
---        docs/services/transactional-mail/02-requirements.md FR-002, FR-007, NFR-001.
+-- Nguồn: docs/domains/transactional-mail/01-architecture.md §4.2, §6.2, §6.2.2;
+--        docs/domains/transactional-mail/02-requirements.md FR-002, FR-007, NFR-001.
 --
 -- ⚠️ Bảng này KHÔNG có cột nào lưu raw `variables` (FR-007, invariant 17): worker render một
 -- lần tại request time, persist template version đã chọn + nội dung đã render. `variables`
@@ -48,7 +48,7 @@ CREATE TABLE mail_messages (
   --
   -- Không có CHECK nào ép tiền tố `msg_` (§4.2 nêu `id` (`msg_`), `delivery_id` (`dlv_`)) vì
   -- "ID strategy — mặc định UUIDv7, có đổi sang compact ID không" vẫn là quyết định mở ở
-  -- `docs/overview/01-architecture.md` §10, trước khi có schema production. Ép tiền tố lúc này
+  -- `docs/architecture/01-architecture.md` §10, trước khi có schema production. Ép tiền tố lúc này
   -- sẽ bắt một quyết định chưa chốt thành constraint, mà SQLite không sửa được CHECK tại chỗ:
   -- đổi sang UUIDv7 sẽ phải rebuild bảng. Tiền tố sinh do generator của application layer
   -- (contract với wire), không phải việc của storage.

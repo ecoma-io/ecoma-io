@@ -122,7 +122,7 @@ export default defineNuxtConfig({
     //
     // ⚠️ Đây là slot "verify-only", KHÔNG phải slot "khoá cũ": khi xoay secret nó chứa
     // khoá **mới** trong pha nạp trước, rồi khoá **cũ** trong pha overlap — cùng một cặp
-    // biến, hai ý nghĩa khác nhau theo giai đoạn. Runbook: `docs/services/auth/03-operations.md` §3.3.
+    // biến, hai ý nghĩa khác nhau theo giai đoạn. Runbook: `docs/domains/auth/03-operations.md` §3.3.
     internalHmacPreviousSecret: '',
     internalHmacPreviousKid: '',
     // Secret HMAC cho digest mã OTP (`server/lib/otp.ts`). Cùng luật với

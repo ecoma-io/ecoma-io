@@ -33,7 +33,7 @@
  * canonical** (`apps/pact-broker-api/db/apply.mts` — advisory lock
  * `hashtext('db-pact-broker')`) bằng container node pin chạy tsx binary của
  * repo, KHÔNG qua binding Hyperdrive (HD6: Hyperdrive không hỗ trợ advisory
- * lock — `docs/services/pact-broker/03-operations.md` §2).
+ * lock — `docs/domains/pact-broker/03-operations.md` §2).
  *
  * Seed machine token (issue #238): `db/migrations/` không seed token nào, mà
  * consumer chính ở local (`pact-broker-app`, unit song song) cần token máy

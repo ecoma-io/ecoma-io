@@ -60,7 +60,7 @@ export interface JobReconciliationOptions {
    * DLQ / đã kiệt).
    *
    * ⚠️ **Giá trị placeholder/gate, chưa phải quyết định vận hành** — đúng văn phong của
-   * `RECONCILE_STUCK_AFTER_MS`: `docs/overview/03-operations.md` §10 liệt kê retry policy là
+   * `RECONCILE_STUCK_AFTER_MS`: `docs/architecture/03-operations.md` §10 liệt kê retry policy là
    * operational item chưa chốt, và `max_retries` của Cloudflare Queues còn mâu thuẫn nội bộ
    * (QU2). Vì vậy đây là hằng **đặt tên rõ** ở composition root, không phải con số "đúng"
    * của vận hành; khi operator chốt chỉ có hằng đó phải sửa. Ngân sách được áp **trong SQL

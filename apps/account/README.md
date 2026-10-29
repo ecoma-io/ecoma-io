@@ -5,7 +5,7 @@ App Nuxt 4 chạy trên Cloudflare Workers, giữ **account UI + BFF** của bou
 
 Đây là **một trong hai** deploy unit của context đó. Endpoint protocol OAuth 2.0/OIDC
 thuộc deploy unit kia (`auth` ở `apps/auth`, Worker `ecoma-auth`), không phải app này.
-Reference: `docs/overview/01-architecture.md` §2.
+Reference: `docs/architecture/01-architecture.md` §2.
 
 ## Phạm vi app
 
@@ -190,7 +190,7 @@ biến code gọi `pg.native` thành client giả và hỏng im lặng ở produ
 
 ## Tham chiếu
 
-- `docs/services/account/01-architecture.md` — §4 session/cookie, §5 contract
-- `docs/services/account/02-requirements.md` — FR-011x, SR-010
-- `docs/services/account/03-operations.md` — §1 runtime, §2 deployment, §5 Hyperdrive, §6 observability, §8 failure modes
-- `docs/overview/01-architecture.md` §9 — invariants (2: Preview không ghi production, 4: application code chỉ chứa tên binding, 14: Hyperdrive query cache OFF, 25: `account` chỉ đọc/ghi `db-account`, 30: kiểm tra trạng thái account lúc phát hành)
+- `docs/domains/account/01-architecture.md` — §4 session/cookie, §5 contract
+- `docs/domains/account/02-requirements.md` — FR-011x, SR-010
+- `docs/domains/account/03-operations.md` — §1 runtime, §2 deployment, §5 Hyperdrive, §6 observability, §8 failure modes
+- `docs/architecture/01-architecture.md` §9 — invariants (2: Preview không ghi production, 4: application code chỉ chứa tên binding, 14: Hyperdrive query cache OFF, 25: `account` chỉ đọc/ghi `db-account`, 30: kiểm tra trạng thái account lúc phát hành)

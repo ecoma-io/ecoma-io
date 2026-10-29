@@ -3,7 +3,7 @@
  *
  * Chạy từ **CI runner** bằng PostgreSQL client kết nối thẳng với credential
  * `ecoma_auth_migrator`, **không** chạy từ trong Worker: Hyperdrive không hỗ trợ
- * advisory lock (`docs/overview/04-platform-facts.md` HD6), mà bước quan trọng
+ * advisory lock (`docs/architecture/04-platform-facts.md` HD6), mà bước quan trọng
  * nhất ở đây chính là advisory lock. Đây là runner canonical mà
  * `apps/auth/migrations/README.md` §"Cách áp dụng" mô tả — protocol (history
  * table, checksum, thứ tự tên file) được hiện thực hoá tại một nơi duy nhất;

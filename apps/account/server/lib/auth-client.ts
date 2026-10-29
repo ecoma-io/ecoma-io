@@ -1,6 +1,6 @@
 /**
  * Client gọi ngược `auth` qua các internal contract `account → auth` (§5.1.7
- * của `docs/services/auth/01-architecture.md`): `POST /internal/session/verified`
+ * của `docs/domains/auth/01-architecture.md`): `POST /internal/session/verified`
  * (hàng 5), `POST /internal/consent/context` (hàng 6) và
  * `POST /internal/consent/decide` (hàng 7/8).
  *

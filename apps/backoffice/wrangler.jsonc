@@ -6,7 +6,7 @@
   // asset của app.
   //
   // Worker identity lâu dài — PR không tạo Worker mới, Preview chạy dưới
-  // identity này. Reference: docs/overview/02-delivery.md §5.
+  // identity này. Reference: docs/architecture/02-delivery.md §5.
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "ecoma-backoffice",
   "main": ".output/server/index.mjs",
@@ -58,7 +58,7 @@
   // Trước đây `backoffice` chỉ có một Worker (`ecoma-backoffice`) và không có
   // env nào, nên deploy target của làn staging và của làn production là **cùng
   // một** Worker — staging ghi đè production, vi phạm mô hình hai làn ở
-  // `docs/overview/02-delivery.md` §7.
+  // `docs/architecture/02-delivery.md` §7.
   //
   // Mỗi deploy unit có **hai Worker identity riêng**, đặt tên theo
   // `{target}-{slug}` đúng quy ước của tầng delivery (`02-delivery.md` §7.2,

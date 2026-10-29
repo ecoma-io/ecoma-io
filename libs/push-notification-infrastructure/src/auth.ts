@@ -44,7 +44,7 @@ export interface RuntimeAuthHeaders {
    *
    * ⚠️ **Không dùng `readBearerToken` cho header này.** `authenticateBearer` của Admin API bóc
    * `Bearer ` và từ chối cả scheme khác, còn runtime API theo
-   * `docs/services/push-notification/01-architecture.md` §8.1 nhận secret thô — nên tái dùng
+   * `docs/domains/push-notification/01-architecture.md` §8.1 nhận secret thô — nên tái dùng
    * hàm bóc bearer ở đây sẽ từ chối đúng những request hợp lệ mà Worker gửi.
    */
   readonly sharedSecret: string | null;

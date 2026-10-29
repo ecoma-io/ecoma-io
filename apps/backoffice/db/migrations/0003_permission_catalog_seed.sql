@@ -1,9 +1,9 @@
 -- 0003_permission_catalog_seed.sql — seed catalog permission read cho backoffice.
 --
 -- Source of truth đã đọc trước khi viết:
---   * `docs/services/backoffice/adr/0010-permission-naming-and-read-catalog.md`
+--   * `docs/domains/staff-access/adr/0010-permission-naming-and-read-catalog.md`
 --     (ADR-0010) — quy ước đặt tên `domain.action` dot-style và 3 permission read.
---   * `docs/services/backoffice/01-architecture.md` §4.3, §9 invariant 10:
+--   * `docs/domains/staff-access/01-architecture.md` §4.3, §9 invariant 10:
 --     catalog là nguồn sự thật duy nhất; thêm/đổi/bỏ permission là governance action
 --     có audit (ADR từ git).
 --   * `apps/backoffice/db/migrations/0001_backoffice_domain.sql` — schema

@@ -1,5 +1,7 @@
 # Backoffice — Onboarding
 
+> 📌 Thư mục này là bounded context **Staff Access** (đích — Phase 1, xem [`README.md`](./README.md) §4); luồng onboarding dưới đây diễn ra trên `backoffice`, nơi hiện sở hữu nghiệp vụ staff (A21–A24) và là host dự kiến trước khi tách.
+
 > Phạm vi: onboarding lần đầu của staff trên `backoffice` — gate displayName thiếu, giao tiếp với `account` để lấy displayName, chính sách fail/degrade, và chỗ gắn gate two-factor cho giai đoạn sau.
 > Thiết kế → [`01-architecture.md`](./01-architecture.md) · contract provider → [`../account/01-architecture.md`](../account/01-architecture.md) §5.2 · yêu cầu provider → [`../account/02-requirements.md`](../account/02-requirements.md) §1.4b · yêu cầu backoffice → [`02-requirements.md`](./02-requirements.md).
 

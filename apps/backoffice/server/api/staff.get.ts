@@ -9,7 +9,7 @@
  * những cột allowlist của {@link listStaff} (`sub`, `status`) cộng tên hiển
  * thị đọc từ `account` qua batch contract (`GET /internal/account/profiles`).
  * Không nhân bản hồ sơ vào DB backoffice; không fallback từ email (lý do đầy
- * đủ ở `docs/services/backoffice/03-onboarding.md`).
+ * đủ ở `docs/domains/staff-access/03-onboarding.md`).
  *
  * ## Hai chế độ lỗi trong cùng route
  *

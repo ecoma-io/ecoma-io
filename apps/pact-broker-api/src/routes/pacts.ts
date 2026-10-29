@@ -143,7 +143,7 @@ export function pactRoutes(
 
     // Webhook outbound TẮT (SR-006): không dispatch. Schema webhook giữ
     // CRUD để cấu hình sẵn, nhưng không execution nào chạy cho tới khi có
-    // SSRF guard — docs/services/pact-broker/01-architecture.md §6.
+    // SSRF guard — docs/domains/pact-broker/01-architecture.md §6.
 
     const result = await repo.getPact(
       currentTenantId(c),

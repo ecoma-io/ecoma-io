@@ -3,11 +3,11 @@
  *
  * ## Điều kiện docs đã chốt
  *
- * - FR-005a (`docs/services/account/02-requirements.md` §1.2): "`recovery_codes`
+ * - FR-005a (`docs/domains/account/02-requirements.md` §1.2): "`recovery_codes`
  *   hash, **single-use**, đếm số lần dùng"; kiểm chứng "Dùng lại code đã dùng →
  *   từ chối". T-03 cùng file: "lạm dụng recovery code" là threat; biện pháp
  *   "`recovery_codes` single-use".
- * - Logical model (`docs/services/account/01-architecture.md` §3.2, entity
+ * - Logical model (`docs/domains/account/01-architecture.md` §3.2, entity
  *   `recovery_codes`): "Hash; **single-use**; đếm số lần dùng".
  *
  * ## Ranh giới — cái file này KHÔNG làm

@@ -1,7 +1,7 @@
 -- 0001_mail_jobs.sql — schema `mail_jobs`: trạng thái thực thi job trong D1 `mail-job`.
 --
--- Nguồn: docs/services/transactional-mailer-job/01-architecture.md §7, §9.2.1, §9.2.2, §9.5;
---        docs/services/transactional-mailer-job/02-requirements.md FR-006/FR-007.
+-- Nguồn: docs/solutions/transactional-mailer-job/01-architecture.md §7, §9.2.1, §9.2.2, §9.5;
+--        docs/solutions/transactional-mailer-job/02-requirements.md FR-006/FR-007.
 --
 -- Invariant chỉ được encode bằng constraint khi biểu diễn đúng trong D1 và không chặn transition
 -- hợp lệ; điều kiện claim/fencing giữ ở consumer dưới dạng conditional UPDATE như tài liệu.

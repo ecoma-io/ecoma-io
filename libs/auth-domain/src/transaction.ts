@@ -6,7 +6,7 @@ import { OAuthProtocolError } from './errors';
  * ⚠️ Tập trạng thái này là HỮU HẠN và chuyển tiếp là MỘT CHIỀU — không có
  * đường quay lui. Đó là điều làm cho "code chỉ được cấp một lần" trở thành hệ
  * quả của state machine thay vì một kiểm tra rời có thể quên (hàng 9 của bảng
- * 5.1.2 trong `docs/services/auth/01-architecture.md`).
+ * 5.1.2 trong `docs/domains/auth/01-architecture.md`).
  *
  * Nhánh `denied` là kết thúc KHÔNG cấp code, nhưng vẫn phải qua Z + cookie để
  * dựng `error=access_denied` tới `redirect_uri`: chỉ `auth` được dựng OAuth

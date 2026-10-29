@@ -9,7 +9,7 @@ import { defineConfig, devices } from '@playwright/test';
  * bề mặt giao thức OIDC của service `auth` qua stack local thật. Copy mô hình
  * kiến trúc của `home-public-e2e` (suite skeleton đầu tiên); các quyết định
  * được lặp lại ở đây vì mỗi suite system E2E tự sở hữu config của mình
- * (`docs/overview/06-testing.md` §2), không có lib dùng chung.
+ * (`docs/architecture/06-testing.md` §2), không có lib dùng chung.
  *
  * ═══ Quyết định TLS-in-browser (giữ nguyên từ skeleton) ═══
  *

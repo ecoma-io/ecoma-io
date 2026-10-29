@@ -307,7 +307,7 @@ describe('validateAccountConfig — mail service URL', () => {
   });
 
   it('rejects a mail credential shared with the internal HMAC secret', () => {
-    // Envelope không mang principal (`docs/services/transactional-mail/
+    // Envelope không mang principal (`docs/domains/transactional-mail/
     // 01-architecture.md` §7.4): phía nhận suy ra principal từ credential đã khớp,
     // nên một secret dùng cho cả hai path là cấu hình mơ hồ — chặn lúc config thay
     // vì nhận một loạt envelope trong đó chỉ một path thực sự hợp lệ.

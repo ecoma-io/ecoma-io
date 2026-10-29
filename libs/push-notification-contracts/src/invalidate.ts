@@ -1,6 +1,6 @@
 /**
  * `POST /internal/subscriptions/:subscription_id/invalidate` — operation thứ tư của private
- * delivery runtime API (`docs/services/push-notification/01-architecture.md` §8.1).
+ * delivery runtime API (`docs/domains/push-notification/01-architecture.md` §8.1).
  *
  * ⚠️ Đây là operation **duy nhất** trong API này không nhận `delivery_id`, nên ranh giới của
  * nó phải rõ: nó **chỉ** đổi subscription state (`active → disabled`), **không** đụng delivery

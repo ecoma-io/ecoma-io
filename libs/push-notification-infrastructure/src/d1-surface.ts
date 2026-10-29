@@ -26,7 +26,7 @@
  *
  * ⚠️ `changes` là **trường quan trọng nhất** của cả tầng infrastructure: mọi guarded
  * conditional write quyết định thắng/thua bằng `meta.changes === 1`
- * (`docs/overview/04-platform-facts.md` DB3). Không có `changes` thì "thắng/thua trong
+ * (`docs/architecture/04-platform-facts.md` DB3). Không có `changes` thì "thắng/thua trong
  * statement" biến thành read-then-write, đúng thứ mà §5.6 và §6.1 cấm.
  */
 export interface D1ResultMeta {
@@ -67,7 +67,7 @@ export interface D1PreparedStatement {
 /**
  * Bề mặt D1 của `push-notification`.
  *
- * ⚠️ `batch()` là **transaction duy nhất** của D1 (`docs/overview/04-platform-facts.md` DB2):
+ * ⚠️ `batch()` là **transaction duy nhất** của D1 (`docs/architecture/04-platform-facts.md` DB2):
  * không có `BEGIN`/`COMMIT`/`ROLLBACK` tường minh. Mọi ghi "nhiều hàng phải cùng đúng hoặc
  * cùng sai" đều phải đi qua đây — và nó **không** cho phép một network call xen giữa các lệnh,
  * đó là lý do publisher phải `send()` **ngoài** batch (§6.2).

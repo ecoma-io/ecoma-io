@@ -1,7 +1,7 @@
 /**
  * HAL builder — port từ upstream `src/services/hal.ts` (REUSE). Import type
  * đổi sang `../domain/types`. Mọi relation giữ nguyên tên vì Pact CLI điều
- * hướng qua chúng (xem docs/services/pact-broker/UPSTREAM_MAPPING.md §5).
+ * hướng qua chúng (xem docs/domains/pact-broker/UPSTREAM_MAPPING.md §5).
  */
 import type { HalLinks, HalLink } from './types';
 

@@ -113,7 +113,7 @@ const SCOPES = ['openid', 'offline_access', 'profile'] as const;
  * Gắn vào `openid` vì scope này có trong MỌI request; một mục top-level
  * (`acr: null`) chỉ công bố trong discovery, không vào mask nào. Lệch spec
  * OIDC (acr/auth_time đáng lẽ phải được đòi qua `claims`/`acr_values`) là CHỦ
- * ĐÍCH và được ghi trong docs/services/auth: ACR là hợp đồng bắt buộc, không
+ * ĐÍCH và được ghi trong docs/domains/auth: ACR là hợp đồng bắt buộc, không
  * do client quyết định.
  */
 const CLAIMS = {

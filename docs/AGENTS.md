@@ -27,6 +27,7 @@
 - `04-platform-facts.md`: verified external platform facts only.
 - `05-code-architecture.md`: Nx project structure, Bounded Context, DDD layers, dependency rules, contracts.
 - `06-testing.md`: canonical testing architecture — taxonomy, ownership/layout, Nx target contracts, test environment.
+- `roadmap.md`: implementation roadmap for upcoming phases — task IDs, dependencies, contract freeze points. It is a plan, not committed architecture policy; decisions it references must live in ADRs or `01-architecture.md`.
 - `README.md`: index of the architecture axis (three axes explained).
 
 ### `domains/`

@@ -1,7 +1,7 @@
 -- 0002_authorization_transactions.sql — bảng trung tâm của protocol.
 --
 -- Phạm vi: `authorization_transactions`.
--- Thiết kế → docs/services/auth/01-architecture.md §3.3 (mô hình dữ liệu), §5.1.2 (máy trạng thái),
+-- Thiết kế → docs/domains/auth/01-architecture.md §3.3 (mô hình dữ liệu), §5.1.2 (máy trạng thái),
 --            §5.5 (handle Y), §5.6 (derivation HMAC).
 -- Yêu cầu   → FR-005..FR-009z.
 --
@@ -212,7 +212,7 @@ COMMENT ON COLUMN auth.authorization_transactions.browser_confirmed_at IS
 -- ==============================================================================================
 -- INDEX — chỉ những index gắn với một truy vấn hoặc ràng buộc cụ thể.
 --
--- Nguyên tắc của `docs/services/account/01-architecture.md`: "every index must be tied to a
+-- Nguyên tắc của `docs/domains/account/01-architecture.md`: "every index must be tied to a
 -- specific query or constraint — no 'just in case' indexes". Vì vậy mỗi index dưới đây đều
 -- ghi rõ truy vấn nào dùng nó.
 -- ==============================================================================================

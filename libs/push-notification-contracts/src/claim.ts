@@ -1,6 +1,6 @@
 /**
  * `POST /internal/deliveries/:delivery_id/claim` — operation trả runtime material của
- * private delivery runtime API (`docs/services/push-notification/01-architecture.md` §8.1).
+ * private delivery runtime API (`docs/domains/push-notification/01-architecture.md` §8.1).
  *
  * ⚠️ **`claim` là operation duy nhất cấp quyền thực thi *và* là operation duy nhất trả
  * runtime material.** Hai tính chất đó gắn chặt: nếu tồn tại một đường đọc material không

@@ -1,5 +1,5 @@
 /**
- * Machine-token authorization cho Pact CLI — auth pattern 2 của docs/services/
+ * Machine-token authorization cho Pact CLI — auth pattern 2 của docs/domains/pact-broker/
  * pact-broker/01-architecture.md §5.2. Phần application của tầng auth: port
  * tra token, scope hierarchy, hash token — KHÔNG gắn HTTP framework.
  *

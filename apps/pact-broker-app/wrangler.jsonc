@@ -6,7 +6,7 @@
   // asset của app.
   //
   // Worker identity lâu dài — PR không tạo Worker mới, Preview chạy dưới
-  // identity này. Reference: docs/overview/02-delivery.md §5.
+  // identity này. Reference: docs/architecture/02-delivery.md §5.
   //
   // `pact-broker-app` là deploy unit thứ hai của bounded context `pact-broker`:
   // dashboard BFF, KHÔNG có Hyperdrive binding nào (invariant 1 của

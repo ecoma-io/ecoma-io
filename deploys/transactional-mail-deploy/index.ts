@@ -10,7 +10,7 @@
  *   1. `ecoma-transactional-mail` (control plane — port nội bộ 4206) boot
  *      TRƯỚC: consumer resolve service binding `TRANSACTIONAL_MAIL_SERVICE`
  *      qua dev registry, chỉ `[connected]` khi control plane đã đăng ký entry
- *      (bằng chứng spike §2, docs/services/local-platform/04). Control plane
+ *      (bằng chứng spike §2, docs/solutions/local-platform/04). Control plane
  *      bind `0.0.0.0` (flag `--ip`) vì container account gọi tới nó qua alias
  *      network — bind mặc định `localhost` của miniflare là loopback-only
  *      trong netns của container, alias không với tới được.

@@ -11,7 +11,7 @@
  * ⚠️ **Guarded conditional write là một method riêng cho mỗi predicate, không phải tham số
  * `expectedStatus`.** Lý do là §5.6/§6.1/§8.1 của `01-architecture.md`: predicate phải nằm
  * trong **chính statement** ghi và thắng/thua quyết định bằng số hàng **thật sự** đổi
- * (`docs/overview/04-platform-facts.md` DB3). Một method `updateStatus(id, from, to)` có
+ * (`docs/architecture/04-platform-facts.md` DB3). Một method `updateStatus(id, from, to)` có
  * vẻ tổng quát hơn nhưng đẩy việc viết predicate xuống tầng gọi — chỗ không có test nào
  * kiểm được statement đó. Ở đây mỗi method **là** một use case cụ thể, và tên method nói
  * rõ điều kiện thắng.
@@ -329,7 +329,7 @@ export interface ProviderRepository {
    * Tách thành `clearPrimaryMapping` rồi `setPrimaryMapping` là **hai transaction**, và
    * giữa chúng scope không có primary — routing trong khoảng đó fail-safe thành
    * `no_provider` cho một scope vốn đang phục vụ tốt. D1 không có `BEGIN/COMMIT` tường minh
-   * (`docs/overview/04-platform-facts.md` DB2), nên `db.batch()` là ranh giới atomic duy
+   * (`docs/architecture/04-platform-facts.md` DB2), nên `db.batch()` là ranh giới atomic duy
    * nhất, và nó phải bao **cả hai** lệnh.
    */
   setPrimaryMapping(input: SetPrimaryMappingInput): Promise<ProviderMappingRecord | null>;

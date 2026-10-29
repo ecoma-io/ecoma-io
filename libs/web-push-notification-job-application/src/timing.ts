@@ -75,7 +75,7 @@ export function queueRetryDelaySeconds(input: {
  * ⚠️ **Cố ý không** trở thành biến `env`. Docs §3 liệt kê tập config tối thiểu
  * (`QUEUE · PUSH_NOTIFICATION_SERVICE · LOG_LEVEL · ENVIRONMENT`) và FR-013 chỉ yêu cầu
  * "timeout hữu hạn" — không chốt một giá trị. Thêm một config key cho nó là **tự quyết định**
- * một operational gate (`docs/overview/03-operations.md` §10 liệt kê `provider timeout` là
+ * một operational gate (`docs/architecture/03-operations.md` §10 liệt kê `provider timeout` là
  * chưa chốt), mà Agent này không có quyền chốt. Giá trị dưới đây là một **hằng số kỹ thuật** có
  * chủ ý: đủ dưới giới hạn CPU của Worker cho một round-trip HTTP đơn, và đủ ngắn để một
  * message không bị giữ ở `processing` quá lâu.

@@ -1,5 +1,7 @@
 # Backoffice — Architecture
 
+> 📌 Thư mục này là bounded context **Staff Access** (đích — Phase 1, xem [`README.md`](./README.md) §4): nghiệp vụ staff/RBAC/entitlement sẽ được tách khỏi `backoffice` theo A21–A24. Nội dung dưới đây vẫn mô tả trạng thái hiện tại, nơi `backoffice` còn sở hữu staff/RBAC.
+
 > Phạm vi: thiết kế `backoffice` — ranh giới, domain model khái niệm, authorization model và nơi enforce, token validity vs privilege currency, data/service trust, invariants và các quyết định đã chốt qua ADR.
 > Yêu cầu → [`02-requirements.md`](./02-requirements.md) · system boundary → [`../../architecture/01-architecture.md`](../../architecture/01-architecture.md) §2.2 · §4 · §8 A21–A24 · §9 · §10 · `account` → [`../account/01-architecture.md`](../account/01-architecture.md) · [`../account/03-operations.md`](../account/03-operations.md) · `auth` → [`../auth/01-architecture.md`](../auth/01-architecture.md) §6.
 
@@ -139,7 +141,7 @@ ABAC được định nghĩa là logical access control mà kết quả authoriz
 | **Versioned authorization state**            | Token mang version, backend từ chối version đã bị thu hồi                |
 | **Cache invalidation**                       | Giảm tải; độ trễ invalidation là rủi ro phải đo và giới hạn              |
 
-- **Ngưỡng revocation latency tối đa theo risk class đã chốt ([ADR-0002](./adr/0002-revocation-latency-risk-class.md)): `normal` ≤ 60 giây, `high` ≤ 5 giây — là target, không tự hiện đại hoá thành cơ chế.** Phải có cơ chế thiết kế đáp ứng ngưỡng trước khi bật role assignment thật; không hứa thu hồi tức thời khi chưa có cơ chế guarantee.
+- **Ngưỡng revocation latency tối đa theo risk class là target ([ADR-0002](./adr/0002-revocation-latency-risk-class.md)): `normal` ≤ 60 giây, `high` ≤ 5 giây; cơ chế đáp ứng ngưỡng chưa chốt.** Phải có cơ chế thiết kế đáp ứng ngưỡng trước khi bật role assignment thật; không tuyên bố Cloudflare Queues (hay bất kỳ hàng đợi nào) đơn thuần bảo đảm ngưỡng ≤ 5 giây, và không hứa thu hồi tức thời khi chưa có cơ chế guarantee.
 - **Privilege change → cân nhắc regenerate session/token.** OWASP Session Management Cheat Sheet: session phải invalidate **server-side**, và "The session ID must be renewed or regenerated… after any privilege level change"; xoá cookie một mình **không** invalidate bản sao session bị đánh cắp (trích → [`02-requirements.md`](./02-requirements.md) §8).
 
 ## 7. Step-up authentication, privileged operations và governance

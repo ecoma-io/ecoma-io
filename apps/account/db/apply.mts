@@ -3,7 +3,7 @@
  *
  * Chạy từ **CI runner** bằng PostgreSQL client kết nối thẳng với credential
  * `_migrator_`, **không** chạy từ trong Worker: Hyperdrive không hỗ trợ advisory
- * lock (`docs/overview/04-platform-facts.md` HD6), mà bước quan trọng nhất ở đây
+ * lock (`docs/architecture/04-platform-facts.md` HD6), mà bước quan trọng nhất ở đây
  * chính là advisory lock.
  *
  * Biến môi trường:

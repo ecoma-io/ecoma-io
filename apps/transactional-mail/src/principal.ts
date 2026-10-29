@@ -1,7 +1,7 @@
 /**
  * Danh tính đã xác thực của caller — do receiver HMAC (`internal-auth.ts`) trả về sau khi
  * credential khớp, **không bao giờ** đọc từ header hay body do caller kiểm soát
- * (`docs/services/transactional-mail/01-architecture.md` §7.4: một header kiểu
+ * (`docs/domains/transactional-mail/01-architecture.md` §7.4: một header kiểu
  * `X-ECOMA-PRINCIPAL` không phải bằng chứng danh tính).
  *
  * File do lead agent sở hữu — interface dùng chung giữa receiver (middleware auth) và

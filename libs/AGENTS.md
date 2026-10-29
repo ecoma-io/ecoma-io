@@ -2,7 +2,7 @@
 
 ## Scope
 
-Each `libs/<bc>-<layer>` subdirectory is one Nx project. Structure, tags and dependency boundaries → [`docs/overview/05-code-architecture.md`](../docs/overview/05-code-architecture.md).
+Each `libs/<bc>-<layer>` subdirectory is one Nx project. Structure, tags and dependency boundaries → [`docs/architecture/05-code-architecture.md`](../docs/architecture/05-code-architecture.md).
 
 ## Required tags
 
@@ -25,7 +25,7 @@ Each project carries **exactly one** tag per dimension: `type:*`, `scope:*`, `ru
 
 ⚠️ **`type:contracts` must not import `type:domain`, not even transitively.** A contract is what a provider **publishes** for consumers to depend on, not a layer to travel down the dependency direction. That is why a shared type is re-declared at the contracts layer as a `wire` union instead of importing the domain's union.
 
-⚠️ **The Nx graph does not guard the database boundary.** The bounded-context split gives `account` and `auth` their own Nx scopes (`scope:account` and `scope:auth`), but no Nx tag stops an app from declaring a binding that points at the other app's database: tags only encode the graph, not credentials. That boundary is enforced by database grants that do not allow it ([`docs/overview/05-code-architecture.md`](../docs/overview/05-code-architecture.md) §6.3).
+⚠️ **The Nx graph does not guard the database boundary.** The bounded-context split gives `account` and `auth` their own Nx scopes (`scope:account` and `scope:auth`), but no Nx tag stops an app from declaring a binding that points at the other app's database: tags only encode the graph, not credentials. That boundary is enforced by database grants that do not allow it ([`docs/architecture/05-code-architecture.md`](../docs/architecture/05-code-architecture.md) §6.3).
 
 ## Imports
 
