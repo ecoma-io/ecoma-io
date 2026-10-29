@@ -44,7 +44,7 @@ import {
  *   4. `/login/continue` handoff tự relay (window.location.assign sang
  *      continueUrl của auth).
  *   5. Consent UI: approve → continue → 303 resume → callback.
- *   6. page.route chặn glob của callback và abort — code single-use
+ *   6. Callback BỊ BẮT qua `waitForURL` (không `page.route`) — code single-use
  *      KHÔNG được để backoffice tiêu thụ; test là RP của riêng mình.
  *   7. POST /token với code_verifier → tokens thật; verify id_token + access
  *      token bằng jose với JWKS công bố (issuer + audience đúng).
@@ -84,14 +84,6 @@ test('completes the full browser authorize → OTP login → consent → token f
     `&response_type=code&scope=${encodeURIComponent('openid offline_access')}` +
     `&state=${state}&nonce=${nonce}` +
     `&code_challenge=${challenge}&code_challenge_method=S256`;
-
-  // Chặn sẵn callback: code là single-use — abort để backoffice KHÔNG bao giờ
-  // tiêu thụ nó; test là bên duy nhất POST /token.
-  let capturedCallbackUrl: URL | undefined;
-  await page.route('**/api/auth/callback*', async (route) => {
-    capturedCallbackUrl = new URL(route.request().url());
-    await route.abort('aborted');
-  });
 
   // ── Bước 3 listener: hop `/authorize/confirm` của product path ───────────
   // Gắn TRƯỚC khi điều hướng: sau verify OTP, trang login relay browser sang
@@ -149,7 +141,11 @@ test('completes the full browser authorize → OTP login → consent → token f
   // về `/login/continue`. Contract của hop confirm (bằng chứng product path):
   // request do trang login phát ra (không phải page.request), status 302, đích
   // /login/continue cùng handle (§5.1.2 hàng 2 + hàng 7).
-  expect(confirmHop).toBeDefined();
+  // ⚠️ `expect(variable).toBeDefined()` KHÔNG retry — listener gán biến ngoài
+  // vòng lifecycle của expect, nên assertion chạy ngay lập tức với `undefined` dù
+  // response sắp tới (đỏ thật ở round 5). `expect.poll` là hình dạng đúng:
+  // đọc lại biến mỗi khoảng poll cho tới budget 30s.
+  await expect.poll(() => confirmHop, { timeout: 30_000 }).toBeDefined();
   expect(confirmHop?.status).toBe(302);
   expect(confirmHop?.location.origin + confirmHop?.location.pathname).toBe(
     `${account}/login/continue`,
@@ -176,8 +172,15 @@ test('completes the full browser authorize → OTP login → consent → token f
   await continueButton.waitFor({ state: 'visible', timeout: 30_000 });
   await continueButton.click();
 
-  // ── Bước 6: resume 303 → callback bị route chặn ──────────────────────────
-  await expect.poll(() => capturedCallbackUrl !== undefined, { timeout: 30_000 }).toBe(true);
+  // ── Bước 6: resume 303 → callback ─────────────────────────────────────────
+  // KHÔNG dùng `page.route` để chặn callback: qua redirect chain thật của
+  // provider (303 `/auth/:uid` → callback trên origin khác) interception
+  // không đảm bảo fire (đã đỏ thật — request lọt tới backoffice, poll chết).
+  // `waitForURL` + đọc `page.url()` bắt đúng URL cuối của chain; code vẫn chưa
+  // bị tiêu thụ vì backoffice 401 (`no_flow_cookie`) TRƯỚC khi đổi code, và
+  // test là bên duy nhất POST /token ở bước 7.
+  await page.waitForURL(`${localRedirectUri()}**`, { timeout: 30_000 });
+  const capturedCallbackUrl = new URL(page.url());
   // Callback URI khớp đúng redirect_uri đã đăng ký (origin + path).
   const callbackTarget = `${capturedCallbackUrl?.origin ?? ''}${capturedCallbackUrl?.pathname ?? ''}`;
   expect(callbackTarget).toBe(redirectUri);
