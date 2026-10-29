@@ -188,14 +188,14 @@ export function filterAllowedScopes(
 ): readonly string[] {
   const fail = (detail: string): OAuthProtocolError =>
     options.redirectable === false
-      ? OAuthProtocolError.directInvalidRequest(detail)
-      : OAuthProtocolError.invalidRequest(detail);
+      ? OAuthProtocolError.directInvalidScope(detail)
+      : OAuthProtocolError.invalidScope(detail);
 
   const allowed = new Set(allowedScopes);
   const granted: string[] = [];
   for (const item of requested) {
     if (!allowed.has(item)) {
-      throw fail(`scope khong duoc phep: ${item}`);
+      throw fail(`scope not allowed: ${item}`);
     }
     granted.push(item);
   }

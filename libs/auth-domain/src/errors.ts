@@ -80,6 +80,20 @@ export class OAuthProtocolError extends Error {
     });
   }
 
+  static invalidScope(detail?: string): OAuthProtocolError {
+    return new OAuthProtocolError('invalid_scope', 400, {
+      redirectable: true,
+      ...(detail === undefined ? {} : { detail }),
+    });
+  }
+
+  static directInvalidScope(detail?: string): OAuthProtocolError {
+    return new OAuthProtocolError('invalid_scope', 400, {
+      redirectable: false,
+      ...(detail === undefined ? {} : { detail }),
+    });
+  }
+
   static invalidClient(detail?: string): OAuthProtocolError {
     return new OAuthProtocolError('invalid_client', 401, {
       redirectable: false,
