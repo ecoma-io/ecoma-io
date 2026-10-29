@@ -7,6 +7,25 @@
     "@playwright/test": "^1.37.0"
   },
   "nx": {
+    "//": [
+      "implicitDependencies — tập deploy unit mà kết quả test phụ thuộc, suy từ code suite:",
+      "- platform-deploy: cert local `deploys/platform-deploy/local-certs/fbi.com.crt` (global-setup.ts + e2e/support/local-origin.ts đọc trực tiếp),",
+      "  `ROOT_DOMAIN`/`ROOT_HOST` do `local-up` của platform ghi vào `.env`, router Traefik của platform route `account.<host>`,",
+      "  và container `ecoma-<ns>-postgres` mà e2e/support/local-stack.ts seed nằm trong namespace của platform.",
+      "- account-deploy: origin `account.<host>` là điểm đến của toàn bộ suite — gate probe `/api/auth/session` và mọi spec gọi",
+      "  challenge/verify/session/logout (apps/account), đồng thời `db-account` mà suite seed là database account sở hữu.",
+      "- transactional-mail-deploy: OTP được đọc từ mail sink D1 trong container `ecoma-<ns>-mail-wic`",
+      "  (`local-stack.ts::pollOtpFromSink` docker exec vào đó) do `local-up` của mail provision.",
+      "KHÔNG khai auth-deploy: luồng login OTP này KHÔNG chạm origin auth — challenge/verify/session/logout là route của account",
+      "(apps/account/server/api/auth/*) và suite không bao giờ gọi `auth.<host>`; account chỉ push kết quả verify về auth qua handoff",
+      "khi browser đi luồng OIDC (identity-oidc-e2e), còn suite này chạy thuần API account và không truyền `handle` nào.",
+      "Không khai home/backoffice/pact/push: suite không chạm origin nào của chúng."
+    ],
+    "implicitDependencies": [
+      "platform-deploy",
+      "account-deploy",
+      "transactional-mail-deploy"
+    ],
     "tags": [
       "type:tooling",
       "scope:account",
@@ -16,6 +35,19 @@
       "system-test": {
         "executor": "nx:run-commands",
         "cache": false,
+        "dependsOn": [
+          {
+            "projects": [
+              "platform-deploy",
+              "account-deploy",
+              "transactional-mail-deploy"
+            ],
+            "target": "local-up"
+          }
+        ],
+        "configurations": {
+          "local": {}
+        },
         "options": {
           "cwd": "system-tests/e2e/identity-login-e2e",
           "command": "npx playwright test"
@@ -27,7 +59,13 @@
           "repo, nhưng stack local phía sau là external state sống ngoài inputs của Nx — một cache",
           "hit sẽ che việc stack đã đổi trạng thái (container recreate, router Traefik chưa đăng ký",
           "lại) và trả kết quả xanh cho một hệ thống KHÔNG còn chạy như lúc cache được ghi. Suite",
-          "verify cả hệ thống đang chạy thật nên mỗi lần chạy phải chạm stack thật."
+          "verify cả hệ thống đang chạy thật nên mỗi lần chạy phải chạm stack thật.",
+          "`dependsOn` kéo prerequisite deploy: `local-up` của đúng ba deploy project mà suite phụ",
+          "thuộc — Nx schedule chúng TRƯỚC playwright test, dùng lại task đã chạy thay vì deploy lại.",
+          "Chỉ `local-up`, KHÔNG `local-smoke`: smoke dependsOn đuôi spine + các lá wave-2 nên sẽ ép",
+          "deploy cả 9 unit cho một suite chỉ cần 3. `configurations.local` cùng tên configuration mà",
+          "target `local-up` khai — `-c local` trên lệnh Nx lan configuration vào task prerequisite",
+          "(task id `...:local-up:local`)."
         ]
       }
     }

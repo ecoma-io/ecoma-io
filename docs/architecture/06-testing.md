@@ -91,8 +91,16 @@ Ba tên dưới đây là **canonical contract** — thêm suite mới phải g�
 | `test-integration` | **Toàn bộ** app-owned suites dưới `apps/<app>/tests/` — integration, contract, database và mọi suite app-owned khác |
 | `system-test`      | Execution target do **từng** system-test Nx project thực thi tự định nghĩa                                          |
 
-Thực thi: `nx run-many -t system-test` chạy mọi system-test project; `nx affected -t system-test` chỉ chọn đúng các suite bị
-ảnh hưởng khi project graph phản ánh đúng dependency thật của chúng.
+Thực thi: `nx run-many -t system-test` chạy mọi system-test project; `nx affected -t system-test -c local` chỉ chọn đúng các
+suite bị ảnh hưởng khi project graph phản ánh đúng dependency thật của chúng. Mỗi suite system-test khai báo dependency ở cả
+hai tầng graph — hai cơ chế bổ sung cho nhau, không thay thế nhau:
+
+- **Selection (project graph):** `implicitDependencies` trỏ tới các deploy unit mà luồng của suite chạm thật — thay đổi ảnh
+  hưởng deploy unit nào thì chọn đúng những suite đi qua deploy unit đó.
+- **Prerequisite (task graph):** target `system-test` khai `dependsOn` tới target `local-up` của đúng các deploy unit đó, kèm
+  `configurations.local`; cờ `-c local` truyền xuống mọi task prerequisite (task id dạng `platform-deploy:local-up:local`), nên
+  một invocation suite tự dựng đủ stack trước khi chạy — suite không chứa script deploy riêng.
+- **Tuần tự:** các suite dùng chung một local stack, nên thực thi với `--parallel=1`.
 
 Tên target ngoài ba tên trên không phải tầng phân loại. Cụ thể: `@nx/playwright/plugin` sinh target `e2e` trên project có
 `playwright.config.ts` — đó chỉ là **tên target do plugin suy ra**; một suite Playwright chạy UI của một app đơn lẻ vẫn là
