@@ -62,12 +62,6 @@ async function obtainTokens(page: import('@playwright/test').Page): Promise<Toke
     `&response_type=code&scope=${encodeURIComponent('openid offline_access')}` +
     `&state=st-rot&code_challenge=${makePkceChallenge(verifier)}&code_challenge_method=S256`;
 
-  let callbackUrl: URL | undefined;
-  await page.route('**/api/auth/callback*', async (route) => {
-    callbackUrl = new URL(route.request().url());
-    await route.abort('aborted');
-  });
-
   await page.goto(authorizeUrl, { waitUntil: 'commit' });
   await page.waitForURL(`${account}/login**`, { timeout: 30_000 });
   // Browser đã đứng ở trang login account mang handle — hop `/authorize/confirm`
@@ -98,8 +92,14 @@ async function obtainTokens(page: import('@playwright/test').Page): Promise<Toke
   await continueButton.waitFor({ state: 'visible', timeout: 30_000 });
   await continueButton.click();
 
-  await expect.poll(() => callbackUrl !== undefined, { timeout: 30_000 }).toBe(true);
-  const code = callbackUrl?.searchParams.get('code');
+  // KHÔNG dùng `page.route` để chặn callback: interception không đảm bảo fire
+  // qua redirect chain thật của provider (đã đỏ thật — request lọt tới
+  // backoffice, poll chết). `waitForURL` + `page.url()` bắt đúng URL cuối;
+  // code chưa bị tiêu thụ vì backoffice 401 (`no_flow_cookie`) trước khi đổi
+  // code, và test là bên duy nhất POST /token.
+  await page.waitForURL(`${localRedirectUri()}**`, { timeout: 30_000 });
+  const callbackUrl = new URL(page.url());
+  const code = callbackUrl.searchParams.get('code');
   expect(typeof code).toBe('string');
 
   const tokenResponse = await stackPostForm(`${origin}/token`, {
