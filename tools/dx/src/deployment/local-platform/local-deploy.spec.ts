@@ -754,13 +754,11 @@ describe('runNxOrchestratedDeploy — Nx Task Graph path', () => {
     expect(plan.args[scriptIndex + 1]).toBe('run-many');
     expect(plan.args).toContain('-c');
     expect(plan.args[plan.args.indexOf('-c') + 1]).toBe('local');
-    // Task sequence dẫn xuất từ khai báo Nx — 11 task sau wave 2 (#264):
-    // 8 bước legacy (gộp read-outputs+update-env thành 1 task local-env) +
-    // 4 unit wave-2, các unit đó được Kahn xen ngay khi dependency của chính
-    // nó xong; smoke vẫn là node lá CUỐI.
+    // Task sequence dẫn xuất từ khai báo Nx — spine thuần `local-up` (10 task:
+    // 9 stack + smoke CUỐI). Ghi `.env` sống bên TRONG task platform local-up —
+    // không còn task trung gian nào giữa platform và các unit.
     expect(plan.taskSequence).toEqual([
       'platform-deploy:local-up',
-      'platform-deploy:local-env',
       'home-deploy:local-up',
       'pact-broker-api-deploy:local-up',
       'push-notification-deploy:local-up',

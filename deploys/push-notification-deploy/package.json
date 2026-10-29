@@ -53,12 +53,6 @@
               "@ecoma-io/web-push-notification-job"
             ],
             "target": "build"
-          },
-          {
-            "projects": [
-              "platform-deploy"
-            ],
-            "target": "local-env"
           }
         ]
       }

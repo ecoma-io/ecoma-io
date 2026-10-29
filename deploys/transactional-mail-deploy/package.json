@@ -53,12 +53,6 @@
               "@ecoma-io/transactional-mailer-job"
             ],
             "target": "build"
-          },
-          {
-            "projects": [
-              "platform-deploy"
-            ],
-            "target": "local-env"
           }
         ]
       }

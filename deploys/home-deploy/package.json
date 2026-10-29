@@ -41,12 +41,6 @@
               "platform-deploy"
             ],
             "target": "local-up"
-          },
-          {
-            "projects": [
-              "platform-deploy"
-            ],
-            "target": "local-env"
           }
         ]
       }

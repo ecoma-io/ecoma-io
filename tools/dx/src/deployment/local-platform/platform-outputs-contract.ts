@@ -61,7 +61,7 @@ export const POSTGRES_PASSWORD_ENV_KEY = 'POSTGRES_PASSWORD';
 /**
  * Environment keys mà orchestration local flow sở hữu trong `.env`.
  *
- * Bước orchestration sau platform deploy chỉ được ghi/đè đúng các key này;
+ * Bước platform up (sau khi `pulumi up` xanh) chỉ được ghi/đè đúng các key này;
  * mọi key khác trong file `.env` hiện có phải giữ nguyên. `.env` là artifact
  * tiện dụng — nguồn sự thật cho giá trị triển khai là Pulumi outputs.
  */

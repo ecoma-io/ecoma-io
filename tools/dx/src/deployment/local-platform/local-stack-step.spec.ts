@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -80,10 +80,8 @@ function happyExec(): void {
 }
 
 describe('validateStepTarget — combinatorial guard', () => {
-  it('env and smoke are platform-only', () => {
-    expect(() => validateStepTarget('home-deploy', 'env')).toThrowError(LocalStackStepUsageError);
+  it('smoke is platform-only', () => {
     expect(() => validateStepTarget('auth-deploy', 'smoke')).toThrowError(LocalStackStepUsageError);
-    expect(() => validateStepTarget('platform-deploy', 'env')).not.toThrow();
     expect(() => validateStepTarget('platform-deploy', 'smoke')).not.toThrow();
     for (const project of [
       'platform-deploy',
@@ -269,7 +267,12 @@ describe('runLocalStackStep up — platform path', () => {
       }
       return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
     });
-    pulumiRunMock.mockReturnValue(undefined);
+    pulumiRunMock.mockImplementation((_dir, _project, args) => {
+      if (args[0] === 'stack' && args[1] === 'output') {
+        return `${JSON.stringify({ traefikHostPort: 40010 })}\n`;
+      }
+      return undefined;
+    });
 
     const exit = await runLocalStackStep('platform-deploy', 'up', { worktreeRoot: root });
     expect(exit).toBe(0);
@@ -279,14 +282,13 @@ describe('runLocalStackStep up — platform path', () => {
     // Platform up KHÔNG mang platformStackRef (chính nó là nguồn).
     expect(upCalls[0][2].join(' ')).not.toContain('platformStackRef=organization');
   });
-});
 
-describe('runLocalStackStep env', () => {
-  it('reads outputs and writes .env with ROOT_HOST, ROOT_DOMAIN + POSTGRES_PASSWORD from canonical config', async () => {
+  it('writes .env with the three owned keys right after a green up (outputs + canonical password)', async () => {
     const root = tempWorktree();
     process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
-    mkdirSync(join(root, '.pulumi-local-state'), { recursive: true });
     execMock.mockImplementation((_command, args) => {
+      // resolvePostgresPassword đọc lại config (canonical) — khác đường sinh
+      // mới: đây là password đã có trong stack config.
       if (args[0] === 'config' && args[1] === 'get') {
         return { status: 0, stdout: 'canonical-pw\n', stderr: '' } satisfies ExecResult;
       }
@@ -299,26 +301,97 @@ describe('runLocalStackStep env', () => {
       return undefined;
     });
 
-    const exit = await runLocalStackStep('platform-deploy', 'env', { worktreeRoot: root });
+    const exit = await runLocalStackStep('platform-deploy', 'up', { worktreeRoot: root });
     expect(exit).toBe(0);
     const content = readFileSync(join(root, '.env'), 'utf8');
     expect(content).toContain('ROOT_HOST=fbi.com:40020');
-    // ROOT_DOMAIN là alias E2E-facing — đường Nx (step env) ghi cùng bộ key
-    // với đường legacy trong `local-deploy.ts`.
+    // ROOT_DOMAIN là alias E2E-facing — step up của platform ghi đủ cùng bộ key
+    // sở hữu với đường legacy trong `local-deploy.ts` (contract #366).
     expect(content).toContain('ROOT_DOMAIN=fbi.com:40020');
     expect(content).toContain('POSTGRES_PASSWORD=canonical-pw');
-    // env là read-only đối với state: KHÔNG up, KHÔNG ensureStack.
-    expect(pulumiRunMock.mock.calls.filter(([, , args]) => args[0] === 'up')).toHaveLength(0);
-    expect(vi.mocked(ensureStack)).not.toHaveBeenCalled();
+    // Ghi `.env` xảy ra SAU khi up xanh — thứ tự trong mock history.
+    const upIndex = pulumiRunMock.mock.calls.findIndex(([, , args]) => args[0] === 'up');
+    expect(upIndex).toBeGreaterThanOrEqual(0);
+    expect(existsSync(join(root, '.env'))).toBe(true);
   });
 
-  it('worktree never deployed (no state dir) → exit 1, nothing read', async () => {
+  it('upsert preserves unrelated .env lines and replaces only the owned keys (idempotent)', async () => {
+    const root = tempWorktree();
+    process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
+    writeFileSync(
+      join(root, '.env'),
+      'USER_VAR=keep\nROOT_HOST=fbi.com:1\nPOSTGRES_PASSWORD=pw-old\n',
+      'utf8',
+    );
+    execMock.mockImplementation((_command, args) => {
+      if (args[0] === 'config' && args[1] === 'get') {
+        return { status: 0, stdout: 'canonical-pw\n', stderr: '' } satisfies ExecResult;
+      }
+      return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+    });
+    pulumiRunMock.mockImplementation((_dir, _project, args) => {
+      if (args[0] === 'stack' && args[1] === 'output') {
+        return `${JSON.stringify({ traefikHostPort: 40021 })}\n`;
+      }
+      return undefined;
+    });
+
+    const exit = await runLocalStackStep('platform-deploy', 'up', { worktreeRoot: root });
+    expect(exit).toBe(0);
+    const content = readFileSync(join(root, '.env'), 'utf8');
+    expect(content).toContain('USER_VAR=keep');
+    expect(content).toContain('ROOT_HOST=fbi.com:40021');
+    expect(content).not.toContain('ROOT_HOST=fbi.com:1');
+    expect(content).toContain('POSTGRES_PASSWORD=canonical-pw');
+    expect(content).not.toContain('pw-old');
+    // Chạy lần nữa với cùng dữ liệu → file ổn định (idempotent upsert).
+    const before = content;
+    const exitAgain = await runLocalStackStep('platform-deploy', 'up', { worktreeRoot: root });
+    expect(exitAgain).toBe(0);
+    expect(readFileSync(join(root, '.env'), 'utf8')).toBe(before);
+  });
+
+  it('.env write failure (outputs unreadable) → exit 1 even though pulumi up ran', async () => {
+    const root = tempWorktree();
+    process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
+    execMock.mockImplementation((_command, args) => {
+      if (args[0] === 'config' && args[1] === 'get') {
+        return { status: 0, stdout: 'canonical-pw\n', stderr: '' } satisfies ExecResult;
+      }
+      return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+    });
+    pulumiRunMock.mockImplementation((_dir, _project, args) => {
+      if (args[0] === 'stack' && args[1] === 'output') {
+        // Port lạ (không validate được) — đọc outputs phải fail-closed.
+        return `${JSON.stringify({ traefikHostPort: 0 })}\n`;
+      }
+      return undefined;
+    });
+
+    const exit = await runLocalStackStep('platform-deploy', 'up', { worktreeRoot: root });
+    expect(exit).toBe(1);
+    expect(existsSync(join(root, '.env'))).toBe(false);
+  });
+});
+
+describe('step "env" is no longer representable', () => {
+  it('LOCAL_STACK_STEPS no longer contains env (compile-time surface pinned here)', async () => {
+    const mod = await import('./local-stack-step.js');
+    expect(mod.LOCAL_STACK_STEPS).toEqual(['up', 'smoke']);
+  });
+
+  it('running step env (e.g. a stale target declaration) exits 1 before touching Pulumi', async () => {
     const root = tempWorktree();
     process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
     happyExec();
-    const exit = await runLocalStackStep('platform-deploy', 'env', { worktreeRoot: root });
+    // Cast: khai báo target còn sót `--step env` phải chết ở validate — test
+    // giữ contract đó bằng cách gọi xuyên qua runLocalStackStep với step lạ.
+    const exit = await runLocalStackStep('platform-deploy', 'env' as never, {
+      worktreeRoot: root,
+    });
     expect(exit).toBe(1);
     expect(pulumiRunMock).not.toHaveBeenCalled();
+    expect(vi.mocked(ensureStack)).not.toHaveBeenCalled();
     expect(existsSync(join(root, '.env'))).toBe(false);
   });
 });
@@ -874,10 +947,10 @@ describe('verifyLaneHealth — wave-2 container health gate', () => {
 });
 
 describe('step type surface', () => {
-  it('exactly three steps exist (up, env, smoke) — adding one requires touching this spec', async () => {
+  it('exactly two steps exist (up, smoke) — adding one requires touching this spec', async () => {
     const mod = await import('./local-stack-step.js');
-    expect(mod.LOCAL_STACK_STEPS).toEqual(['up', 'env', 'smoke']);
+    expect(mod.LOCAL_STACK_STEPS).toEqual(['up', 'smoke']);
     const step: LocalStackStep = 'up';
-    expect(['up', 'env', 'smoke']).toContain(step);
+    expect(['up', 'smoke']).toContain(step);
   });
 });
