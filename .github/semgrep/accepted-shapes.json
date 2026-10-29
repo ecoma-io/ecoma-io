@@ -84,43 +84,57 @@
   },
   {
     "rule": "security-sensitive-value-in-http-response",
-
     "path": "tools/dx/src/local-runtime/local-lock.ts",
-    "start": 52,
-    "end": 52,
-    "reason": "parseLockContent cua file lock tra ve {pid, token} - token la lock acquisition token (randomBytes hex), bat ky process cung user co the doc file lock truc tiep -> khong la secret-lookup heuristics can bao ve. Day la lock file lock o tmpdir, KHONG stan HTTP response; rule taint match 'token' naming heuristic FP.",
+    "start": 82,
+    "end": 87,
+    "reason": "parseLockContent cua file lock tra ve {pid, token, startedAt, cmdline} - token la lock acquisition token (randomBytes hex), bat ky process cung user co the doc file lock truc tiep -> khong la secret-lookup heuristics can bao ve. Day la lock file lock trong worktree, KHONG phai HTTP response; rule taint match 'token' naming heuristic FP. Line pin re-anchored khi doi sang lock lane per-worktree (#363) - lock content them startedAt/cmdline, nghia token khong doi.",
     "lines": {
-      "52": "^  return \\{ pid, token \\};$"
+      "82": "^  return \\{$",
+      "83": "^    pid,$",
+      "84": "^    token,$",
+      "85": "^    startedAt,$",
+      "86": "^    cmdline: cmdline as string\\[\\],$",
+      "87": "^  \\};$"
     }
   },
   {
     "rule": "security-sensitive-value-in-http-response",
     "path": "tools/dx/src/deployment/local-platform/local-deploy.ts",
-    "start": 194,
-    "end": 194,
-    "reason": "Helper noi bo cua CLI tooling (tools/dx) tra mat khau PostgreSQL cho orchestrator - KHONG phai HTTP response: tools/ khong co HTTP handler, gia tri chi dung noi bo de ghi stack config/.env va truyen vao container qua pulumi.secret (redact). Khong ro ra browser/bundle/URL/public output.",
+    "start": 198,
+    "end": 198,
+    "reason": "Helper noi bo cua CLI tooling (tools/dx) tra mat khau PostgreSQL cho orchestrator - KHONG phai HTTP response: tools/ khong co HTTP handler, gia tri chi dung noi bo de ghi stack config/.env va truyen vao container qua pulumi.secret (redact). Khong ro ra browser/bundle/URL/public output. Line pin re-anchored +4 khi doi sang lock lane per-worktree (#363) - noi dung dong khong doi.",
     "lines": {
-      "194": "^    return \\{ state: 'found', password \\};$"
+      "198": "^    return \\{ state: 'found', password \\};$"
     }
   },
   {
     "rule": "security-sensitive-value-in-http-response",
     "path": "tools/dx/src/deployment/local-platform/local-deploy.ts",
-    "start": 641,
-    "end": 641,
-    "reason": "Helper noi bo cua CLI tooling (tools/dx) tra mat khau PostgreSQL cho orchestrator - KHONG phai HTTP response: tools/ khong co HTTP handler, gia tri chi dung noi bo de ghi stack config/.env va truyen vao container qua pulumi.secret (redact). Khong ro ra browser/bundle/URL/public output. Line pin re-anchored +1 khi step up cua platform fold read-outputs/update-env vao local-up - noi dung dong khong doi.",
+    "start": 679,
+    "end": 679,
+    "reason": "Helper noi bo cua CLI tooling (tools/dx) tra mat khau PostgreSQL cho orchestrator - KHONG phai HTTP response: tools/ khong co HTTP handler, gia tri chi dung noi bo de ghi stack config/.env va truyen vao container qua pulumi.secret (redact). Khong ro ra browser/bundle/URL/public output. Line pin re-anchored +38 khi doi sang lock lane per-worktree (#363) - noi dung dong khong doi.",
     "lines": {
-      "641": "^    return \\{ ok: true, password: lookup\\.password, generated: false \\};$"
+      "679": "^    return \\{ ok: true, password: lookup\\.password, generated: false \\};$"
     }
   },
   {
     "rule": "security-sensitive-value-in-http-response",
     "path": "tools/dx/src/deployment/local-platform/local-deploy.ts",
-    "start": 714,
-    "end": 714,
-    "reason": "Helper noi bo cua CLI tooling (tools/dx) tra mat khau PostgreSQL cho orchestrator - KHONG phai HTTP response: tools/ khong co HTTP handler, gia tri chi dung noi bo de ghi stack config/.env va truyen vao container qua pulumi.secret (redact). Khong ro ra browser/bundle/URL/public output. Line pin re-anchored +1 cung dot thay doi - noi dung dong khong doi.",
+    "start": 752,
+    "end": 752,
+    "reason": "Helper noi bo cua CLI tooling (tools/dx) tra mat khau PostgreSQL cho orchestrator - KHONG phai HTTP response: tools/ khong co HTTP handler, gia tri chi dung noi bo de ghi stack config/.env va truyen vao container qua pulumi.secret (redact). Khong ro ra browser/bundle/URL/public output. Line pin re-anchored +38 cung dot thay doi lock lane (#363) - noi dung dong khong doi.",
     "lines": {
-      "714": "^  return \\{ ok: true, password, generated: true \\};$"
+      "752": "^  return \\{ ok: true, password, generated: true \\};$"
+    }
+  },
+  {
+    "rule": "security-sensitive-value-in-http-response",
+    "path": "tools/dx/src/local-runtime/local-lock.ts",
+    "start": 252,
+    "end": 252,
+    "reason": "tryAcquire cua lock lane tra {release, token} cho orchestrator - token la lock acquisition token (randomBytes hex), khong roi khoi process qua HTTP. KHONG phai HTTP response; rule taint match 'token' naming heuristic FP. Entry moi khi doi sang lock lane per-worktree (#363): signature acquire doi tu release-only sang {release, token} de truyen lease xuong task con qua ECOMA_LANE_LEASE.",
+    "lines": {
+      "252": "^  return \\{ release, token \\};$"
     }
   }
 ]
