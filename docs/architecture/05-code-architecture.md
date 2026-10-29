@@ -269,12 +269,12 @@ duy nhất mà tag đảm bảo. Ranh giới protocol/UI giữa hai app là quy�
 contract test — không phải bằng tag mới.
 
 ⚠️ **Nx scope ≠ catalog bounded context.** Scope là trục sở hữu **code**; catalog bounded context là trục sở hữu
-**nghiệp vụ và dữ liệu**, canonical ở [`README.md`](./README.md) §3. Hai trục phần lớn trùng tên
+**nghiệp vụ và dữ liệu**, canonical ở [`domains/README.md`](../domains/README.md) §3. Hai trục phần lớn trùng tên
 (`account`, `auth`, `backoffice`, `llm`, `payment`) nhưng không đồng nhất: `messaging` (transactional-mail) và `notifications`
 (push-notification) là bounded context nghiệp vụ mang scope chia sẻ theo chức năng; `local`, `public`, `shared`,
 `platform` là scope hạ tầng/chia sẻ, không phải bounded context; `pact-broker` là bounded context mang scope `pact`; và
 `backoffice` là scope của một composition/UI + BFF — bounded context ngày nay theo A21, nhưng target chỉ còn composition
-sau khi `staff-access` tiếp quản (roadmap Phase 1; catalog → [`README.md`](./README.md) §3/§6).
+sau khi `staff-access` tiếp quản (roadmap Phase 1; catalog → [`domains/README.md`](../domains/README.md) §3/§6).
 Danh sách scope trong mục này mô tả cấu trúc code — **không** phải một bản catalog thứ hai của bounded context.
 
 **Scope của deployment project là ranh giới provisioning, không phải bounded context.** Một `deploys/<unit>-deploy` mang
