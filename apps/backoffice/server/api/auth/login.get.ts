@@ -35,11 +35,7 @@ import {
   type H3Event,
 } from 'h3';
 
-import {
-  backofficeHyperdrive,
-  backofficeNodeDatabaseUrl,
-  withBackofficePool,
-} from '@ecoma-io/backoffice-infrastructure';
+import { withBackofficePool } from '@ecoma-io/backoffice-infrastructure';
 
 import {
   codeChallenge,
@@ -50,7 +46,7 @@ import {
   loginFlowCookie,
 } from '@ecoma-io/backoffice-application';
 import { backofficeAuthConfig } from '../../auth/config';
-import { readWorkerEnv } from '../../db';
+import { poolBinding } from '../../db';
 
 /** Scope xin từ `auth` — hằng số ghim ADR-0012 §6, không nhận từ query. */
 const LOGIN_SCOPE = 'openid offline_access';
@@ -77,16 +73,7 @@ export default defineEventHandler(async (event: H3Event) => {
     throw createError({ statusCode: 503, statusMessage: 'authorization unavailable' });
   }
 
-  const binding =
-    backofficeHyperdrive(readWorkerEnv(event)) ??
-    ((): { connectionString: string } | null => {
-      try {
-        const url = backofficeNodeDatabaseUrl(useRuntimeConfig(event));
-        return url === null ? null : { connectionString: url };
-      } catch {
-        return null;
-      }
-    })();
+  const binding = poolBinding(event);
   if (binding === null) {
     throw createError({ statusCode: 503, statusMessage: 'authorization unavailable' });
   }

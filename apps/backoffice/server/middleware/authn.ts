@@ -72,8 +72,6 @@ import { createError, defineEventHandler, getCookie, type H3Event } from 'h3';
 import type { Pool } from 'pg';
 
 import {
-  backofficeHyperdrive,
-  backofficeNodeDatabaseUrl,
   hashSessionIdentifier,
   isSessionLive,
   loadSessionByHash,
@@ -85,7 +83,7 @@ import {
 } from '@ecoma-io/backoffice-infrastructure';
 
 import { backofficeAuthConfig } from '../auth/config';
-import { readWorkerEnv } from '../db';
+import { poolBinding } from '../db';
 import { PRINCIPAL_CONTEXT_KEY, type VerifiedPrincipal } from '../principal';
 
 /**
@@ -108,29 +106,12 @@ const API_PREFIX = '/api/';
 const AUTH_PATHS = new Set(['/api/auth/login', '/api/auth/callback', '/api/auth/logout']);
 
 /**
- * Nguồn connection string PostgreSQL của request — binding Hyperdrive trước,
- * runtimeConfig private Node local sau (`backofficeNodeDatabaseUrl` cùng hàm
- * mà `ready.get.ts` dùng); `null` khi không có nguồn nào.
- *
- * ⚠️ Dùng lại `ready.get.ts` về cùng **một** thứ tự nguồn: middleware và
- * readiness phải cùng quan điểm "app này nối DB bằng gì", nếu không sẽ có
- * trạng thái ready-but-broken hay broken-but-ready.
+ * Nguồn connection string PostgreSQL của request — dùng hàm chung `poolBinding`
+ * của `server/db.ts` (Hyperdrive trước, runtime Node local sau). Trước đây
+ * logic này nhân bản tại đây và ở callback với độ phủ đầy đủ, còn khung
+ * `withReadEnforcement` lại thiếu nhánh Node — nhân bản lệch là read route
+ * chết 503 trên local (bug thật, đã gom về một hàm).
  */
-function poolBinding(event: H3Event): { connectionString: string } | null {
-  const hyperdrive = backofficeHyperdrive(readWorkerEnv(event));
-  if (hyperdrive !== null) {
-    return { connectionString: hyperdrive.connectionString };
-  }
-  try {
-    const url = backofficeNodeDatabaseUrl(useRuntimeConfig(event));
-    if (url !== null) {
-      return { connectionString: url };
-    }
-  } catch {
-    // Không có runtimeConfig (test dựng app trực tiếp) ⇒ rơi về `null`.
-  }
-  return null;
-}
 
 export default defineEventHandler(async (event: H3Event): Promise<void> => {
   // Tách query trước khi so: `event.path` gồm cả query string (h3 1.15), còn

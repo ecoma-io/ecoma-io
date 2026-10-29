@@ -33,9 +33,10 @@ const fetchCapture = vi.hoisted(() => ({
   tokenBody: { access_token: 'at-test-value' } as Record<string, unknown>,
 }));
 
-vi.mock('../../db', () => ({
-  readWorkerEnv: () => undefined,
-}));
+// ⚠️ KHÔNG mock `../../db` nữa: `poolBinding` dùng chung giờ là code thật của
+// app — hai nhánh của nó gọi vào `backofficeHyperdrive`/`backofficeNodeDatabaseUrl`
+// của barrel mock ở dưới (`hyperdrive → null`, `nodeUrl` do test điều khiển),
+// nên đường nguồn DB của route được test qua cấu hình thật của nó.
 
 vi.mock('@ecoma-io/backoffice-infrastructure', async (importOriginal) => {
   // Giữ nguyên các hàm thuần (cookie, deadline...) — mock chỉ thay các biên

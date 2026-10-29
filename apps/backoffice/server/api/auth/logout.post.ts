@@ -27,11 +27,8 @@
  */
 
 import { createError, defineEventHandler, getCookie, getHeader, setResponseHeader } from 'h3';
-import type { H3Event } from 'h3';
 
 import {
-  backofficeHyperdrive,
-  backofficeNodeDatabaseUrl,
   clearCsrfCookie,
   clearSessionCookie,
   CSRF_COOKIE_NAME,
@@ -45,24 +42,8 @@ import {
 } from '@ecoma-io/backoffice-infrastructure';
 
 import { backofficeAuthConfig } from '../../auth/config';
-import { readWorkerEnv } from '../../db';
+import { poolBinding } from '../../db';
 import { writeLog } from '../../log';
-
-function poolBinding(event: H3Event): { connectionString: string } | null {
-  const hyperdrive = backofficeHyperdrive(readWorkerEnv(event));
-  if (hyperdrive !== null) {
-    return { connectionString: hyperdrive.connectionString };
-  }
-  try {
-    const url = backofficeNodeDatabaseUrl(useRuntimeConfig(event));
-    if (url !== null) {
-      return { connectionString: url };
-    }
-  } catch {
-    // Không có runtimeConfig ⇒ rơi về `null`.
-  }
-  return null;
-}
 
 /**
  * Gọi `POST {issuer}/revocation` — RFC 7009, public client `client_id` trong
