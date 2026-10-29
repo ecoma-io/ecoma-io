@@ -6,7 +6,7 @@
 
 - Docker daemon đang chạy (rootful lẫn rootless đều được; rootless được tự động nhận qua `DOCKER_HOST` — Traefik cần bind-mount đúng socket, chương trình tự suy theo thứ tự `DOCKER_SOCKET_PATH` > `DOCKER_HOST` > `/var/run/docker.sock`, và **fail sớm** nếu không tìm thấy socket nào tồn tại thật thay vì mount nhầm path).
 - `pulumi` CLI trên `PATH` — **bản đã xác minh cho luồng này là `3.270.0`** (CLI pin trong repo, `node_modules/.bin/pulumi`; stack reference format `organization/<project>/<stack>` chỉ được kiểm chứng từ bản này — xem `04-platform-facts.md` §2.16 PU12). CLI cũ hơn trên `PATH` có thể fail với lỗi rối khó chẩn đoán.
-- **Passphrase Pulumi** — **không cần developer tự đặt nữa.** Pulumi CLI 3.270 trên DIY backend `file://` bắt buộc passphrase cho mọi thao tác nạp stack config; luồng này giải bằng cách **công cụ tự sinh** một passphrase ngẫu nhiên (32 byte `randomBytes`, `base64url`) cho từng worktree, lưu ở `<worktree>/.pulumi-local-passphrase` (quyền `0600`, **ngoài Git** — `.gitignore` chặn tường minh). Developer không cần `export PULUMI_CONFIG_PASSPHRASE` cho stack local mới. Nếu môi trường đã có passphrase (`PULUMI_CONFIG_PASSPHRASE`/`PULUMI_CONFIG_PASSPHRASE_FILE`), giá trị đó được ưu tiên và ghi vào file để stack tự chứa từ lần chạy sau; stack cũ tạo bằng passphrase của developer vẫn giải được khi cung cấp lại đúng passphrase đó. Worktree đã deploy bằng passphrase khác thì cung cấp lại qua biến môi trường (không có đường reset không mất dữ liệu). Giữ file `.pulumi-local-passphrase` ổn định cho từng worktree — mất file mà state còn thì passphrase không khôi phục được.
+- **Passphrase Pulumi** — **không cần developer tự đặt.** Pulumi CLI 3.270 trên DIY backend `file://` bắt buộc passphrase cho mọi thao tác nạp stack config; luồng này giải bằng cách **công cụ tự sinh** một passphrase ngẫu nhiên (32 byte `randomBytes`, `base64url`) cho từng worktree, lưu ở `<worktree>/.pulumi-local-passphrase` (quyền `0600`, **ngoài Git** — `.gitignore` chặn tường minh). Developer không cần `export PULUMI_CONFIG_PASSPHRASE` cho stack local mới. Nếu môi trường đã có passphrase (`PULUMI_CONFIG_PASSPHRASE`/`PULUMI_CONFIG_PASSPHRASE_FILE`), giá trị đó được ưu tiên và ghi vào file để stack tự chứa từ lần chạy sau; stack cũ tạo bằng passphrase của developer vẫn giải được khi cung cấp lại đúng passphrase đó. Worktree đã deploy bằng passphrase khác thì cung cấp lại qua biến môi trường (không có đường reset không mất dữ liệu). Giữ file `.pulumi-local-passphrase` ổn định cho từng worktree — mất file mà state còn thì passphrase không khôi phục được.
 
 - Certificate `fbi.com` ở `deploys/platform-deploy/local-certs/` (đường dẫn đầy đủ từ root repo; đã có trong repo). ⚠️ **Đường an toàn là trust scoped**: smoke đã làm đúng kiểu đó — trust certificate **cho đúng request** (tham số `ca` scoped), không đụng trust store hệ điều hành. Chỉ khi cần browser chấp nhận TLS thì mới trust thủ công, và phải hiểu hệ quả: cert này mang `CA:TRUE` (`keyCertSign`) — cài vào trust store là biến nó thành CA được toàn máy tin, tức **mọi certificate ký bằng khoá này cho bất kỳ hostname nào** cũng được chấp nhận. Khoá nằm vĩnh viễn trong Git history (không bị `.gitignore` loại) nên ai đọc được repo đều giữ được khoá — với trust store đầy máy, người đó có thể cấp cert giả cho domain bất kỳ trên máy của developer. Nếu bắt buộc trust ở mức máy, làm trên máy thử nghiệm rồi **tái sinh cert/key khi repo chuyển sang public**. Không bao giờ tắt TLS verification toàn cục. Khoá này **chỉ dùng cho local**, không tái sử dụng ở staging/production.
 
@@ -14,53 +14,60 @@
 
 Mọi lệnh Pulumi của luồng này chạy với `PULUMI_BACKEND_URL=file://<worktree>/.pulumi-local-state` và `--stack organization/<project>/<stack>` tường minh (`tools/dx/src/deployment/local-platform/pulumi-context.ts`) — không `pulumi login`, nên không backend toàn cục nào bị chọn. `stack init`/`stack select` của `ensureStack` vẫn ghi stack hiện tại vào workspace file `~/.pulumi/workspaces/<project>-<sha1(Pulumi.yaml)>-workspace.json`, nhưng file đó key theo đường dẫn project (PU13) nên hai worktree không đụng file của nhau; các lệnh đọc/ghi state khác đều truyền `--stack` tường minh nên không phụ thuộc giá trị được ghi đó. `~/.pulumi` còn dùng chung cho plugin cache. Chi tiết platform đã đo: `04-platform-facts.md` §2.16 PU12–PU13.
 
-## Luồng deploy
+## Luồng deploy — Nx điều phối, mỗi deploy project sở hữu lifecycle của mình
+
+Điều phối thuộc Nx Task Graph: mỗi deploy project khai target `local-up`/`local-down` (và `platform-deploy` thêm `local-smoke`) với configuration `local` trong `package.json` của mình, thực thi entry colocated `deploys/<project>/local.ts` (`npx tsx local.ts up|down|smoke`, cwd là thư mục project). Thứ tự toàn cục là dữ liệu khai báo của chính các project — target `dependsOn` — mà Nx đọc để dựng task graph; entry không biết thứ tự của project khác và không gọi lệnh DX nào.
 
 ```bash
-pnpm dx local-deploy            # apply thật: orchestration qua Nx Task Graph, smoke HTTPS + lane health cuối
-pnpm dx local-deploy --preview  # read-only: preview platform + home, không mutate gì
-pnpm dx local-status            # namespace, stack, resource names, trạng thái platform
-pnpm dx local-destroy           # teardown 9 stack theo thứ tự ngược phụ thuộc + XOÁ volume PostgreSQL (in cảnh báo, mất dữ liệu vĩnh viễn)
+pnpm nx run-many -t local-up -c local             # up cả 9 lane project theo đúng thứ tự phụ thuộc
+pnpm nx run platform-deploy:local-smoke -c local  # smoke HTTPS qua Traefik — bước hoàn tất lane
+pnpm nx run-many -t local-down -c local           # down từng project, KHÔNG có thứ tự teardown toàn cục
+pnpm dx local-status                              # namespace, stack, resource names, trạng thái platform
 ```
 
-Luồng `local-deploy` (không `--preview`) không còn đi qua mảng bước hard-code nữa: `local-deploy` sinh một Nx Task Graph từ khai báo `local-up`/`local-smoke` trong `package.json` của từng deploy project (nguồn sự thật của thứ tự là target `dependsOn` của mỗi project, đọc bởi `local-deploy-graph.ts`), rồi spawn `nx run-many -p <projects> -t <targets> -c local`. Lane gồm **9 project** (`LOCAL_LANE_PROJECTS`): platform, home, backoffice, account, auth (+ wave 2 theo issue #264: pact-broker-api, pact-broker-app, transactional-mail, push-notification). Task platform `local-up` tự ghi `.env` của worktree (đúng các key sở hữu `ROOT_HOST`/`ROOT_DOMAIN`/`POSTGRES_PASSWORD`) ngay sau khi `pulumi up` xanh — mọi unit kế tiếp đọc `ROOT_HOST` từ file đó. Nx bail mặc định: một task thất bại dừng toàn chuỗi. Các target đều không cacheable (`cache: false` trong `nx.json` targetDefaults) vì chúng mutate Docker/state; lane chỉ có configuration `local`.
+Lane gồm **9 project**: platform, home, backoffice, account, auth, pact-broker-api, pact-broker-app, transactional-mail, push-notification. Hai project job-deploy (`transactional-mailer-job-deploy`, `web-push-notification-job-deploy`) không có target local — cặp worker mail đã chạy trong MỘT WIC container của `transactional-mail-deploy`, và worker web-push chạy trong WIC của `push-notification-deploy`.
+
+Hình dạng graph `local-up` (nguồn sự thật là `dependsOn` trong `package.json` của từng project, không phải mục này): `platform-deploy:local-up` là node gốc duy nhất của spine (network, Traefik, PostgreSQL) — mọi lane project đọc outputs platform qua StackReference; chuỗi spine `home → backoffice → account → auth`; cặp `pact-broker-api → pact-broker-app`; `transactional-mail` và `push-notification` phụ thuộc `account-deploy` + `platform-deploy`. Build image/app của từng unit là task dependency của `local-up` unit đó. `platform-deploy:local-smoke` phụ thuộc ĐUÔI spine (auth) và CÁC LÁ (pact-app, mail, push) — smoke chỉ có nghĩa khi toàn bộ chuỗi đã xanh.
+
+Mỗi entry `local.ts up` làm bốn việc, tự chứa trong project của mình:
+
+1. Tự lấy khóa lane của worktree (xem mục khóa lane dưới đây).
+2. Chuẩn bị bảng secret của project mình (`pulumi config set`, giá trị qua stdin).
+3. `pulumi up` stack của chính nó.
+4. Health gate container CỦA CHÍNH unit: chờ container của unit này `running` + `Health.Status=healthy` (healthcheck Docker do deploy unit định nghĩa; budget 90s, poll 3s; container biến mất hoặc không `running` là fail ngay).
+
+Task `local-up` của platform tự ghi `.env` của worktree (đúng ba key sở hữu `ROOT_HOST`/`ROOT_DOMAIN`/`POSTGRES_PASSWORD`, giữ nguyên byte các dòng khác) ngay sau khi `pulumi up` xanh — mọi unit kế tiếp đọc `ROOT_HOST` từ file đó và fail rõ ràng kèm hướng dẫn khi file/key chưa có.
+
+### `local-down` — teardown của từng project
+
+`local.ts down` của mỗi project = `pulumi destroy --yes` trên stack của chính nó. Target `local-down` KHÔNG có `dependsOn`: không thứ tự teardown toàn cục — mỗi project tự xoá resource của mình trong namespace của worktree, `pulumi destroy` tự serialize trên stack state, và Docker không còn phụ thuộc vòng sống giữa các resource sau khi down. Idempotent: worktree chưa từng deploy là no-op exit 0; lỗi destroy thật là exit 1.
+
+Volume PostgreSQL sống độc lập với vòng đời stack (`retainOnDelete`) — destroy trực tiếp không xoá volume. Down của platform xoá volume **chỉ với cờ tường minh `--remove-data`** (in cảnh báo, mất dữ liệu vĩnh viễn):
+
+```bash
+pnpm nx run platform-deploy:local-down -c local -- --remove-data   # XOÁ dữ liệu — cân nhắc kỹ
+```
 
 ### Khóa lane per worktree
 
-Hai lane mutation CÙNG worktree (`local-deploy` apply / `local-destroy`) được mutual exclusion bởi một khóa whole-lane per worktree (`tools/dx/src/local-runtime/local-lock.ts`):
+Các mutation CÙNG worktree (up/down của các entry) được mutual exclusion bởi một khóa per worktree (`tools/dx/src/local-runtime/local-lock.ts`):
 
-- File khóa là `<worktreeRoot>/.ecoma-lane.lock` (ngoài Git, `.gitignore`), nội dung JSON `{ pid, token, startedAt, cmdline }` của orchestrator. Hai worktree không bao giờ chặn nhau — namespace Docker và backend `file://` theo worktree đã cô lập toàn bộ tài nguyên chéo worktree.
-- Orchestrator lấy khóa MỘT LẦN quanh `spawn(nx)` — sau khi validate khai báo graph và resolve passphrase (fail-early trước khi giữ tài nguyên). Task con (`local-stack-step`) KHÔNG tự lấy khóa: nó assert lease qua env `ECOMA_LANE_LEASE` (token khóa orchestrator truyền xuống) khớp token đang trong file khóa trước khi mutate; lệch là lane mồ côi (orchestrator bị kill) hoặc gọi ngoài lane → exit 1, không warning.
+- File khóa là `<worktreeRoot>/.ecoma-lane.lock` (ngoài Git, `.gitignore`), nội dung JSON `{ pid, token, startedAt, cmdline }` của holder. MỖI entry tự lấy khóa quanh toàn bộ thao tác mutate của mình — hai lane cùng worktree serialize với nhau qua cùng một file khóa; hai worktree không bao giờ chặn nhau (namespace Docker và backend `file://` theo worktree đã cô lập toàn bộ tài nguyên chéo worktree).
 - Không có ngân sách chờ: lane sau đợi VÔ HẠN cho lane kia buông khóa, in progress line ~30 giây một lần với holder identity (pid/cmdline/startedAt/elapsed). Không hằng số thời gian nào tham gia correctness — khoảng in chỉ là UX.
-- Holder còn sống nhưng treo là trạng thái không máy nào tự đo được: gỡ bằng `pnpm dx local-deploy --steal-lock` hoặc `pnpm dx local-destroy --steal-lock` (opt-in tường minh, in holder identity trước khi chiếm).
+- Holder còn sống nhưng treo là trạng thái không máy nào tự đo được: gỡ bằng `--steal-lock` trên target đang kẹt, ví dụ `pnpm nx run platform-deploy:local-up -c local -- --steal-lock` (opt-in tường minh, in holder identity trước khi chiếm).
 
-Các bất biến cross-stack thể hiện trực tiếp trong graph qua `dependsOn` và cơ chế persist/read-lại stack config (một giá trị chia hai stack, đọc bởi `local-stack-step.ts`):
+Các bất biến cross-stack thể hiện trực tiếp trong graph qua `dependsOn` và cơ chế persist/read-lại stack config (một giá trị chia hai stack; bên ghi là entry up của producer, bên đọc là entry up của consumer):
 
 - account → auth: account tự sinh internal HMAC secret vào stack config của mình (`namespace:internalHmacSecret`) mà auth đọc lại khi up (`namespace:internalSecret`).
 - account → transactional-mail: cùng cơ chế với `namespace:mailInternalAuthSecret` (receiver mail giữ làm credential `MAIL_INTERNAL_AUTH_SECRET_SVC_ACCOUNT`).
 - pact-broker-api → pact-broker-app: machine token plaintext do api persist (`namespace:machineToken`), BFF đọc lại làm `NITRO_PACT_BROKER_API_TOKEN`; api chỉ seed HASH SHA-256 vào DB. pact-broker-app gọi api qua alias nội bộ `ecoma-pact-api:4204` (port contract giữa hai unit).
 - platform → pact-broker-api / push-notification: network + StackReference.
-- `transactional-mailer-job-deploy` CỐ ĐỊNG nằm ngoài lane: cặp worker mail đã chạy trong MỘT WIC container của `transactional-mail-deploy` (issue #241).
 
-Bước hoàn tất lane là `platform-deploy:local-smoke`: smoke HTTPS qua Traefik (home) rồi health gate `verifyLaneHealth` — `docker inspect` bốn container của unit mới (`pact-api-wic`, `pact-app`, `mail-wic`, `push-wic`) phải `running` + `Health.Status=healthy` (probe do từng deploy unit định nghĩa).
+⚠️ **KHÔNG dùng `nx run-many --dry-run` để kiểm tra lane này**: trên Nx 23.3.0 `--dry-run` KHÔNG chặn thực thi lệnh executor (`nx:run-commands` vẫn chạy thật — `pulumi up` thật, Docker thật). Xác minh cấu trúc graph dùng duy nhất `--graph=stdout` (chỉ in JSON, không thực thi): `nx run-many -t local-up -c local --graph=stdout` rồi đọc `graph.dependencies`.
 
-⚠️ **KHÔNG dùng `nx run-many --dry-run` để kiểm tra lane này**: trên Nx 23.3.0 `--dry-run` KHÔNG chạy lệnh executor (`nx:run-commands` vẫn chạy thật — `pulumi up` thật, Docker thật). Xác minh cấu trúc graph dùng duy nhất `--graph=stdout` (chỉ in JSON, không thực thi): `nx run-many -p <projects> -t local-up,local-smoke -c local --graph=stdout` rồi đọc `graph.dependencies`.
-
-⚠️ **Worktree đã deploy bằng code trước PR này (chỉ 3 stack platform/home/backoffice)**: lần `pnpm dx local-destroy` đầu tiên sẽ **exit 1** — destroy của account/auth báo "no stack named" vì hai stack đó chưa từng tồn tại — nhưng teardown vẫn trọn vẹn (platform/home/backoffice đã sạch). Đây là kỳ vọng, không phải hỏng; chạy lần nữa hoặc dùng `local-cleanup` nếu còn rợ.
-
-Lần chạy đầu trên stack mới, password PostgreSQL được sinh ngẫu nhiên (24 byte `randomBytes`, `base64url`) và lưu ở **Pulumi stack config plaintext** (`postgres:password`) của local stack — đây là nguồn sự thật canonical; cùng giá trị được ghi vào `.env` (`POSTGRES_PASSWORD`) để E2E/dev tools dùng. Passphrase chỉ là encryption material của state Pulumi local, không còn đóng vai trò bảo vệ password. `local-deploy` tái dùng mật khẩu đã có trong config cho mọi lần deploy sau; `.env` bị xoá thì được khôi phục từ config mà không xoay password. Nếu volume PostgreSQL đã tồn tại nhưng config mất password, luồng fail với hướng dẫn thay vì sinh password mới (tránh khoá người dùng ra khỏi dữ liệu cũ).
+Lần chạy đầu trên stack mới, password PostgreSQL được sinh ngẫu nhiên (24 byte `randomBytes`, `base64url`) và lưu ở **Pulumi stack config plaintext** (`postgres:password`) của local stack — đây là nguồn sự thật canonical; cùng giá trị được ghi vào `.env` (`POSTGRES_PASSWORD`) để E2E/dev tools dùng. Passphrase chỉ là encryption material của state Pulumi local, không đóng vai trò bảo vệ password. Entry up của platform tái dùng mật khẩu đã có trong config cho mọi lần chạy sau; `.env` bị xoá thì được khôi phục từ config mà không xoay password. Nếu volume PostgreSQL đã tồn tại nhưng config mất password, entry up fail với hướng dẫn thay vì sinh password mới (tránh khoá người dùng ra khỏi dữ liệu cũ).
 
 Hai chi tiết CLI 3.270 đã đo thật, cả hai đều bắt buộc để password được lưu đúng: `pulumi config set` **từ chối** giá trị "trông như secret" (key `postgres:password` + chuỗi ngẫu nhiên) với exit 1 và lời khuyên dùng `--secret`/`--plaintext` — nên luồng luôn truyền `--plaintext`; và giá trị được ghi qua **stdin** (`--raw`, không có argument value) thay vì argv, vì argv của process khác đọc được qua `/proc/<pid>/cmdline` và `ps`.
-
-`--worktree-root <dir>` (cả ba lệnh `local-*`) chọn worktree bị tác động về **state/namespace/`.env`** (namespace Docker, Pulumi stack, `.pulumi-local-state`, `.env`); mặc định là checkout hiện hành. Chương trình Pulumi và smoke vẫn chạy từ checkout đang gõ lệnh — flag không phải "deploy code của worktree kia".
-
-### Preview là read-only, và cần worktree đã apply
-
-`--preview` **không mutate gì**: không tạo `.pulumi-local-state`, không `stack init`, không `pulumi config set`, không sinh/lưu `postgres:password`, không `up`/`destroy`, không ghi `.env`, không đụng Docker. Nó cũng **không truyền `--config`** cho `pulumi preview` — CLI 3.x _lưu_ `--config` vào stack config file kể cả khi preview (`pulumi preview --help`: "Config to use during the preview and save to the stack config file"), nên truyền nó là mutation cấu hình giữa chừng lệnh read-only. Mọi config mà chương trình cần (`namespace:worktreeRoot`, `namespace:platformStackRef`, `postgres:password`) do lần apply trước lưu vào stack config; preview chỉ đọc lại.
-
-**Prerequisite**: worktree phải đã apply ít nhất một lần (`pnpm dx local-deploy`). Preview tự kiểm read-only trước khi chạy lệnh nào — state dir tồn tại, platform stack đã up (outputs thật), home stack tồn tại — và khi thiếu thì báo đúng thứ thiếu kèm cách khắc phục, exit 1, **không** tự khởi tạo gì để "giúp" preview xanh. Lý do có prerequisite: preview của Pulumi _có_ đọc state (nó đối chiếu desired state với state thật), nên một stack chưa tồn tại không có gì để preview; và home đọc platform qua `StackReference` mà chỉ có dữ liệu thật sau apply đầu tiên.
-
-Cả hai project đều được preview (platform rồi home). Nếu preview home fail sau khi platform đã preview xanh, thông báo nói rõ home **không** được preview — không báo chung chung "preview xong".
 
 Dry-run an toàn cho CI là Nx target `provision` (`pnpm nx run platform-deploy:provision`) — chỉ in kế hoạch, không chạy `pulumi up`.
 
@@ -76,7 +83,13 @@ Read-only. Phân biệt năm trạng thái, mỗi trạng thái một dòng:
 
 ## URL và smoke
 
-Port thật nằm trong `.env` (`ROOT_HOST=fbi.com:<port>`) và trong output `traefikHostPort` của platform stack. Kiểm thử nhanh không cần trust certificate:
+Port thật nằm trong `.env` (`ROOT_HOST=fbi.com:<port>`) và trong output `traefikHostPort` của platform stack. Kiểm tra lane đầy đủ qua target smoke (đọc `ROOT_HOST` từ `.env`, chỉ chạy HTTPS):
+
+```bash
+pnpm nx run platform-deploy:local-smoke -c local
+```
+
+Kiểm thử nhanh một hostname cụ thể, không cần trust certificate:
 
 ```bash
 node tools/dx/src/deployment/local-platform/local-smoke.mjs fbi.com:<port>
@@ -86,11 +99,11 @@ Smoke xác nhận đúng hành vi ứng dụng qua Traefik, không chỉ "server
 
 ## Vòng đời dữ liệu
 
-- `local-destroy` destroy cả 9 stack local theo **thứ tự ngược phụ thuộc** của đồ thị up — các unit lá (mail, auth, pact-app...) trước, platform sau cùng — rồi **xoá volume PostgreSQL** của worktree (mặc định vô điều kiện; mất dữ liệu vĩnh viễn, có cảnh báo trước khi xoá). Một stack destroy thất bại không dừng các stack còn lại: cả 9 vẫn được destroy, và bước xoá volume vẫn được thử; `local-destroy` thoát exit 1 khi có bất kỳ lỗi nào, không bao giờ báo thành công khi xoá volume thất bại.
-- Volume được khai `retainOnDelete` nên `pulumi destroy` trực tiếp không xoá volume; bước xoá volume của `local-destroy` là `docker volume rm` tường minh sau teardown, và `local-cleanup` xoá volume chỉ với resource mồ côi đủ điều kiện.
-- ⚠️ Đừng chạy `pulumi stack rm` trên stack local: nó xoá stack config (trong đó có `postgres:password`) trong khi volume còn lại — hai nửa lệch tuổi, Postgres kế tiếp không vào được dữ liệu cũ. Đó cũng là lý do `local-destroy` không dùng `destroy --remove`. Khi phát hiện tình huống này, `local-deploy` **fail với hướng dẫn** (không sinh mật khẩu mới): khôi phục mật khẩu cũ vào stack config, hoặc `pnpm dx local-destroy` (xoá volume, bắt đầu lại từ dữ liệu rỗng) rồi `pnpm dx local-deploy`.
+- Down là việc của từng project (`nx run-many -t local-down -c local` hoặc down từng project một); không có thứ tự teardown toàn cục. Lỗi destroy của một project không cản trở project khác — mỗi `local-down` độc lập, exit 1 chỉ của chính project lỗi.
+- Volume được khai `retainOnDelete` nên `pulumi destroy` trực tiếp không xoá volume; đường xoá volume duy nhất trong luồng lifecycle là `--remove-data` của down platform (mục `local-down` ở trên). `local-cleanup` xoá volume chỉ với resource mồ côi đủ điều kiện.
+- ⚠️ Đừng chạy `pulumi stack rm` trên stack local: nó xoá stack config (trong đó có `postgres:password`) trong khi volume còn lại — hai nửa lệch tuổi, Postgres kế tiếp không vào được dữ liệu old. Đó cũng là lý do down không dùng `destroy --remove`. Khi phát hiện tình huống này, entry up của platform **fail với hướng dẫn** (không sinh mật khẩu mới): khôi phục mật khẩu cũ vào stack config, hoặc chạy `pnpm nx run platform-deploy:local-down -c local -- --remove-data` (xoá volume, bắt đầu lại từ dữ liệu rỗng) rồi chạy lại lane `local-up`.
 - ⚠️ Đừng đổi `postgres:password` trong stack config sau khi volume đã init: `POSTGRES_PASSWORD` chỉ có tác dụng lúc `initdb` trên volume rỗng. Pulumi sẽ thay container (envs nằm trong diff) nhưng Postgres không chạy lại initdb — superuser trong volume vẫn giữ mật khẩu cũ, kết nối bằng giá trị mới nhận `password authentication failed` trong khi healthcheck `pg_isready` vẫn xanh (nó không xác thực mật khẩu). Nguyên tắc: mật khẩu và volume phải cùng tuổi.
-- Healthcheck `pg_isready` không kiểm password; khi nghi ngờ lệch password (vd. đã `stack rm` ngoài luồng), kiểm bằng auth TCP thật hoặc tạo lại volume qua `local-destroy` rồi `local-deploy`.
+- Healthcheck `pg_isready` không kiểm password; khi nghi ngờ lệch password (vd. đã `stack rm` ngoài luồng), kiểm bằng auth TCP thật hoặc tạo lại volume qua down platform `--remove-data` rồi chạy lại lane `local-up`.
 - **Mật khẩu PostgreSQL local lưu plaintext** trong Pulumi stack config (`.pulumi-local-state/`) và trong `.env` của worktree — cả hai đều ngoài Git (`.gitignore` chặn `.pulumi-local-state/`, `Pulumi.*.yaml`, `.env*`). Đây là đánh đổi **có chủ đích cho môi trường local development**, không phải khuôn mẫu cho staging/production: ở đó secret vẫn phải là secret của Cloudflare Worker. Mật khẩu không bao giờ được in ra log/stdout, không nằm trong Pulumi outputs, không nằm trong URL, và PostgreSQL không publish host port.
 
 ## Migration legacy `postgres:password` (secure/`[secret]`)
@@ -107,7 +120,7 @@ closed và in hướng dẫn migration thay vì đoán.
 
 ### Khi nào cần migration
 
-`pnpm dx local-deploy` báo lỗi đọc `postgres:password` (luồng fail closed và
+Entry up của platform báo lỗi đọc `postgres:password` (luồng fail closed và
 không sinh mật khẩu mới). Trigger thật trên CLI 3.270:
 
 - `error: passphrase must be set` hoặc `error: incorrect passphrase` — stack
@@ -138,10 +151,11 @@ postgres:password` trả về **plaintext** (không trả `[secret]`). Chuỗi m
    ```
 
    Với passphrase đúng, lệnh này trả **plaintext** (đã kiểm trên CLI 3.270,
-   kể cả khi giá trị được lưu dạng `secure:`) — luồng `local-deploy` đọc được
+   kể cả khi giá trị được lưu dạng `secure:`) — entry up của platform đọc được
    mật khẩu đang dùng và tái dùng nó, không sinh mới.
 
-3. Chạy `pnpm dx local-deploy` để deploy lại với mật khẩu khớp volume.
+3. Chạy lại lane `pnpm nx run-many -t local-up -c local` để deploy lại với mật
+   khẩu khớp volume.
 
 Nếu passphrase gốc không còn: không có đường phục hồi tự động —
 
@@ -150,11 +164,11 @@ Nếu passphrase gốc không còn: không có đường phục hồi tự độ
 Không có đường convert an toàn. Cách duy nhất là bắt đầu lại từ dữ liệu rỗng:
 
 ```bash
-pnpm dx local-destroy   # XOÁ dữ liệu vĩnh viễn — cân nhắc kỹ
-pnpm dx local-deploy
+pnpm nx run platform-deploy:local-down -c local -- --remove-data   # XOÁ dữ liệu vĩnh viễn — cân nhắc kỹ
+pnpm nx run-many -t local-up -c local
 ```
 
-`local-destroy` xoá volume PostgreSQL theo mặc định (không có cờ nào giữ volume).
+Down platform với `--remove-data` xoá volume PostgreSQL (không có đường xoá nào khác trong luồng lifecycle).
 Cleanup (`pnpm dx local-cleanup`) xoá volume chỉ với resource mồ côi đủ điều kiện.
 
 ### Lưu ý về plaintext config
@@ -168,7 +182,7 @@ log/stdout, không nằm trong Pulumi outputs, không nằm trong URL.
 
 ## `local-cleanup` — dọn resource mồ côi
 
-Worktree xoá mà quên `local-destroy` là Docker resource còn lại: container/network/volume mang tên `ecoma-<namespace>-<kind>` không ai quản lý. `pnpm dx local-cleanup` tìm và xoá resource mồ côi đó — worktree sở hữu nó không còn trên đĩa.
+Worktree xoá là Docker resource còn lại: container/network/volume mang tên `ecoma-<namespace>-<kind>` không ai quản lý. `pnpm dx local-cleanup` tìm và xoá resource mồ côi đó — worktree sở hữu nó không còn trên đĩa.
 
 ```bash
 pnpm dx local-cleanup                       # dọn thật, xoá cả volume PostgreSQL của resource mồ côi đủ điều kiện
@@ -176,11 +190,11 @@ pnpm dx local-cleanup --dry-run             # chỉ báo cáo, không có lệnh
 pnpm dx local-cleanup --worktree-root <dir> # lọc báo cáo theo worktree (diagnostics, không nới ràng buộc)
 ```
 
-**Cleanup phát hiện và xoá những gì**: resource Docker mà luồng local deployment tạo — network platform, container Traefik, container PostgreSQL, container home/backoffice, WIC containers và images của auth/pact-api/mail/push, image node-server của account/pact-app, volume PostgreSQL và các volume state WIC (`CLEANUP_KINDS` trong `tools/dx/src/deployment/local-platform/local-cleanup.ts`). Cleanup KHÔNG có teardown theo thứ tự phụ thuộc: worktree biến mất thì không resource nào còn phụ thuộc vòng sống vào nhau; Docker chấp nhận lệnh `rm` trực tiếp từng resource.
+**Cleanup phát hiện và xoá những gì**: resource Docker mà luồng local deployment tạo — network platform, container Traefik, container PostgreSQL, container home/backoffice/account/pact-app, WIC containers và images của auth/pact-api/mail/push, volume PostgreSQL và các volume state WIC (`CLEANUP_KINDS` trong `tools/dx/src/deployment/local-platform/local-cleanup.ts`). Cleanup KHÔNG có teardown theo thứ tự phụ thuộc: worktree biến mất thì không resource nào còn phụ thuộc vòng sống vào nhau; Docker chấp nhận lệnh `rm` trực tiếp từng resource.
 
 ### Labels ownership — bằng chứng "của ai"
 
-Mọi resource local deployment được gắn bốn label kể từ thay đổi này (`deploys/platform-deploy`, `deploys/home-deploy`; định nghĩa một bản duy nhất ở `tools/dx/src/deployment/local-platform/deploy-labels.ts`):
+Mọi resource local deployment được gắn bốn label (`deploys/platform-deploy`, `deploys/home-deploy`; định nghĩa một bản duy nhất ở `tools/dx/src/deployment/local-platform/deploy-labels.ts`):
 
 | Label                       | Ý nghĩa                                                                                                                                                          |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -191,7 +205,7 @@ Mọi resource local deployment được gắn bốn label kể từ thay đổi
 
 Resource thiếu bất kỳ label trong bốn, `worktree-id` sai pattern namespace, hay `worktree-path` không absolute → **metadata không trọn vẹn (malformed) → skip, không xoá**. Quyết định xóa luôn dựa trên metadata hợp lệ, không dựa trên hình dạng tên.
 
-**Volume persistent bị xoá với resource mồ côi đủ điều kiện**: cleanup xoá volume PostgreSQL của resource có labels ownership hợp lệ và worktree confirmed absent — cùng convention mới của `local-destroy`. Volume không đủ điều kiện xoá (metadata không trọn vẹn, worktree còn sống) được báo ra entries `kept`/`skipped` với lý do rõ để developer tự quyết.
+**Volume persistent bị xoá với resource mồ côi đủ điều kiện**: cleanup xoá volume PostgreSQL của resource có labels ownership hợp lệ và worktree confirmed absent. Volume không đủ điều kiện xoá (metadata không trọn vẹn, worktree còn sống) được báo ra entries `kept`/`skipped` với lý do rõ để developer tự quyết.
 
 ### An toàn và xử lý lỗi
 
@@ -199,22 +213,21 @@ Resource thiếu bất kỳ label trong bốn, `worktree-id` sai pattern namespa
 - **Docker daemon không phản hồi** (`docker info` fail): cleanup trả lỗi ở stderr với chi tiết, exit 1, **không quét và không xoá gì**.
 - **Lỗi `ls` per-kind** (daemon lỗi giữa chừng): kind đó được bỏ với lỗi trong output; các kind khác vẫn xử lý — lệnh exit 1 khi có bất kỳ lỗi nào, không `return 0` nói dối.
 - **Worktree filter** (`--worktree-root`) chỉ dành cho diagnostics — nó lọc báo cáo, không thay check ownership/liveness; resource ngoài filter vẫn phải qua đủ check như thường.
-- **Phối hợp với deploy đang chạy**: cleanup KHÔNG lấy khóa lane. Khóa lane
-  (`tools/dx/src/local-runtime/local-lock.ts`) bảo vệ mutual exclusion giữa hai
-  lane mutation CÙNG worktree (`local-deploy` apply / `local-destroy`) — một khóa
-  whole-lane per worktree tại `<worktreeRoot>/.ecoma-lane.lock`, do orchestrator
-  giữ quanh cả lane (`runNxOrchestratedDeploy`), task con chỉ assert lease qua
-  env `ECOMA_LANE_LEASE`. Cleanup không thuộc mô hình đó: quyết định xoá của nó
-  dựa trên presence của worktree trên đĩa + labels ownership bắt buộc đủ (mục
-  Labels ownership ở trên) — không dựa trên pha của apply, nên chạy cạnh deploy
-  đang chạy chỉ tốn chi phí nhiễu báo cáo (inspect lỗi giữa chừng → `skipped`,
-  behavior fail-safe ở trên), không bao giờ xoá resource một lane đang tạo lại.
+- **Phối hợp với lane đang chạy**: cleanup KHÔNG lấy khóa lane. Khóa lane
+  (`tools/dx/src/local-runtime/local-lock.ts`) bảo vệ mutual exclusion giữa các
+  mutation CÙNG worktree — các entry up/down tự lấy khóa quanh phần mutate của
+  mình. Cleanup không thuộc mô hình đó: quyết định xoá của nó dựa trên presence
+  của worktree trên đĩa + labels ownership bắt buộc đủ (mục Labels ownership ở
+  trên) — không dựa trên pha của lane, nên chạy cạnh lane đang chạy chỉ tốn chi
+  phí nhiễu báo cáo (inspect lỗi giữa chừng → `skipped`, behavior fail-safe ở
+  trên), không bao giờ xoá resource một lane đang tạo lại. Worktree đã bị xoá
+  thì file khóa nằm trong worktree cũng biến mất theo — không còn khóa chặn
+  cleanup.
 - Cleanup chạy không đòi checkout cũ hay thao tác Pulumi nào: nó chỉ nói chuyện Docker + filesystem của worktree path được ghi trong label.
 
 ## Giới hạn đã biết
 
 - Host port Traefik đổi mỗi lần container được tạo lại (Docker cấp động) — luôn đọc lại từ `.env`/outputs sau khi up.
-- Preview cần worktree đã apply trước (read-only, xem mục Luồng deploy); nó không tự khởi tạo stack/mật khẩu/config.
 - Traefik bind-mount Docker socket read-only: `readOnly` chỉ chặn ghi filesystem, KHÔNG giới hạn Docker API — mount này vẫn là đường leo thang đặc quyền tiềm năng nếu container bị chiếm. Socket proxy GET-only là giảm thiểu đúng nghĩa, chưa có ở đây (chấp nhận rủi ro có chủ đích cho môi trường local).
 - Local deployment **không** auto-trust certificate, không backup volume, không monitoring — ngoài phạm vi có chủ đích.
 - Preset Nitro của `apps/home` cho staging/production vẫn là `cloudflare-module` (đường Wrangler); Docker chỉ dùng preset `node-server` qua build-time flag, không sửa `nitro.config.ts`.
