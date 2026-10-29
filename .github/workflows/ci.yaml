@@ -232,8 +232,20 @@ jobs:
       # từ GitHub. `pulumi` CLI (ghim 3.272.0 trong node_modules/.bin) và Docker
       # daemon đều có sẵn trên runner. Timeout là trần cho lần build image lạnh
       # đầu tiên; các lần sau tận dụng layer cache Docker của runner.
+      # Vòng retry che race đã gặp ở CI: container init one-shot `rm: true` của
+      # provider docker v5.2.0 đôi khi bị Docker tự xoá trước khi provider kịp
+      # inspect → "No such container" (thử lại cho phép unit dở dang chạy tiếp).
       - name: Deploy local platform stack
-        run: pnpm dx local-deploy
+        run: |
+          for attempt in 1 2 3; do
+            echo "Deploy attempt ${attempt}/3"
+            if pnpm dx local-deploy; then
+              exit 0
+            fi
+            echo "Deploy attempt ${attempt} failed; preparing retry" >&2
+            sleep 5
+          done
+          exit 1
       # `@playwright/test` không có postinstall tải browser, nên runner sạch không
       # có Chromium; `--with-deps` cài luôn các thư viện hệ thống mà Chromium cần.
       - name: Install Playwright browsers
