@@ -1,4 +1,4 @@
-# Backoffice — ADR index
+# Staff Access — ADR index
 
 Architectural decision record (ADR) của `backoffice`, thuộc bounded context **Staff Access** đang hình thành (đích — Phase 1, xem [`../README.md`](../README.md) §4). Mỗi quyết định có **một** canonical location là ADR tương ứng; [`01-architecture.md`](../01-architecture.md) §10 giữ con trỏ tới đó. Số thứ tự theo thứ tự bảng §10 tại thời điểm chốt; nhìn lại một quyết định hay đảo nó phải qua ADR mới (không sửa ADR đã Accepted để đổi ý một cách âm thầm) — trừ cập nhật chính tả hay cross-reference không đổi nghĩa.
 
