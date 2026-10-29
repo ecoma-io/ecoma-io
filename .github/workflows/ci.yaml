@@ -191,20 +191,31 @@ jobs:
           affected: ${{ !inputs.force }}
           bail: ${{ github.event_name == 'merge_group' }}
 
-  # Bộ test browser của `apps/backoffice` (Playwright + Chromium thật). Job tách
-  # khỏi `unit-test` vì cần cài browser và hệ thống libs của nó, và vì nó chậm hơn
-  # hẳn: server `nuxt dev` phải khởi động rồi JIT-compile từng route.
+  # Bộ system test (Playwright + Chromium thật) chạy trên local platform stack
+  # thật: deploy 9 unit trước (`pnpm dx local-deploy` qua Nx Task Graph, trả về
+  # stack Docker + mật khẩu sinh tự động, KHÔNG secret production nào được
+  # inject), rồi chạy `nx affected -t system-test` — bốn suite đọc origin từ
+  # `ROOT_DOMAIN`/`ROOT_HOST` trong `.env` mà bước deploy ghi. Suite fail-closed
+  # khi stack không có (gate trong `global-setup.ts`), nên không deploy là đỏ:
+  # chạy thật là điều kiện của job này, không phải cải tiến.
   #
   # Job KHÔNG có `if:` nào — và đó là điều kiện đúng đắn của nó. `ci-gate` fail với
   # mọi kết quả khác `success`, kể cả `skipped`, nên một job bị bỏ qua ở đây sẽ làm
-  # đỏ cả pipeline. Trên PR chỉ chạm tài liệu, `nx affected -t e2e` không có project
-  # nào bị ảnh hưởng và thoát 0 với "0 tasks" — đã đo bằng
-  # `npx nx affected -t e2e --base=HEAD~1 --head=HEAD` — nên job chạy, xanh, mà
-  # không tốn phút nào cho test.
-  e2e:
-    name: e2e
+  # đỏ cả pipeline. Trên PR chỉ chạm tài liệu, `nx affected -t system-test` không có
+  # project nào bị ảnh hưởng và thoát 0 với "0 tasks" (các target `system-test` đều
+  # `cache: false`, nhưng affected = 0 task thì không tốn phút test nào). Bước
+  # deploy shell thường KHÔNG có kiến thức về affected — nó luôn chạy, gồm cả PR
+  # docs-only (~vài phút build image trần): chi phí được chấp nhận để giữ job
+  # đơn giản với một đường chạy duy nhất thay vì hai hình thái if/else.
+  system-test:
+    name: system-test
     runs-on: ubuntu-26.04
-    timeout-minutes: 30
+    # Deploy lane 9 unit build image home/account/auth/pact/mail/push khi cache
+    # Docker của runner lạnh; tests bổ sung gate retry + chromium thật. 60 phút
+    # là trần đo từ budget 15 phút deploy + 4 suite chạy tuần tự (mỗi suite
+    # ~1 phút đo thực tế), không phải mục tiêu: job xanh điển hình kết thúc
+    # sớm hơn nhiều.
+    timeout-minutes: 60
     steps:
       - name: Start runner resource monitoring
         uses: Garbee/runner-resource-usage@5d478275bca9b56badaca884f6e3858085e2ca18 # main HEAD (upstream chưa có tag)
@@ -215,33 +226,85 @@ jobs:
           persist-credentials: false
       - name: Setup Node.js and pnpm
         uses: ./.github/actions/setup-node-pnpm
+      # Deploy thật (apply) lên Docker của runner: orchestration tự sinh passphrase
+      # Pulumi + mật khẩu PostgreSQL (randomBytes), ghi `.env` với ROOT_HOST/
+      # ROOT_DOMAIN mà các suite đọc ở step sau; không prompt, không secret inject
+      # từ GitHub. `pulumi` CLI (ghim 3.272.0 trong node_modules/.bin) và Docker
+      # daemon đều có sẵn trên runner. Timeout là trần cho lần build image lạnh
+      # đầu tiên; các lần sau tận dụng layer cache Docker của runner.
+      # Vòng retry che hai race đã gặp ở CI: (1) container init one-shot
+      # `rm: true` của provider docker v5.2.0 đôi khi bị Docker tự xoá trước khi
+      # provider kịp inspect → "No such container"; (2) khi một unit chết giữa
+      # chừng, `--nx-bail` hủy các `pulumi up` đang chạy và file backend để lại
+      # stack lock mồ côi — attempt kế của unit đó chết ngay "stack is currently
+      # locked". Trước mỗi attempt lại: xoá lock file của các stack có owner PID
+      # không còn sống (chỉ lock mồ côi — lock của process sống giữ nguyên), để
+      # lane idempotent chạy tiếp trên namespace đã tạo một phần. Lock JSON do
+      # `json.Marshal` của Pulumi ghi NÉN với khóa thường `"pid":<n>` (struct
+      # `lockContent`, pkg/backend/diy/lock.go của CLI ghim 3.272.0) — không có
+      # khoảng trắng sau dấu hai chấm, không viết hoa "PID".
+      - name: Deploy local platform stack
+        run: |
+          clear_orphaned_stack_locks() {
+            find .pulumi-local-state/.pulumi/locks -name '*.json' -print0 2>/dev/null |
+              while IFS= read -r -d '' lockfile; do
+                lock_pid=$(sed -n 's/.*"pid":\([0-9]*\).*/\1/p' "$lockfile" | head -1)
+                if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
+                  echo "Removing orphaned Pulumi stack lock (pid $lock_pid dead): $lockfile"
+                  rm -f "$lockfile"
+                fi
+              done
+          }
+          for attempt in 1 2 3 4 5; do
+            echo "Deploy attempt ${attempt}/5"
+            clear_orphaned_stack_locks
+            if pnpm dx local-deploy; then
+              exit 0
+            fi
+            echo "Deploy attempt ${attempt} failed; preparing retry" >&2
+            sleep 10
+          done
+          exit 1
       # `@playwright/test` không có postinstall tải browser, nên runner sạch không
       # có Chromium; `--with-deps` cài luôn các thư viện hệ thống mà Chromium cần.
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
-      - name: End-to-end tests
+      # `threads: '1'`: cả 4 suite chia sẻ MỘT stack vừa deploy trên runner
+      # (grants, mail sink D1, OTP rate-limit, Traefik) — chạy song song tái tạo
+      # đúng xung đột chéo suite mà per-file identities đã xử lý trong phạm vi
+      # một suite, nên thực thi tuần tự theo quyết định của user.
+      - name: System tests
         uses: ./.github/actions/run-nx-target
         with:
-          targets: e2e
+          targets: system-test
           affected: ${{ !inputs.force }}
           bail: ${{ github.event_name == 'merge_group' }}
+          threads: '1'
       # Chỉ khi đỏ: trace, screenshot và HTML report là bằng chứng duy nhất còn lại
       # sau khi runner bị xoá, và không có chúng thì một job đỏ ở CI là thứ người
-      # khác không tái hiện được.
+      # khác không tái hiện được. Đường dẫn theo BỐN suite system-test
+      # (`system-tests/e2e/<suite>/`) — mỗi suite tự giữ `playwright-report/` +
+      # `test-results/` ngay trong project của nó.
       - name: Upload Playwright artifacts
         if: ${{ failure() || cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: backoffice-playwright-artifacts
+          name: system-test-playwright-artifacts
           path: |
-            apps/backoffice/playwright-report
-            apps/backoffice/test-results
+            system-tests/e2e/home-public-e2e/playwright-report
+            system-tests/e2e/home-public-e2e/test-results
+            system-tests/e2e/identity-login-e2e/playwright-report
+            system-tests/e2e/identity-login-e2e/test-results
+            system-tests/e2e/identity-oidc-e2e/playwright-report
+            system-tests/e2e/identity-oidc-e2e/test-results
+            system-tests/e2e/backoffice-access-control-e2e/playwright-report
+            system-tests/e2e/backoffice-access-control-e2e/test-results
           if-no-files-found: ignore
           retention-days: 7
 
   ci-gate:
     name: ci-gate
-    needs: [verify, unit-test, integration-test, build, e2e]
+    needs: [verify, unit-test, integration-test, build, system-test]
     if: always()
     runs-on: ubuntu-26.04
     timeout-minutes: 5

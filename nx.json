@@ -56,12 +56,6 @@
         "serveStaticTargetName": "serve-static",
         "buildStaticTargetName": "build-static"
       }
-    },
-    {
-      "plugin": "@nx/playwright/plugin",
-      "options": {
-        "targetName": "e2e"
-      }
     }
   ],
   "release": {
