@@ -69,11 +69,8 @@ function commitAll(repo: string, message: string): string {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Docker + semgrep thật                                                      */
+/*  Docker + semgrep thật — Docker là dependency phát triển BẮT BUỘC            */
 /* -------------------------------------------------------------------------- */
-
-let dockerAvailable = true;
-let dockerReason = '';
 
 /**
  * Cài bộ rule thật của repository vào một repo tạm.
@@ -93,6 +90,11 @@ function installRules(repo: string): void {
 }
 
 beforeAll(() => {
+  // Probe Docker một lần trước cả suite: lỗi nhanh, rõ ràng, và pre-pull sẵn
+  // image semgrep cho các test engine phía dưới. Theo policy fail-loud của
+  // `docs/overview/06-testing.md` §6, vắng Docker phải làm toàn bộ lần chạy đỏ
+  // (ném lỗi ở đây) — KHÔNG được skip, vì skip với exit 0 che mất việc một phần
+  // suite bắt buộc chưa hề chạy. Tiền lệ: suite PG của app auth (d96c40de).
   const probe = join(process.env.SEMGREP_TEST_TMP ?? '/tmp', `semgrep-docker-probe-${process.pid}`);
   rmSync(probe, { recursive: true, force: true });
   mkdirSync(probe, { recursive: true });
@@ -107,10 +109,13 @@ beforeAll(() => {
       { stdio: 'ignore', env: gitEnv(), timeout: 300_000 },
     );
   } catch (error) {
-    dockerAvailable = false;
-    dockerReason = error instanceof Error ? error.message : String(error);
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Docker is a mandatory development dependency for this repository (policy: docs/overview/06-testing.md §6); probe failed: ${reason}`, { cause: error },
+    );
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
   }
-  rmSync(probe, { recursive: true, force: true });
 }, 300_000);
 
 afterAll(() => {
@@ -258,128 +263,114 @@ describe('summarizeFindings', () => {
 /*  Bộ rule thật, chạy bằng engine thật                                          */
 /* -------------------------------------------------------------------------- */
 
-describe.skipIf(!dockerAvailable)(
-  "the repository's own rules, scanned by the engine the hook runs",
-  () => {
-    it('detects a real violation in .ts and .tsx, and in neither .mts nor .cts nor .vue', () => {
-      // Bảo đảm danh sách extension trong `semgrep-scan.ts` là ĐÚNG với khả năng
-      // thật của engine, chứ không phải với điều ta hy vọng. Cùng một vi phạm,
-      // cấy vào từng extension: nếu sau này semgrep bắt đầu quét `.mts`, test
-      // này đỏ và buộc phải cập nhật danh sách — đúng hướng, vì lỗ hổng được
-      // nói ra thay vì để im.
-      const repo = initRepo('semgrep-ext-');
-      installRules(repo);
-      mkdirSync(join(repo, 'apps/probe/src'), { recursive: true });
+describe("the repository's own rules, scanned by the engine the hook runs", () => {
+  it('detects a real violation in .ts and .tsx, and in neither .mts nor .cts nor .vue', () => {
+    // Bảo đảm danh sách extension trong `semgrep-scan.ts` là ĐÚNG với khả năng
+    // thật của engine, chứ không phải với điều ta hy vọng. Cùng một vi phạm,
+    // cấy vào từng extension: nếu sau này semgrep bắt đầu quét `.mts`, test
+    // này đỏ và buộc phải cập nhật danh sách — đúng hướng, vì lỗ hổng được
+    // nói ra thay vì để im.
+    const repo = initRepo('semgrep-ext-');
+    installRules(repo);
+    mkdirSync(join(repo, 'apps/probe/src'), { recursive: true });
 
-      const payloads: Record<string, string> = {
-        'a.ts': REAL_VIOLATION,
-        'a.tsx': REAL_VIOLATION,
-        'a.mts': REAL_VIOLATION,
-        'a.cts': REAL_VIOLATION,
-        'a.vue':
-          '<script setup lang="ts">\nfunction f(authorization: string, userId: string) {\n  console.log(`t=${authorization} u=${userId}`);\n}\n</script>\n',
-      };
-      for (const [name, contents] of Object.entries(payloads)) {
-        writeFileSync(join(repo, 'apps/probe/src', name), contents);
-      }
-      commitAll(repo, 'probe');
+    const payloads: Record<string, string> = {
+      'a.ts': REAL_VIOLATION,
+      'a.tsx': REAL_VIOLATION,
+      'a.mts': REAL_VIOLATION,
+      'a.cts': REAL_VIOLATION,
+      'a.vue':
+        '<script setup lang="ts">\nfunction f(authorization: string, userId: string) {\n  console.log(`t=${authorization} u=${userId}`);\n}\n</script>\n',
+    };
+    for (const [name, contents] of Object.entries(payloads)) {
+      writeFileSync(join(repo, 'apps/probe/src', name), contents);
+    }
+    commitAll(repo, 'probe');
 
-      const reportDir = join(process.env.SEMGREP_TEST_TMP ?? '/tmp', `semgrep-out-${process.pid}`);
-      rmSync(reportDir, { recursive: true, force: true });
-      mkdirSync(reportDir, { recursive: true });
+    const reportDir = join(process.env.SEMGREP_TEST_TMP ?? '/tmp', `semgrep-out-${process.pid}`);
+    rmSync(reportDir, { recursive: true, force: true });
+    mkdirSync(reportDir, { recursive: true });
 
-      const out = execFileSync(
-        'docker',
-        [
-          'run',
-          '--rm',
-          '--volume',
-          `${repo}:/src`,
-          '--volume',
-          `${reportDir}:/out`,
-          '--workdir',
-          '/src',
-          SEMGREP_IMAGE,
-          'bash',
-          '-c',
-          'semgrep scan --config .github/semgrep --exclude .github/semgrep --sarif --output /out/semgrep.sarif --quiet',
-        ],
-        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: gitEnv() },
-      );
+    const out = execFileSync(
+      'docker',
+      [
+        'run',
+        '--rm',
+        '--volume',
+        `${repo}:/src`,
+        '--volume',
+        `${reportDir}:/out`,
+        '--workdir',
+        '/src',
+        SEMGREP_IMAGE,
+        'bash',
+        '-c',
+        'semgrep scan --config .github/semgrep --exclude .github/semgrep --sarif --output /out/semgrep.sarif --quiet',
+      ],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: gitEnv() },
+    );
 
-      const findings = summarizeFindings(join(reportDir, 'semgrep.sarif'));
-      const hit = (name: string): boolean =>
-        findings.some((finding) => finding.path === `apps/probe/src/${name}`);
+    const findings = summarizeFindings(join(reportDir, 'semgrep.sarif'));
+    const hit = (name: string): boolean =>
+      findings.some((finding) => finding.path === `apps/probe/src/${name}`);
 
-      // Các extension mà danh sách trong `semgrep-scan.ts` hứa là sẽ bắt được.
-      expect(hit('a.ts')).toBe(true);
-      expect(hit('a.tsx')).toBe(true);
+    // Các extension mà danh sách trong `semgrep-scan.ts` hứa là sẽ bắt được.
+    expect(hit('a.ts')).toBe(true);
+    expect(hit('a.tsx')).toBe(true);
 
-      // Các extension CHƯA được quét. Đây là lỗ hổng đã biết của bộ rule, được
-      // ghi thành khẳng định để nó không biến mất trong im lặng: khi rule phủ
-      // được chúng, test đỏ và bắt người sửa danh sách + báo lại.
-      expect(hit('a.mts')).toBe(false);
-      expect(hit('a.cts')).toBe(false);
-      expect(hit('a.vue')).toBe(false);
+    // Các extension CHƯA được quét. Đây là lỗ hổng đã biết của bộ rule, được
+    // ghi thành khẳng định để nó không biến mất trong im lặng: khi rule phủ
+    // được chúng, test đỏ và bắt người sửa danh sách + báo lại.
+    expect(hit('a.mts')).toBe(false);
+    expect(hit('a.cts')).toBe(false);
+    expect(hit('a.vue')).toBe(false);
 
-      expect(out).toBeDefined();
-      rmSync(reportDir, { recursive: true, force: true });
-    }, 300_000);
+    expect(out).toBeDefined();
+    rmSync(reportDir, { recursive: true, force: true });
+  }, 300_000);
 
-    it('catches the wrangler.jsonc ownership violation through the generic rule', () => {
-      // Rule `generic` + `pattern-regex` là lý do `wrangler.jsonc` nằm trong
-      // danh sách dù nó không phải `.ts`/`.yml`: không có nó thì một app mới mở
-      // D1 mà không sở hữu sẽ lọt khỏi cả hook lẫn CI.
-      const repo = initRepo('semgrep-wrangler-');
-      installRules(repo);
-      mkdirSync(join(repo, 'apps/probe'), { recursive: true });
-      writeFileSync(
-        join(repo, 'apps/probe/wrangler.jsonc'),
-        '{\n  "name": "probe",\n  "database_name": "probe-db"\n}\n',
-      );
-      commitAll(repo, 'probe');
+  it('catches the wrangler.jsonc ownership violation through the generic rule', () => {
+    // Rule `generic` + `pattern-regex` là lý do `wrangler.jsonc` nằm trong
+    // danh sách dù nó không phải `.ts`/`.yml`: không có nó thì một app mới mở
+    // D1 mà không sở hữu sẽ lọt khỏi cả hook lẫn CI.
+    const repo = initRepo('semgrep-wrangler-');
+    installRules(repo);
+    mkdirSync(join(repo, 'apps/probe'), { recursive: true });
+    writeFileSync(
+      join(repo, 'apps/probe/wrangler.jsonc'),
+      '{\n  "name": "probe",\n  "database_name": "probe-db"\n}\n',
+    );
+    commitAll(repo, 'probe');
 
-      const reportDir = join(process.env.SEMGREP_TEST_TMP ?? '/tmp', `semgrep-wr-${process.pid}`);
-      rmSync(reportDir, { recursive: true, force: true });
-      mkdirSync(reportDir, { recursive: true });
+    const reportDir = join(process.env.SEMGREP_TEST_TMP ?? '/tmp', `semgrep-wr-${process.pid}`);
+    rmSync(reportDir, { recursive: true, force: true });
+    mkdirSync(reportDir, { recursive: true });
 
-      execFileSync(
-        'docker',
-        [
-          'run',
-          '--rm',
-          '--volume',
-          `${repo}:/src`,
-          '--volume',
-          `${reportDir}:/out`,
-          '--workdir',
-          '/src',
-          SEMGREP_IMAGE,
-          'bash',
-          '-c',
-          'semgrep scan --config .github/semgrep --exclude .github/semgrep --sarif --output /out/semgrep.sarif --quiet',
-        ],
-        { stdio: ['ignore', 'pipe', 'pipe'], env: gitEnv() },
-      );
+    execFileSync(
+      'docker',
+      [
+        'run',
+        '--rm',
+        '--volume',
+        `${repo}:/src`,
+        '--volume',
+        `${reportDir}:/out`,
+        '--workdir',
+        '/src',
+        SEMGREP_IMAGE,
+        'bash',
+        '-c',
+        'semgrep scan --config .github/semgrep --exclude .github/semgrep --sarif --output /out/semgrep.sarif --quiet',
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'], env: gitEnv() },
+    );
 
-      const findings = summarizeFindings(join(reportDir, 'semgrep.sarif'));
+    const findings = summarizeFindings(join(reportDir, 'semgrep.sarif'));
 
-      expect(findings.some((finding) => finding.path === 'apps/probe/wrangler.jsonc')).toBe(true);
+    expect(findings.some((finding) => finding.path === 'apps/probe/wrangler.jsonc')).toBe(true);
 
-      rmSync(reportDir, { recursive: true, force: true });
-    }, 300_000);
-  },
-);
-
-describe.skipIf(dockerAvailable)('semgrep coverage in the engine tests', () => {
-  it('records why the engine tests were skipped', () => {
-    // Không hạ xuống "bỏ qua im lặng": test bỏ skip mà không nói lý do là một
-    // false negative. Thiếu docker thì phải nói ra, để người đọc biết phần nào
-    // của bộ test CHƯA thực sự chạy. `skipIf` thay vì điều kiện bên trong
-    // `expect`: đúng thứ tự mà repository dùng ở
-    // `authorization-transaction-store.spec.ts`.
-    expect(dockerReason).not.toBe('');
-  });
+    rmSync(reportDir, { recursive: true, force: true });
+  }, 300_000);
 });
 
 /* -------------------------------------------------------------------------- */
