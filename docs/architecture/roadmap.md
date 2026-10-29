@@ -37,7 +37,7 @@ Roadmap triển khai các phase sau Phase 0. Phase 0 chỉ audit + tài liệu; 
 
 ## Phase 4 — Remote Cache Nx MVP
 
-- **P4.1** Multi-tenant control plane: tenant/project/membership/API key/scope.
+- **P4.1** Multi-tenant control plane: tenant/project/membership/API key/scope. Chuyển từ disposable infra sang SaaS bounded context cần **ADR mới** theo A18 (`01` §8) — tạo cùng lúc với P4.1.
 - **P4.2** Data plane Nx upload/download, object storage, metadata, namespace isolation.
 - **P4.3** Quota, retention, usage metering, audit ở mức MVP.
 - **P4.4** Security: CI credential, fork/PR write protection, cross-tenant isolation.

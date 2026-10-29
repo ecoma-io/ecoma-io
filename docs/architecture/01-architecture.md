@@ -86,6 +86,8 @@ Catalog bounded context và trách nhiệm nghiệp vụ của từng context �
 
 ### 2.2 Bounded context `backoffice`: một deploy unit
 
+> **Framing target (A21 evolution):** A21 gán trách nhiệm staff/RBAC cho `backoffice`; theo [`roadmap`](./roadmap.md) Phase 1, trách nhiệm đó chuyển sang bounded context `staff-access` — cần ADR supersede khi implement. Sau chuyển đổi, `backoffice` chỉ còn composition/UI + BFF và **không** còn là bounded context (catalog → [`docs/domains/README.md`](../domains/README.md) §3/§6; evolution → [`docs/domains/staff-access/`](../domains/staff-access/README.md) §4). Nội dung dưới đây mô tả hiện trạng theo A21 chưa bị supersede.
+
 `backoffice` là bounded context riêng (Nx tag `scope:backoffice`) gồm **một** deploy unit: Nuxt + BFF tại `office.ecoma.io`. Không có tách protocol/UI như cặp `account`/`auth`: toàn bộ UI quản trị và authorization nằm trong cùng một đơn vị triển khai.
 
 | Deploy unit  | Sở hữu                                                                                                                              | Không sở hữu                                                                                                                      |

@@ -42,7 +42,7 @@ Mục tiêu:
 | R6  | Service MUST lưu artifact trên object storage (MVP: Backblaze B2 qua S3-compatible API), và coi storage là **disposable**: artifact có thể expire, mất cache không mất source of truth, không cần backup, không cần migration khi đổi partition                                                               |
 | R7  | Cache MUST được logical-isolate theo project/namespace. Storage partition MUST **không** thay đổi authorization boundary. Thêm storage backend MUST NOT yêu cầu migrate cache hiện có                                                                                                                         |
 | R8  | Cache MUST có retention hữu hạn; storage lifecycle MUST tự cleanup obsolete versions, incomplete uploads và artifact hết retention. MVP **không** yêu cầu application-level GC trên request path                                                                                                              |
-| R9  | Administrative operations MUST tách khỏi data path. Control plane MUST quản lý projects, API keys, storage backends, storage partitions, capacity state, usage/statistics, lifecycle configuration. Data plane MUST **không** cần database cho mỗi cache request                                              |
+| R9  | Administrative operations MUST tách khỏi data path. Control plane MUST quản lý tenants, projects, memberships, API keys, storage backends, storage partitions, quota/usage, capacity state, lifecycle configuration. Data plane MUST **không** cần database cho mỗi cache request                             |
 | R10 | Admin API MUST là private control plane; public Internet chỉ cần expose `cache.ecoma.io`. Admin UI/BFF truy cập qua private service binding                                                                                                                                                                   |
 | R11 | Service MUST cung cấp `/health` và `/ready` để phân biệt _process đang sống_ với _service nhận được traffic_                                                                                                                                                                                                  |
 | R12 | Service MUST cung cấp structured logs, request correlation ID, hit/miss, latency (request và storage), storage usage và auth failure. Secrets MUST **không** xuất hiện trong logs                                                                                                                             |
@@ -112,6 +112,14 @@ Mỗi dòng là một hành vi quan sát được.
 | A17 | Cache unavailable (disable remote cache) | Task chạy lại được, **không** mất correctness        |
 | A18 | Đổi/thêm storage partition               | Không migrate cache cũ; routing ổn định              |
 
+### Operations
+
+| #   | Kịch bản                                       | Kết quả mong đợi                              |
+| --- | ---------------------------------------------- | --------------------------------------------- |
+| A19 | `/health`, `/ready`                            | Phân biệt được alive vs sẵn sàng nhận traffic |
+| A20 | Structured logs + request ID + hit/miss metric | Truy vết được một request                     |
+| A21 | Secrets xuất hiện trong logs                   | Không có                                      |
+
 ### Multi-tenancy và control plane
 
 | #   | Kịch bản                                                                            | Kết quả mong đợi                                           |
@@ -121,14 +129,6 @@ Mỗi dòng là một hành vi quan sát được.
 | A24 | Tenant/project bị suspended                                                         | Write/read bị từ chối theo lifecycle state                 |
 | A25 | Administrative mutation (key/membership/project/quota)                              | Có audit entry với actor/action/target/time/outcome        |
 | A26 | Upload retry sau khi request đầu đã ghi đủ artifact                                 | Usage không bị double-count                                |
-
-### Operations
-
-| #   | Kịch bản                                       | Kết quả mong đợi                              |
-| --- | ---------------------------------------------- | --------------------------------------------- |
-| A19 | `/health`, `/ready`                            | Phân biệt được alive vs sẵn sàng nhận traffic |
-| A20 | Structured logs + request ID + hit/miss metric | Truy vết được một request                     |
-| A21 | Secrets xuất hiện trong logs                   | Không có                                      |
 
 ---
 
