@@ -31,9 +31,9 @@ const db = vi.hoisted(() => ({
   inserts: [] as { text: string; values: readonly unknown[] }[],
 }));
 
-vi.mock('../../db', () => ({
-  readWorkerEnv: () => undefined,
-}));
+// ⚠️ KHÔNG mock `../../db`: `poolBinding` dùng chung giữ bản thật — nhánh
+// Hyperdrive trả `null` qua barrel mock ở dưới, nhánh Node đọc
+// `useRuntimeConfig` (test stub global) ⇒ `db.nodeUrl` vẫn là đường điều khiển.
 
 vi.mock('@ecoma-io/backoffice-infrastructure', () => ({
   backofficeHyperdrive: () => null,

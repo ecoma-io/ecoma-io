@@ -36,9 +36,10 @@ vi.mock('../authorization', () => ({
   }),
 }));
 
-vi.mock('../db', () => ({
-  readWorkerEnv: () => readEnv,
-}));
+// ⚠️ KHÔNG mock `../db`: `readWorkerEnv`/`poolBinding` giữ bản thật — cả hai
+// đọc `event.context.cloudflare.env` (test gắn `readEnv` vào đó ở `get()`
+// dưới), và `backofficeHyperdrive` của barrel mock ở dưới trả
+// `readEnv.DB_BACKOFFICE` ⇒ đường điều khiển của test không đổi.
 
 // Pool `pg` giả trả một sổ staff cứng — query thật thuộc suite integration.
 // ⚠️ `vi.mock` thay thế **toàn bộ** module: mọi export mà route import phải có
@@ -53,6 +54,7 @@ vi.mock('@ecoma-io/backoffice-infrastructure', async (importOriginal) => {
     ...actual,
     backofficeHyperdrive: (env: unknown) =>
       (env as { DB_BACKOFFICE?: unknown })?.DB_BACKOFFICE ?? null,
+    backofficeNodeDatabaseUrl: () => null,
     loadPrincipalAuthorization: async () => ({ assignments: [] }),
     listStaff: async (client: { query: (text: string) => Promise<{ rows: typeof STAFF_ROWS }> }) =>
       (await client.query('SELECT sub, status FROM backoffice.staff ORDER BY sub')).rows,

@@ -33,13 +33,12 @@ import type { Pool, PoolClient } from 'pg';
 
 import type { CatalogPermission } from '@ecoma-io/backoffice-domain';
 import {
-  backofficeHyperdrive,
   loadPrincipalAuthorization,
   withBackofficePool,
 } from '@ecoma-io/backoffice-infrastructure';
 
 import { requirePermission, type PrincipalAuthorization } from './authorization';
-import { readWorkerEnv } from './db';
+import { poolBinding } from './db';
 import { requirePrincipal } from './principal';
 
 /**
@@ -79,14 +78,17 @@ export async function withReadEnforcement<T>(
   // 1. Principal — không có phiên hợp lệ thì `401` (ADR-0011 §1), chưa mở pool.
   const principal = requirePrincipal(event);
 
-  // 2. Binding — Worker chưa có DB thì `503`, không phải "trả rỗng".
-  const hyperdrive = backofficeHyperdrive(readWorkerEnv(event));
-  if (hyperdrive === null) {
+  // 2. Binding — Worker chưa có DB thì `503`, không phải "trả rỗng". Cùng
+  //    một nguồn kép với middleware authn (`poolBinding`): Hyperdrive trước,
+  //    runtime Node local sau — lệch nguồn là read route chết 503 trên local
+  //    trong khi authn vẫn chạy (bug thật của suite e2e, đã sửa tại `db.ts`).
+  const binding = poolBinding(event);
+  if (binding === null) {
     throw createError({ statusCode: 503, statusMessage: 'authorization unavailable' });
   }
 
   try {
-    return await withBackofficePool(hyperdrive, (pool) =>
+    return await withBackofficePool(binding, (pool) =>
       withPoolClient(pool, async (client) => {
         // 3. Ảnh assignment — đọc bằng **runtime role**, cùng lượt đọc với
         //    `staff.status` (invariant 5).

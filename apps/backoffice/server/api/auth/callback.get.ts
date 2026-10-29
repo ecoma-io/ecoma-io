@@ -45,8 +45,6 @@ import type { H3Event } from 'h3';
 
 import {
   accountClientConfig,
-  backofficeHyperdrive,
-  backofficeNodeDatabaseUrl,
   createCsrfToken,
   createSessionIdentifier,
   csrfCookie,
@@ -68,7 +66,7 @@ import {
   LOGIN_FLOW_COOKIE_NAME,
   needsDisplayName,
 } from '@ecoma-io/backoffice-application';
-import { readWorkerEnv } from '../../db';
+import { poolBinding, readWorkerEnv } from '../../db';
 import { writeLog } from '../../log';
 
 /**
@@ -83,26 +81,11 @@ interface TokenEndpointResponse {
 }
 
 /**
- * Nguồn connection string PostgreSQL của request — cùng một hàm mà middleware
- * authn dùng (một thứ tự nguồn cho toàn app). Tách bản địa ở đây vì
- * `server/db.ts` không biết "middleware hay route đang gọi" — và không cần
- * biết: logic là thuần đọc cấu hình.
+ * Nguồn connection string PostgreSQL của request — dùng hàm chung `poolBinding`
+ * của `server/db.ts` (một thứ tự nguồn cho toàn app). Trước đây logic này nhân
+ * bản tại đây và ở middleware authn, còn khung `withReadEnforcement` lại thiếu
+ * nhánh Node — nhân bản lệch là read route chết 503 trên local (bug thật).
  */
-function poolBinding(event: H3Event): { connectionString: string } | null {
-  const hyperdrive = backofficeHyperdrive(readWorkerEnv(event));
-  if (hyperdrive !== null) {
-    return { connectionString: hyperdrive.connectionString };
-  }
-  try {
-    const url = backofficeNodeDatabaseUrl(useRuntimeConfig(event));
-    if (url !== null) {
-      return { connectionString: url };
-    }
-  } catch {
-    // Không có runtimeConfig (test dựng app trực tiếp) ⇒ rơi về `null`.
-  }
-  return null;
-}
 
 /** `redirect_uri` — cùng công thức với login (một nguồn). */
 function callbackRedirectUri(event: H3Event): string {
