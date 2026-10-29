@@ -104,15 +104,12 @@ export interface TestTargetAllowlistEntry {
  * Hệ quả được chấp nhận có chủ đích: một real-dependency spec MỚI thêm vào
  * project đang nằm trong allowlist sẽ bị che luôn đến khi entry được xóa —
  * cửa sổ đó ngắn (đến khi PR tier merge) và PR tier chính là người đóng lại.
+ *
+ * Đã rỗng kể từ #385: entry cuối cùng (`transactional-mail` real-D1 suite
+ * còn colocated ở `src/`) đã được chuyển tier sang `tests/integrations/`.
+ * Mảng vẫn được giữ để cơ chế stale-detection sẵn sàng cho vi phạm kế tiếp.
  */
-export const KNOWN_TEST_TARGET_VIOLATIONS: readonly TestTargetAllowlistEntry[] = [
-  {
-    project: '@ecoma-io/transactional-mail',
-    kind: 'unit-real-dependency-spec',
-    reason:
-      'temporary: src/main.spec.ts boots D1 via getPlatformProxy; explicitly deferred by PR #367, follow-up tracked under #357',
-  },
-];
+export const KNOWN_TEST_TARGET_VIOLATIONS: readonly TestTargetAllowlistEntry[] = [];
 
 /**
  * Filesystem thuần cho lượt này: mọi path là TƯƠNG ĐỐI so với repo root mà fs
