@@ -84,18 +84,17 @@ interface ProbeResult {
   readonly body: string;
 }
 
-/** Tách `hostname`/`port` từ giá trị `ROOT_DOMAIN`/`ROOT_HOST`, mặc định port 443. */
-function readHostPort(raw: string): { hostname: string; port: string } {
-  const hostname = raw.split(':')[0];
-  const port = raw.includes(':') ? raw.split(':')[1] : '443';
-  return { hostname, port };
-}
-
-function resolveRootOrigin(): { hostname: string; port: string; ca: string } {
+/**
+ * Origin backoffice mà gate probe — hostname gốc (giá trị `ROOT_DOMAIN`/
+ * `ROOT_HOST`, dạng `hostname:port`) GHÉP PREFIX `office.`: router Traefik của
+ * backoffice match `Host(office.<root>)`, probe hostname gốc là 404 chắc chắn
+ * (#392 — cùng hợp đồng mà `e2e/support/local-origin.ts` của suite đã suy).
+ */
+function resolveBackofficeOrigin(): { hostname: string; port: string; ca: string } {
   const ca = readFileSync(LOCAL_CERT_PATH, 'utf8');
   const raw = process.env.ROOT_DOMAIN ?? process.env.ROOT_HOST;
   if (raw !== undefined && raw.trim().length > 0) {
-    return { ...readHostPort(raw.trim()), ca };
+    return { ...readOfficeHostPort(raw.trim()), ca };
   }
   // Fallback cho lệnh gọi ngoài Nx: parse `.env` repo root.
   try {
@@ -103,7 +102,7 @@ function resolveRootOrigin(): { hostname: string; port: string; ca: string } {
     for (const line of text.split(/\r?\n/u)) {
       const match = /^ROOT_(?:DOMAIN|HOST)=(.*)$/u.exec(line.trim());
       if (match && match[1].trim().length > 0) {
-        return { ...readHostPort(match[1].trim()), ca };
+        return { ...readOfficeHostPort(match[1].trim()), ca };
       }
     }
   } catch {
@@ -113,6 +112,13 @@ function resolveRootOrigin(): { hostname: string; port: string; ca: string } {
     'backoffice-access-control-e2e global setup failed: ROOT_DOMAIN (or ROOT_HOST) is not set and no .env file defines it. ' +
       'Run `pnpm dx local-deploy` first — it writes the dynamic Traefik host:port into the repo-root .env.',
   );
+}
+
+/** Tách `hostname`/`port` từ hostname gốc rồi ghép prefix `office.` của backoffice. */
+function readOfficeHostPort(raw: string): { hostname: string; port: string } {
+  const rootHostname = raw.split(':')[0];
+  const port = raw.includes(':') ? raw.split(':')[1] : '443';
+  return { hostname: `office.${rootHostname}`, port };
 }
 
 /**
@@ -204,7 +210,7 @@ function fail(origin: string, elapsedMs: number, error: Error): never {
 }
 
 async function main(): Promise<void> {
-  const { hostname, port, ca } = resolveRootOrigin();
+  const { hostname, port, ca } = resolveBackofficeOrigin();
   const origin = `https://${hostname}:${port}`;
   const startedAt = Date.now();
   let backoffMs = BACKOFF_INITIAL_MS;
