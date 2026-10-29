@@ -154,17 +154,6 @@
         }
       }
     ],
-    "local-env": [
-      {
-        "filter": {
-          "projects": ["platform-deploy"]
-        },
-        "cache": false,
-        "metadata": {
-          "//": "Xem entry `local-up`: lane local duy nhất, không bao giờ cacheable, thứ tự từ `dependsOn` của project."
-        }
-      }
-    ],
     "local-smoke": [
       {
         "filter": {

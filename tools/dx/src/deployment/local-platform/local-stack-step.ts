@@ -2,7 +2,7 @@
  * Một BƯỚC của luồng deploy local, chạy cho MỘT deploy project — execution
  * boundary của orchestration Nx Task Graph.
  *
- * Target Nx (`local-up`/`local-env`/`local-smoke` trên `deploys/*-deploy`) gọi
+ * Target Nx (`local-up`/`local-smoke` trên `deploys/*-deploy`) gọi
  * lệnh này qua `nx:run-commands`; thứ tự giữa các target là CONTRACT đã khai
  * bằng `dependsOn` trong package.json của từng deploy project. Module này cố ý KHÔNG
  * biết thứ tự toàn cục — nó chỉ làm đúng MỘT bước cho đúng MỘT stack. Graph quy
@@ -10,8 +10,7 @@
  *
  * Các tổ hợp (project, step) hợp lệ:
  *
- * - `platform-deploy` + `up`    → ensureStack + resolve password + `pulumi up`
- * - `platform-deploy` + `env`   → đọc outputs → ghi `.env` (chỉ key sở hữu)
+ * - `platform-deploy` + `up`    → ensureStack + resolve password + `pulumi up` + ghi `.env` (chỉ key sở hữu)
  * - `<unit>-deploy` + `up`      → secrets per-stack qua stdin → `pulumi up`
  * - `platform-deploy` + `smoke` → smoke HTTPS qua Traefik (node lá của chuỗi)
  *
@@ -56,11 +55,9 @@ import { resolvePostgresPassword, upsertLocalEnv } from './local-deploy.js';
 import { ROOT_DIR } from '../../utils.js';
 
 /** Các step mà lệnh này nhận diện — 1:1 với target Nx local trên deploy project. */
-export const LOCAL_STACK_STEPS = ['up', 'env', 'smoke'] as const;
+export const LOCAL_STACK_STEPS = ['up', 'smoke'] as const;
 export type LocalStackStep = (typeof LOCAL_STACK_STEPS)[number];
 
-/** Project duy nhất nhận step `env` — outputs platform là nguồn. */
-export const STEP_ENV_OWNER = 'platform-deploy';
 /** Project duy nhất nhận step `smoke` — smoke end-to-end qua Traefik. */
 export const STEP_SMOKE_OWNER = 'platform-deploy';
 
@@ -69,11 +66,6 @@ export class LocalStackStepUsageError extends Error {}
 
 /** Validate tổ hợp (project, step) trước khi chạm Pulumi/Docker. */
 export function validateStepTarget(project: string, step: LocalStackStep): void {
-  if (step === 'env' && project !== STEP_ENV_OWNER) {
-    throw new LocalStackStepUsageError(
-      `step "env" chỉ hợp lệ trên ${STEP_ENV_OWNER} (outputs platform là nguồn); nhận: ${project}`,
-    );
-  }
   if (step === 'smoke' && project !== STEP_SMOKE_OWNER) {
     throw new LocalStackStepUsageError(
       `step "smoke" chỉ hợp lệ trên ${STEP_SMOKE_OWNER}; nhận: ${project}`,
@@ -248,8 +240,8 @@ export interface LocalStackStepOptions {
  * Step `up` bao trọn trong lock host-wide (`/tmp/ecoma-local-deploy.lock`):
  * target Nx chạy nhiều task song song theo graph nhưng các task ĐÓ đã tuần tự
  * hoá nhau bằng `dependsOn`; lock giữ an toàn khi lệnh này chạy cạnh
- * `local-deploy`/`local-cleanup` khác trên cùng daemon. Step `env`/`smoke`
- * không mutate Docker nên không cần lock.
+ * `local-deploy`/`local-cleanup` khác trên cùng daemon. Step `smoke` không
+ * mutate Docker nên không cần lock.
  */
 export async function runLocalStackStep(
   project: string,
@@ -279,50 +271,6 @@ export async function runLocalStackStep(
     } finally {
       lock();
     }
-  }
-
-  if (step === 'env') {
-    if (!existsSync(join(ctx.worktreeRoot, '.pulumi-local-state'))) {
-      console.error('[local-stack-step] worktree chưa từng deploy — chạy step up trước.');
-      return 1;
-    }
-    // Helper chỉ đọc outputs; password + ghi `.env` là việc của caller — tách
-    // này giữ string log được dựng từ number đã validate, không đi qua cùng
-    // scope nào với password access (taint-flow của CodeQL sạch).
-    const resolution = resolvePlatformEnv(ctx, env, ROOT_DIR);
-    if (!resolution.ok) {
-      console.error(`[local-stack-step] ${resolution.error}`);
-      return 1;
-    }
-    // Password canonical từ stack config — reuse, không regenerate: `.env` là
-    // bản sao của config, khôi phục được khi bị xoá mà không xoay password.
-    //
-    // Tên biến `resolution` CÓ CHỦ ĐÍCH, hai heuristic security cùng ăn khớp:
-    // 1. Semgrep `security-sensitive-value-logged`: source pattern khớp biến
-    //    TRẦN tên `password*` — không còn biến nào tên password* bị log.
-    // 2. CodeQL `js/clear-text-logging`: name-heuristic coi biến tên chứa
-    //    "password" là sensitive qua MỌI property access (`.error` cũng dính),
-    //    nên chỗ log phải đứng trên biến không chứa từ đó (legacy
-    //    `local-deploy` chứng minh: `resolution.error` trên cùng flow pass).
-    const canonical = resolvePostgresPassword(ctx, env);
-    if (!canonical.ok) {
-      console.error(`[local-stack-step] ${canonical.error}`);
-      return 1;
-    }
-    const rootHost = buildRootHost(resolution.traefikHostPort);
-    // `ROOT_DOMAIN` cùng giá trị với `ROOT_HOST` — hai key là hai tên gọi cho
-    // cùng một `host[:port]` gốc (`ROOT_HOST` cho consumer hiện có,
-    // `ROOT_DOMAIN` cho system E2E suite). Bước `env` của đường Nx phải ghi đủ
-    // cùng bộ key với đường legacy trong `local-deploy.ts`.
-    const { envPath } = upsertLocalEnv(ctx.worktreeRoot, {
-      [ROOT_HOST_ENV_KEY]: rootHost,
-      [ROOT_DOMAIN_ENV_KEY]: rootHost,
-      [POSTGRES_PASSWORD_ENV_KEY]: canonical.password,
-    });
-    console.log(
-      `[local-stack-step] ${ROOT_HOST_ENV_KEY}=${rootHost}, ${ROOT_DOMAIN_ENV_KEY}=${rootHost} đã ghi vào ${envPath}`,
-    );
-    return 0;
   }
 
   // step === 'smoke'
@@ -467,7 +415,7 @@ function unitUpArgs(ctx: LocalDeployContext): string[] {
   ];
 }
 
-/** Step `up` cho một project: secrets (nếu có) rồi `pulumi up`. */
+/** Step `up` cho một project: secrets (nếu có) rồi `pulumi up` (+ ghi `.env` trên platform). */
 async function runUpStep(
   project: string,
   ctx: LocalDeployContext,
@@ -501,13 +449,21 @@ async function runUpStep(
         env,
         { prepareStack: true, stream: true },
       );
+      // Ghi `.env` ngay sau khi up xanh: outputs platform (port Traefik thật)
+      // chỉ tồn tại sau up, và mọi step unit kế tiếp đọc ROOT_HOST từ file này
+      // — gộp vào step up là graph không còn task trung gian nào phải truyền
+      // dữ liệu giữa hai target. Password lấy từ chính stack config (canonical,
+      // đã resolve ở `resolvePlatformUp`) — `.env` là bản sao, không sinh lần
+      // thứ hai.
+      const envWritten = await writePlatformLocalEnv(project, ctx, env);
+      if (!envWritten.ok) return 1;
       return 0;
     }
 
     const rootHost = readRootHostFromEnv(ctx.worktreeRoot);
     if (rootHost === undefined) {
       console.error(
-        '[local-stack-step] thiếu ROOT_HOST trong .env — step env của platform chưa chạy ' +
+        '[local-stack-step] thiếu ROOT_HOST trong .env — platform up chưa ghi .env ' +
           'hoặc .env đã bị xoá. Chạy lại orchestration từ đầu.',
       );
       return 1;
@@ -545,7 +501,64 @@ async function runUpStep(
 }
 
 /**
- * Đọc ROOT_HOST từ `.env` của worktree — artifact mà step `env` ghi.
+ * Đọc outputs platform rồi ghi `.env` của worktree — phần "env" được gộp vào
+ * step `up` của platform (graph local không còn target `local-env` riêng).
+ *
+ * Upsert chỉ đụng ĐÚNG các key sở hữu (`LOCAL_ENV_OWNED_KEYS` — contract
+ * #366): file chưa có thì tạo mới, có rồi thì chỉ thay dòng key sở hữu, mọi
+ * dòng khác giữ nguyên byte-for-byte.
+ *
+ * Returns `{ ok: false }` khi đọc outputs/password lỗi — caller (step up của
+ * platform) dừng với exit 1; upsert throw khi giá trị dị hình (newline) —
+ * fail-loud theo contract của `upsertLocalEnv`.
+ */
+async function writePlatformLocalEnv(
+  project: string,
+  ctx: LocalDeployContext,
+  env: NodeJS.ProcessEnv,
+): Promise<{ ok: true } | { ok: false }> {
+  // Helper chỉ đọc outputs; password + ghi `.env` là việc của caller — tách
+  // này giữ string log được dựng từ number đã validate, không đi qua cùng
+  // scope nào với password access (taint-flow của CodeQL sạch).
+  const resolution = resolvePlatformEnv(ctx, env, ROOT_DIR);
+  if (!resolution.ok) {
+    console.error(`[local-stack-step] ${resolution.error}`);
+    return { ok: false };
+  }
+  // Password canonical từ stack config — reuse, không regenerate: `.env` là
+  // bản sao của config, khôi phục được khi bị xoá mà không xoay password.
+  //
+  // Tên biến `resolution` CÓ CHỦ ĐÍCH, hai heuristic security cùng ăn khớp:
+  // 1. Semgrep `security-sensitive-value-logged`: source pattern khớp biến
+  //    TRẦN tên `password*` — không còn biến nào tên password* bị log.
+  // 2. CodeQL `js/clear-text-logging`: name-heuristic coi biến tên chứa
+  //    "password" là sensitive qua MỌI property access (`.error` cũng dính),
+  //    nên chỗ log phải đứng trên biến không chứa từ đó (legacy
+  //    `local-deploy` chứng minh: `resolution.error` trên cùng flow pass).
+  const canonical = resolvePostgresPassword(ctx, env);
+  if (!canonical.ok) {
+    console.error(`[local-stack-step] ${canonical.error}`);
+    return { ok: false };
+  }
+  const rootHost = buildRootHost(resolution.traefikHostPort);
+  // `ROOT_DOMAIN` cùng giá trị với `ROOT_HOST` — hai key là hai tên gọi cho
+  // cùng một `host[:port]` gốc (`ROOT_HOST` cho consumer hiện có,
+  // `ROOT_DOMAIN` cho system E2E suite). Bước up của platform ghi đủ cùng bộ
+  // key sở hữu với đường legacy trong `local-deploy.ts`.
+  const { envPath } = upsertLocalEnv(ctx.worktreeRoot, {
+    [ROOT_HOST_ENV_KEY]: rootHost,
+    [ROOT_DOMAIN_ENV_KEY]: rootHost,
+    [POSTGRES_PASSWORD_ENV_KEY]: canonical.password,
+  });
+  console.log(
+    `[local-stack-step] ${ROOT_HOST_ENV_KEY}=${rootHost}, ${ROOT_DOMAIN_ENV_KEY}=${rootHost} đã ghi vào ${envPath}`,
+  );
+  return { ok: true };
+}
+
+/**
+ * Đọc ROOT_HOST từ `.env` của worktree — artifact mà platform up ghi sau khi
+ * `pulumi up` xanh.
  *
  * `.env` không trở thành nguồn sự thật của resource vì hàm này chỉ đọc: giá trị
  * sai chỉ làm issuer/audience của auth lệch hostname và luồng fail ở smoke.
@@ -700,7 +713,7 @@ export function resolvePactApiMachineToken(
 function runSmokeStep(worktreeRoot: string): number {
   const rootHost = readRootHostFromEnv(worktreeRoot);
   if (rootHost === undefined) {
-    console.error('[local-stack-step] smoke: thiếu ROOT_HOST trong .env — step env chưa chạy?');
+    console.error('[local-stack-step] smoke: thiếu ROOT_HOST trong .env — platform up chưa chạy?');
     return 1;
   }
   const smoke = exec(

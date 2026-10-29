@@ -47,12 +47,6 @@
               "@ecoma-io/pact-broker-api"
             ],
             "target": "build"
-          },
-          {
-            "projects": [
-              "platform-deploy"
-            ],
-            "target": "local-env"
           }
         ]
       }

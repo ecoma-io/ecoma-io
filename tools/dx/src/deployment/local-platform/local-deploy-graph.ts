@@ -32,7 +32,7 @@ import { join } from 'node:path';
 import { ROOT_DIR } from '../../utils.js';
 
 /** Target Nx của lane local trên deploy project. */
-export type LocalLaneTarget = 'local-up' | 'local-env' | 'local-smoke';
+export type LocalLaneTarget = 'local-up' | 'local-smoke';
 
 /**
  * Target build-prerequisite mà một `dependsOn` của `local-up` được phép khai
@@ -74,11 +74,7 @@ export const LOCAL_LANE_PROJECTS = [
 export type LocalLaneProject = (typeof LOCAL_LANE_PROJECTS)[number];
 
 /** Target mặc định mà orchestration chạy — toàn bộ chuỗi qua run-many. */
-export const LOCAL_LANE_TARGETS: readonly LocalLaneTarget[] = [
-  'local-up',
-  'local-env',
-  'local-smoke',
-];
+export const LOCAL_LANE_TARGETS: readonly LocalLaneTarget[] = ['local-up', 'local-smoke'];
 
 /** Lỗi dữ liệu khai báo — fail-closed, không bao giờ "đoán" thứ tự. */
 export class LocalLaneGraphError extends Error {}
@@ -131,15 +127,14 @@ function normalizeDependsOnEntry(entry: NonNullable<JsonTargetSpec['dependsOn']>
  *   hay implicit) vẫn là lỗi như cũ: thứ tự lane không bao giờ "đoán".
  * - `{"projects": [<lane project>], "target": "local-up"}` là spine edge thật
  *   giữa hai stack — tham gia topo.
- * - `{"projects": [<lane project>], "target": "local-env"}` (platform) cung
- *   cấp dữ liệu `.env` nhưng KHÔNG tham gia spine — đúng ngữ nghĩa hiện có.
  * - `{"projects": [<bất kỳ>], "target": "build"}` là build prerequisite —
  *   được phép trỏ ra ngoài lane (app bundle), KHÔNG tham gia spine. Target
  *   `build` trên project trong lane cũng rơi vào đây: nó không phải up của
  *   stack nào, giữ một classification duy nhất cho một target.
- * - Mọi tổ hợp khác (project ngoài lane với `local-up`/`local-env`, target
- *   lạ nói chung) ném `LocalLaneGraphError` với đúng thông điệp cũ — một
- *   `dependsOn` sai phải đỏ ở validator TRƯỚC khi Nx kịp chạy.
+ * - Mọi tổ hợp khác (project ngoài lane với `local-up`, target lạ nói chung,
+ *   gồm cả `local-env` đã bị gỡ khỏi lane) ném `LocalLaneGraphError` với đúng
+ *   thông điệp cũ — một `dependsOn` sai phải đỏ ở validator TRƯỚC khi Nx kịp
+ *   chạy.
  */
 export function classifyLocalUpDependsOnEntry(
   project: LocalLaneProject,
@@ -160,19 +155,14 @@ export function classifyLocalUpDependsOnEntry(
       `${project}:local-up depends on ${normalized.project} which is outside the local lane`,
     );
   }
-  if (normalized.target !== 'local-up' && normalized.target !== 'local-env') {
+  if (normalized.target !== 'local-up') {
     throw new LocalLaneGraphError(
       `${project}:local-up depends on unexpected target "${normalized.target}" — ` +
-        'the spine only allows local-up targets (plus platform local-env for .env data; ' +
-        'target "build" is the only build prerequisite allowed to point outside the lane)',
+        'the spine only allows local-up targets ' +
+        '(target "build" is the only build prerequisite allowed to point outside the lane)',
     );
   }
-  if (normalized.target === 'local-up') {
-    return { kind: 'spine', dependency: normalized.project as LocalLaneProject };
-  }
-  // `local-env` chỉ tồn tại trên platform và không tham gia spine — edge
-  // spine chỉ đếm các phụ thuộc `local-up` (dependency thật giữa các stack).
-  return { kind: 'prerequisite' };
+  return { kind: 'spine', dependency: normalized.project as LocalLaneProject };
 }
 
 /** Target của MỘT project — từ package.json; không có target → lỗi (khai báo thiếu). */
@@ -183,9 +173,9 @@ export function readProjectLaneTargets(project: string): Record<LocalLaneTarget,
   for (const target of LOCAL_LANE_TARGETS) {
     const spec = targets[target];
     if (spec === undefined) {
-      // `local-env`/`local-smoke` là target CHỈ platform có (outputs và smoke
-      // end-to-end thuộc về platform) — thiếu chúng trên unit là đúng cấu trúc,
-      // không phải lỗi. Chỉ `local-up` là bắt buộc trên MỌI project của chuỗi.
+      // `local-smoke` là target CHỈ platform có (smoke end-to-end thuộc về
+      // platform) — thiếu nó trên unit là đúng cấu trúc, không phải lỗi. Chỉ
+      // `local-up` là bắt buộc trên MỌI project của chuỗi.
       if (target !== 'local-up') continue;
       throw new LocalLaneGraphError(
         `${project} is missing target ${target} — the Nx declaration is the source of truth for local lane order`,
@@ -199,13 +189,15 @@ export function readProjectLaneTargets(project: string): Record<LocalLaneTarget,
 /**
  * Danh sách project thuộc chuỗi local-up, xếp theo thứ tự topo từ `dependsOn`.
  *
- * Chỉ xét target `local-up` (chuỗi spine của lane); `local-env`/`local-smoke`
- * gắn trên platform và được orchestration chạy trong cùng lệnh `run-many`.
- * Build prerequisite (`target: "build"` trỏ ngoài lane) được chấp nhận nhưng
- * KHÔNG tham gia topo — thứ tự build↔up do Nx đảm bảo lúc chạy task graph.
+ * Chỉ xét target `local-up` (chuỗi spine của lane); `local-smoke` gắn trên
+ * platform và được orchestration chạy trong cùng lệnh `run-many`. Việc ghi
+ * `.env` sống bên TRONG task platform `local-up` (sau khi `pulumi up` xanh) —
+ * không còn target trung gian nào phải chèn giữa các stack. Build
+ * prerequisite (`target: "build"` trỏ ngoài lane) được chấp nhận nhưng KHÔNG
+ * tham gia topo — thứ tự build↔up do Nx đảm bảo lúc chạy task graph.
  * Fail-closed: thiếu project khai báo, thiếu target, thiếu dependsOn, khai
- * báo sai (project ngoài lane cho local-up/local-env, target lạ), hay có
- * chu trình đều là lỗi graph chứ không phải "chạy theo thứ tự cũ".
+ * báo sai (project ngoài lane cho local-up, target lạ), hay có chu trình đều
+ * là lỗi graph chứ không phải "chạy theo thứ tự cũ".
  */
 export function localUpProjectSequence(): LocalLaneProject[] {
   const specs = new Map<LocalLaneProject, JsonTargetSpec>();
@@ -261,20 +253,17 @@ export function localUpProjectSequence(): LocalLaneProject[] {
 /**
  * Toàn bộ task của lane local theo thứ tự topo chạy.
  *
- * Chuỗi spine (`local-up`) trước, rồi các target phụ trợ của platform gắn đúng
- * vị trí dữ liệu: `local-env` ngay sau platform-up (nó cần outputs), các task
- * còn lại theo dependency; `local-smoke` là node lá — luôn CUỐI.
+ * Chuỗi spine (`local-up`) thuần: platform-up (tự ghi `.env` ngay sau khi
+ * `pulumi up` xanh — mọi step unit đọc ROOT_HOST từ file đó), rồi các unit
+ * theo dependency; `local-smoke` là node lá — luôn CUỐI.
  *
  * Dùng cho: orchestration `run-many` (danh sách `-t`), unit test cấu trúc, và
  * tài liệu hoá contract thứ tự.
  */
 export function localDeployTaskSequence(): LocalLaneTask[] {
   const upSequence = localUpProjectSequence();
-  const tasks: LocalLaneTask[] = [{ project: 'platform-deploy', target: 'local-up' }];
-  // env NGAY sau platform-up: mọi step unit đọc ROOT_HOST từ `.env` mà nó ghi.
-  tasks.push({ project: 'platform-deploy', target: 'local-env' });
+  const tasks: LocalLaneTask[] = [];
   for (const project of upSequence) {
-    if (project === 'platform-deploy') continue;
     tasks.push({ project, target: 'local-up' });
   }
   tasks.push({ project: 'platform-deploy', target: 'local-smoke' });

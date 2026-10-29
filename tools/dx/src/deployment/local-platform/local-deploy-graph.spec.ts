@@ -72,13 +72,15 @@ describe('local lane Nx declarations (source of truth)', () => {
     expect(readProjectLaneTargets('platform-deploy')['local-up'].dependsOn).toBeUndefined();
   });
 
-  it('home depends on platform local-up AND platform local-env (needs .env artifacts)', () => {
+  it('home depends on platform local-up only (the .env it needs is written inside that task)', () => {
     const deps = readProjectLaneTargets('home-deploy')['local-up'].dependsOn ?? [];
     const normalized = deps.map((d) =>
       typeof d === 'string' ? d : `${(d.projects ?? []).join('|')}:${d.target ?? ''}`,
     );
     expect(normalized).toContain('platform-deploy:local-up');
-    expect(normalized).toContain('platform-deploy:local-env');
+    // Graph KHÔNG còn carve-out: không dependsOn nào được phép trỏ target
+    // local-env — target đó đã bị gỡ khỏi toàn bộ lane.
+    expect(normalized).not.toContain('platform-deploy:local-env');
   });
 
   it('account depends on backoffice; auth depends on account (bounded-context invariant)', () => {
@@ -139,25 +141,22 @@ describe('local lane Nx declarations (source of truth)', () => {
     expect(names).toContain('push-notification-deploy:local-up');
   });
 
-  it('platform local-env declares a RAW dependsOn edge on platform local-up (outputs exist only after up)', () => {
-    // Quy ước "dependsOn local-up" phải là FIELD thật trong khai báo Nx, không
-    // chỉ lời hứa trong comment: không có field này Nx đặt local-env SONG SONG
-    // local-up (parallel level 0) — worktree mới exit 1 (guard chưa deploy),
-    // worktree cũ đọc outputs CŨ khi platform đang replace resource. Test đọc
-    // dependsOn THÔ từ package.json (không qua module derive) nên một xoá field
-    // "cho gọn" sẽ đỏ tại đây, không cần graph Nx thật.
-    const envDeps = readProjectLaneTargets('platform-deploy')['local-env'].dependsOn;
-    if (!Array.isArray(envDeps)) {
-      throw new Error('local-env: dependsOn phai la mang khai bao Nx tường minh');
+  it('no lane target or dependsOn entry references local-env anywhere (no carve-out)', () => {
+    // Target `local-env` đã bị gỡ khỏi lane — ghi `.env` sống bên TRONG task
+    // platform `local-up`. Test đọc khai báo THÔ của MỌI project lane (không
+    // qua module derive) nên một dependsOn còn trỏ local-env, hay một target
+    // local-env còn được khai, đều đỏ tại đây.
+    for (const project of LOCAL_LANE_PROJECTS) {
+      for (const [target, spec] of Object.entries(readProjectLaneTargets(project))) {
+        expect(target, `${project} must not declare target local-env`).not.toBe('local-env');
+        for (const d of spec.dependsOn ?? []) {
+          const normalized = typeof d === 'string' ? d : (d.target ?? '');
+          expect(normalized, `${project}:${target} must not depend on local-env`).not.toBe(
+            'local-env',
+          );
+        }
+      }
     }
-    const edges = envDeps.filter(
-      (d) =>
-        typeof d !== 'string' && d.target === 'local-up' && d.projects?.[0] === 'platform-deploy',
-    );
-    expect(edges).toHaveLength(1);
-    // Chỉ đúng MỘT edge lên local-up cùng project — env không được treo thêm
-    // dependency nào khác (nó cần duy nhất outputs của platform up).
-    expect(dependsOnNames(envDeps)).toEqual(['platform-deploy:local-up']);
   });
 
   it('auth local-up declares build prerequisites on BOTH app projects (WIC bundles exist before up)', () => {
@@ -309,33 +308,32 @@ describe('localUpProjectSequence — structural invariants', () => {
 });
 
 describe('localDeployTaskSequence — legacy parity and wave-2 extension', () => {
-  it('task sequence EXTENDS the legacy 8-step mirror with the four wave-2 units', async () => {
+  it('task sequence maps the legacy 8-step mirror onto a pure local-up/local-smoke spine', async () => {
     // Import muộn để song song hoá rõ hai nguồn: DEPLOY_STEPS (bản hard-coded)
-    // và task sequence (dẫn xuất từ khai báo Nx). Wave 2 (#264) mở rộng lane
-    // thêm 4 unit — chuỗi unit cũ nằm NGAY SAU platform-env và giữ nguyên thứ
-    // tự tương đối; smoke vẫn là node lá ở vị trí cuối.
+    // và task sequence (dẫn xuất từ khai báo Nx). Hai step read-outputs +
+    // update-env gộp vào task platform local-up (step up tự ghi .env) — chuỗi
+    // task chỉ còn local-up của 9 stack + local-smoke cuối.
     const { DEPLOY_STEPS, STEP_TO_TASK } = await import('./local-deploy.js');
     const tasks = localDeployTaskSequence().map((t) => `${t.project}:${t.target}`);
 
     const mapped = DEPLOY_STEPS.map((step) => STEP_TO_TASK[step]);
-    // Hai bước read-outputs + update-env gộp thành MỘT task local-env (outputs
-    // và ghi .env là một biến đổi dữ liệu). Chuỗi mới 11 phần tử: các unit
-    // wave-2 (chỉ phụ thuộc platform/account) được Kahn cho vào ngay khi
-    // dependency của chính nó xong — xen giữa chuỗi cũ nhưng KHÔNG đổi thứ tự
-    // tương đối của chuỗi cũ; smoke vẫn CUỐI.
     expect(mapped).toHaveLength(8);
-    expect(tasks).toHaveLength(11);
+    expect(tasks).toHaveLength(10); // 9 local-up + 1 local-smoke
     expect(tasks[0]).toBe(mapped[0]); // platform-up
-    expect(tasks[1]).toBe(mapped[1]); // local-env (read-outputs + update-env gộp)
-    const legacyUnits = mapped.slice(3, 7); // home → backoffice → account → auth
+    // Không task trung gian nào giữa platform-up và các unit — mọi task là
+    // local-up, trừ smoke CUỐI.
+    for (const task of tasks.slice(0, -1)) {
+      expect(task.endsWith(':local-up')).toBe(true);
+    }
     // Chuỗi cũ giữ nguyên thứ tự tương đối trong chuỗi mới (subsequence).
-    let cursor = 2;
+    const legacyUnits = [mapped[3], mapped[4], mapped[5], mapped[6]]; // home → backoffice → account → auth
+    let cursor = 1;
     for (const legacyTask of legacyUnits) {
       const found = tasks.indexOf(legacyTask, cursor);
       expect(found).toBeGreaterThan(cursor - 1);
       cursor = found + 1;
     }
-    // Bốn unit wave-2 đủ mặt trong chuỗi, sau platform-env.
+    // Bốn unit wave-2 đủ mặt trong chuỗi.
     for (const wave2 of [
       'pact-broker-api-deploy:local-up',
       'pact-broker-app-deploy:local-up',
@@ -344,17 +342,17 @@ describe('localDeployTaskSequence — legacy parity and wave-2 extension', () =>
     ]) {
       expect(tasks).toContain(wave2);
     }
-    expect(tasks[10]).toBe('platform-deploy:local-smoke'); // smoke vẫn CUỐI
+    expect(tasks[tasks.length - 1]).toBe('platform-deploy:local-smoke'); // smoke vẫn CUỐI
     // Bất biến chính vẫn được chứng minh trên chuỗi mới: account trước auth.
     expect(tasks.indexOf('account-deploy:local-up')).toBeLessThan(
       tasks.indexOf('auth-deploy:local-up'),
     );
   });
 
-  it('local-env comes right after platform local-up; local-smoke is last', () => {
+  it('platform local-up is first, no local-env task exists, local-smoke is last', () => {
     const tasks = localDeployTaskSequence();
     expect(tasks[0]).toEqual({ project: 'platform-deploy', target: 'local-up' });
-    expect(tasks[1]).toEqual({ project: 'platform-deploy', target: 'local-env' });
+    expect(tasks.some((t) => t.target === ('local-env' as never))).toBe(false);
     expect(tasks[tasks.length - 1]).toEqual({ project: 'platform-deploy', target: 'local-smoke' });
   });
 
@@ -407,13 +405,16 @@ describe('local lane safety — single configuration, never cacheable', () => {
     const nxJson = JSON.parse(readFileSync(join(ROOT_DIR, 'nx.json'), 'utf8')) as {
       targetDefaults: Record<string, Array<{ cache?: boolean }>>;
     };
-    for (const target of ['local-up', 'local-env', 'local-smoke']) {
+    for (const target of ['local-up', 'local-smoke']) {
       const defaults = nxJson.targetDefaults[target];
       expect(Array.isArray(defaults), `${target} must have targetDefaults`).toBe(true);
       for (const entry of defaults ?? []) {
         expect(entry.cache, `${target} must never be cacheable (side-effecting)`).toBe(false);
       }
     }
+    // Target `local-env` không còn tồn tại — targetDefaults cũng phải không giữ
+    // entry chết cho nó.
+    expect(nxJson.targetDefaults['local-env']).toBeUndefined();
   });
 
   it('nx.json does NOT attach dependsOn to local-up (order lives in project declarations)', () => {

@@ -3,7 +3,7 @@
  *
  * Thứ tự là CONTRACT (không phải chi tiết cài đặt):
  *
- *   platform up → đọc outputs → cập nhật .env → home up → smoke HTTPS.
+ *   platform up (tự ghi .env sau khi up xanh) → home up → smoke HTTPS.
  *
  * Mỗi bước chỉ chạy khi bước trước thành công; `.env` KHÔNG BAO GIỜ là nguồn
  * sự thật — nó là artifact tiện dụng được ghi từ Pulumi outputs. Không bước
@@ -382,13 +382,14 @@ export type DeployStep = (typeof DEPLOY_STEPS)[number];
  *
  * `DEPLOY_STEPS` không còn là nguồn thứ tự của đường chạy mới: nguồn thứ tự là
  * khai báo Nx (`dependsOn` trong package.json của từng deploy project), và bảng này chỉ
- * ánh xạ từng step cũ sang task tương đương để `pnpm dx local-deploy` qua Nx
- * giữ đúng hành vi 8 bước.
+ * ánh xạ từng step cũ sang task tương đương. Hai step read-outputs/update-env
+ * đã gộp vào task platform `local-up` (step up của platform tự ghi `.env` sau
+ * khi `pulumi up` xanh) — graph không còn task trung gian nào.
  */
 export const STEP_TO_TASK: Readonly<Record<DeployStep, string>> = {
   'platform-up': 'platform-deploy:local-up',
-  'read-outputs': 'platform-deploy:local-env',
-  'update-env': 'platform-deploy:local-env',
+  'read-outputs': 'platform-deploy:local-up',
+  'update-env': 'platform-deploy:local-up',
   'home-up': 'home-deploy:local-up',
   'backoffice-up': 'backoffice-deploy:local-up',
   'account-up': 'account-deploy:local-up',
