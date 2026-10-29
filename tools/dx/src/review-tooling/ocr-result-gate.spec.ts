@@ -118,6 +118,23 @@ const CLEAN_STDERR =
   '[ocr] Skipping .env — matches a built-in secret path\n' +
   '[ocr] Filtered 2 file(s) by include/exclude rules\n';
 
+/**
+ * Kết quả `skipped` đúng schema thật (mọi coverage array rỗng); các test
+ * nothing-in-scope dùng lại nguyên khối và chỉ đổi stderr/rule.
+ */
+function skippedResult(): Record<string, unknown> {
+  return ocrResult({
+    status: 'skipped',
+    message: 'Review skipped: no items were selected.',
+    summary: { files_reviewed: 0, comments: 0, total_tokens: 0, elapsed: '0s' },
+    manifest: {
+      schema_version: 'ocr.run-manifest/v1',
+      terminal_state: 'skipped',
+      coverage: { selected: [], completed: [], reused: [], failed: [], waived: [] },
+    },
+  });
+}
+
 describe('ocr-result-gate', () => {
   it('passes when the review completed on at least one file', () => {
     const paths = writeCase(ocrResult({}), CLEAN_STDERR);
@@ -129,6 +146,13 @@ describe('ocr-result-gate', () => {
   });
 
   it('fails when the review was skipped because no item was selected', () => {
+    // Under the issue #391 contract this fixture still fails, and honestly so:
+    // no rule file exists on disk (`rule: null` -> default path unreadable), so
+    // the audit falls back to the MARKDOWN_EXT heuristic; the skipped files
+    // docs/a.md and docs/b.md match that fallback, so the gate cannot prove
+    // they are outside the review scope. Without that proof the skipped path
+    // stays fail-closed — exactly the #239 guard. A spec-only diff would pass
+    // here; a markdown diff must not.
     const paths = writeCase(
       ocrResult({
         status: 'skipped',
@@ -366,6 +390,214 @@ describe('ocr-result-gate', () => {
     expect(status).toBe(1);
     expect(stdout).toContain('cannot rule out size-gated skips');
     expect(stdout).toContain('is empty');
+  });
+
+  it('passes when every changed file is provably outside the rule scope (issue 391)', () => {
+    // Đúng bằng chứng của run thật PR #390 (run 40836248838): 1 file spec duy
+    // nhất bị CLI loại theo path/extension, rule chỉ include Markdown → không có
+    // gì trong phạm vi để review. Cổng phải pass kèm ghi chú thay vì đỏ vĩnh
+    // viễn một diff hợp lệ.
+    const paths = writeCase(
+      skippedResult(),
+      '[ocr] 1 file(s) changed, reviewing 0 in /repo\n' +
+        '[ocr] Skipping tools/dx/src/security/semgrep-scan.spec.ts — filtered by path/extension rules\n' +
+        '[ocr] Filtered 1 file(s) by include/exclude rules\n' +
+        '[ocr] No supported files changed. Skipping review.\n',
+      {
+        include: ['**/*.md', '**/*.markdown', '**/*.mdx'],
+        exclude: [
+          '**/*.generated.*',
+          '**/testdata/**',
+          '**/fixtures/**',
+          '**/__tests__/**',
+          '**/__snapshots__/**',
+          '**/dist/**',
+          '**/.nuxt/**',
+          '**/{id_rsa,id_dsa,id_ecdsa,id_ed25519}*',
+        ],
+      },
+    );
+    const { status, stdout } = runGate(paths);
+    expect(status).toBe(0);
+    expect(stdout).toContain('VERIFIED');
+    expect(stdout).toContain('0 in-scope file(s): nothing to review under the project rule');
+    expect(stdout).not.toContain('::error::');
+    expect(stdout).not.toContain('NOT VERIFIED');
+  });
+
+  it('fails when a skipped file was inside the rule include scope', () => {
+    // Bảo vệ #239 trên đường `skipped`: file Markdown thuộc phạm vi rule mà vẫn
+    // bị bỏ nghĩa là rule mất hiệu lực cho run này — không được cấp qua.
+    const paths = writeCase(
+      skippedResult(),
+      '[ocr] 2 file(s) changed, reviewing 0 in /repo\n' +
+        '[ocr] Skipping docs/architecture.md — filtered by path/extension rules\n' +
+        '[ocr] Skipping tools/dx/src/app.spec.ts — filtered by path/extension rules\n' +
+        '[ocr] Filtered 2 file(s) by include/exclude rules\n',
+      { include: ['**/*.md'], exclude: ['**/dist/**'] },
+    );
+    const { status, stdout } = runGate(paths);
+    expect(status).toBe(1);
+    expect(stdout).toContain('inside the project rule include scope were skipped');
+    expect(stdout).toContain('docs/architecture.md');
+    expect(stdout).toContain('::error::');
+  });
+
+  it('fails when a skipped review has an unrecognized skip reason', () => {
+    // Lý do lạ = có thể là một gate mới đang bỏ file trong phạm vi — không đủ
+    // bằng chứng "mọi file đều ngoài phạm vi".
+    const paths = writeCase(
+      skippedResult(),
+      '[ocr] 1 file(s) changed, reviewing 0 in /repo\n' +
+        '[ocr] Skipping tools/dx/src/app.spec.ts — some future gate\n',
+      { include: ['**/*.md'], exclude: [] },
+    );
+    const { status, stdout } = runGate(paths);
+    expect(status).toBe(1);
+    expect(stdout).toContain('unrecognized reason');
+    expect(stdout).toContain('::error::');
+  });
+
+  it('fails when a skipped review has a size-gated skip', () => {
+    // File bị gate kích thước là file lớn — luôn đáng review nếu nằm trong phạm
+    // vi, nên không bao giờ coi là "nothing in scope".
+    const paths = writeCase(
+      skippedResult(),
+      '[ocr] 1 file(s) changed, reviewing 0 in /repo\n' +
+        '[ocr] Skipping docs/big.md (~189000 tokens exceeds 80% of max_tokens(200000))\n',
+      { include: ['**/*.md'], exclude: [] },
+    );
+    const { status, stdout } = runGate(paths);
+    expect(status).toBe(1);
+    expect(stdout).toContain('dropped for exceeding the size limit');
+    expect(stdout).toContain('::error::');
+  });
+
+  it('fails when the stderr log is missing on a skipped review', () => {
+    // Không log = không có bằng chứng file nào bị bỏ vì sao — không thể chứng
+    // minh "mọi file đều ngoài phạm vi".
+    const paths = writeCase(skippedResult(), CLEAN_STDERR);
+    const { status, stdout } = runGate({ result: paths.result, stderr: '/nonexistent.log' });
+    expect(status).toBe(1);
+    expect(stdout).toContain('terminal_state is "skipped"');
+    expect(stdout).toContain('cannot prove nothing-in-scope');
+    expect(stdout).toContain('::error::');
+  });
+
+  it('fails when the selection line contradicts the skipped state', () => {
+    // CLI nói `reviewing 2` nhưng manifest nói `skipped`: dữ liệu tự mâu thuẫn,
+    // không được dùng làm bằng chứng "nothing in scope".
+    const paths = writeCase(
+      skippedResult(),
+      '[ocr] 4 file(s) changed, reviewing 2 in /repo\n' +
+        '[ocr] Skipping pnpm-lock.yaml — filtered by path/extension rules\n' +
+        '[ocr] Skipping .env — matches a built-in secret path\n' +
+        '[ocr] Filtered 2 file(s) by include/exclude rules\n',
+      { include: ['**/*.md'], exclude: [] },
+    );
+    const { status, stdout } = runGate(paths);
+    expect(status).toBe(1);
+    expect(stdout).toContain('terminal_state is "skipped"');
+    expect(stdout).toContain('::error::');
+  });
+
+  it('fails when the selection line is absent from a skipped review stderr', () => {
+    // Không có dòng selection thì không chứng minh được CLI thực sự thấy 0 file
+    // đáng chọn — thiếu bằng chứng, fail-closed.
+    const paths = writeCase(
+      skippedResult(),
+      '[ocr] Skipping tools/dx/src/app.spec.ts — filtered by path/extension rules\n',
+      { include: ['**/*.md'], exclude: [] },
+    );
+    const { status, stdout } = runGate(paths);
+    expect(status).toBe(1);
+    expect(stdout).toContain('terminal_state is "skipped"');
+    expect(stdout).toContain('::error::');
+  });
+
+  it('fails when the changed count does not match the skip lines on a skipped review', () => {
+    // 2 file thay đổi nhưng chỉ 1 dòng skip: file còn lại không giải thích được —
+    // có thể là file trong phạm vi bị bỏ im lặng.
+    const paths = writeCase(
+      skippedResult(),
+      '[ocr] 2 file(s) changed, reviewing 0 in /repo\n' +
+        '[ocr] Skipping tools/dx/src/app.spec.ts — filtered by path/extension rules\n' +
+        '[ocr] Filtered 1 file(s) by include/exclude rules\n',
+      { include: ['**/*.md'], exclude: [] },
+    );
+    const { status, stdout } = runGate(paths);
+    expect(status).toBe(1);
+    expect(stdout).toContain('terminal_state is "skipped"');
+    expect(stdout).toContain('::error::');
+  });
+
+  it('passes when a skipped review only filtered binary and secret files out of scope', () => {
+    // PR chỉ đổi lockfile/binary/secret: các lý do bỏ qua đều không cần rule để
+    // biện minh (binary và secret không bao giờ thuộc phạm vi review), nên đây
+    // là "nothing in scope" chính đáng.
+    const paths = writeCase(
+      skippedResult(),
+      '[ocr] 3 file(s) changed, reviewing 0 in /repo\n' +
+        '[ocr] Skipping pnpm-lock.yaml — filtered by path/extension rules\n' +
+        '[ocr] Skipping assets/logo.png — binary file\n' +
+        '[ocr] Skipping .env — matches a built-in secret path\n',
+      { include: ['**/*.md'], exclude: [] },
+    );
+    const { status, stdout } = runGate(paths);
+    expect(status).toBe(0);
+    expect(stdout).toContain('VERIFIED');
+    expect(stdout).toContain('0 in-scope file(s): nothing to review under the project rule');
+    expect(stdout).not.toContain('::error::');
+  });
+
+  it('passes when the selection line is preceded by other stderr output', () => {
+    // CLI có thể in dòng progress/warning trước dòng selection: `SELECTION_LINE`
+    // phải neo theo đầu từng dòng (cờ `m`) và parser phải tìm được dòng selection
+    // ở bất kỳ vị trí nào, nếu không một diff hợp lệ ngoài phạm vi sẽ đỏ oan
+    // (findings OCR của PR #403, run 40863933482).
+    const paths = writeCase(
+      skippedResult(),
+      '[ocr] resolving repository context\n' +
+        '[ocr] 1 file(s) changed, reviewing 0 in /repo\n' +
+        '[ocr] Skipping tools/dx/src/security/semgrep-scan.spec.ts — filtered by path/extension rules\n' +
+        '[ocr] Filtered 1 file(s) by include/exclude rules\n',
+      {
+        include: ['**/*.md', '**/*.markdown', '**/*.mdx'],
+        exclude: [],
+      },
+    );
+    const { status, stdout } = runGate(paths);
+    expect(status).toBe(0);
+    expect(stdout).toContain('VERIFIED');
+    expect(stdout).toContain('0 in-scope file(s): nothing to review under the project rule');
+    expect(stdout).not.toContain('::error::');
+  });
+
+  it('fails when a skipped manifest still lists selected coverage items', () => {
+    // Manifest tự mâu thuẫn: `terminal_state: "skipped"` nhưng coverage có item
+    // selected/completed/reused. Stderr có thể sạch (mọi file được giải thích),
+    // nhưng CLI thực không thể vừa "skipped" vừa có item đã chọn — dữ liệu mâu
+    // thuẫn không được dùng làm bằng chứng "nothing in scope" (findings OCR của
+    // PR #403, run 40863933482).
+    const provablyOutOfScopeStderr =
+      '[ocr] 1 file(s) changed, reviewing 0 in /repo\n' +
+      '[ocr] Skipping tools/dx/src/security/semgrep-scan.spec.ts — filtered by path/extension rules\n' +
+      '[ocr] Filtered 1 file(s) by include/exclude rules\n';
+    const rule = { include: ['**/*.md', '**/*.markdown', '**/*.mdx'], exclude: [] };
+    for (const field of ['selected', 'completed', 'reused'] as const) {
+      const contradiction = skippedResult();
+      const base = contradiction.manifest as Record<string, unknown>;
+      const coverage = base.coverage as Record<string, unknown>;
+      contradiction.manifest = {
+        ...base,
+        coverage: { ...coverage, [field]: [item('docs/a.md')] },
+      };
+      const paths = writeCase(contradiction, provablyOutOfScopeStderr, rule);
+      const { status, stdout } = runGate(paths);
+      expect(status, `coverage.${field} non-empty must block the grant`).toBe(1);
+      expect(stdout).toContain('terminal_state is "skipped"');
+      expect(stdout).toContain('::error::');
+    }
   });
 
   it('notes a missing stderr log without piling on when the review already failed', () => {
