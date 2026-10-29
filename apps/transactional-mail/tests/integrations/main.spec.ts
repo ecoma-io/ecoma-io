@@ -24,8 +24,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { signRequest } from '@ecoma-io/internal-auth-contracts';
 
-import worker from './main';
-import { FINGERPRINT_KEYRING_ENV, type TransactionalMailEnv } from './config';
+import worker from '../../src/main';
+import { FINGERPRINT_KEYRING_ENV, type TransactionalMailEnv } from '../../src/config';
 
 // Không gửi telemetri khi spawn wrangler trong test.
 process.env['WRANGLER_SEND_METRICS'] = 'false';
@@ -35,7 +35,7 @@ const requireFromSpec = createRequire(import.meta.url);
 // tiến trình, cho D1 binding thật với bound parameter.
 const { getPlatformProxy } = requireFromSpec('wrangler') as typeof import('wrangler');
 
-const appDir = join(import.meta.dirname, '..');
+const appDir = join(import.meta.dirname, '..', '..');
 const wranglerConfig = join(appDir, 'wrangler.jsonc');
 const wranglerCli = requireFromSpec.resolve('wrangler');
 
@@ -179,6 +179,20 @@ async function accountPost(
     body: encoded as BodyInit,
   });
   return await worker.fetch(request, env, executionContext);
+}
+
+/**
+ * Seed một delivery FRESH cho một test với key riêng — trước đây describe delivery route
+ * dùng một row từ `beforeAll` và test outcome chuyển row đó sang `sent`, nên `GET envelope`
+ * đỏ khi shuffle chạy nó sau (#385). Row mới tạo luôn ở trạng thái `accepted` bất kể thứ
+ * tự khai báo; test chạy tuần tự trong file nên không test nào xen giữa POST và lượt đọc
+ * ngay sau nó.
+ */
+async function seedDelivery(env: TransactionalMailEnv, idempotencyKey: string): Promise<string> {
+  const response = await accountPost(env, TEMPLATE_BODY, idempotencyKey);
+  expect(response.status).toBe(201);
+  const body = (await response.json()) as { readonly delivery_id: string };
+  return body.delivery_id;
 }
 
 async function rawRows<T = Record<string, unknown>>(
@@ -346,11 +360,13 @@ describe('POST /v1/messages (FR-001 end to end on real D1)', () => {
 
   it('replays the same logical result and creates no second row for the same key', async () => {
     const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
-    const first = await accountPost(env, TEMPLATE_BODY, 'main-spec-key-2');
+    // Key duy nhất của test này: cặp request tạo + replay nằm trọn trong test, không dựa
+    // vào row do test khác tạo trước — shuffle không được đổi verdict (#385).
+    const first = await accountPost(env, TEMPLATE_BODY, 'main-spec-replay-key');
     expect(first.status).toBe(201);
     const firstBody = (await first.json()) as { readonly delivery_id: string };
 
-    const replay = await accountPost(env, TEMPLATE_BODY, 'main-spec-key-2');
+    const replay = await accountPost(env, TEMPLATE_BODY, 'main-spec-replay-key');
     expect(replay.status).toBe(200);
     const replayBody = (await replay.json()) as {
       readonly delivery_id: string;
@@ -369,12 +385,22 @@ describe('POST /v1/messages (FR-001 end to end on real D1)', () => {
 
   it('returns 409 for the same key with a different payload', async () => {
     const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
+    // Tự seed row của key riêng trước khi gửi payload khác: trước đây test dựa vào row
+    // mà test replay tạo trước đó theo thứ tự khai báo — shuffle phải vẫn 409 (#385).
+    const seedBody = JSON.stringify({
+      template: 'account.login-otp',
+      recipient: 'user@example.test',
+      variables: { code: '11111111' },
+    });
+    const seed = await accountPost(env, seedBody, 'main-spec-conflict-key');
+    expect(seed.status).toBe(201);
+
     const conflictBody = JSON.stringify({
       template: 'account.login-otp',
       recipient: 'other@example.test',
       variables: { code: '65432178' },
     });
-    const conflict = await accountPost(env, conflictBody, 'main-spec-key-2');
+    const conflict = await accountPost(env, conflictBody, 'main-spec-conflict-key');
     expect(conflict.status).toBe(409);
     const conflictJson = (await conflict.json()) as { readonly error: { readonly code: string } };
     expect(conflictJson.error.code).toBe('idempotency_key_conflict');
@@ -735,21 +761,10 @@ describe('template authorization (SR-001, route step 3b)', () => {
 });
 
 describe('internal delivery routes on real D1 (§7.2, §6.2.2)', () => {
-  let env: TransactionalMailEnv;
-  let deliveryId = '';
-
-  beforeAll(async () => {
-    env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
-    const response = await accountPost(env, TEMPLATE_BODY, 'routes-seed-key');
-    // beforeAll không phải test block với `vitest/no-standalone-expect`; assert thủ công.
-    if (response.status !== 201) {
-      throw new Error(`seed request failed with status ${response.status}`);
-    }
-    const body = (await response.json()) as { readonly delivery_id: string };
-    deliveryId = body.delivery_id;
-  });
-
   it('GET envelope carries exactly the eight message fields plus dispatch_generation', async () => {
+    const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
+    const deliveryId = await seedDelivery(env, 'routes-envelope-key');
+
     const response = await mjFetch(env, {
       method: 'GET',
       path: `/internal/deliveries/${deliveryId}`,
@@ -779,6 +794,7 @@ describe('internal delivery routes on real D1 (§7.2, §6.2.2)', () => {
   });
 
   it('GET returns 404 for an unknown delivery without echoing the id in the message', async () => {
+    const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
     const response = await mjFetch(env, {
       method: 'GET',
       path: '/internal/deliveries/dlv_does-not-exist',
@@ -789,6 +805,9 @@ describe('internal delivery routes on real D1 (§7.2, §6.2.2)', () => {
   });
 
   it('outcome applies once, replays as duplicate, and stale on a lower generation', async () => {
+    const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
+    const deliveryId = await seedDelivery(env, 'routes-outcome-key');
+
     const first = await mjFetch(env, {
       method: 'POST',
       path: `/internal/deliveries/${deliveryId}/outcome`,
@@ -829,6 +848,7 @@ describe('internal delivery routes on real D1 (§7.2, §6.2.2)', () => {
   });
 
   it('outcome for an unknown delivery is 404', async () => {
+    const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
     const response = await mjFetch(env, {
       method: 'POST',
       path: '/internal/deliveries/dlv_unknown/outcome',
@@ -838,6 +858,10 @@ describe('internal delivery routes on real D1 (§7.2, §6.2.2)', () => {
   });
 
   it('outcome with a malformed body is 400 after authentication', async () => {
+    const env = makeEnv(proxy?.env['mail'], proxy?.env['QUEUE']);
+    // Row thật (tự seed) + body malformed: 400 chứng minh validate body đứng TRƯỚC lookup
+    // delivery — row tồn tại mà route vẫn từ chối body trước khi chạm persistence.
+    const deliveryId = await seedDelivery(env, 'routes-malformed-key');
     const response = await mjFetch(env, {
       method: 'POST',
       path: `/internal/deliveries/${deliveryId}/outcome`,
