@@ -15,7 +15,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const TEST_TIMEOUT = 120_000;
 
-const appDir = dirname(import.meta.dirname);
+// Suite nằm ở `tests/integrations/`, hai cấp dưới root app — đi lên hai cấp mới ra appDir.
+const appDir = dirname(dirname(import.meta.dirname));
 const migrationsDir = join(appDir, 'migrations');
 const req = createRequire(import.meta.url);
 const wranglerCli = req.resolve('wrangler');

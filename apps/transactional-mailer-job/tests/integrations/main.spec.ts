@@ -37,7 +37,7 @@ import {
   type D1DatabaseLike,
 } from '@ecoma-io/transactional-mailer-job-infrastructure';
 
-import workerMj from './main';
+import workerMj from '../../src/main';
 
 // `main` không export hằng tên queue (named export non-function làm workerd
 // từ chối boot entry module) — test khai literal khớp consumer config trong
@@ -51,7 +51,8 @@ process.env['WRANGLER_SEND_METRICS'] = 'false';
 const requireFromSpec = createRequire(import.meta.url);
 const { getPlatformProxy } = requireFromSpec('wrangler') as typeof import('wrangler');
 
-const appDir = join(import.meta.dirname, '..');
+// Suite nằm ở `tests/integrations/`, hai cấp dưới root app.
+const appDir = join(import.meta.dirname, '..', '..');
 const wranglerConfig = join(appDir, 'wrangler.jsonc');
 
 const INTERNAL_SECRET = 'secret-main-spec-mj';
