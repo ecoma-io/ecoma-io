@@ -52,9 +52,13 @@ export class NonceStoreContractError extends Error {
  * 2. **Query cache OFF.** Xem `assertQueryCacheDisabled`. Đây là điều kiện an
  *    toàn của chính dữ liệu này: một authorization code đã bị tiêu thụ mà vẫn
  *    trả về từ cache là một lần cấp token thứ hai.
- * 3. **Không giữ state có ý nghĩa bảo mật trong process.** `postgres` giữ
- *    connection pool, và đó là thứ Cloudflare sở hữu. Không có biến nào ở đây
- *    mang nghĩa bảo mật — single-winner đến từ SQL, không đến từ việc serialize.
+ * 3. **Không giữ state có ý nghĩa bảo mật trong process — và không giữ client
+ *    qua request.** `postgres` giữ connection pool, và pool của một request
+ *    chỉ thuộc về request đó: socket mà driver mở qua polyfill
+ *    `cloudflare:sockets` gắn với request context đã tạo nó, tái dùng chéo
+ *    request là lỗi workerd (issue #289). Không có biến nào ở đây mang nghĩa
+ *    bảo mật — single-winner đến từ SQL, không đến từ việc serialize; vòng đời
+ *    client nằm ở {@link withPostgresClient} và các call site của nó.
  */
 
 /**
@@ -108,7 +112,13 @@ export interface PostgresClientLike extends Queryable {
    * nghĩa là một code bị đánh dấu đã dùng mà token không được cấp.
    */
   begin<T>(fn: (tx: Queryable) => Promise<T>): Promise<T>;
-  /** Đóng pool. Bắt buộc trong test, không cần trong Worker (isolate bị huỷ). */
+  /**
+   * Đóng pool.
+   *
+   * ⚠️ Bắt buộc ở cả test lẫn Worker: một client không `end()` là một socket rò
+   * theo request (issue #289). Serving path không gọi trực tiếp — bọc thao tác
+   * trong {@link withPostgresClient}, nơi `end()` đã nằm trong `finally`.
+   */
   end(options?: { timeout?: number }): Promise<void>;
 }
 
@@ -201,6 +211,72 @@ export function createPostgresClient(
   });
 
   return client as unknown as PostgresClientLike;
+}
+
+/**
+ * Tham số dựng client của {@link withPostgresClient} — cùng hình dạng với hai tham
+ * số của {@link createPostgresClient}, gói trong MỘT object để một config có thể
+ * được vận chuyển như một giá trị (composition root dựng MỘT lần, các component
+ * mở client từ đó khi cần).
+ *
+ * ⚠️ Config là giá trị THUẦN, an toàn để cache theo isolate — khác với client:
+ * client gắn request context của workerd (issue #289), config thì không giữ
+ * socket, pool hay state nào của driver.
+ */
+export interface PostgresClientConfig {
+  /** Hyperdrive binding — truyền thẳng xuống {@link createPostgresClient}. */
+  readonly hyperdrive: HyperdriveBinding;
+  /** Bỏ trống ⇒ giữ mặc định `connect_timeout` của driver. */
+  readonly connectTimeoutSeconds?: number;
+}
+
+/**
+ * Chạy `fn` trên MỘT client postgres.js mới rồi đóng client — đơn vị vòng đời
+ * của serving path (`#289`).
+ *
+ * ⚠️ **Vì sao không cache client theo isolate nữa.** postgres.js trên workerd mở
+ * TCP socket qua polyfill `cloudflare:sockets`; socket gắn với request context
+ * của request tạo ra nó (issue #289 — stack `postgres/cf/polyfills.js:182`).
+ * Một client sống theo isolate biến MỌI request sau thành người dùng chéo-request
+ * của socket đó: xen kẽ 500/302, restart mới hết. `createPostgresClient` cho
+ * mỗi lần chạy rồi `end()` ngay trong request — cùng hình dạng mà `probeDatabase`
+ * của `main.ts` đã dùng từ trước và không bao giờ dính lỗi này.
+ *
+ * ⚠️ **Một transaction là MỘT lần mở.** Toàn bộ khối `client.begin(...)` phải
+ * nằm trong `fn` của MỘT lời gọi này — transaction-mode pooling của Hyperdrive
+ * gắn statement với connection; hai lần mở là hai pool khác nhau và khối
+ * `begin/commit` sẽ vỡ. Ngược lại, các thao tác ĐỨNG GIỮA hai khối transaction
+ * (một câu gọi HTTP tới account, ví dụ) nên nằm ngoài `fn` — không giữ client
+ * mở qua một phép I/O không phải DB.
+ *
+ * ⚠️ **`end()` chạy trong `finally`, kể cả khi `fn` ném.** Không đóng ⇒ socket
+ * rò theo mỗi request. Lỗi của chính `end()` bị nuốt khi `fn` đã ném (lỗi gốc
+ * thắng — đóng thất bại không được che lỗi nghiệp vụ của request), và được ném
+ * ra khi `fn` thành công (người gọi cần biết đường đóng hỏng). Hợp đồng này được
+ * ghim bởi `postgres.spec.ts`.
+ *
+ * @throws {AuthConfigurationError} Trước khi mở client, với config sai (thiếu
+ *   `connectionString`, `connectTimeoutSeconds` không hữu hạn dương) — cùng
+ *   validation với {@link createPostgresClient} vì cùng hàm đó chạy.
+ */
+export async function withPostgresClient<T>(
+  config: PostgresClientConfig,
+  fn: (client: PostgresClientLike) => Promise<T>,
+): Promise<T> {
+  const client = createPostgresClient(config.hyperdrive, {
+    connectTimeoutSeconds: config.connectTimeoutSeconds,
+  });
+  let result: T;
+  try {
+    result = await fn(client);
+  } catch (fnError) {
+    // Lỗi gốc thắng: một `end()` ném thêm ở đây chỉ là tiếng ồn của teardown.
+    await client.end({ timeout: 1 }).catch(() => undefined);
+    throw fnError;
+  }
+  // Đường thành công: lỗi đóng là lỗi thật của request này.
+  await client.end({ timeout: 1 });
+  return result;
 }
 
 /**

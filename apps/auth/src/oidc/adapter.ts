@@ -12,7 +12,8 @@
  * (`base_model.js:26-34`: `new Adapter(obj.name)`), mọi method đều nhận/tra theo `jti`.
  */
 
-import type { PostgresClientLike } from '@ecoma-io/auth-infrastructure';
+import type { PostgresClientConfig } from '@ecoma-io/auth-infrastructure';
+import { withPostgresClient } from '@ecoma-io/auth-infrastructure';
 
 /**
  * Cổng kiểm tại thời điểm PHÁT HÀNH artifact grantable (§6.0, SR-015, FR-020).
@@ -86,15 +87,20 @@ interface OidcStateRow {
  * Provider cache một instance mỗi model class (`base_model.js:26-34`), nên constructor
  * chạy đúng một lần cho mỗi kind trong đời isolate — việc giữ `this.kind` ở đây không
  * phải state phục vụ request.
+ *
+ * ⚠️ **Không giữ client nào trong instance** (issue #289): mọi method mở MỘT client
+ * qua {@link withPostgresClient} và đóng ngay trong cùng request. Instance sống
+ * theo isolate (provider cache nó theo model class) nhưng chỉ cầm opener — một
+ * closure thuần trên config, không socket, không pool.
  */
 export class PostgresAdapter {
   private readonly kind: string;
-  private readonly client: PostgresClientLike;
+  private readonly clientConfig: PostgresClientConfig;
   private readonly issuanceGate?: IssuanceGate;
 
-  constructor(kind: string, client: PostgresClientLike, issuanceGate?: IssuanceGate) {
+  constructor(kind: string, openerConfig: PostgresClientConfig, issuanceGate?: IssuanceGate) {
     this.kind = kind;
-    this.client = client;
+    this.clientConfig = openerConfig;
     this.issuanceGate = issuanceGate;
   }
 
@@ -147,8 +153,9 @@ export class PostgresAdapter {
     // mọi query `payload->'params'` trả null (đúng lệch mà acceptance test bắt được
     // ở index `oidc_state_interaction_ecoma_x_idx`). Lúc đọc, driver parse ngược
     // thành object — khớp `rowToPayload`.
-    await this.client.unsafe(
-      `INSERT INTO auth.oidc_state (kind, id, payload, expires_at, consumed_at, grant_id, uid, user_code)
+    await withPostgresClient(this.clientConfig, async (client) => {
+      await client.unsafe(
+        `INSERT INTO auth.oidc_state (kind, id, payload, expires_at, consumed_at, grant_id, uid, user_code)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (kind, id) DO UPDATE SET
          payload = EXCLUDED.payload,
@@ -157,17 +164,18 @@ export class PostgresAdapter {
          grant_id = EXCLUDED.grant_id,
          uid = EXCLUDED.uid,
          user_code = EXCLUDED.user_code`,
-      [
-        this.kind,
-        id,
-        payload,
-        expiresAt,
-        consumedAt,
-        grantIdOf(this.kind, payload),
-        uidOf(this.kind, payload),
-        userCodeOf(payload),
-      ],
-    );
+        [
+          this.kind,
+          id,
+          payload,
+          expiresAt,
+          consumedAt,
+          grantIdOf(this.kind, payload),
+          uidOf(this.kind, payload),
+          userCodeOf(payload),
+        ],
+      );
+    });
   }
 
   /**
@@ -181,9 +189,11 @@ export class PostgresAdapter {
    * hết hạn theo adapter sẽ biến mất im lặng.
    */
   async find(id: string): Promise<Record<string, unknown> | undefined> {
-    const rows = await this.client.unsafe<OidcStateRow>(
-      'SELECT * FROM auth.oidc_state WHERE kind = $1 AND id = $2',
-      [this.kind, id],
+    const rows = await withPostgresClient(this.clientConfig, (client) =>
+      client.unsafe<OidcStateRow>('SELECT * FROM auth.oidc_state WHERE kind = $1 AND id = $2', [
+        this.kind,
+        id,
+      ]),
     );
     return rowToPayload(rows);
   }
@@ -195,9 +205,11 @@ export class PostgresAdapter {
    * `oidc_state_session_uid_key` bảo đảm một uid không map được hai hàng sống.
    */
   async findByUid(uid: string): Promise<Record<string, unknown> | undefined> {
-    const rows = await this.client.unsafe<OidcStateRow>(
-      'SELECT * FROM auth.oidc_state WHERE kind = $1 AND uid = $2',
-      [this.kind, uid],
+    const rows = await withPostgresClient(this.clientConfig, (client) =>
+      client.unsafe<OidcStateRow>('SELECT * FROM auth.oidc_state WHERE kind = $1 AND uid = $2', [
+        this.kind,
+        uid,
+      ]),
     );
     return rowToPayload(rows);
   }
@@ -207,9 +219,11 @@ export class PostgresAdapter {
    * giữ cho đúng hợp đồng adapter.
    */
   async findByUserCode(userCode: string): Promise<Record<string, unknown> | undefined> {
-    const rows = await this.client.unsafe<OidcStateRow>(
-      'SELECT * FROM auth.oidc_state WHERE kind = $1 AND user_code = $2',
-      [this.kind, userCode],
+    const rows = await withPostgresClient(this.clientConfig, (client) =>
+      client.unsafe<OidcStateRow>(
+        'SELECT * FROM auth.oidc_state WHERE kind = $1 AND user_code = $2',
+        [this.kind, userCode],
+      ),
     );
     return rowToPayload(rows);
   }
@@ -235,13 +249,15 @@ export class PostgresAdapter {
       throw new Error(`consume() khong ap dung cho kind ${this.kind}`);
     }
     const nowEpoch = Math.floor(Date.now() / 1000);
-    await this.client.unsafe(
-      `UPDATE auth.oidc_state
+    await withPostgresClient(this.clientConfig, async (client) => {
+      await client.unsafe(
+        `UPDATE auth.oidc_state
        SET consumed_at = to_timestamp($3),
            payload = jsonb_set(payload, '{consumed}', to_jsonb($3::bigint), true)
        WHERE kind = $1 AND id = $2`,
-      [this.kind, id, nowEpoch],
-    );
+        [this.kind, id, nowEpoch],
+      );
+    });
   }
 
   /**
@@ -253,10 +269,9 @@ export class PostgresAdapter {
    * (`actions/grants/refresh_token.js:108`).
    */
   async destroy(id: string): Promise<void> {
-    await this.client.unsafe('DELETE FROM auth.oidc_state WHERE kind = $1 AND id = $2', [
-      this.kind,
-      id,
-    ]);
+    await withPostgresClient(this.clientConfig, (client) =>
+      client.unsafe('DELETE FROM auth.oidc_state WHERE kind = $1 AND id = $2', [this.kind, id]),
+    );
   }
 
   /**
@@ -274,10 +289,12 @@ export class PostgresAdapter {
     if (!GRANTABLE_KINDS.has(this.kind)) {
       throw new Error(`revokeByGrantId() khong ap dung cho kind ${this.kind}`);
     }
-    await this.client.unsafe('DELETE FROM auth.oidc_state WHERE kind = $1 AND grant_id = $2', [
-      this.kind,
-      grantId,
-    ]);
+    await withPostgresClient(this.clientConfig, (client) =>
+      client.unsafe('DELETE FROM auth.oidc_state WHERE kind = $1 AND grant_id = $2', [
+        this.kind,
+        grantId,
+      ]),
+    );
   }
 }
 
@@ -331,13 +348,22 @@ function userCodeOf(payload: Record<string, unknown>): string | null {
 /**
  * Sinh adapter cho một provider instance.
  *
- * ⚠️ `pool-per-call` KHÔNG áp dụng ở đây: client được truyền từ composition root và
- * adapter chỉ là bọc stateless quanh nó. Connection pool thuộc về isolate (xem
- * `postgres.ts` — `max: 3`), không phải mỗi adapter một pool, nếu không mọi model của
- * provider sẽ mở connection riêng của mình.
+ * ⚠️ **Vòng đời client của adapter: MỖI thao tác MỘT client** (issue #289 — ngược
+ * lại với bản ghi cũ "pool thuộc về isolate" ở đây). Socket mà postgres.js mở qua
+ * polyfill `cloudflare:sockets` gắn với request context đã tạo nó, nên một client
+ * dùng chung theo isolate là lỗi chéo-request (`Cannot perform I/O on behalf of a
+ * different request`). Adapter nhận config và bọc từng method trong
+ * `withPostgresClient` — client sống đúng một thao tác, `end()` trong `finally`.
+ * Chi phí là một `end()`/thao tác: connection đi qua pool của Hyperdrive, không
+ * giữ connection origin nào giữa hai thao tác.
+ *
+ * ⚠️ Mọi method của `PostgresAdapter` hiện là single-statement (mỗi câu SQL tự
+ * đứng). Không có khối `begin` nào nằm trong adapter — nếu sau này một method cần
+ * transaction, khối `begin` PHẢI nằm trọn trong `fn` của MỘT lời gọi
+ * `withPostgresClient` (một transaction = một client).
  */
 export function createAdapterFactory(
-  client: PostgresClientLike,
+  postgresClientConfig: PostgresClientConfig,
   issuanceGate?: IssuanceGate,
 ): (kind: string) => PostgresAdapter {
   // Provider cache instance theo class (`base_model.js:26-34`) nên mỗi kind chỉ được
@@ -347,7 +373,7 @@ export function createAdapterFactory(
   return (kind: string) => {
     let adapter = cache.get(kind);
     if (adapter === undefined) {
-      adapter = new PostgresAdapter(kind, client, issuanceGate);
+      adapter = new PostgresAdapter(kind, postgresClientConfig, issuanceGate);
       cache.set(kind, adapter);
     }
     return adapter;

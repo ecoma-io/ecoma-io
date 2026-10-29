@@ -1,5 +1,5 @@
 /**
- * Runtime của isolate: config + pool postgres + Provider + Node bridge, dựng LƯỜI.
+ * Runtime của isolate: config + Provider + Node bridge + CONFIG postgres, dựng LƯỜI.
  *
  * ## Chọn bridge nào — và vì sao
  *
@@ -23,11 +23,34 @@
  *
  * ## Vòng đời
  *
- * Provider + pool postgres sống theo isolate: `AuthEnv` không đổi trong vòng đời
+ * Provider + Node bridge sống theo isolate: `AuthEnv` không đổi trong vòng đời
  * isolate nên dựng một lần là đúng (cùng luật với `cachedConfigPromise` của
  * `main.ts` trước đây). ⚠️ Cache theo PROMISE và KHÔNG cache lỗi — một lần dựng
  * thất bại (secret sai, DB không kết nối được lúc load clients) phải được phép
  * thử lại ở request sau, không được biến thành vĩnh viễn.
+ *
+ * ⚠️⚠️ **Client postgres KHÔNG sống theo isolate — chỉ CONFIG (giá trị thuần) được
+ * cache.** Bài học của issue #289: postgres.js trên workerd mở TCP socket qua
+ * polyfill `cloudflare:sockets`, và socket gắn với request context của request
+ * đã tạo nó. Một client cache theo isolate biến mọi request sau thành người dùng
+ * chéo-request của socket đó — xen kẽ 500/302 trên `/authorize`, `/auth` chết
+ * qua `renderError`, đúng pattern đã tái lập trong #289. Vì vậy:
+ *
+ * - `postgresClientConfig` (một object thuần: binding + timeout, KHÔNG giữ
+ *   socket/pool/state nào của driver) được dựng MỘT lần theo isolate và truyền
+ *   cho provider + gate. Các component mở client từ config đúng lúc cần thao tác
+ *   DB, qua {@link withPostgresClient} — client sống đúng một thao tác (hoặc một
+ *   transaction) rồi `end()` trong `finally`, không bao giờ qua ranh giới request.
+ * - Adapter của provider (`createAdapterFactory`) mở client cho MỖI thao tác;
+ *   mọi method của adapter là single-statement, không có khối transaction nào
+ *   trong adapter.
+ * - Static clients được load MỘT lần lúc dựng runtime qua MỘT client tạm
+ *   (`withPostgresClient`), client đó đóng ngay khi factory xong.
+ * - Đường glue của `main.ts` (`/authorize`, `/internal/*`) không đi qua runtime:
+ *   mỗi request tự mở client riêng qua `withPostgresClient`.
+ *
+ * `loadStaticClients` per isolate vẫn đúng chi phí cũ (một query per isolate,
+ * không per request); thứ thay đổi chỉ là client đó không còn sống sau boot.
  *
  * ⚠️ **Không node-local state có ý nghĩa phục hồi**: mọi trạng thái protocol nằm
  * trong `db-auth` (`oidc_state` + `authorization_transactions`), còn server Node
@@ -36,7 +59,7 @@
  */
 
 import { type AuthConfig, type AuthEnv, loadAuthConfig } from '../config';
-import { type PostgresClientLike, createPostgresClient } from '@ecoma-io/auth-infrastructure';
+import { type PostgresClientConfig, withPostgresClient } from '@ecoma-io/auth-infrastructure';
 import { AccountClient } from '../account-client';
 
 import { createProvider } from './provider';
@@ -44,6 +67,18 @@ import { createIssuanceGateFromDeps } from './issuance-gate';
 import type { Provider } from 'oidc-provider';
 
 import type { NodeStyleServer } from 'cloudflare:node';
+
+/**
+ * Config postgres thuần từ config isolate — giá trị DUY NHẤT về postgres được
+ * cache theo isolate.
+ *
+ * ⚠️ An toàn để cache vì config không giữ gì của driver (xem JSDoc của
+ * {@link PostgresClientConfig}); client thì NGƯỢC LẠI — không client nào được
+ * dựng ở đây, mọi component tự mở qua `withPostgresClient` khi thao tác.
+ */
+function postgresClientConfigOf(config: AuthConfig): PostgresClientConfig {
+  return { hyperdrive: config.hyperdrive };
+}
 
 /**
  * Runtime đã dựng cho một isolate.
@@ -54,7 +89,8 @@ import type { NodeStyleServer } from 'cloudflare:node';
  */
 export interface AuthRuntime {
   readonly config: AuthConfig;
-  readonly postgresClient: PostgresClientLike;
+  /** Config postgres thuần — KHÔNG phải client sống; xem JSDoc ở đầu file. */
+  readonly postgresClientConfig: PostgresClientConfig;
   readonly provider: Provider;
   readonly nodeServer: NodeStyleServer;
   readonly nodePort: number;
@@ -79,7 +115,7 @@ export interface AuthRuntime {
 export function createIssuanceGate(
   env: AuthEnv,
   config: AuthConfig,
-  postgresClient: PostgresClientLike,
+  postgresClientConfig: PostgresClientConfig,
 ): ReturnType<typeof createIssuanceGateFromDeps> {
   const account = new AccountClient({
     binding: env.ACCOUNT_SERVICE as {
@@ -88,7 +124,7 @@ export function createIssuanceGate(
     secret: config.internalSecret,
   });
   return createIssuanceGateFromDeps({
-    postgresClient,
+    postgresClientConfig,
     // `nowMs` được ghi ở runtime thật (mỗi lần hỏi là một mốc hiện hành), cùng
     // cách wiring mà `main.ts` dùng cho đường session/verified.
     checkStatus: (accountId) => account.checkStatus({ accountId, nowMs: Date.now() }),
@@ -100,27 +136,35 @@ let cachedRuntimePromise: Promise<AuthRuntime> | undefined;
 /**
  * Dựng (hoặc trả lại) runtime của isolate.
  *
- * ⚠️ Thứ tự dựng: config trước (validate secret), postgres trước provider (factory
- * load clients), server Node CUỐI — nếu provider ném thì không để lại listener mồ côi.
- * `listen(0)` + `address().port` là cặp lệnh chuẩn của `node:http` và mirror
- * declaration của `cloudflare:node` (`NodeStyleServer.address()`).
+ * ⚠️ Thứ tự dựng: config trước (validate secret), provider trước server Node —
+ * nếu provider ném thì không để lại listener mồ côi. Static clients của provider
+ * load qua MỘT client tạm (`withPostgresClient`) — client đóng ngay khi factory
+ * xong, không sống qua request đã tạo nó. `listen(0)` + `address().port` là cặp
+ * lệnh chuẩn của `node:http` và mirror declaration của `cloudflare:node`
+ * (`NodeStyleServer.address()`).
  */
 async function buildRuntime(env: AuthEnv): Promise<AuthRuntime> {
   const config = await loadAuthConfig(env);
 
-  const postgresClient = createPostgresClient(config.hyperdrive);
-
-  const provider = await createProvider({
-    config,
-    postgresClient,
-    signingPem: config.signingKeyPem,
-    // SR-015/FR-020: gate cấp phát là BẮT BUỘC ở runtime production, và là
-    // CÙNG MỘT factory với đường testcontainers (`issuance-gate.ts`) — một
-    // đường logic duy nhất, không bản inline riêng để trôi lệch. Test không
-    // truyền gate là test trình duyệt protocol thuần; acceptance của gate nằm
-    // ở (a) adapter upsert-gate + (b) composition này + (c) runtime-gate.spec.
-    issuanceGate: createIssuanceGate(env, config, postgresClient),
-  });
+  const postgresClientConfig = postgresClientConfigOf(config);
+  // Static clients — MỘT query lúc boot, qua client tạm đóng ngay (issue #289:
+  // không client nào sống qua request đã tạo nó).
+  const provider = await withPostgresClient(
+    postgresClientConfig,
+    async (temporaryClient) =>
+      await createProvider({
+        config,
+        postgresClientConfig,
+        staticClientsLoader: temporaryClient,
+        signingPem: config.signingKeyPem,
+        // SR-015/FR-020: gate cấp phát là BẮT BUỘC ở runtime production, và là
+        // CÙNG MỘT factory với đường testcontainers (`issuance-gate.ts`) — một
+        // đường logic duy nhất, không bản inline riêng để trôi lệch. Test không
+        // truyền gate là test trình duyệt protocol thuần; acceptance của gate nằm
+        // ở (a) adapter upsert-gate + (b) composition này + (c) runtime-gate.spec.
+        issuanceGate: createIssuanceGate(env, config, postgresClientConfig),
+      }),
+  );
 
   const { createServer } = await import('node:http');
   // `provider.callback()` là `(req, res) => void` theo chữ ký Koa; `createServer`
@@ -136,7 +180,7 @@ async function buildRuntime(env: AuthEnv): Promise<AuthRuntime> {
     throw new Error('node server khong cap duoc port ephemeral');
   }
 
-  return { config, postgresClient, provider, nodeServer, nodePort: port };
+  return { config, postgresClientConfig, provider, nodeServer, nodePort: port };
 }
 
 /**
