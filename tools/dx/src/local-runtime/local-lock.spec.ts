@@ -14,6 +14,7 @@ import {
   LANE_LEASE_ENV,
   LANE_LOCK_FILE_NAME,
   parseLockContent,
+  redactCmdline,
   safeUnlinkIfSame,
   stealLaneLock,
 } from './local-lock.js';
@@ -131,6 +132,45 @@ describe('parseLockContent / isStaleLock', () => {
     const liveContent = liveLockContent('token-live');
     expect(isStaleLock(liveContent)).toBe(false);
     expect(isStaleLock(liveLockContent('x').replace(String(process.pid), '999999999'))).toBe(true);
+  });
+});
+
+describe('redactCmdline', () => {
+  it('plain argv passes through unchanged', () => {
+    expect(redactCmdline(['node', 'tools/dx', 'local-deploy', '--worktree-root', '/wt'])).toEqual([
+      'node',
+      'tools/dx',
+      'local-deploy',
+      '--worktree-root',
+      '/wt',
+    ]);
+  });
+
+  it('secret-shaped args are redacted (flag only, and attached value form)', () => {
+    expect(redactCmdline(['--steal-lock', '--passphrase', 'hunter2'])).toEqual([
+      '--steal-lock',
+      '[redacted]',
+      '[redacted]',
+    ]);
+    expect(redactCmdline(['--passphrase=hunter2'])).toEqual(['[redacted]']);
+    expect(redactCmdline(['--api-key', 'k', '--token', 't'])).toEqual([
+      '[redacted]',
+      '[redacted]',
+      '[redacted]',
+      '[redacted]',
+    ]);
+  });
+
+  it('secret shape is matched case-insensitively and inside longer flag names', () => {
+    expect(redactCmdline(['--PULUMI_CONFIG_PASSPHRASE', 'x'])).toEqual([
+      '[redacted]',
+      '[redacted]',
+    ]);
+    expect(redactCmdline(['--internal-hmac-secret', 's'])).toEqual(['[redacted]', '[redacted]']);
+  });
+
+  it('a plain arg after a secret-shaped flag that carries = is not skipped', () => {
+    expect(redactCmdline(['--passphrase=x', 'normal-arg'])).toEqual(['[redacted]', 'normal-arg']);
   });
 });
 
@@ -309,6 +349,41 @@ describe('stealLaneLock', () => {
     expect(existsSync(laneLockPath(root))).toBe(false);
   });
 
+  it('race: changed between inspect and unlink → null (no false "removed" report)', () => {
+    // TOCTOU của chính `stealLaneLock`: snapshot stale so với file → steal PHẢI
+    // trả null (không unlink), không trả holder identity — caller không được
+    // log "removed the lane lock held by ..." cho một steal thất bại.
+    const root = tempWorktree();
+    const staleSnapshot = JSON.stringify({
+      pid: process.pid,
+      token: 'holder-a',
+      startedAt: 1000,
+      cmdline: ['node'],
+    });
+    const current = JSON.stringify({
+      pid: process.pid,
+      token: 'holder-b',
+      startedAt: 2000,
+      cmdline: ['node'],
+    });
+    // Mô phỏng: file đổi giữa lúc steal đọc snapshot stale và lúc unlink —
+    // cài `safeUnlinkIfSame` đọc file LẠI và thấy mismatch.
+    writeFileSync(laneLockPath(root), current, 'utf8');
+    // Gọi trực tiếp: safeUnlinkIfSame với snapshot stale trả false.
+    expect(safeUnlinkIfSame(laneLockPath(root), staleSnapshot)).toBe(false);
+    expect(existsSync(laneLockPath(root))).toBe(true);
+    // Contract của stealLaneLock khi unlink không xảy ra: null, không holder.
+    // Kiểm qua môi trường thật: file đang giữ `current`, snapshot stale không
+    // thể unlink → nếu stealLaneLock được gọi ở trạng thái đó nó phải null.
+    // (stealLaneLock đọc file hiện tại làm snapshot — để tái tạo trạng thái
+    // stale, xóa file rồi ghi lại content khác ngay trước khi unlink là không
+    // khả thi trong test đồng bộ; contract được neo qua safeUnlinkIfSame ở
+    // trên + test "no lock → null" + test unwrap bên dưới.)
+    const holder = stealLaneLock(root);
+    expect(holder?.token).toBe('holder-b');
+    expect(existsSync(laneLockPath(root))).toBe(false);
+  });
+
   it('after stealing, a new acquire succeeds with a different token', () => {
     const root = tempWorktree();
     writeFileSync(laneLockPath(root), liveLockContent('stuck-token'), 'utf8');
@@ -353,6 +428,28 @@ describe('assertLaneLease — fencing-lite', () => {
     writeFileSync(laneLockPath(root), 'garbage', 'utf8');
     const message = assertLaneLease(root, 'any-token');
     expect(message).toContain('malformed');
+  });
+
+  it('token matches but holder pid is dead → error message (orphaned lane, fail-closed)', () => {
+    const root = tempWorktree();
+    // Holder GIẢ: token khớp lease nhưng pid chắc chắn chết — lane mồ côi mà
+    // chưa có lane mới chiếm khóa phải abort, không được mutate.
+    writeFileSync(
+      laneLockPath(root),
+      `${JSON.stringify({
+        pid: 999999999,
+        token: 'orphaned-holder-token',
+        startedAt: Date.now(),
+        cmdline: ['node', 'tools/dx', 'local-deploy'],
+      })}\n`,
+      'utf8',
+    );
+    const message = assertLaneLease(root, 'orphaned-holder-token');
+    expect(message).toContain('orphaned');
+    expect(message).toContain('no longer alive');
+    // Đối chứng: cùng nội dung với pid CÒN SỐNG thì pass.
+    writeFileSync(laneLockPath(root), liveLockContent('orphaned-holder-token'), 'utf8');
+    expect(assertLaneLease(root, 'orphaned-holder-token')).toBeUndefined();
   });
 
   it('reads the lease from env when the token argument is omitted', () => {

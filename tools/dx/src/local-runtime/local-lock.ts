@@ -19,7 +19,9 @@
  * - Lock file `<worktreeRoot>/.ecoma-lane.lock`, nội dung JSON
  *   `{ pid, token, startedAt, cmdline }` — holder identity in ngay trong
  *   thông báo lỗi khi bị chặn. `cmdline` là `process.argv` của orchestrator
- *   (không chứa secret: passphrase đi qua env/file của subprocess, không argv).
+ *   SAU KHI lọc các argv mang hình nhạy cảm (`redactCmdline`): passphrase thật
+ *   đi qua env/file của subprocess, không argv — lọc thêm một lớp phòng khi
+ *   argv nào đó vẫn mang tên flag secret.
  * - Waiter đợi VÔ HẠN (không budget) nhưng in progress line định kỳ (~30s) —
  *   khoảng in này chỉ là UX, KHÔNG tham gia correctness. Cái kết thúc đợi là
  *   lane kia buông khóa; chủ treo-vẫn-sống xử bằng `--steal-lock`
@@ -31,7 +33,8 @@
  *   khác; exit handler tự buông khóa khi process kết thúc.
  * - Lease assertion: token trong lock chính là lease mà orchestrator truyền
  *   cho task con qua env `ECOMA_LANE_LEASE` — `assertLaneLease` kiểm process
- *   con còn đứng trong lane hợp lệ (cha bị SIGKILL → lane mồ côi fail-closed).
+ *   con còn đứng trong lane hợp lệ: token khớp VÀ holder pid còn sống (cha bị
+ *   SIGKILL → lane mồ côi fail-closed, kể cả khi chưa có lane mới chiếm khóa).
  */
 import { closeSync, openSync, readFileSync, unlinkSync, writeSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
@@ -48,6 +51,36 @@ export function laneLockPath(worktreeRoot: string): string {
 
 /** Môi trường biến env truyền lease token từ orchestrator xuống task con. */
 export const LANE_LEASE_ENV = 'ECOMA_LANE_LEASE';
+
+/**
+ * Lọc các argv mang hình nhạy cảm (token/passphrase/secret/key + giá trị kề
+ * sau) trước khi ghi `cmdline` vào lock file — lock file nằm ngoài Git nhưng
+ * vẫn là file trên đĩa mà tiến trình cùng user đọc được, và `formatHolder` in
+ * cmdline vào stdout. Defense-in-depth cho nguyên tắc "secret không vào argv
+ * của orchestrator": passphrase thật đi qua env/file, cmdline chỉ là holder
+ * identity cho người đọc.
+ */
+const SECRET_ARG_SHAPE = /(?:token|passphrase|secret|password|api[-_]?key|credential)/iu;
+
+export function redactCmdline(argv: string[]): string[] {
+  const redacted: string[] = [];
+  let skipNext = false;
+  for (const arg of argv) {
+    if (skipNext) {
+      redacted.push('[redacted]');
+      skipNext = false;
+      continue;
+    }
+    const looksLikeSecretFlag = SECRET_ARG_SHAPE.test(arg);
+    // Cả hình `--passphrase=value` lẫn `--passphrase value`: flag nhạy cảm thì
+    // che chính flag (nó đã mang giá trị hoặc sắp mang giá trị kế tiếp).
+    if (looksLikeSecretFlag) redacted.push('[redacted]');
+    else redacted.push(arg);
+    // Chỉ nhảy qua arg kế tiếp với dạng tách giá trị (`--passphrase value`).
+    if (looksLikeSecretFlag && !arg.includes('=')) skipNext = true;
+  }
+  return redacted;
+}
 
 export interface LockContent {
   pid: number;
@@ -233,7 +266,7 @@ function tryAcquire(lockPath: string): { release: () => void; token: string } | 
         pid: process.pid,
         token,
         startedAt: Date.now(),
-        cmdline: process.argv,
+        cmdline: redactCmdline(process.argv),
       })}\n`,
       0,
       'utf8',
@@ -317,7 +350,9 @@ export function acquireLaneLock(worktreeRoot: string): { release: () => void; to
  * thể release hoặc lane khác đã acquire, khi đó KHÔNG đụng file.
  *
  * Trả về nội dung holder cũ (để caller in ra trước khi chiếm) hoặc null khi
- * lock đã biến mất/không đọc được.
+ * lock đã biến mất/không đọc được HOẶC bị thay đổi giữa inspect và unlink
+ * (TOCTOU: `safeUnlinkIfSame` trả false nghĩa là KHÔNG có gì bị gỡ — caller
+ * không được log "removed" cho một steal thất bại).
  */
 export function stealLaneLock(worktreeRoot: string): LockContent | null {
   const lockPath = laneLockPath(worktreeRoot);
@@ -328,7 +363,8 @@ export function stealLaneLock(worktreeRoot: string): LockContent | null {
     return null; // không có khóa để steal
   }
   const holder = parseLockContent(content);
-  safeUnlinkIfSame(lockPath, content);
+  const removed = safeUnlinkIfSame(lockPath, content);
+  if (!removed) return null; // lock đổi giữa chừng — steal thất bại, không có gì bị gỡ
   return holder;
 }
 
@@ -372,6 +408,16 @@ export function assertLaneLease(
     return (
       `the lane lease does not match the current lock holder — this step belongs to an ` +
       `orphaned lane (its orchestrator was killed or stole-replaced). Aborting instead of mutating.`
+    );
+  }
+  // Token khớp thôi chưa đủ: holder chết mà lane mới chưa kịp acquire thì
+  // token cũ vẫn nằm trong file — lane mồ côi của holder đó phải abort, không
+  // được mutate. Cùng ngữ nghĩa liveness fail-closed với `isStaleLock` (EPERM
+  // = còn sống), nên một orchestrator khác-user sống vẫn pass.
+  if (!isPidAlive(parsed.pid)) {
+    return (
+      `the lane lock holder (pid=${String(parsed.pid)}) is no longer alive — this step ` +
+      `belongs to an orphaned lane. Aborting instead of mutating.`
     );
   }
   return undefined;

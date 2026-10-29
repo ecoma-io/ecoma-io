@@ -85,16 +85,16 @@
   {
     "rule": "security-sensitive-value-in-http-response",
     "path": "tools/dx/src/local-runtime/local-lock.ts",
-    "start": 82,
-    "end": 87,
-    "reason": "parseLockContent cua file lock tra ve {pid, token, startedAt, cmdline} - token la lock acquisition token (randomBytes hex), bat ky process cung user co the doc file lock truc tiep -> khong la secret-lookup heuristics can bao ve. Day la lock file lock trong worktree, KHONG phai HTTP response; rule taint match 'token' naming heuristic FP. Line pin re-anchored khi doi sang lock lane per-worktree (#363) - lock content them startedAt/cmdline, nghia token khong doi.",
+    "start": 115,
+    "end": 120,
+    "reason": "parseLockContent cua file lock tra ve {pid, token, startedAt, cmdline} - token la lock acquisition token (randomBytes hex), bat ky process cung user co the doc file lock truc tiep -> khong la secret-lookup heuristics can bao ve. Day la lock file lock trong worktree, KHONG phai HTTP response; rule taint match 'token' naming heuristic FP. Line pin re-anchored +33 khi them redactCmdline (OCR round #417: loc argv nhay cam truoc khi ghi cmdline vao lock file) - noi dung dong khong doi.",
     "lines": {
-      "82": "^  return \\{$",
-      "83": "^    pid,$",
-      "84": "^    token,$",
-      "85": "^    startedAt,$",
-      "86": "^    cmdline: cmdline as string\\[\\],$",
-      "87": "^  \\};$"
+      "115": "^  return \\{$",
+      "116": "^    pid,$",
+      "117": "^    token,$",
+      "118": "^    startedAt,$",
+      "119": "^    cmdline: cmdline as string\\[\\],$",
+      "120": "^  \\};$"
     }
   },
   {
@@ -130,11 +130,11 @@
   {
     "rule": "security-sensitive-value-in-http-response",
     "path": "tools/dx/src/local-runtime/local-lock.ts",
-    "start": 252,
-    "end": 252,
-    "reason": "tryAcquire cua lock lane tra {release, token} cho orchestrator - token la lock acquisition token (randomBytes hex), khong roi khoi process qua HTTP. KHONG phai HTTP response; rule taint match 'token' naming heuristic FP. Entry moi khi doi sang lock lane per-worktree (#363): signature acquire doi tu release-only sang {release, token} de truyen lease xuong task con qua ECOMA_LANE_LEASE.",
+    "start": 285,
+    "end": 285,
+    "reason": "tryAcquire cua lock lane tra {release, token} cho orchestrator - token la lock acquisition token (randomBytes hex), khong roi khoi process qua HTTP. KHONG phai HTTP response; rule taint match 'token' naming heuristic FP. Entry moi khi doi sang lock lane per-worktree (#363): signature acquire doi tu release-only sang {release, token} de truyen lease xuong task con qua ECOMA_LANE_LEASE. Re-anchored 252->285 khi them redactCmdline (OCR round #417) - noi dung dong khong doi.",
     "lines": {
-      "252": "^  return \\{ release, token \\};$"
+      "285": "^  return \\{ release, token \\};$"
     }
   }
 ]
