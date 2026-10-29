@@ -87,6 +87,11 @@ tsconfig.tsbuildinfo
 # `tools/dx/src/deployment/local-platform/pulumi-context.ts`).
 # Entry tường minh: đổi tên file không được âm thầm đưa passphrase vào Git.
 .pulumi-local-passphrase
+# Lock lane deploy của worktree (`acquireLaneLock` trong
+# `tools/dx/src/local-runtime/local-lock.ts`): metadata PID/token/cmdline của
+# orchestrator đang giữ lane — runtime state, không phải source.
+# Entry tường minh: đổi tên file không được âm thầm đưa lock vào Git.
+.ecoma-lane.lock
 Pulumi.*.yaml
 
 # State lifecycle của Worker process local (`worker-process.ts`): metadata

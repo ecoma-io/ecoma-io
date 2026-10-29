@@ -30,7 +30,11 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { dockerResourceName } from './../../local-runtime/deploy-namespace.js';
-import { acquireLocalDeployLock } from './../../local-runtime/local-lock.js';
+import {
+  acquireLaneLock,
+  LANE_LEASE_ENV,
+  stealLaneLock,
+} from './../../local-runtime/local-lock.js';
 import {
   buildRootHost,
   LOCAL_ENV_OWNED_KEYS,
@@ -468,25 +472,31 @@ export function validateNxLaneDeclarations(): string[] {
  * của package.json của từng deploy project. `runApply` vẫn giữ nguyên như bản dự phòng có
  * kiểm (xem JSDoc của `localDeploy`) — không delete-before-replacement.
  *
- * Passphrase và lock vẫn do hàm này quản lý TRƯỚC khi bấm Nx: mỗi task con là
- * một process `local-stack-step` tự vào lại cùng lock (re-entrant theo nghĩa
- * các task chạy tuần tự nhờ dependsOn, không đụng nhau), nên không deadlock —
- * process cha giữ lock, process con phải chờ... KHÔNG: `local-lock` là lock
- * file đối chiếu PID, process con PID khác sẽ bị chặn vĩnh viễn. Vì vậy cha
- * KHÔNG giữ lock khi bấm Nx — từng step `up` tự lock/unlock trong process con
- * của nó (xem `runLocalStackStep`); khoảng giữa hai task không có mutation
- * nào của luồng này đang chạy. Trade-off đã biết: lock granularity của đường Nx
- * là TỪNG STEP `up`, yếu hơn legacy (giữ lock suốt apply) — hai luồng local-deploy
- * xen kẽ nhau ở mức task vẫn được tránh nhờ tuần tự hóa theo dependsOn trong
- * cùng một lần chạy, nhưng hai lần chạy Nx khác process có thể xen task giữa
- * chừng; chấp nhận được cho máy local một developer.
+ * Passphrase và khóa lane do hàm này quản lý TRƯỚC khi bấm Nx: khóa WHOLE-LANE
+ * per worktree (`acquireLaneLock`) được lấy MỘT LẦN quanh `spawn(nx)`, sau khi
+ * validate khai báo graph và resolve passphrase (fail-early trước khi giữ tài
+ * nguyên). Token khóa được truyền xuống task con qua env `ECOMA_LANE_LEASE` —
+ * mỗi task con assert lease (`runLocalStackStep` → `assertLaneLease`) trước khi
+ * mutate: cha bị SIGKILL giữa chừng thì lane mồ côi fail-closed thay vì đè lên
+ * lane mới đã chiếm khóa với token khác (#363, fencing-lite).
  */
 /** Hình dạng tối thiểu của spawnSync mà orchestration cần — injectable cho test. */
 export type NxSpawn = typeof spawnSync;
 
+/** Tuỳ chọn của `runNxOrchestratedDeploy` — test seam cho lock + steal-lock. */
+export interface NxOrchestrationOptions {
+  skipSmoke?: boolean;
+  /**
+   * Escape hatch người: chiếm khóa lane đang giữ bởi holder còn sống
+   * (`stealLaneLock`) trước khi acquire — opt-in tường minh qua cờ
+   * `--steal-lock` của CLI. Holder identity được in ra trước khi chiếm.
+   */
+  stealLock?: boolean;
+}
+
 export function runNxOrchestratedDeploy(
   ctx: LocalDeployContext,
-  options: { skipSmoke?: boolean } = {},
+  options: NxOrchestrationOptions = {},
   spawn: NxSpawn = spawnSync,
 ): number {
   // Kẹt khai báo phải nổi TRƯỚC khi bấm Nx — fail-closed với nguyên nhân rõ.
@@ -517,37 +527,58 @@ export function runNxOrchestratedDeploy(
     return 1;
   }
 
-  // `spawn` là biên INJECTABLE (cùng pattern với `exec` của pulumi-context):
-  // mặc định là `spawnSync` thật; unit test cắm spy để chứng minh "không bấm nx"
-  // mà không bao giờ chạy nx thật — một test mà spawn được Docker/Pulumi thật
-  // là một test nguy hiểm, không phải bằng chứng.
-  const run = spawn(plan.command, plan.args, {
-    cwd: plan.cwd,
-    encoding: 'utf8',
-    env: { ...process.env },
-    stdio: 'inherit',
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  if (run.status !== 0) {
-    if (run.status === null) {
-      console.error(
-        `[local-deploy] nx run-many could not run: ${describeSpawnFailure({
-          status: run.status,
-          stdout: run.stdout ?? '',
-          stderr: run.stderr ?? '',
-          error: run.error,
-          signal: run.signal,
-        })}`,
+  // Khóa WHOLE-LANE per worktree, lấy SAU khi validate graph + passphrase
+  // (fail-early trước khi giữ tài nguyên) và GIỮ quanh `spawn(nx)`. Escape
+  // hatch `--steal-lock`: chiếm khóa của holder còn sống, in holder identity
+  // trước khi unlink (một lần ghi nguyên tử trong `stealLaneLock`).
+  if (options.stealLock === true) {
+    const holder = stealLaneLock(ctx.worktreeRoot);
+    if (holder !== null) {
+      console.log(
+        `[local-deploy] --steal-lock: removed the lane lock held by pid=${holder.pid} ` +
+          `cmdline=${JSON.stringify(holder.cmdline)} startedAt=${new Date(holder.startedAt).toISOString()}`,
       );
     } else {
-      console.error(
-        `[local-deploy] Nx Task Graph failed (exit ${run.status}) — the failing task and its stderr are printed above.`,
-      );
+      console.log('[local-deploy] --steal-lock: no lane lock to steal.');
     }
-    return 1;
   }
-  console.log('[local-deploy] Nx Task Graph finished — all local steps are green.');
-  return 0;
+
+  const lane = acquireLaneLock(ctx.worktreeRoot);
+  try {
+    // `spawn` là biên INJECTABLE (cùng pattern với `exec` của pulumi-context):
+    // mặc định là `spawnSync` thật; unit test cắm spy để chứng minh "không bấm nx"
+    // mà không bao giờ chạy nx thật — một test mà spawn được Docker/Pulumi thật
+    // là một test nguy hiểm, không phải bằng chứng.
+    const run = spawn(plan.command, plan.args, {
+      cwd: plan.cwd,
+      encoding: 'utf8',
+      env: { ...process.env, [LANE_LEASE_ENV]: lane.token },
+      stdio: 'inherit',
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    if (run.status !== 0) {
+      if (run.status === null) {
+        console.error(
+          `[local-deploy] nx run-many could not run: ${describeSpawnFailure({
+            status: run.status,
+            stdout: run.stdout ?? '',
+            stderr: run.stderr ?? '',
+            error: run.error,
+            signal: run.signal,
+          })}`,
+        );
+      } else {
+        console.error(
+          `[local-deploy] Nx Task Graph failed (exit ${run.status}) — the failing task and its stderr are printed above.`,
+        );
+      }
+      return 1;
+    }
+    console.log('[local-deploy] Nx Task Graph finished — all local steps are green.');
+    return 0;
+  } finally {
+    lane.release();
+  }
 }
 
 /** Export cho spec + destroy: thứ tự destroy suy từ graph (nghịch của dependsOn). */
@@ -575,6 +606,13 @@ export interface LocalDeployOptions {
    * contract, spec khoá tính tương đương.
    */
   legacyApply?: boolean;
+  /**
+   * Escape hatch người (cờ `--steal-lock`): chiếm khóa lane đang giữ bởi
+   * holder còn sống trước khi acquire — cùng ý nghĩa với
+   * `NxOrchestrationOptions.stealLock`. Holder identity được in ra trước khi
+   * chiếm; dùng khi holder treo-vẫn-sống chặn lane mới (#363).
+   */
+  stealLock?: boolean;
 }
 
 /** Chạy pulumi cho MỘT project trong luồng local; lỗi → in stderr rồi return 1. */
@@ -778,20 +816,33 @@ export async function localDeploy(options: LocalDeployOptions = {}): Promise<num
   // tường minh (`legacyApply: true`) — cùng chuỗi contract, không xoá behavior
   // cũ cho tới khi đường mới thay thế đầy đủ trong cùng PR này.
   if (options.legacyApply !== true) {
-    // Passphrase đã resolve (tạo nếu cần) trước khi bấm Nx; lock do từng task
-    // con tự quản (xem JSDoc của `runNxOrchestratedDeploy`).
-    return runNxOrchestratedDeploy(ctx, { skipSmoke: options.skipSmoke });
+    // Passphrase đã resolve (tạo nếu cần) trước khi bấm Nx; khóa whole-lane do
+    // orchestrator giữ quanh spawn (xem JSDoc của `runNxOrchestratedDeploy`).
+    return runNxOrchestratedDeploy(ctx, {
+      skipSmoke: options.skipSmoke,
+      stealLock: options.stealLock,
+    });
   }
 
-  // Lock phối hợp host-wide với `local-cleanup`: deploy đang apply (Docker thay
-  // đổi trong lúc up) và cleanup chạy cạnh nhau là race vào cùng daemon — cleanup
-  // thấy container đang thiếu/chưa đủ labels rồi quyết định sai. Preview là
-  // read-only, không cần lock.
-  const lock = acquireLocalDeployLock();
+  // Khóa WHOLE-LANE per worktree của đường legacy: apply (Docker thay đổi trong
+  // lúc up) không được chạy đồng thời với lane khác cùng worktree. Preview là
+  // read-only, không cần khóa. `--steal-lock` cùng escape hatch với đường Nx.
+  if (options.stealLock === true) {
+    const holder = stealLaneLock(ctx.worktreeRoot);
+    if (holder !== null) {
+      console.log(
+        `[local-deploy] --steal-lock: removed the lane lock held by pid=${holder.pid} ` +
+          `cmdline=${JSON.stringify(holder.cmdline)} startedAt=${new Date(holder.startedAt).toISOString()}`,
+      );
+    } else {
+      console.log('[local-deploy] --steal-lock: no lane lock to steal.');
+    }
+  }
+  const lane = acquireLaneLock(ctx.worktreeRoot);
   try {
     return await runApply(ctx, env, options);
   } finally {
-    lock();
+    lane.release();
   }
 }
 
@@ -1295,7 +1346,11 @@ function runPreview(ctx: LocalDeployContext, env: NodeJS.ProcessEnv): number {
  * resource) là cách hai nửa — mật khẩu trong config, dữ liệu trong volume —
  * luôn cùng tuổi.
  */
-export function localDestroy(options: { worktreeRoot?: string; removeData?: boolean }): number {
+export function localDestroy(options: {
+  worktreeRoot?: string;
+  removeData?: boolean;
+  stealLock?: boolean;
+}): number {
   const ctx = resolveContext(options.worktreeRoot);
   const volumeName = dockerResourceName(ctx.namespace, 'postgres-volume');
 
@@ -1327,15 +1382,27 @@ export function localDestroy(options: { worktreeRoot?: string; removeData?: bool
   }
   const env = pulumiEnv(ctx, passphrase);
 
-  // Lock host-wide chia sẻ với `local-deploy`/`local-cleanup`: destroy biến đổi
-  // Docker (xoá container/network/volume) nên không được chạy đồng thời với apply
-  // hay cleanup vào cùng daemon. No-op (worktree chưa deploy) và kiểm tra
-  // passphrase đã trả về ở TRÊN — lock chỉ bao phần mutate thật.
-  const lock = acquireLocalDeployLock();
+  // Khóa WHOLE-LANE per worktree chia sẻ với `local-deploy`: destroy biến đổi
+  // Docker (xoá container/network/volume) nên không được chạy đồng thời với
+  // lane apply khác cùng worktree. No-op (worktree chưa deploy) và kiểm tra
+  // passphrase đã trả về ở TRÊN — khóa chỉ bao phần mutate thật.
+  // Escape hatch `--steal-lock` cùng ý nghĩa với đường deploy.
+  if (options.stealLock === true) {
+    const holder = stealLaneLock(ctx.worktreeRoot);
+    if (holder !== null) {
+      console.log(
+        `[local-destroy] --steal-lock: removed the lane lock held by pid=${holder.pid} ` +
+          `cmdline=${JSON.stringify(holder.cmdline)} startedAt=${new Date(holder.startedAt).toISOString()}`,
+      );
+    } else {
+      console.log('[local-destroy] --steal-lock: no lane lock to steal.');
+    }
+  }
+  const lane = acquireLaneLock(ctx.worktreeRoot);
   try {
     return runDestroySteps(ctx, volumeName, env, options);
   } finally {
-    lock();
+    lane.release();
   }
 }
 

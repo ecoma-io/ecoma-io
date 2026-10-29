@@ -17,15 +17,16 @@ import {
   type LocalStackStep,
 } from './local-stack-step.js';
 import { exec, ensureStack, pulumiEnv, pulumiRun, resolveContext } from './pulumi-context.js';
-import { acquireLocalDeployLock } from './../../local-runtime/local-lock.js';
+import { assertLaneLease } from './../../local-runtime/local-lock.js';
 import type { ExecResult } from './pulumi-context.js';
 
 /**
  * Spec hành vi của execution boundary Nx (`local-stack-step`) — mock đúng
- * MỘT biên: `exec`/`pulumiRun`/`ensureStack` (Pulumi CLI) và lock (host state).
- * Toàn bộ orchestration logic (validate tổ hợp, secrets per-stack, đọc .env,
- * thứ tự config set rồi up, lỗi → exit 1) vẫn chạy THẬT trong test — không cần
- * Docker hay Pulumi.
+ * MỘT biên: `exec`/`pulumiRun`/`ensureStack` (Pulumi CLI) và lease assert
+ * (lane state — tồn tại của `.ecoma-lane.lock` là dữ liệu runtime của
+ * orchestrator, không phải đối tượng test ở đây). Toàn bộ orchestration logic
+ * (validate tổ hợp, secrets per-stack, đọc .env, thứ tự config set rồi up,
+ * lỗi → exit 1) vẫn chạy THẬT trong test — không cần Docker hay Pulumi.
  */
 vi.mock('./pulumi-context.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./pulumi-context.js')>();
@@ -41,13 +42,13 @@ vi.mock('./../../local-runtime/local-lock.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./../../local-runtime/local-lock.js')>();
   return {
     ...actual,
-    acquireLocalDeployLock: vi.fn<typeof actual.acquireLocalDeployLock>(() => () => undefined),
+    assertLaneLease: vi.fn<typeof actual.assertLaneLease>(() => undefined),
   };
 });
 
 const execMock = vi.mocked(exec);
 const pulumiRunMock = vi.mocked(pulumiRun);
-const lockMock = vi.mocked(acquireLocalDeployLock);
+const leaseMock = vi.mocked(assertLaneLease);
 
 const cleanup: string[] = [];
 
@@ -63,9 +64,10 @@ afterEach(() => {
   if (SAVE_PASSPHRASE === undefined) delete process.env.PULUMI_CONFIG_PASSPHRASE;
   else process.env.PULUMI_CONFIG_PASSPHRASE = SAVE_PASSPHRASE;
   vi.resetAllMocks();
-  // Mock lock trả no-op theo mặc định của factory; resetAllMocks xoá
-  // implementation → cài lại cho test kế tiếp.
-  lockMock.mockImplementation(() => () => undefined);
+  // Mock lease assert trả pass theo mặc định của factory; resetAllMocks xoá
+  // implementation → cài lại cho test kế tiếp. Mock chỉ để QUAN SÁT lời gọi
+  // assert — các case lệch lease được phủ thật ở local-lock.spec.ts.
+  leaseMock.mockImplementation(() => undefined);
   for (const dir of cleanup.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -118,8 +120,9 @@ describe('runLocalStackStep up — unit project path', () => {
     const exit = await runLocalStackStep('backoffice-deploy', 'up', { worktreeRoot: root });
     expect(exit).toBe(0);
 
-    // Lock bao trọn phần mutate.
-    expect(lockMock).toHaveBeenCalledTimes(1);
+    // Lease assert chạy đúng MỘT lần trước mutate, đúng worktree của lane.
+    expect(leaseMock).toHaveBeenCalledTimes(1);
+    expect(leaseMock).toHaveBeenCalledWith(root, undefined);
 
     // Secrets: hai key của backoffice, giá trị qua stdin (không argv).
     const configSets = execMock.mock.calls.filter(([, args]) => args[1] === 'set');
@@ -371,6 +374,56 @@ describe('runLocalStackStep up — platform path', () => {
     const exit = await runLocalStackStep('platform-deploy', 'up', { worktreeRoot: root });
     expect(exit).toBe(1);
     expect(existsSync(join(root, '.env'))).toBe(false);
+  });
+});
+
+describe('runLocalStackStep — lane lease assertion (fencing-lite)', () => {
+  it('failed lease assert → exit 1 BEFORE resolvePassphrase/ensureStack/up (orphaned lane aborts)', async () => {
+    const root = tempWorktree();
+    process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
+    writeFileSync(join(root, '.env'), 'ROOT_HOST=fbi.com:40040\n', 'utf8');
+    happyExec();
+    // Lease lệch: orchestrator đã chết, lane khác chiếm khóa với token mới.
+    leaseMock.mockImplementation(
+      () =>
+        'the lane lease does not match the current lock holder — this step belongs to an ' +
+        'orphaned lane (its orchestrator was killed or stole-replaced). Aborting instead of mutating.',
+    );
+    const exit = await runLocalStackStep('backoffice-deploy', 'up', { worktreeRoot: root });
+    expect(exit).toBe(1);
+    // Fail-closed: KHÔNG chạm Pulumi, KHÔNG set secret, KHÔNG up.
+    expect(vi.mocked(ensureStack)).not.toHaveBeenCalled();
+    expect(pulumiRunMock).not.toHaveBeenCalled();
+    expect(execMock.mock.calls.filter(([, args]) => args[1] === 'set')).toHaveLength(0);
+  });
+
+  it('failed lease assert applies to smoke too (one rule for every step)', async () => {
+    const root = tempWorktree();
+    process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
+    writeFileSync(join(root, '.env'), 'ROOT_HOST=fbi.com:40041\n', 'utf8');
+    execMock.mockImplementation((command) => {
+      if (command === 'node') return { status: 0, stdout: 'ok\n', stderr: '' } satisfies ExecResult;
+      return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
+    });
+    leaseMock.mockImplementation(() => 'no ECOMA_LANE_LEASE lease in the environment');
+    const exit = await runLocalStackStep('platform-deploy', 'smoke', { worktreeRoot: root });
+    expect(exit).toBe(1);
+    // Không một lệnh node/docker nào chạy sau assert fail.
+    expect(execMock.mock.calls.filter(([command]) => command === 'node')).toHaveLength(0);
+    expect(execMock.mock.calls.filter(([command]) => command === 'docker')).toHaveLength(0);
+  });
+
+  it('explicit leaseToken option overrides the env lookup (test seam reaches assertLaneLease)', async () => {
+    const root = tempWorktree();
+    process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
+    writeFileSync(join(root, '.env'), 'ROOT_HOST=fbi.com:40042\n', 'utf8');
+    happyExec();
+    const exit = await runLocalStackStep('backoffice-deploy', 'up', {
+      worktreeRoot: root,
+      leaseToken: 'lane-token-from-orchestrator',
+    });
+    expect(exit).toBe(0);
+    expect(leaseMock).toHaveBeenCalledWith(root, 'lane-token-from-orchestrator');
   });
 });
 
