@@ -237,8 +237,32 @@ function stackRequest(
 }
 
 // ---------------------------------------------------------------------------
-// PKCE helpers
+// Test subject + PKCE helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * `sub` test đúng invariant domain (`libs/account-domain/src/subject.ts`):
+ * `sub_` + 32 ký tự base32 viết thường (a-z, 2-7) — format mà
+ * `GET /internal/account/status` xác thực trước khi trả trạng thái. Một `sub`
+ * lệch format không bao giờ tới nổi "not_found": handler trả 400, và phía
+ * `auth` fail-closed 503 cả luồng handoff (đã xảy ra thật với `sub-oidc-*`).
+ * Entropy: timestamp base36 + random bytes nén về đúng 32 ký tự alphabet.
+ */
+export function makeTestSubject(): string {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz234567';
+  const raw = `${Date.now().toString(36)}${randomBytes(12).toString('hex')}`;
+  let suffix = '';
+  for (let index = 0; index < raw.length && suffix.length < 32; index += 1) {
+    const digit = parseInt(raw[index] ?? '0', 36);
+    if (!Number.isNaN(digit)) {
+      suffix += alphabet[digit % alphabet.length];
+    }
+  }
+  while (suffix.length < 32) {
+    suffix += 'a';
+  }
+  return `sub_${suffix}`;
+}
 
 /** Verifier 43 base64url ký tự (32 random bytes) — đúng ràng buộc RFC 7636. */
 export function makePkceVerifier(): string {
@@ -309,7 +333,7 @@ function mailContainer(namespace: string): string {
 
 /**
  * Escape nháy đơn cho một giá trị trong SQL literal (`''`) — inputs đều do
- * test sinh ra với format chặt (sub `sub-oidc-e2e-*`, hash hex 64), nhưng
+ * test sinh ra với format chặt (sub `sub_<32 base32>`, hash hex 64), nhưng
  * escape vẫn là mặc định đúng: SQL không bao giờ nội suy giá trị bằng nháy
  * đơn trần.
  */

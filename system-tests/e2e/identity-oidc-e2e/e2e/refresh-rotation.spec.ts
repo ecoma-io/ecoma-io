@@ -8,6 +8,7 @@ import {
   localRedirectUri,
   makePkceChallenge,
   makePkceVerifier,
+  makeTestSubject,
   pollOtpMail,
   seedUser,
   stackPostForm,
@@ -50,7 +51,7 @@ async function obtainTokens(page: import('@playwright/test').Page): Promise<Toke
   const redirectUri = localRedirectUri();
 
   const email = `oidc-rot-${Date.now().toString(36)}@e2e-test.ecoma.local`;
-  const sub = `sub-oidc-rot-${Date.now().toString(36)}`;
+  const sub = makeTestSubject();
   seedUser(namespace, sub, email);
   const otpSinceMs = Date.now();
 

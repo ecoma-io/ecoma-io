@@ -9,6 +9,7 @@ import {
   localRedirectUri,
   makePkceChallenge,
   makePkceVerifier,
+  makeTestSubject,
   pollOtpMail,
   primaryAudience,
   seedUser,
@@ -70,7 +71,7 @@ test('completes the full browser authorize → OTP login → consent → token f
 
   // ── Seed: user + email verified trong db-account (idempotent) ────────────
   const email = makeTestEmail();
-  const sub = `sub-oidc-e2e-${emailToSuffix(email)}`;
+  const sub = makeTestSubject();
   seedUser(namespace, sub, email);
   const otpSinceMs = Date.now();
 
@@ -267,8 +268,4 @@ function requireNamespace(): string {
  */
 function makeTestEmail(): string {
   return `oidc-e2e-${Date.now().toString(36)}@e2e-test.ecoma.local`;
-}
-
-function emailToSuffix(email: string): string {
-  return email.split('@')[0]?.replace(/^oidc-e2e-/u, '') ?? 'x';
 }
