@@ -144,22 +144,27 @@ test('completes the full browser authorize → OTP login → consent → token f
   await codeInput.fill(otp.code);
   await page.getByTestId('login-code-submit').click();
 
-  // Verify OK → product tự relay browser qua hop `/authorize/confirm` rồi
-  // `/login/continue` push → handoff relay sang continueUrl của auth (consent
-  // path) — đích cuối là trang consent của account.
-  await page.waitForURL(`${account}/consent**`, { timeout: 60_000 });
-  const consentUrl = new URL(page.url());
-  expect(consentUrl.searchParams.get('handle')).not.toBeNull();
-
-  // Contract của hop confirm (bằng chứng product path): request do trang login
-  // phát ra (không phải page.request), status 302, đích /login/continue cùng
-  // handle (§5.1.2 hàng 2 + hàng 7). Sau đó `/login/continue` push về auth.
+  // Verify OK → product tự relay browser qua hop `/authorize/confirm` rồi 302
+  // về `/login/continue`. Contract của hop confirm (bằng chứng product path):
+  // request do trang login phát ra (không phải page.request), status 302, đích
+  // /login/continue cùng handle (§5.1.2 hàng 2 + hàng 7).
   expect(confirmHop).toBeDefined();
   expect(confirmHop?.status).toBe(302);
   expect(confirmHop?.location.origin + confirmHop?.location.pathname).toBe(
     `${account}/login/continue`,
   );
   expect(confirmHop?.location.searchParams.get('handle')).toBe(handleX);
+
+  // `/login/continue` là click-to-continue: push handoff chỉ chạy khi người
+  // dùng bấm nút relay — bấm nó rồi mới đến continueUrl của auth (consent
+  // path), đích cuối là trang consent của account.
+  const continueTarget = page.getByTestId('login-continue-target');
+  await continueTarget.waitFor({ state: 'visible', timeout: 30_000 });
+  await continueTarget.click();
+
+  await page.waitForURL(`${account}/consent**`, { timeout: 60_000 });
+  const consentUrl = new URL(page.url());
+  expect(consentUrl.searchParams.get('handle')).not.toBeNull();
 
   // ── Bước 5: consent ──────────────────────────────────────────────────────
   const consentCard = page.getByTestId('consent-card');

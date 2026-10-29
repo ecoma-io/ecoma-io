@@ -83,6 +83,13 @@ async function obtainTokens(page: import('@playwright/test').Page): Promise<Toke
   await page.getByTestId('login-code').fill(otp.code);
   await page.getByTestId('login-code-submit').click();
 
+  // Sau verify, product relay browser qua hop `/authorize/confirm` rồi 302 về
+  // `/login/continue` — click-to-continue: bấm nút relay trước khi handoff push
+  // chạy và browser đi tiếp sang auth (consent).
+  const continueTarget = page.getByTestId('login-continue-target');
+  await continueTarget.waitFor({ state: 'visible', timeout: 30_000 });
+  await continueTarget.click();
+
   await page.waitForURL(`${account}/consent**`, { timeout: 60_000 });
   await page.getByTestId('consent-card').waitFor({ state: 'visible', timeout: 30_000 });
   await page.getByTestId('consent-approve').click();
