@@ -10,7 +10,7 @@
  */
 
 import { createError, type H3Event } from 'h3';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Pool } from 'pg';
 import { withReadEnforcement } from './read-route';
 
@@ -71,6 +71,13 @@ function eventWithPrincipal(actorSub: string | null): H3Event {
 }
 
 const VALID_SUB = 'sub_' + 'a'.repeat(32);
+
+// Shuffle-proof (Phase 3 #357 bắt được khi shuffle): mỗi test tự lập trạng thái
+// mock — không phụ thuộc thứ tự chạy.
+beforeEach(() => {
+  enforcement.behavior = 'allow';
+  pool.failOnConnect = null;
+});
 
 async function run(event: H3Event): Promise<{ status: number; body: unknown }> {
   try {
