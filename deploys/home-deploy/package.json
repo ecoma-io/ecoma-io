@@ -9,7 +9,8 @@
   },
   "nx": {
     "implicitDependencies": [
-      "platform-deploy"
+      "platform-deploy",
+      "@ecoma-io/home"
     ],
     "tags": [
       "type:deployment",
@@ -26,11 +27,11 @@
         }
       },
       "local-up": {
-        "//": "Local lane — duy nhất một lane (`-c local`). Home phụ thuộc outputs platform (StackReference + platformStackRef) nên `dependsOn` platform:local-up. Chuỗi tổng thể (CONTRACT, unit test khoá): platform → home → backoffice → account → auth.",
+        "//": "Local lane — duy nhất một lane (`-c local`). Entry colocated (`local.ts up`) tự lấy khóa lane `.ecoma-lane.lock` quanh phần mutate: chuẩn bị bảng secret của riêng project (config set qua stdin), `pulumi up` stack của chính nó, rồi health gate container CỦA CHÍNH unit (`ecoma-<ns>-home` healthy theo healthcheck Docker của unit). Thứ tự toàn cục do `dependsOn` dưới đây quyết định (Nx Task Graph); entry KHÔNG gọi lệnh DX nào. Cache bị tắt ở targetDefaults `nx.json` (CONTRACT: mutate Docker/state thật).",
         "executor": "nx:run-commands",
         "options": {
           "cwd": "deploys/home-deploy",
-          "command": "npx tsx ../../tools/dx local-stack-step --stack home-deploy --step up"
+          "command": "npx tsx local.ts up"
         },
         "configurations": {
           "local": {}
@@ -43,6 +44,17 @@
             "target": "local-up"
           }
         ]
+      },
+      "local-down": {
+        "//": "Teardown của RIÊNG project này (`local.ts down` = `pulumi destroy --yes`; platform tự xoá volume khi `--remove-data`). KHÔNG có `dependsOn` — không thứ tự teardown toàn cục: mỗi project tự xoá resource của mình trong namespace của worktree, và `pulumi destroy` tự serialize trên stack state. Idempotent: worktree chưa từng deploy là no-op exit 0; lỗi destroy thật thì exit 1. Cache bị tắt ở targetDefaults `nx.json` (cùng một-lane policy với local-up).",
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "deploys/home-deploy",
+          "command": "npx tsx local.ts down"
+        },
+        "configurations": {
+          "local": {}
+        }
       }
     }
   }

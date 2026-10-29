@@ -4,6 +4,7 @@
     "outDir": "bin",
     "rootDir": "../..",
     "target": "es2020",
+    "lib": ["es2022"],
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "sourceMap": true,
@@ -22,6 +23,12 @@
     "../../tools/dx/src/local-runtime/deploy-namespace.ts",
     "../../tools/dx/src/local-runtime/shell-quote.ts",
     "../../tools/dx/src/deployment/local-platform/deploy-labels.ts",
-    "../../tools/dx/src/deployment/local-platform/platform-outputs-contract.ts"
+    "../../tools/dx/src/deployment/local-platform/platform-outputs-contract.ts",
+    "../../tools/dx/src/deployment/local-platform/local-env.ts",
+    "../../tools/dx/src/deployment/local-platform/local-entry.ts",
+    "../../tools/dx/src/deployment/local-platform/pulumi-context.ts",
+    "../../tools/dx/src/local-runtime/local-lock.ts",
+    "../../tools/dx/src/utils.ts",
+    "local.ts"
   ]
 }

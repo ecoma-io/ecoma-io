@@ -23,22 +23,22 @@
         }
       },
       "local-up": {
-        "//": "Local lane — duy nhất một lane (`-c local`), không có staging/production trên target này. Bước 1 của orchestration local: platform up, và ngay sau khi `pulumi up` xanh step tự đọc outputs platform rồi ghi `.env` của worktree (đúng các key sở hữu) — mọi unit kế tiếp đọc ROOT_HOST từ file đó. `dependsOn` rỗng Có CHỦ ĐÍCH — platform là node ĐẦU của chuỗi; mọi unit khác phụ thuộc platform qua `^local-up`, và `local-smoke` gắn sau ở target riêng. Cache bị tắt ở targetDefaults `nx.json` (CONTRACT: mutate Docker/state thật).",
+        "//": "Local lane — duy nhất một lane (`-c local`). Entry colocated (`local.ts up`) tự lấy khóa lane `.ecoma-lane.lock` quanh phần mutate: chuẩn bị bảng secret của riêng project (config set qua stdin), `pulumi up` stack của chính nó, rồi health gate container CỦA CHÍNH unit (`ecoma-<ns>-postgres` healthy theo healthcheck Docker của unit). Thứ tự toàn cục do `dependsOn` dưới đây quyết định (Nx Task Graph); entry KHÔNG gọi lệnh DX nào. Cache bị tắt ở targetDefaults `nx.json` (CONTRACT: mutate Docker/state thật).",
         "executor": "nx:run-commands",
         "options": {
           "cwd": "deploys/platform-deploy",
-          "command": "npx tsx ../../tools/dx local-stack-step --stack platform-deploy --step up"
+          "command": "npx tsx local.ts up"
         },
         "configurations": {
           "local": {}
         }
       },
       "local-smoke": {
-        "//": "Bước CUỐI của chuỗi local: smoke HTTPS qua Traefik. `dependsOn` gồm ĐUÔI chuỗi cũ (auth) và CÁC LÁ của nhánh wave 2 (#264: pact-app, mail, push) — smoke chỉ có nghĩa khi toàn bộ chuỗi đã xanh; thiếu edge tới một lá là Nx có thể chạy smoke trước unit đó kết thúc (thứ tự chạy do dependsOn quyết định, không phải danh sách in ra). Là node lá (không ai dependsOn nó), nên orchestrator dùng nó làm điểm hoàn tất.",
+        "//": "Bước CUỐI của lane local: smoke HTTPS qua Traefik (`local.ts smoke`, script `local-smoke.mjs`). `dependsOn` gồm ĐUÔI spine (auth) và CÁC LÁ wave-2 (pact-app, mail, push) — smoke chỉ có nghĩa khi toàn bộ chuỗi đã xanh; thiếu edge tới một lá là Nx có thể chạy smoke trước unit đó kết thúc. Là node lá (không ai dependsOn nó).",
         "executor": "nx:run-commands",
         "options": {
           "cwd": "deploys/platform-deploy",
-          "command": "npx tsx ../../tools/dx local-stack-step --stack platform-deploy --step smoke"
+          "command": "npx tsx local.ts smoke"
         },
         "configurations": {
           "local": {}
@@ -69,6 +69,17 @@
             "target": "local-up"
           }
         ]
+      },
+      "local-down": {
+        "//": "Teardown của RIÊNG project này (`local.ts down` = `pulumi destroy --yes`; platform tự xoá volume khi `--remove-data`). KHÔNG có `dependsOn` — không thứ tự teardown toàn cục: mỗi project tự xoá resource của mình trong namespace của worktree, và `pulumi destroy` tự serialize trên stack state. Idempotent: worktree chưa từng deploy là no-op exit 0; lỗi destroy thật thì exit 1. Cache bị tắt ở targetDefaults `nx.json` (cùng một-lane policy với local-up).",
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "deploys/platform-deploy",
+          "command": "npx tsx local.ts down"
+        },
+        "configurations": {
+          "local": {}
+        }
       }
     }
   }

@@ -144,7 +144,18 @@
         },
         "cache": false,
         "metadata": {
-          "//": "Local deployment lane targets. Thứ tự là CONTRACT nhưng NẰM TRONG từng deploy project (target `local-up` khai `dependsOn` riêng của nó trong `deploys/*/package.json`) — `nx.json` chỉ đặt chính sách chung: `cache: false` là CONTRACT chứ không phải tối ưu, target mutate Docker resource và Pulumi state thật của máy developer, cache hit là bỏ một side effect. Một unit test chặn target local-* quay lại cacheable hoặc sinh configuration (lane) mới — lane local phải là lane DUY NHẤT của các target này."
+          "//": "Local deployment lane targets. Thứ tự là CONTRACT nhưng NẰM TRONG từng deploy project (target `local-up` khai `dependsOn` riêng của nó trong `deploys/*/package.json`) — `nx.json` chỉ đặt chính sách chung: `cache: false` là CONTRACT chứ không phải tối ưu, target mutate Docker resource và Pulumi state thật của máy developer, cache hit là bỏ một side effect. Lệnh thực thi là entry colocated `deploys/<p>/local.ts up` (tự lấy khóa lane, không gọi lệnh DX nào). Một unit test chặn target local-* quay lại cacheable hoặc sinh configuration (lane) mới — lane local phải là lane DUY NHẤT của các target này."
+        }
+      }
+    ],
+    "local-down": [
+      {
+        "filter": {
+          "projects": ["tag:type:deployment"]
+        },
+        "cache": false,
+        "metadata": {
+          "//": "Xem entry `local-up`: cùng một-lane policy (không bao giờ cacheable). Target teardown của RIÊNG mỗi deploy project — KHÔNG có `dependsOn` toàn cục: không thứ tự teardown toàn cục, mỗi entry tự xoá resource của mình trong namespace của worktree."
         }
       }
     ],
