@@ -44,9 +44,11 @@ function fixtureWorkflow({
  *
  * Mô hình selection phản chiếu CLI pinned `1.12.12`: `.md` chỉ được chọn khi
  * rule include glob markdown (ca 2 ra `unsupported_ext` khi không), và file
- * `.spec.ts` chỉ được chọn khi rule include glob spec (ngược lại
- * `default_path` — issue #399). Rule thật của repo được copy vào repo thí
- * nghiệm, nên `ruleIncludesSpec` theo đúng rule đang ship.
+ * test (`.spec.ts` / `.test.ts` / `_test.py`) chỉ được chọn khi rule include
+ * glob tương ứng (ngược lại `default_path` — issue #399). Đường `.env.*` —
+ * markdown lẫn file test — bị bộ lọc secret bắt bất kể include (ca 3 và ca 6).
+ * Rule thật của repo được copy vào repo thí nghiệm, nên `ruleIncludesSpec`
+ * theo đúng rule đang ship.
  */
 const FAKE_OCR = `#!/usr/bin/env node
 const { execFileSync } = require('node:child_process');
@@ -160,7 +162,7 @@ if (mode === 'suicide') {
 }
 
 const decide = (path) => {
-  if (path.endsWith('.env.md')) {
+  if (path.endsWith('.env.md') || path.endsWith('.env.spec.ts')) {
     return mode === 'secret-leak'
       ? { will_review: true }
       : { will_review: false, exclude_reason: 'secret_exclude' };
@@ -175,8 +177,9 @@ const decide = (path) => {
   }
   // CLI thật loại mọi file test với exclude_reason "default_path" khi rule
   // không include glob tương ứng (đo trên 1.12.12); rule thật của repo có
-  // include nên file test được chọn. CLI giả phản chiếu đúng nhị phân đó.
-  if (path.endsWith('.spec.ts')) {
+  // include nên file test được chọn. CLI giả phản chiếu đúng nhị phân đó, cho
+  // cả ba hình dạng test file mà ca 6 ghim (.spec.ts / .test.ts / _test.py).
+  if (path.endsWith('.spec.ts') || path.endsWith('.test.ts') || path.endsWith('_test.py')) {
     return ruleIncludesSpec
       ? { will_review: true }
       : { will_review: false, exclude_reason: 'default_path' };
@@ -288,10 +291,13 @@ describe('OpenCodeReview selection probe', () => {
     expect(output).toContain('secret_exclude');
     expect(output).toContain('unsupported_ext');
     expect(output).toContain('user_exclude');
-    // Ca 6: rule include glob file test phải đưa `src/auth/login.spec.ts` vào
-    // phạm vi — bảng preview in `true` cho đường dẫn đó.
-    expect(run.stdout).toContain('true');
+    // Ca 6: rule include glob file test phải đưa cả ba hình dạng vào phạm vi —
+    // mỗi glob một đại diện, một regression trên bất kỳ glob nào phải đỏ ca 6.
     expect(run.stdout).toContain('src/auth/login.spec.ts');
+    expect(run.stdout).toContain('src/auth/session.test.ts');
+    expect(run.stdout).toContain('tests/login_test.py');
+    // Ca 6 (cùng ca 3): include không vượt được bộ lọc secret, kể cả cho file test.
+    expect(run.stdout).toContain('.env.spec.ts');
     expect(run.status).toBe(0);
   });
 

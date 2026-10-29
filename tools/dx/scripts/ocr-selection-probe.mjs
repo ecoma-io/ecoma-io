@@ -97,11 +97,25 @@ const SECRET_PATH_MARKDOWN = '.env.md';
 /** Đường dẫn khớp `exclude` của rule thật; đổi rule thì phải đổi ca này. */
 const RULE_EXCLUDED_MARKDOWN = 'testdata/fixture.md';
 /**
- * File test mà rule mở rộng phạm vi cho (issue #399). Đường dẫn sạch — không
- * khớp `exclude` nào của rule — để ca này đo đúng `include`, không phải ca
- * `user_exclude` vốn đã do ca 3/4 phụ trách.
+ * Ba file test mà rule mở rộng phạm vi cho (issue #399) — mỗi glob `include`
+ * một đại diện, để một regression của CLI trên bất kỳ glob nào cũng làm ca 6 đỏ
+ * thay vì lọt qua nhờ hai glob còn lại (findings OCR của PR #404, run
+ * 40863940984). Đường dẫn sạch — không khớp `exclude` nào của rule — để ca này
+ * đo đúng `include`, không phải ca `user_exclude` vốn đã do ca 3/4 phụ trách.
+ * Glob python khớp hậu tố nên fixture là `login_test.py`, không phải
+ * `test_login.py`.
  */
-const ORDINARY_TEST_FILE = 'src/auth/login.spec.ts';
+const ORDINARY_TEST_FILES = [
+  'src/auth/login.spec.ts',
+  'src/auth/session.test.ts',
+  'tests/login_test.py',
+];
+/**
+ * File test trên đường dẫn secret builtin (`findings` cùng run): `include`
+ * của rule KHÔNG được vượt qua bộ lọc secret của CLI — cùng hợp đồng với ca 3,
+ * nhưng đo cho hình dạng file test.
+ */
+const SECRET_PATH_TEST_FILE = '.env.spec.ts';
 
 class UsageError extends Error {}
 
@@ -651,28 +665,50 @@ function runCases({ ocrBin, rulePath, keep }) {
     // còn đường dẫn phải sạch (không khớp `exclude`) để đo đúng `include`.
     caseCount = 6;
     const withTestRule = createRepo(rulePath, { withRule: true }, track);
-    writeFixture(
-      withTestRule.dir,
-      ORDINARY_TEST_FILE,
-      "describe('login', () => {\n  it('rejects a bad password', () => {});\n});\n",
-    );
-    const headWithTestRule = commitAll(withTestRule.dir, 'add ordinary test file');
+    for (const testFile of ORDINARY_TEST_FILES) {
+      writeFixture(
+        withTestRule.dir,
+        testFile,
+        "describe('login', () => {\n  it('rejects a bad password', () => {});\n});\n",
+      );
+    }
+    writeFixture(withTestRule.dir, SECRET_PATH_TEST_FILE, '# pretend secret material\n');
+    const headWithTestRule = commitAll(withTestRule.dir, 'add ordinary test files');
     const case6 = preview(ocrBin, withTestRule.dir, withTestRule.base, headWithTestRule);
     if (!case6.ok) {
       environmentErrors.push(`case 6: ${case6.error}`);
     } else {
-      printFiles('case 6 — rule present, ordinary test file', case6.value);
-      const file = findFile(case6.value, ORDINARY_TEST_FILE);
-      if (file === undefined) {
-        failures.push(`case 6: ${ORDINARY_TEST_FILE} is missing from preview files`);
-      } else if (file.will_review !== true) {
+      printFiles(
+        'case 6 — rule present, ordinary test files and secret-path test file',
+        case6.value,
+      );
+      for (const testFile of ORDINARY_TEST_FILES) {
+        const file = findFile(case6.value, testFile);
+        if (file === undefined) {
+          failures.push(`case 6: ${testFile} is missing from preview files`);
+        } else if (file.will_review !== true) {
+          failures.push(
+            `case 6: ${testFile} must be selected by the rule include — the CLI drops ` +
+              `test files by default (exclude_reason 'default_path') and only the project rule ` +
+              `(.github/ocr-rules.json, include globs **/*.spec.{js,jsx,ts,tsx}, ` +
+              `**/*.test.{js,jsx,ts,tsx}, **/*_test.py) brings them into review scope (issue #399) ` +
+              `(got will_review=${JSON.stringify(file.will_review)}, ` +
+              `exclude_reason=${JSON.stringify(file.exclude_reason)})`,
+          );
+        }
+      }
+      const secretTest = findFile(case6.value, SECRET_PATH_TEST_FILE);
+      if (secretTest === undefined) {
+        failures.push(`case 6: ${SECRET_PATH_TEST_FILE} is missing from preview files`);
+      } else if (
+        secretTest.will_review !== false ||
+        secretTest.exclude_reason !== 'secret_exclude'
+      ) {
         failures.push(
-          `case 6: ${ORDINARY_TEST_FILE} must be selected by the rule include — the CLI drops ` +
-            `test files by default (exclude_reason 'default_path') and only the project rule ` +
-            `(.github/ocr-rules.json, include globs **/*.spec.{js,jsx,ts,tsx}, ` +
-            `**/*.test.{js,jsx,ts,tsx}, **/*_test.py) brings them into review scope (issue #399) ` +
-            `(got will_review=${JSON.stringify(file.will_review)}, ` +
-            `exclude_reason=${JSON.stringify(file.exclude_reason)})`,
+          `case 6: include must NOT bypass the CLI secret filter for test files — ` +
+            `${SECRET_PATH_TEST_FILE} must be excluded as 'secret_exclude' ` +
+            `(got will_review=${JSON.stringify(secretTest.will_review)}, ` +
+            `exclude_reason=${JSON.stringify(secretTest.exclude_reason)})`,
         );
       }
     }
