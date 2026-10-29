@@ -47,7 +47,7 @@ pact.tenants ─┬─< pact.tenant_members >─ sub (opaque)
               └─< mọi bảng domain phía dưới (tenant_id NOT NULL)
 ```
 
-- **`tenants`**: `id` (uuid), `name` (unique, regex giống `nameSchema` upstream), `status` (`active|suspended|deleted`), timestamps. Default tenant per sub được provision **lần đầu** theo tên suy từ sub, **idempotent + race-safe** (INSERT ON CONFLICT — xem §4).
+- **`tenants`**: `id` (uuid), `name` (unique, regex giống `nameSchema` upstream), `status` (`active|suspended|deleted`), timestamps. Default tenant per sub được provision **tường minh** (deterministic từ sub, qua bootstrap script — xem §4; không tự động khi signup/login), **idempotent + race-safe** (INSERT ON CONFLICT).
 - **`tenant_members`**: `UNIQUE (tenant_id, sub)`; `role` CHECK IN ('owner','admin','member','viewer'). Composite FK về `tenants` và (khi thêm) unique-sub constraint cho phép DB-level enforce "member thuộc đúng tenant".
 - **`machine_tokens`**: chỉ lưu **hash** SHA-256 của token (`token_hash` PRIMARY KEY); `tenant_id`, `name`, `scopes` (text CSV hoặc jsonb), `created_by_sub`, `revoked_at` (NULL = active). Không có `last_used_at` — ghi nó đòi UPDATE trên mọi request (observability thành serving-path dependency, trái bất biến); usage tracking khi cần thì đọc từ `audit_events` (append-only, off-path). Plaintext hiện **một lần** trong response của lệnh tạo; không đường nào đọc lại. Revoke = set `revoked_at`, hiệu lực **ngay lập tức** (mỗi request tra hash rồi check `revoked_at IS NULL`).
 - Scopes: `read` (viewer trở lên), `write` (member trở lên: publish pact/verification), `admin` (Admin/Owner: environments, webhooks, membership). Token scope ≠ role của người — token là credential cấp sẵn quyền cố định, người tạo phải có role đủ cao.
@@ -70,7 +70,7 @@ Toàn bộ bảng upstream (`pacticipants`, `versions`, `tags`, `pacts`, `verifi
 
 ## 4. Default tenant provisioning (race-safe)
 
-`ensureDefaultTenant(name, ownerSub)` là primitive race-safe của tenant repo; **không** có đường HTTP nào tự gọi nó khi account đăng ký hay đăng nhập. Tenant mặc định của một account **không** được tạo tự động từ login — bootstrap tenant `ecoma-internal` và tenant mặc định cho account được thực hiện **tường minh** bởi deploy pipeline / bootstrap script (machine token từ migration seed, chỉ trong test/local), theo nguyên tắc bootstrap independence (§5.3).
+`ensureDefaultTenant(name, ownerSub)` là primitive race-safe của tenant repo; **không** có đường HTTP nào tự gọi nó khi account đăng ký hay đăng nhập. Tenant mặc định của một account **không** được tạo tự động từ login — bootstrap tenant `ecoma-internal` và tenant mặc định cho account được thực hiện **tường minh** bởi một **bootstrap script độc lập** (machine token từ migration seed, chỉ trong test/local); deploy pipeline, khi được xây, chỉ là caller tuỳ chọn của script đó — theo nguyên tắc bootstrap independence (§5.3) và roadmap P3.1.
 
 Khi được gọi (trong bootstrap có kiểm soát), primitive thực hiện:
 
@@ -79,7 +79,7 @@ Khi được gọi (trong bootstrap có kiểm soát), primitive thực hiện:
 3. `INSERT INTO pact.tenant_members (tenant_id, sub, role) VALUES (...,'owner') ON CONFLICT (tenant_id, sub) DO NOTHING` — idempotent; thành viên có sẵn role cũ thì giữ nguyên.
 4. Race test: hai connection đồng thời cùng sub phải cho đúng một tenant + một membership owner, không lỗi chết.
 
-**Ranh giới bắt buộc (Subagent D):** quyền truy cập sản phẩm từ Staff Access không thay thế authorization bên trong Pact Broker; nhân sự nội bộ provision vào tenant `ecoma-internal` **chỉ bắt đầu với quyền Member** trừ khi có quy trình cấp quyền quản trị rõ ràng; thu hồi entitlement không được vô tình xóa customer membership độc lập hoặc machine credentials không thuộc vòng đời nhân sự đó. `ecoma-internal` phải được bootstrap tường minh và có kiểm soát.
+**Ranh giới bắt buộc:** quyền truy cập sản phẩm từ Staff Access không thay thế authorization bên trong Pact Broker; nhân sự nội bộ provision vào tenant `ecoma-internal` **chỉ bắt đầu với quyền Member** trừ khi có quy trình cấp quyền quản trị rõ ràng; thu hồi entitlement không được vô tình xóa customer membership độc lập hoặc machine credentials không thuộc vòng đời nhân sự đó. `ecoma-internal` phải được bootstrap tường minh và có kiểm soát.
 
 ## 5. Auth model
 

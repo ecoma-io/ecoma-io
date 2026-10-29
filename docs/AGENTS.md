@@ -46,7 +46,7 @@
 - Only genuinely undecided items belong in the open-boundaries section. A decision already settled by an ADR or an overview decision must not be re-listed as open; only the explicitly unresolved part of it may be.
 - A deploy-unit spec (or a new app/job) does not create a bounded context. A new context enters the catalog only when the architecture docs define new business responsibility and data ownership.
 - Shared infrastructure (`local-platform`, `remote-cache` while disposable build state, `janitor`, `deploys/*`, provisioning projects) is never a bounded context.
-- Do not copy the catalog or the context map into other documents; reference [`domains/README.md`](./README.md) instead.
+- Do not copy the catalog or the context map into other documents; reference [`domains/README.md`](./domains/README.md) instead.
 
 ### `solutions/<name>/`
 

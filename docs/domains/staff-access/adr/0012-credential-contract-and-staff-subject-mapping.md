@@ -1,5 +1,7 @@
 # ADR-0012 — Credential contract của `backoffice`: Authorization Code + PKCE qua `auth`, BFF verify access token offline, ánh xạ `sub` → staff
 
+> 📌 Thư mục này là bounded context **Staff Access** (đích — Phase 1, xem [`../README.md`](../README.md) §4): ADR này chốt quyết định cho nghiệp vụ staff/RBAC khi được tách khỏi `backoffice` (A21–A24). Ngày nay `backoffice` còn sở hữu staff/RBAC.
+
 > **Trạng thái:** Accepted · **Ngày:** 2026-10-23 · **Quyết định từ:** [`01-architecture.md`](../01-architecture.md) §5, §6 · **Issue:** #116 · **Hiện thực:** PR B của Backoffice MVP (J2)
 
 ## Bối cảnh

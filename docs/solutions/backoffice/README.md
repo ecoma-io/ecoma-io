@@ -1,13 +1,13 @@
 # Backoffice
 
-`backoffice` là **composition: UI quản trị + BFF** phục vụ vận hành nội bộ. Nó phối hợp các API của các bounded context — Staff Access cho nhân sự/quyền, Pact Broker và Remote Cache cho nghiệp vụ sản phẩm — và **không sở hữu database nghiệp vụ** thay cho bất kỳ domain nào.
+`backoffice` là **composition: UI quản trị + BFF** phục vụ vận hành nội bộ. Nó phối hợp các API của các bounded context — Staff Access cho nhân sự/quyền, Pact Broker và Remote Cache cho nghiệp vụ sản phẩm. **Không sở hữu database nghiệp vụ** là **target architecture**: ngày nay app `backoffice` vẫn sở hữu staff/RBAC theo A21–A24 (dòng Trạng thái bên dưới); khi tách xong sang Staff Access, composition không ghi database nghiệp vụ thay cho bất kỳ domain nào.
 
 > **Trạng thái:** `apps/backoffice` là Nuxt app (`ssr: false`, AppShell, i18n `en`/`vi`/`zh-CN`). Ba trang staff/roles/permissions vẫn đọc dữ liệu mẫu trong bộ nhớ (`mock-adapter`), nhưng phía server **đã có auth runtime và persistence thật**: migrations `0001–0006` (staff/RBAC/bff-sessions), binding `DB_BACKOFFICE`, authn middleware và authorization check. App chưa đi qua pipeline release — lý do vẫn còn nguyên ở [`architecture/02-delivery.md`](../../architecture/02-delivery.md) §7.5. Ngày nay app còn sở hữu luôn nghiệp vụ staff/RBAC; tách nghiệp vụ đó sang Staff Access là **target architecture** — xem [`docs/domains/staff-access/README.md`](../../domains/staff-access/README.md) §4.
 
 ## 1. Vai trò composition
 
 - **UI quản trị** cho staff: quản trị nhân sự, vai trò/quyền, và các thao tác vận hành trên sản phẩm nội bộ.
-- **BFF** giữ token server-side, trình browser chỉ thấy session cookie hash-only; BFF verify token rồi forward với credential của riêng nó — đúng pattern `pact-broker-app`.
+- **BFF** giữ token server-side; trình browser chỉ thấy session cookie (`__Host-backoffice-session` — session ID nguyên vẹn), còn server chỉ lưu `id_hash = SHA-256(id)` trong `bff_sessions` — đúng pattern `pact-broker-app` và `account_sessions` (hash-only là ở phía lưu trữ, không phải phía cookie).
 - **Không ghi trực tiếp vào database của domain khác** để bỏ qua API/contract; mọi dữ liệu nghiệp vụ đi qua API của context sở hữu.
 
 ## 2. Authentication và authorization

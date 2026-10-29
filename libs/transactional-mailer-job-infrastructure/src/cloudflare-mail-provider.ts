@@ -78,7 +78,7 @@ export interface SendEmailBindingLike {
  * đối chiếu field như `ResendProviderConfig`).
  *
  * Không có endpoint/token: binding là kênh in-process của cùng Cloudflare account
- * (không qua internet, không credential trong worker — overview `01` §5.4). `sender`
+ * (không qua internet, không credential trong worker — architecture `01` §6). `sender`
  * là địa chỉ sender cố định từ trusted config; binding còn bị chặn thêm bởi
  * `allowed_sender_addresses` ở wrangler.jsonc — hai lớp chặn độc lập.
  */

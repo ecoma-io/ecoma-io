@@ -82,12 +82,6 @@ PUT /v1/cache/{hash}
 Authorization: Bearer <token>
 ```
 
-```http
-GET /v1/cache/{hash}
-PUT /v1/cache/{hash}
-Authorization: Bearer <token>
-```
-
 Namespace **không** đưa vào public URL — public interface phải tương thích Nx. Namespace resolve từ authenticated principal và project authorization:
 
 ```text

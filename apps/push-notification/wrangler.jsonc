@@ -12,7 +12,7 @@
   // .oxlintrc.json chặn import Node.js builtin trong mọi project `runtime:edge`.
   //
   // KHÔNG có `routes`/`hostname` public — service chỉ có internal API,
-  // gọi qua Service Binding từ Worker cùng account (overview `01` §5.4).
+  // gọi qua Service Binding từ Worker cùng account (architecture `01` §6).
   //
   // `workers_dev: false` bắt buộc (task §10 / SR-006): Worker chỉ được gọi qua
   // Service Binding; tắt workers.dev subdomain để không có hostname công khai

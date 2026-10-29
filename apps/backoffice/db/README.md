@@ -27,7 +27,7 @@ chép mù.
 
 Tài liệu thiết kế
 [`docs/domains/staff-access/01-architecture.md`](../../../docs/domains/staff-access/01-architecture.md)
-§10 để "storage/schema cho staff/RBAC" ở bảng _Chưa chốt_, với điều kiện kích
+§10 để "storage/schema cho staff/RBAC" ở bảng _Đã chốt qua ADR_ (ADR-0001), với điều kiện kích
 hoạt "trước khi implement persistence đầu tiên cho staff/RBAC". Workstream này
 **là** persistence đầu tiên đó, nên nó chốt: engine PostgreSQL (business data,
 bounded context rule), tên database `db-backoffice`, schema `backoffice`.

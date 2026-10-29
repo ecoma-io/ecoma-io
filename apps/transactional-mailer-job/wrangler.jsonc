@@ -77,7 +77,7 @@
   },
 
   // Service Binding private (cùng Cloudflare account → không qua internet,
-  // không cần token — overview `01` §5.4). Tên binding suy từ tiền lệ
+  // không cần token — architecture `01` §6). Tên binding suy từ tiền lệ
   // `PUSH_NOTIFICATION_SERVICE` của web-push-notification-job
   // (docs/solutions/web-push-notification-job/03-operations.md §3).
   "services": [

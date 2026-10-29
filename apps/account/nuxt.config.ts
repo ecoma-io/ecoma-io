@@ -169,7 +169,7 @@ export default defineNuxtConfig({
     authServiceUrl: '',
     // Origin của worker auth mà BFF dựng URL browser cho nó (`/authorize/confirm`
     // sau khi mã OTP được chấp nhận — §5.1.2 hàng 7 của
-    // `docs/services/auth/01-architecture.md`). Rỗng = chưa cấu hình ⇒ verify
+    // `docs/domains/auth/01-architecture.md`). Rỗng = chưa cấu hình ⇒ verify
     // không cấp `confirmUrl` (luồng có handle fail-closed ở bước cuối, người dùng
     // thấy trạng thái "không tiếp tục được"); luồng đăng nhập account thuần
     // không bao giờ đọc key này. Cùng luật `NUXT_*` ở trên: không default, được

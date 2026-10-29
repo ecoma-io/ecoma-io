@@ -4,7 +4,7 @@
 // không đo được UNIQUE, không đo được `json_valid`, và không đo được việc `LIMIT` được áp
 // SAU khi lọc.
 // Nguồn canonical: docs/solutions/web-push-notification-job/01-architecture.md §11b (bốn nhóm
-// FR-022), 02-requirements.md FR-022; 03-operations.md §7.2, §14.11 (crash windows).
+// FR-022), 02-requirements.md FR-022; 03-operations.md §14.10 (job reconciliation), §14.11 (crash windows).
 //
 // ⚠️ Suite này KHÔNG import gì từ project khác: harness là bản sao riêng của app này, đúng
 // lý do `apps/transactional-mailer-job/src/mail-job-repository.spec.ts` có bản sao riêng.

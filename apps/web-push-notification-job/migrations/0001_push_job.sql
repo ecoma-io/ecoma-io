@@ -3,7 +3,7 @@
 --
 -- Nguồn: docs/solutions/web-push-notification-job/01-architecture.md §11b (bốn nhóm bắt buộc),
 --        02-requirements.md FR-022; docs/solutions/web-push-notification-job/03-operations.md
---        §7.2 (job reconciliation), §14.10 (giới hạn phạm vi), §14.11 (crash windows W1–W4).
+--        §14.10 (job reconciliation), §14.11 (crash windows W1–W4).
 --
 -- ⚠️ Bốn nhóm FR-022 được biểu diễn bằng **hai** bảng, và đó là quyết định có chủ đích:
 --

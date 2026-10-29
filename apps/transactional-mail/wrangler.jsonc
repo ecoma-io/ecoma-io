@@ -11,7 +11,7 @@
   // .oxlintrc.json chặn import Node.js builtin trong mọi project `runtime:edge`.
   //
   // KHÔNG có `routes`/`hostname` public — service chỉ có internal API,
-  // gọi qua Service Binding từ Worker cùng account (overview `01` §5.4).
+  // gọi qua Service Binding từ Worker cùng account (architecture `01` §6).
   //
   // CHƯA khai `env.staging`/`env.production`: chưa có Worker identity cho làn
   // nào của hai làn deploy (thiết kế `02-delivery.md` §7.2, chưa hiện thực),

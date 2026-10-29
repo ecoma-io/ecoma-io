@@ -76,7 +76,7 @@
   },
 
   // Service Binding private tới control plane (cùng Cloudflare account → không
-  // qua internet, không cần token — overview `01` §5.4). Tên binding theo
+  // qua internet, không cần token — architecture `01` §6). Tên binding theo
   // docs/solutions/web-push-notification-job/03-operations.md §3.
   "services": [
     {

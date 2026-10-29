@@ -139,7 +139,8 @@ app.get('/health', (c) =>
  * (cùng một nguyên nhân mà `loadAuthConfig` ném ở request đầu) hoặc `db-auth`
  * không trả lời được thì **không phát hành** token nào — hợp đồng của `auth`
  * không có degraded path (control point fail-closed lúc phát hành,
- * `docs/architecture/01-architecture.md` §6.0). Một readiness trả 200 trong khi
+ * `docs/domains/auth/01-architecture.md` §6.0; system invariant 30 trong
+ * `docs/architecture/01-architecture.md`). Một readiness trả 200 trong khi
  * dependency chết là đẩy failure xuống thành lỗi 503 rải rác ở từng request
  * thật. Readiness **không** log chi tiết lỗi DB vào response: response đi qua
  * mạng công cộng; nguyên nhân nằm ở log với mã ổn định — như `ready.get.ts`

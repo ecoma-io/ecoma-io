@@ -87,7 +87,7 @@ export const RUNTIME_PRINCIPAL_HEADER = 'x-ecoma-principal';
  * Origin giả của private API.
  *
  * Chỉ dùng để dựng một URL *tương đối* hợp lệ cho `Request`/`URL`; request đi qua Service Binding
- * nên hostname này **không bao giờ** được phân giải trên DNS (overview `01` §5.4). Đặt đúng tên
+ * nên hostname này **không bao giờ** được phân giải trên DNS (architecture `01` §6). Đặt đúng tên
  * Worker của control plane để `wrangler tail` không đọc nhầm thành lời gọi ra Internet.
  */
 const RUNTIME_ORIGIN = 'https://ecoma-push-notification.internal';

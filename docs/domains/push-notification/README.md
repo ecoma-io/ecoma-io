@@ -8,7 +8,7 @@ Application ──► push-notification ──► Cloudflare Queue ──► web
 
 ## Runtime / deploy unit
 
-- Cloudflare Worker (control plane) — internal API, Service Binding; **thiết kế** là không public hostname (`docs/architecture/01-architecture.md` §2, §6). ⚠️ Trạng thái hiện tại **chưa** đạt: Worker chưa đặt `workers_dev: false` nên private delivery runtime API vẫn reachable từ Internet — **launch gate** và biện pháp bắt buộc → [`03-operations.md`](./03-operations.md) §2.
+- Cloudflare Worker (control plane) — internal API, Service Binding; không public hostname (`docs/architecture/01-architecture.md` §2, §6). Trạng thái: `workers_dev: false` **đã đóng trong implementation** (`apps/push-notification/wrangler.jsonc` và `apps/web-push-notification-job/wrangler.jsonc` đều đặt và không có `routes`/hostname công khai) — vẫn còn là điều kiện kiểm tra khi thêm environment mới; **launch gate** → [`03-operations.md`](./03-operations.md) §2.
 - Storage owner: D1 `push` (mỗi environment một D1 riêng).
 - Queue producer: `ecoma-push-delivery` (+ DLQ `ecoma-push-delivery-dlq`).
 - Delivery plane: [`web-push-notification-job`](../../solutions/web-push-notification-job/README.md) — deploy unit độc lập, không truy cập D1 `push`.

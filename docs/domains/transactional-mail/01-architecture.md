@@ -628,7 +628,7 @@ Authentication **không** thay thế authorization: sau khi principal đã xác 
 
 ## 9. Các quyết định convention-derived (cần xác nhận)
 
-Những cái tên dưới đây suy từ tiền lệ có sẵn trong repo; chưa có quyết định chính thức trong `overview`:
+Những cái tên dưới đây suy từ tiền lệ có sẵn trong repo; chưa có quyết định chính thức trong `architecture`:
 
 | Mục                                     | Giá trị dùng                                                                                                                                        | Suy từ                                                                                          |
 | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |

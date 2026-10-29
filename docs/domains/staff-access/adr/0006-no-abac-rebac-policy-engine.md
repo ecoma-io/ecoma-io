@@ -1,5 +1,7 @@
 # ADR-0006 — Không bật ABAC/ReBAC/policy engine ngoài: RBAC + typed scope + controlled conditions
 
+> 📌 Thư mục này là bounded context **Staff Access** (đích — Phase 1, xem [`../README.md`](../README.md) §4): ADR này chốt quyết định cho nghiệp vụ staff/RBAC khi được tách khỏi `backoffice` (A21–A24). Ngày nay `backoffice` còn sở hữu staff/RBAC.
+
 > **Trạng thái:** Accepted · **Ngày:** 2026-10-21 · **Quyết định từ:** [`01-architecture.md`](../01-architecture.md) §10 (hàng 6), §4.7 · **Issue:** #87
 
 ## Bối cảnh
