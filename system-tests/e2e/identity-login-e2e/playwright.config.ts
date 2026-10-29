@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { X509Certificate, createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -53,12 +53,9 @@ export const LOCAL_CA_PEM = readFileSync(LOCAL_CERT_PATH, 'utf8');
  * Tính tại config load: cert đổi → hash đổi → browser trust theo cert MỚI.
  */
 function computeSpkiHash(pem: string): string {
-  const body = pem
-    .replace(/-----BEGIN CERTIFICATE-----/u, '')
-    .replace(/-----END CERTIFICATE-----/u, '')
-    .replace(/\s+/gu, '');
-  const der = Buffer.from(body, 'base64');
-  return createHash('sha256').update(der).digest('base64');
+  const cert = new X509Certificate(pem);
+  const spkiDer = cert.publicKey.export({ type: 'spki', format: 'der' });
+  return createHash('sha256').update(spkiDer).digest('base64');
 }
 
 const SPKI_HASH = computeSpkiHash(LOCAL_CA_PEM);
