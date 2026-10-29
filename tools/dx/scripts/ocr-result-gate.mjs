@@ -20,9 +20,13 @@
  *   đối chiếu các file bị bỏ: file khớp `include` mà không khớp `exclude` nào thì
  *   đáng lẽ phải được review, nên việc bỏ nó nghĩa là rule không còn hiệu lực.
  *
- * Hợp đồng: exit 0 = chứng minh được review đã hoàn tất trên ít nhất một file;
- * exit 1 = không chứng minh được (fail-closed, mọi trường hợp thiếu dữ liệu đều
- * rơi vào đây); exit 2 = dùng sai tham số.
+ * Hợp đồng: exit 0 = chứng minh được một trong hai điều: (a) review đã hoàn tất
+ * trên ít nhất một file, hoặc (b) review bị bỏ qua (`terminal_state: "skipped"`)
+ * mà TOÀN BỘ file thay đổi đều nằm ngoài phạm vi review (issue #391: rule chỉ
+ * include Markdown còn PR chỉ đổi `*.spec.ts` — không có gì để review theo
+ * policy, không phải xanh giả #239). Exit 1 = không chứng minh được
+ * (fail-closed, mọi trường hợp thiếu dữ liệu đều rơi vào đây); exit 2 = dùng
+ * sai tham số.
  */
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
@@ -45,6 +49,13 @@ const DEFAULT_RULE_PATH = '.opencodereview/rule.json';
  * `secret_exclude`, và `user_exclude`/`unsupported_ext`/`default_path` — cả ba
  * in chung một câu). Đây là các gate do path/extension quyết định, không phụ
  * thuộc nội dung, nên việc bỏ qua chúng là hành vi đã thiết kế.
+ *
+ * Ý nghĩa theo hợp đồng exit 0 (issue #391): với `terminal_state: "skipped"`,
+ * các lý do này là bằng chứng "không có gì trong phạm vi để review" khi và chỉ
+ * khi cổng chứng minh được toàn bộ file thay đổi đều nằm ngoài phạm vi rule
+ * (xem `nothingInScopeEvidence`). Riêng hai lý do `binary`/`secret_exclude` không
+ * cần đối chiếu rule: chúng loại file theo nội dung/đường dẫn nhạy cảm, và file
+ * binary/secret không bao giờ thuộc phạm vi review muốn xem.
  */
 const PERMITTED_SKIP_REASONS = new Set([
   'binary file',
@@ -74,7 +85,8 @@ const MARKDOWN_EXT = /\.(?:md|markdown|mdx)$/iu;
 const SIZE_SKIP_LINE =
   /^\[ocr\] Skipping (?<path>.+?) \(~(?<tokens>\d+) tokens exceeds 80% of max_tokens\((?<max>\d+)\)\)$/u;
 const SIZE_ROLLUP_LINE = /^\[ocr\] Pre-filtered \d+ file\(s\) exceeding 80% of max_tokens/u;
-const SELECTION_LINE = /^\[ocr\] \d+ file\(s\) changed, reviewing (?<selected>\d+) in /u;
+const SELECTION_LINE =
+  /^\[ocr\] (?<changed>\d+) file\(s\) changed, reviewing (?<selected>\d+) in /mu;
 
 const USAGE = `Usage: node ocr-result-gate.mjs [--result <path>] [--stderr <path>] [--rule <path>]
 
@@ -283,6 +295,80 @@ function reportedSelectionCount(text) {
 }
 
 /**
+ * Kiểm tra xem có đủ bằng chứng "không có file nào trong phạm vi review" cho một
+ * run `skipped` hay không (issue #391). Trả về `null` nếu thiếu bất kỳ điều kiện
+ * nào — khi đó đường `skipped` vẫn fail-closed như cũ.
+ *
+ * Các điều kiện, mỗi điều kiện chặn một kiểu "xanh giả" riêng:
+ * 1. `selected === 0` và dòng selection phải có mặt — không có dòng thì không
+ *    chứng minh được CLI thực sự đã thấy 0 file đáng chọn.
+ * 2. Mọi file thay đổi phải được giải thích bằng một dòng skip đã phân loại
+ *    (permitted hoặc size-gated): một file chưa được giải thích là một file có
+ *    thể đã đáng review.
+ * 3. Không file nào bị gate kích thước, không lý do lạ, không item `failed` —
+ *    mỗi nhóm đó đều là "đáng lẽ phải được review".
+ * 4. Không file nào `ruleFiltered` nằm trong phạm vi rule — đây chính là bảo vệ
+ *    #239 trên đường `skipped`. `ruleFiltered` khác rỗng mà rule đọc không được
+ *    thì không chứng minh được → `null`. Khi rule hợp lệ nhưng `include` rỗng,
+ *    `auditAgainstRule` rơi về nhận diện theo phần mở rộng (fallback
+ *    `MARKDOWN_EXT`, đúng ngữ nghĩa của đường `complete`): một file `.md` bị bỏ
+ *    vẫn bị coi là trong phạm vi → fail-closed, một file `.spec.ts` bị bỏ vẫn
+ *    ngoài phạm vi → được cấp qua.
+ * @param {ReturnType<typeof classifySkips>} skips
+ * @param {number | undefined} selected số file CLI báo đã chọn (dòng selection)
+ * @param {number} changedCount tổng file thay đổi theo cùng dòng selection
+ * @param {{ failed: number, selected: number, completed: number, reused: number }} coverage số lượng item trong manifest
+ * @param {string} rulePath
+ * @returns {string | null} ghi chú tiếng Anh khi đủ bằng chứng, `null` nếu không
+ */
+function nothingInScopeEvidence(skips, selected, changedCount, coverage, rulePath) {
+  if (selected !== 0 || changedCount === 0) {
+    return null;
+  }
+  const { permitted, ruleFiltered, sizeGated, sizeGatedRollup, unknown } = skips;
+  if (
+    sizeGated.length > 0 ||
+    sizeGatedRollup ||
+    unknown.length > 0 ||
+    coverage.failed > 0 ||
+    coverage.selected !== 0 ||
+    coverage.completed !== 0 ||
+    coverage.reused !== 0
+  ) {
+    return null;
+  }
+  // Đối chiếu từng file thay đổi với một dòng skip đã phân loại. Lưu ý
+  // `ruleFiltered` KHÔNG cộng thêm vào tổng: nó là tập con của `permitted`
+  // (cùng một dòng skip vừa được đếm vào `permitted` vừa được ghi lại path vào
+  // `ruleFiltered` trong `classifySkips`), nên cộng cả hai sẽ đếm kép và mọi
+  // case thật đều mismatch. Tổng đúng = tổng dòng skip permitted + dòng skip
+  // size-gated; lệch với số file thay đổi nghĩa là có file bị bỏ không giải
+  // thích được (hoặc dòng skip trỏ ra ngoài diff) → không cấp qua.
+  const explained =
+    [...permitted.values()].reduce((sum, count) => sum + count, 0) + sizeGated.length;
+  if (explained !== changedCount) {
+    return null;
+  }
+  if (ruleFiltered.length > 0) {
+    const rule = readRule(rulePath);
+    // Rule đọc không được thì không có gì để đối chiếu — "cannot prove",
+    // fail-closed đúng tinh thần lỗi cùng tên của đường `complete`.
+    if (!rule.available) {
+      return null;
+    }
+    // Rule hợp lệ nhưng `include` rỗng: `auditAgainstRule` rơi về nhận diện theo
+    // phần mở rộng (fallback `MARKDOWN_EXT`) — đúng ngữ nghĩa của đường
+    // `complete`, nên một file `.md` bị bỏ vẫn trong phạm vi suy diễn → null,
+    // còn `.spec.ts` thì ngoài phạm vi → được cấp qua.
+    const audit = auditAgainstRule(ruleFiltered, rule, MARKDOWN_EXT);
+    if (audit.inScope.length > 0) {
+      return null;
+    }
+  }
+  return `0 in-scope file(s): nothing to review under the project rule (${changedCount} changed file(s) all filtered out of scope)`;
+}
+
+/**
  * Đọc và parse JSON kết quả.
  * @param {string} resultPath
  * @returns {{ read: true, value: unknown } | { read: false, error: string }}
@@ -375,8 +461,14 @@ function evaluate(result, stderrLog, rulePath) {
   // chúng chỉ có giá trị khi manifest *nói* đã xong mà dữ liệu bên trong lại
   // nói khác.
   let terminalStateComplete = false;
+  let terminalStateSkipped = false;
   let selectedOk = false;
   let completedOrReusedOk = false;
+  let failedCoverageCount = 0;
+  let selectedManifestCount = 0;
+  let completedManifestCount = 0;
+  let reusedManifestCount = 0;
+  const terminalStateFailures = [];
 
   if (!isRecord(manifest)) {
     // Không có manifest thì không có nguồn nào nói item nào đã được chọn và
@@ -386,6 +478,7 @@ function evaluate(result, stderrLog, rulePath) {
     const terminalState = manifest.terminal_state;
     facts.push(`terminal_state=${JSON.stringify(terminalState ?? null)}`);
     terminalStateComplete = terminalState === 'complete';
+    terminalStateSkipped = terminalState === 'skipped';
 
     const coverage = manifest.coverage;
     if (!isRecord(coverage)) {
@@ -403,6 +496,10 @@ function evaluate(result, stderrLog, rulePath) {
         reusedCount = reused.length;
         selectedOk = selected.length > 0;
         completedOrReusedOk = completed.length + reused.length > 0;
+        failedCoverageCount = failed.length;
+        selectedManifestCount = selected.length;
+        completedManifestCount = completed.length;
+        reusedManifestCount = reused.length;
         facts.push(
           `coverage: selected=${selected.length} completed=${completed.length} ` +
             `reused=${reused.length} failed=${failed.length}`,
@@ -415,7 +512,10 @@ function evaluate(result, stderrLog, rulePath) {
           );
         }
         if (!terminalStateComplete) {
-          failures.push(
+          // Với `skipped`, lỗi này có thể được cấp qua bên dưới nếu cổng chứng
+          // minh được toàn bộ diff nằm ngoài phạm vi review — nên hoãn đẩy vào
+          // `failures` đến khi biết kết quả xét "nothing in scope".
+          terminalStateFailures.push(
             `review did not complete: terminal_state is ${JSON.stringify(terminalState ?? null)} ` +
               `(${selected.length} selected, ${completed.length} completed, ${reused.length} reused, ${failed.length} failed)`,
           );
@@ -440,7 +540,10 @@ function evaluate(result, stderrLog, rulePath) {
       );
     } else {
       filesReviewedCount = filesReviewed;
-      facts.push(`files_reviewed=${filesReviewed}`);
+      facts.push(
+        `files_reviewed=${filesReviewed}` +
+          (terminalStateSkipped ? ' (nothing to review for this terminal state)' : ''),
+      );
     }
     if (summary.budget_exceeded === true) {
       failures.push('token budget was reached: coverage was truncated');
@@ -483,6 +586,13 @@ function evaluate(result, stderrLog, rulePath) {
   if (stderrState !== null) {
     if (terminalStateComplete) {
       failures.push(`cannot rule out size-gated skips: ${stderrLog.path} is ${stderrState}`);
+    } else if (terminalStateSkipped) {
+      // Log thiếu/rỗng = không có bằng chứng "mọi file đều ngoài phạm vi" → không
+      // cấp qua, đường `skipped` fail-closed đúng như đường `complete`.
+      failures.push(...terminalStateFailures);
+      failures.push(`cannot prove nothing-in-scope: ${stderrLog.path} is ${stderrState}`);
+      notes.push(`note: ${stderrLog.path} is ${stderrState}`);
+      return { failures, notes, facts };
     } else {
       notes.push(`note: ${stderrLog.path} is ${stderrState}`);
     }
@@ -492,6 +602,25 @@ function evaluate(result, stderrLog, rulePath) {
   const { permitted, ruleFiltered, sizeGated, sizeGatedRollup, unknown } = classifySkips(
     stderrLog.text,
   );
+  // Dòng đầu của log mang cả hai con số (`N file(s) changed, reviewing M`):
+  // `changed` để đối chiếu giải thích từng file, `selected` để xét điều kiện
+  // "reviewing 0" của hợp đồng #391. Không có dòng này thì `selected` là
+  // `undefined` — tự động không đủ bằng chứng cấp qua.
+  // Lấy cả hai con số từ cùng MỘT dòng selection đầu tiên để `changed` và
+  // `reported` không bao giờ lệch nhau. `SELECTION_LINE` mang cờ `m` nên `^`
+  // neo vào đầu từng dòng, nhưng vẫn phải lặp qua các dòng vì `RegExp.exec` trên
+  // cả chuỗi chỉ trả về *đầu tiên* — và nếu CLI in preamble trước dòng selection
+  // thì `exec` trên toàn bộ text vẫn trả về đúng dòng đó (nhờ cờ `m`), nhưng lặp
+  // tường minh cho phép dừng ngay tại dòng đầu tiên khớp.
+  let firstSelectionMatch = null;
+  for (const line of stderrLog.text.split('\n')) {
+    const match = SELECTION_LINE.exec(line);
+    if (match?.groups) {
+      firstSelectionMatch = match;
+      break;
+    }
+  }
+  const changed = firstSelectionMatch ? Number(firstSelectionMatch.groups.changed) : null;
   const reported = reportedSelectionCount(stderrLog.text);
   if (reported !== undefined) {
     facts.push(`cli_reported_selected=${reported}`);
@@ -538,6 +667,41 @@ function evaluate(result, stderrLog, rulePath) {
       for (const path of audit.inScope.slice(0, 10)) {
         notes.push(`skipped although the rule includes it: ${path}`);
       }
+    }
+  }
+
+  // Quyết định "nothing in scope" (issue #391) được tính MỘT lần, ở cuối luồng:
+  // khi đó các kiểm tra size-gate/unknown đã chạy xong, nên `failures` phản ánh
+  // đúng mọi lý do từ chối cấp qua trước khi tôi quyết định số phận lỗi
+  // `terminal_state: "skipped"` đã hoãn. Trả về `null` (không đủ bằng chứng) thì
+  // lỗi hoãn chính là lỗi fail-closed của đường `skipped` như trước đây.
+  if (terminalStateFailures.length > 0) {
+    if (terminalStateSkipped) {
+      // Grant chỉ dành riêng cho `skipped`: `partial` nghĩa là đã review được
+      // một phần diff thật — không bao giờ là "nothing in scope".
+      const grant = nothingInScopeEvidence(
+        { permitted, ruleFiltered, sizeGated, sizeGatedRollup, unknown },
+        reported,
+        changed ?? 0,
+        {
+          failed: failedCoverageCount,
+          selected: selectedManifestCount,
+          completed: completedManifestCount,
+          reused: reusedManifestCount,
+        },
+        rulePath,
+      );
+      if (grant !== null) {
+        // Cấp qua có điều kiện: chỉ lỗi `terminal_state` được bỏ, mọi lỗi khác
+        // (ví dụ budget_exceeded, mismatch coverage) vẫn đỏ như thường.
+        notes.push(grant);
+      } else {
+        failures.push(...terminalStateFailures);
+      }
+    } else {
+      // Mọi terminal state không phải `complete`/`skipped` (vd `partial`) đều
+      // nhận lại lỗi đã hoãn: không có nhánh cấp qua nào cho chúng.
+      failures.push(...terminalStateFailures);
     }
   }
   return { failures, notes, facts };
@@ -595,7 +759,12 @@ function main() {
     );
     return EXIT_UNVERIFIED;
   }
-  process.stdout.write('[ocr-gate] VERIFIED: the review completed on the selected files\n');
+  const nothingInScope = notes.some((note) => note.startsWith('0 in-scope file(s):'));
+  process.stdout.write(
+    nothingInScope
+      ? '[ocr-gate] VERIFIED: no in-scope file to review under the project rule\n'
+      : '[ocr-gate] VERIFIED: the review completed on the selected files\n',
+  );
   return EXIT_VERIFIED;
 }
 

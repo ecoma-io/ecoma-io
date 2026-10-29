@@ -278,11 +278,14 @@ jobs:
 
       # Action kết thúc thành công ngay cả khi không file nào được chọn để review
       # (`status: skipped`, `summary.files_reviewed: 0`), nên bước này đọc kết quả
-      # thật rồi fail-closed. Đây là bước duy nhất quyết định "đã review hay chưa";
-      # nó không thay đổi hành vi của action và không cần thêm secret/quyền nào.
-      # `--rule` trỏ vào project rule trong base checkout (đúng nguồn mà `ocr`
-      # đọc), để cổng đối chiếu được file bị bỏ qua có nằm trong phạm vi rule hay
-      # không; không truyền nội dung nào từ PR head.
+      # thật rồi fail-closed — ngoại trừ trường hợp `skipped` mà cổng chứng minh
+      # được TOÀN BỘ file thay đổi đều nằm ngoài phạm vi review theo rule (không
+      # có gì để review, không phải xanh giả #239): lúc đó nó pass kèm ghi chú
+      # "0 in-scope file(s)" thay vì đỏ. Đây là bước duy nhất quyết định "đã
+      # review hay chưa"; nó không thay đổi hành vi của action và không cần thêm
+      # secret/quyền nào. `--rule` trỏ vào project rule trong base checkout (đúng
+      # nguồn mà `ocr` đọc), để cổng đối chiếu được file bị bỏ qua có thật sự nằm
+      # ngoài phạm vi rule hay không; không truyền nội dung nào từ PR head.
       - name: Verify the review result
         id: verify
         if: steps.ocr.outcome == 'success'
