@@ -52,6 +52,7 @@ jobs:
         with:
           targets: lint typecheck
           affected: ${{ !inputs.force }}
+          bail: ${{ github.event_name == 'merge_group' }}
 
   unit-test:
     name: unit-test
@@ -109,6 +110,7 @@ jobs:
         with:
           targets: test
           affected: ${{ !inputs.force }}
+          bail: ${{ github.event_name == 'merge_group' }}
 
   integration-test:
     name: integration-test
@@ -167,6 +169,7 @@ jobs:
         with:
           targets: test-integration
           affected: ${{ !inputs.force }}
+          bail: ${{ github.event_name == 'merge_group' }}
   build:
     name: build
     runs-on: ubuntu-26.04
@@ -186,6 +189,7 @@ jobs:
         with:
           targets: build
           affected: ${{ !inputs.force }}
+          bail: ${{ github.event_name == 'merge_group' }}
 
   # Bộ test browser của `apps/backoffice` (Playwright + Chromium thật). Job tách
   # khỏi `unit-test` vì cần cài browser và hệ thống libs của nó, và vì nó chậm hơn
@@ -220,6 +224,7 @@ jobs:
         with:
           targets: e2e
           affected: ${{ !inputs.force }}
+          bail: ${{ github.event_name == 'merge_group' }}
       # Chỉ khi đỏ: trace, screenshot và HTML report là bằng chứng duy nhất còn lại
       # sau khi runner bị xoá, và không có chúng thì một job đỏ ở CI là thứ người
       # khác không tái hiện được.

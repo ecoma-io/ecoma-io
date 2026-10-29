@@ -18,6 +18,15 @@ inputs:
     description: 'Maximum number of Nx tasks to run in parallel.'
     required: false
     default: '6'
+  bail:
+    description: |
+      Stop the Nx run after the first failed task ('--nxBail'). Tasks already
+      running still finish; the exit code stays non-zero. Callers opt in where
+      a red run carries no diagnostic value beyond the first failure — the
+      merge queue re-runs each entry separately, so later failures in the same
+      run are re-reported there anyway.
+    required: false
+    default: 'false'
 
 runs:
   using: 'composite'
@@ -41,6 +50,7 @@ runs:
         AFFECTED: ${{ inputs.affected }}
         RAW_TARGETS: ${{ inputs.targets }}
         THREADS: ${{ inputs.threads }}
+        BAIL: ${{ inputs.bail }}
       run: |
         set -euo pipefail
 
@@ -57,10 +67,18 @@ runs:
           exit 1
         fi
 
+        # Bash word splitting is deliberate: an empty flag must vanish from the
+        # command line entirely (`$bail_flag` unquoted), a present one arrives
+        # as the single argument `--nxBail`.
+        bail_flag=''
+        if [ "$BAIL" = 'true' ]; then
+          bail_flag='--nxBail'
+        fi
+
         if [ "$AFFECTED" = 'true' ]; then
           echo "Running on the affected set: npx nx affected -t $targets"
-          npx nx affected -t "$targets" --parallel="$THREADS"
+          npx nx affected -t "$targets" --parallel="$THREADS" $bail_flag
         else
           echo "Running on every project: npx nx run-many -t $targets"
-          npx nx run-many -t "$targets" --parallel="$THREADS"
+          npx nx run-many -t "$targets" --parallel="$THREADS" $bail_flag
         fi
