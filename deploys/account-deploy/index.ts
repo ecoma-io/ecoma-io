@@ -124,6 +124,7 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
 const networkName = requirePlatformOutput('networkName');
 const platformNamespace = requirePlatformOutput('namespace');
 const rootHostname = requirePlatformOutput('rootHostname');
+const traefikHostPort = requirePlatformOutput('traefikHostPort');
 
 // Mật khẩu bốn role — do orchestration sinh và truyền qua --config (stdin, không argv).
 const ownerPassword = conf.require('ownerPassword');
@@ -311,7 +312,9 @@ const migrate = new command.local.Command(
  * tắt); `NUXT_AUTH_SERVICE_URL` trỏ alias `ecoma-auth` của WIC auth (port nội
  * bộ 4203 — nguồn hằng `AUTH_INTERNAL_PORT` của auth-deploy) — bật đường
  * account → auth qua shim `server/plugins/auth-service-shim.ts`; URL rỗng =
- * mọi gọi auth `binding_missing` fail-closed.
+ * mọi gọi auth `binding_missing` fail-closed; `NUXT_AUTH_ISSUER` là origin HTTPS
+ * browser-facing của auth qua Traefik — BFF verify dùng nó dựng `confirmUrl`
+ * cho hop `/authorize/confirm` sau OTP verify (rỗng ⇒ không cấp — fail-closed).
  */
 const account = new docker.Container(
   dockerResourceName(ns, 'account'),
@@ -335,6 +338,21 @@ const account = new docker.Container(
       // apps/auth/wrangler.jsonc). Shim Nitro trong account biến URL này thành
       // binding AUTH_SERVICE lúc runtime.
       pulumi.interpolate`NUXT_AUTH_SERVICE_URL=http://ecoma-${ns}-auth:${AUTH_INTERNAL_PORT_OF_AUTH_WIC}`,
+      // Origin HTTPS browser-facing của auth qua Traefik — BFF verify dựng
+      // `confirmUrl` tuyệt đối từ biến này cho bước hop browser
+      // `/authorize/confirm` sau OTP verify (01-architecture.md §5.1.2 row 7,
+      // contract PR #405). Thiếu biến ⇒ `authIssuer` rỗng ⇒ không cấp
+      // `confirmUrl` ⇒ flow OIDC fail-closed.
+      //
+      // Cùng luật port động với issuer backoffice (`NUXT_BACKOFFICE_AUTH_ISSUER`):
+      // browser tự theo URL nên origin PHẢI mang port Traefik publish (443 không
+      // listen). Ghim chuỗi (`iss` pin) KHÔNG cần ở đây vì account không verify
+      // `iss` — nó chỉ dựng redirect target; nhưng giá trị vẫn PHẢI khớp cấu trúc
+      // với issuer auth mint (`AUTH_ISSUER` của auth-deploy: cùng
+      // `rootHostname` + `traefikHostPort`) — lệch một chữ là hop confirm gõ sai
+      // origin. Precedent đối xứng: `AUTH_ACCOUNT_BASE_URL` bên auth-deploy trỏ
+      // ngược origin account, cùng công thức output.
+      pulumi.interpolate`NUXT_AUTH_ISSUER=https://auth.${rootHostname}:${traefikHostPort}`,
     ],
     labels: [
       ...Object.entries(labels).map(([label, value]) => ({ label, value })),
