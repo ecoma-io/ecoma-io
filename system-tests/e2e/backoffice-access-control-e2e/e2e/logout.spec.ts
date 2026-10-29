@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { TEST_EMAIL, TEST_SUB, UNAUTHENTICATED_STATUS } from './support/fixtures';
+import { LOGOUT_IDENTITY, UNAUTHENTICATED_STATUS } from './support/fixtures';
 import { CookieJar, resolveStackOrigin, stackGet, stackRequest } from './support/local-origin';
 import { performBrowserLogin } from './support/oidc-flow';
 import {
@@ -55,15 +55,15 @@ test.describe.serial('logout revokes the session', () => {
     page,
   }) => {
     const postgres = await resolvePostgresContainer(origin());
-    await seedAccountIdentity(postgres, { sub: TEST_SUB, email: TEST_EMAIL });
+    await seedAccountIdentity(postgres, LOGOUT_IDENTITY);
 
     const sinceMs = Date.now();
     const mailWic = mailWicContainerOf(postgres);
 
     // Login trong browser để lấy CẶP cookie thật (session + CSRF).
     await performBrowserLogin(page, {
-      email: TEST_EMAIL,
-      readOtp: () => readOtpFromMailSink(mailWic, { recipient: TEST_EMAIL, sinceMs }),
+      email: LOGOUT_IDENTITY.email,
+      readOtp: () => readOtpFromMailSink(mailWic, { recipient: LOGOUT_IDENTITY.email, sinceMs }),
     });
     const jar = await jarFromBrowser(page);
     const sessionCookie = jar.get('__Host-backoffice-session');

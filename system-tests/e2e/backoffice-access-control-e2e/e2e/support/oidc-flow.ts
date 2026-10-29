@@ -102,16 +102,27 @@ export async function performBrowserLogin(
   await expect(continueTarget).toBeVisible();
   await continueTarget.click();
 
-  // Lần đầu ⇒ trang consent với nút approve.
+  // Lần đầu login ⇒ trang consent với nút approve; nhưng grant của identity
+  // tồn tại qua các run (persist trong `oauth_grants`) ⇒ run sau đi path
+  // `granted` — handoff trả resume URL và browser về `/` TRỰC TIẾP, không qua
+  // consent. `Promise.race` chấp nhận cả hai hình dạng: thấy consent card thì
+  // đi đủ approve → continue, không thấy (đã về `/`) thì đi thẳng.
   const consentCard = page.getByTestId('consent-card');
-  await expect(consentCard).toBeVisible();
-  await page.getByTestId('consent-approve').click();
+  const backAtHome = page.waitForURL(/\/$/u, { timeout: 30_000 });
+  const consentShown = consentCard
+    .waitFor({ state: 'visible', timeout: 30_000 })
+    .then(() => true)
+    .catch(() => false);
+  const sawConsent = await Promise.race([consentShown, backAtHome.then(() => false)]);
+  if (sawConsent) {
+    await page.getByTestId('consent-approve').click();
 
-  // Nút relay `consent-continue` xuất hiện sau quyết định — bấm để provider
-  // resume và cấp code về callback.
-  const consentContinue = page.getByTestId('consent-continue');
-  await expect(consentContinue).toBeVisible();
-  await consentContinue.click();
+    // Nút relay `consent-continue` xuất hiện sau quyết định — bấm để provider
+    // resume và cấp code về callback.
+    const consentContinue = page.getByTestId('consent-continue');
+    await expect(consentContinue).toBeVisible();
+    await consentContinue.click();
+  }
 
   // Callback → 302 `/`; browser đổ về overview của backoffice với session.
   await expect(page).toHaveURL(/\/$/u);

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { TEST_EMAIL, TEST_SUB } from './support/fixtures';
+import { AUTH_IDENTITY } from './support/fixtures';
 import { resolveStackOrigin } from './support/local-origin';
 import { performBrowserLogin } from './support/oidc-flow';
 import {
@@ -19,6 +19,10 @@ import {
  * chung session và che bug `bff_sessions` (một session bị revoke thì cả hai
  * test đỏ cùng lúc với nguyên nhân khó truy). Chi phí là mỗi file một luồng
  * login — stack local chịu được hai worker chạy song song.
+ *
+ * ⚠️ `test.describe.serial` vẫn cho mỗi test MỘT browser context mới — trạng
+ * thái đăng nhập KHÔNG tự carry giữa các test. Test nào cần session phải tự
+ * login (`performBrowserLogin`) hoặc tự mang cookie của phiên mình.
  *
  * `/api/me` là route đọc session (KHÔNG enforcement permission) — 200 với
  * `{sub, displayName}` chứng minh toàn chuỗi token→session→principal chạy
@@ -39,15 +43,15 @@ test.describe.serial('authenticated access after full browser login', () => {
     // phải thấy hàng, nếu không route trả 204 anti-enumeration và OTP không bao
     // giờ được sinh.
     const postgres = await resolvePostgresContainer(resolveStackOrigin());
-    await seedAccountIdentity(postgres, { sub: TEST_SUB, email: TEST_EMAIL });
+    await seedAccountIdentity(postgres, AUTH_IDENTITY);
 
     // Mốc thời gian cho poll OTP: chỉ nhận mail sinh SAU khi challenge bắt đầu.
     const sinceMs = Date.now();
     const mailWic = mailWicContainerOf(postgres);
 
     const { finalHop } = await performBrowserLogin(page, {
-      email: TEST_EMAIL,
-      readOtp: () => readOtpFromMailSink(mailWic, { recipient: TEST_EMAIL, sinceMs }),
+      email: AUTH_IDENTITY.email,
+      readOtp: () => readOtpFromMailSink(mailWic, { recipient: AUTH_IDENTITY.email, sinceMs }),
     });
     callbackStatus = finalHop.status;
 
@@ -71,7 +75,19 @@ test.describe.serial('authenticated access after full browser login', () => {
   });
 
   test('authenticated GET /api/me returns 200 with the principal sub', async ({ page }) => {
-    // Dùng lại session của test đầu qua browser: fetch từ trang (same-origin,
+    // Context của test này là MỚI (serial không chia sẻ context) — fetch từ
+    // `about:blank` không có cookie mà fetch relative URL cũng chết ("Failed to
+    // parse URL"). Login lại trong chính test này để có phiên của mình.
+    const postgres = await resolvePostgresContainer(resolveStackOrigin());
+    await seedAccountIdentity(postgres, AUTH_IDENTITY);
+    const sinceMs = Date.now();
+    const mailWic = mailWicContainerOf(postgres);
+    await performBrowserLogin(page, {
+      email: AUTH_IDENTITY.email,
+      readOtp: () => readOtpFromMailSink(mailWic, { recipient: AUTH_IDENTITY.email, sinceMs }),
+    });
+
+    // Dùng lại session của test qua browser: fetch từ trang (same-origin,
     // cookie tự gửi) — đây là đúng đường mà UI của backoffice gọi API.
     const me = await page.evaluate(async () => {
       const response = await fetch('/api/me');
@@ -82,7 +98,7 @@ test.describe.serial('authenticated access after full browser login', () => {
       };
     });
     expect(me.status).toBe(200);
-    expect(me.body.sub).toBe(TEST_SUB);
+    expect(me.body.sub).toBe(AUTH_IDENTITY.sub);
     // displayName có thể null (account binding vắng local) nhưng key phải có.
     expect('displayName' in me.body).toBe(true);
     // Route đọc principal phải no-store — phiên không được cache ở chỗ nào.
@@ -92,6 +108,16 @@ test.describe.serial('authenticated access after full browser login', () => {
   test('the overview page renders the three area links (UI smoke, no business assertion)', async ({
     page,
   }) => {
+    // Context mới — login lại như test trên trước khi xem trang authenticated.
+    const postgres = await resolvePostgresContainer(resolveStackOrigin());
+    await seedAccountIdentity(postgres, AUTH_IDENTITY);
+    const sinceMs = Date.now();
+    const mailWic = mailWicContainerOf(postgres);
+    await performBrowserLogin(page, {
+      email: AUTH_IDENTITY.email,
+      readOtp: () => readOtpFromMailSink(mailWic, { recipient: AUTH_IDENTITY.email, sinceMs }),
+    });
+
     await page.goto('/');
     // Assertion UI GIỚI HẠN: suite này không phải UI suite (apps/backoffice/e2e
     // lo phần đó) — chỉ chứng minh trang authenticated render thật.
