@@ -1,0 +1,14 @@
+# Solutions
+
+Specification của các **composition, application, deploy unit và job** — trả lời câu hỏi: application/service nào hiện thực hoặc phối hợp trách nhiệm của các bounded context, bằng API, persistence và luồng xử lý nào? Trách nhiệm nghiệp vụ của từng bounded context → [`docs/domains/`](../domains/README.md).
+
+| Thành phần                                                            | Bản chất                                                              | Bounded context liên quan                                                    |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| [`backoffice/`](./backoffice/README.md)                               | Composition/UI + BFF vận hành nội bộ; không sở hữu database nghiệp vụ | Staff Access (+ Pact Broker, Remote Cache qua API)                           |
+| [`remote-cache/`](./remote-cache/README.md)                           | Remote build cache service (Nx-first; target multi-tenant SaaS)       | target: `remote-cache` (hiện là disposable build state — A18)                |
+| [`local-platform/`](./local-platform/README.md)                       | Hạ tầng Docker local dùng chung (mỗi worktree một bộ)                 | không thuộc context nào — ngoại lệ ghi ở [`docs/AGENTS.md`](../AGENTS.md) §3 |
+| [`transactional-mailer-job/`](./transactional-mailer-job/README.md)   | Delivery plane deploy unit                                            | `transactional-mail`                                                         |
+| [`web-push-notification-job/`](./web-push-notification-job/README.md) | Delivery plane deploy unit                                            | `push-notification`                                                          |
+| [`auth-nonce-prune-job/`](./auth-nonce-prune-job/README.md)           | Cron maintenance plane                                                | `auth`                                                                       |
+
+Một bounded context có thể có nhiều solution (control plane + delivery plane); một composition có thể phối hợp nhiều bounded context. Deploy unit không tạo bounded context mới.

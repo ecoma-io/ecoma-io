@@ -1,6 +1,6 @@
 /**
  * Lượt kiểm test-target layout — ràng buộc layout test trên đĩa theo hợp đồng
- * canonical `docs/overview/06-testing.md` (§2 ownership/layout, §4 target).
+ * canonical `docs/architecture/06-testing.md` (§2 ownership/layout, §4 target).
  *
  * Khác các lượt kiểm tag trong `arch-tags.ts` (đọc project graph), lượt này
  * đọc ĐĨA trong project root của app/lib: vitest config, package.json, nội dung
@@ -475,7 +475,7 @@ export function validateTestTargets(input: {
           kind: 'missing-integration-target',
           detail:
             `${dirList} exist on disk but package.json declares no ` +
-            `test-integration target under nx.targets (docs/overview/06-testing.md §4)`,
+            `test-integration target under nx.targets (docs/architecture/06-testing.md §4)`,
         });
       }
 
@@ -486,7 +486,7 @@ export function validateTestTargets(input: {
           kind: 'missing-integration-config',
           detail:
             `${integrationConfigPath} is missing but ${dirList} exist; ` +
-            `the suites have no integration config of their own (docs/overview/06-testing.md §4)`,
+            `the suites have no integration config of their own (docs/architecture/06-testing.md §4)`,
         });
       } else {
         const text = readOrReportUnreadable(fs, integrationConfigPath, project.name, report);
@@ -501,7 +501,7 @@ export function validateTestTargets(input: {
                 kind: 'integration-config-missing-dir',
                 detail:
                   `${integrationConfigPath} does not include tests/${purpose}/**; the target would ` +
-                  `silently skip the suite living there (docs/overview/06-testing.md §4)`,
+                  `silently skip the suite living there (docs/architecture/06-testing.md §4)`,
               });
             }
           }
@@ -511,7 +511,7 @@ export function validateTestTargets(input: {
               kind: 'integration-pass-with-no-tests',
               detail:
                 `${integrationConfigPath} sets passWithNoTests: true; an integration target finding ` +
-                `nothing must fail loud (docs/overview/06-testing.md §4)`,
+                `nothing must fail loud (docs/architecture/06-testing.md §4)`,
             });
           }
         }
@@ -538,7 +538,7 @@ export function validateTestTargets(input: {
             kind: 'integration-dir-in-unit-config',
             detail:
               `${unitConfigPath} includes tests/${purpose}/ without excluding it; the suite would run ` +
-              `in both test and test-integration (docs/overview/06-testing.md §4)`,
+              `in both test and test-integration (docs/architecture/06-testing.md §4)`,
           });
         }
       }
@@ -584,7 +584,7 @@ export function validateTestTargets(input: {
           (isApp
             ? 'its home is tests/integrations/ of the owning app'
             : "its home is the owning app's integration tier") +
-          ' (docs/overview/06-testing.md §4, §9)',
+          ' (docs/architecture/06-testing.md §4, §9)',
       });
     }
   }

@@ -30,7 +30,7 @@
 
   "prBodyNotes": [
     "Lưu ý pnpm: dependency mới có postinstall/build script phải được thêm vào `allowBuilds` trong `pnpm-workspace.yaml`, nếu không `pnpm install` exit 1 với `ERR_PNPM_IGNORED_BUILDS`.",
-    "Lưu ý migration: nâng `drizzle-kit` có thể đổi snapshot schema — kiểm tra `schema.contract.json` và migration gate theo `docs/overview/02-delivery.md` §3.",
+    "Lưu ý migration: nâng `drizzle-kit` có thể đổi snapshot schema — kiểm tra `schema.contract.json` và migration gate theo `docs/architecture/02-delivery.md` §3.",
     "PR patch/minor đã bật automerge: sau khi approve và CI xanh, GitHub Auto-merge sẽ tự đưa PR vào merge queue."
   ],
   "prBodyTemplate": "### Cập nhật dependency\n\n{{#if isGroup}}Đây là PR tổng hợp nâng cấp nhiều dependencies.{{else}}Nâng cấp `{{depName}}` từ `{{currentVersion}}` lên `{{newVersion}}`.{{/if}}\n\n{{{table}}}\n\n{{{notes}}}\n\n{{{changelogs}}}\n\n{{{warnings}}}\n\n{{{errors}}}\n\n{{{footer}}}",

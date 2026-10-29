@@ -515,7 +515,7 @@ describe('findInvalidTargetRefs', () => {
             'npx vitest run',
             'python3 -B -m unittest discover',
             'curl https://example.com/a/b',
-            'npx tsx docs/overview/05-code-architecture.md',
+            'npx tsx docs/architecture/05-code-architecture.md',
           ],
         ],
       ]),

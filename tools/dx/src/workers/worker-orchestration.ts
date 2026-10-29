@@ -7,7 +7,7 @@
  * hai entry mail, PR6 mở thành registry tự động).
  *
  * Boot order tiêu biểu của hai bound context (đo thật trong PR1 —
- * docs/services/local-platform/04-worker-runtime-spike.md):
+ * docs/solutions/local-platform/04-worker-runtime-spike.md):
  *
  * - control plane `ecoma-transactional-mail` — process `wrangler dev` đầu
  *   tiên, để service binding peer có mặt khi consumer boot (trạng thái

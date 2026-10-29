@@ -191,7 +191,7 @@ export function lookupPostgresPassword(result: ExecResult): PostgresPasswordLook
           'Pulumi returned the `[secret]` masking string instead of the real password — the ' +
           'stack config is in a state where the real value cannot be read. Supply the ' +
           'correct passphrase via PULUMI_CONFIG_PASSPHRASE and retry; if it is still ' +
-          'masked, see docs/services/local-platform/03-operations.md (section Migration ' +
+          'masked, see docs/solutions/local-platform/03-operations.md (section Migration ' +
           'legacy postgres:password).',
       };
     }
