@@ -201,8 +201,8 @@ jobs:
   # nào bị ảnh hưởng và thoát 0 với "0 tasks" — đã đo bằng
   # `npx nx affected -t e2e --base=HEAD~1 --head=HEAD` — nên job chạy, xanh, mà
   # không tốn phút nào cho test.
-  e2e:
-    name: e2e
+  system-test:
+    name: system-test
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
@@ -222,7 +222,7 @@ jobs:
       - name: End-to-end tests
         uses: ./.github/actions/run-nx-target
         with:
-          targets: e2e
+          targets: system-test
           affected: ${{ !inputs.force }}
           bail: ${{ github.event_name == 'merge_group' }}
       # Chỉ khi đỏ: trace, screenshot và HTML report là bằng chứng duy nhất còn lại
@@ -241,7 +241,7 @@ jobs:
 
   ci-gate:
     name: ci-gate
-    needs: [verify, unit-test, integration-test, build, e2e]
+    needs: [verify, unit-test, integration-test, build, system-test]
     if: always()
     runs-on: ubuntu-26.04
     timeout-minutes: 5

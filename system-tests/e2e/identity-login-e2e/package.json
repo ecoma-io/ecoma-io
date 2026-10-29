@@ -29,30 +29,6 @@
           "lại) và trả kết quả xanh cho một hệ thống KHÔNG còn chạy như lúc cache được ghi. Suite",
           "verify cả hệ thống đang chạy thật nên mỗi lần chạy phải chạm stack thật."
         ]
-      },
-      "e2e": {
-        "executor": "nx:run-commands",
-        "cache": false,
-        "options": {
-          "command": "echo \"@ecoma-io/identity-login-e2e: target 'e2e' is a deliberate stub. This system E2E suite requires the local platform stack (start it with: pnpm dx local-deploy) and runs via the 'system-test' target instead (docs/overview/06-testing.md). The stub overrides the 'e2e' target inferred by @nx/playwright so CI's 'e2e' job (nx affected -t e2e) never executes this stack-dependent suite on PR CI.\""
-        },
-        "//": [
-          "Stub đè target `e2e` mà plugin `@nx/playwright` suy ra từ `playwright.config.ts`",
-          "(glob `**/playwright.config.*` + `package.json` cùng thư mục là đủ để plugin gắn",
-          "target `e2e` chạy `playwright test` thật). Target khai tường minh trong project",
-          "config ĐÈ target plugin suy ra, nên `nx affected -t e2e` của job `e2e` trên CI gặp",
-          "đúng stub này thay vì lệnh test thật. Suite system E2E cần stack local (Docker/",
-          "Traefik qua `pnpm dx local-deploy`) — runner PR CI không có stack, chạy thật là đỏ",
-          "toàn bộ test cho một hệ thống vốn không tồn tại ở đó (bài học của skeleton",
-          "home-public-e2e, run 40740897352). Đích chạy canonical là target `system-test` ở",
-          "trên (docs/overview/06-testing.md §4), còn E2E Preview thuộc stage Preview",
-          "(docs/overview/02-delivery.md) — không phải PR CI. `cache: false` cùng rationale",
-          "với `system-test`: đây là guard, không phải task có đầu ra để cache. Dùng `echo`",
-          "thay vì `nx:noop` để ai gọi nhầm target cũng đọc được lý do ngay tại chỗ chạy;",
-          "output tiếng Anh vì là runtime output của chương trình. Chỉ cần đè `e2e` — CI",
-          "không gọi target `e2e-ci` nào mà plugin cũng suy ra. Copy đúng mô hình skeleton",
-          "home-public-e2e."
-        ]
       }
     }
   }
