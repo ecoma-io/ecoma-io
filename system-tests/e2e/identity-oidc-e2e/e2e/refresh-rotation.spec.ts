@@ -69,14 +69,9 @@ async function obtainTokens(page: import('@playwright/test').Page): Promise<Toke
 
   await page.goto(authorizeUrl, { waitUntil: 'commit' });
   await page.waitForURL(`${account}/login**`, { timeout: 30_000 });
-  const handleX = new URL(page.url()).searchParams.get('handle');
-  expect(handleX).not.toBeNull();
-
-  const confirmResponse = await page.request.get(`${origin}/authorize/confirm?handle=${handleX}`, {
-    maxRedirects: 0,
-    failOnStatusCode: false,
-  });
-  expect(confirmResponse.status()).toBe(302);
+  // Browser đã đứng ở trang login account mang handle — hop `/authorize/confirm`
+  // không còn là bước thủ công của test: trang login tự relay browser qua hop
+  // này sau verify OTP (§5.1.2 hàng 7), rồi `/login/continue` push về auth.
 
   const emailInput = page.getByTestId('login-email');
   await emailInput.waitFor({ state: 'visible', timeout: 30_000 });
@@ -87,6 +82,13 @@ async function obtainTokens(page: import('@playwright/test').Page): Promise<Toke
   const otp = await pollOtpMail(namespace, email, otpSinceMs, { budgetMs: 60_000 });
   await page.getByTestId('login-code').fill(otp.code);
   await page.getByTestId('login-code-submit').click();
+
+  // Sau verify, product relay browser qua hop `/authorize/confirm` rồi 302 về
+  // `/login/continue` — click-to-continue: bấm nút relay trước khi handoff push
+  // chạy và browser đi tiếp sang auth (consent).
+  const continueTarget = page.getByTestId('login-continue-target');
+  await continueTarget.waitFor({ state: 'visible', timeout: 30_000 });
+  await continueTarget.click();
 
   await page.waitForURL(`${account}/consent**`, { timeout: 60_000 });
   await page.getByTestId('consent-card').waitFor({ state: 'visible', timeout: 30_000 });

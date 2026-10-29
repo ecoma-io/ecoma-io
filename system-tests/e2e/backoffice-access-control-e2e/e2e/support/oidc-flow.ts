@@ -15,9 +15,14 @@ import { expect, type Page } from '@playwright/test';
  * 4. Trang login của account (`apps/account/app/pages/login/index.vue`):
  *    `login-email-form` → `login-email` → `login-submit` → challenge mode
  *    `code` → `login-code-form` → `login-code` → `login-code-submit` → OTP
- *    verify OK ⇒ trang TỰ gọi `completeHandoff` và `window.location.assign`
- *    sang `continueUrl` do auth cấp.
- * 5. `session-verified-handler` của auth: consent chưa có ⇒
+ *    verify OK ⇒ trang relay browser qua hop `GET /authorize/confirm?handle=X`
+ *    của auth (URL do BFF verify cấp, §5.1.2 hàng 7) → auth CAS
+ *    `browser_confirmed` rồi 302 về `{accountBaseUrl}/login/continue?handle=X`
+ *    (`apps/account/app/pages/login/continue.vue`).
+ * 5. `/login/continue`: người dùng bấm nút `login-continue-target` ⇒
+ *    `completeHandoff` push `/internal/session/verified` về auth và
+ *    `window.location.assign` sang `continueUrl` do auth cấp.
+ *    `session-verified-handler` của auth: consent chưa có ⇒
  *    `consent_required` với `continue_url` = `/consent?handle=Y`; đã grant ⇒
  *    `granted` với `continue_url` = resume URL của provider.
  *    Browser lần đầu ⇒ qua trang consent: `consent-approve` → `consent-continue`
@@ -89,8 +94,15 @@ export async function performBrowserLogin(
   await page.getByTestId('login-code').fill(otp);
   await page.getByTestId('login-code-submit').click();
 
-  // Sau verify OK, trang tự chạy handoff rồi điều hướng sang auth (consent lần
-  // đầu hoặc resume trực tiếp). Lần đầu ⇒ trang consent với nút approve.
+  // Sau verify OK, trang login relay browser qua hop `/authorize/confirm` của
+  // auth rồi 302 về `/login/continue` (§5.1.2 hàng 7); tiếp tục phải qua nút
+  // relay của trang đó — bấm `login-continue-target` để chạy handoff push và
+  // điều hướng sang auth (consent lần đầu hoặc resume trực tiếp).
+  const continueTarget = page.getByTestId('login-continue-target');
+  await expect(continueTarget).toBeVisible();
+  await continueTarget.click();
+
+  // Lần đầu ⇒ trang consent với nút approve.
   const consentCard = page.getByTestId('consent-card');
   await expect(consentCard).toBeVisible();
   await page.getByTestId('consent-approve').click();

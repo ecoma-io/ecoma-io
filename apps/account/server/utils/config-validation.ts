@@ -63,6 +63,15 @@ export interface AccountRuntimeConfig {
    */
   authServiceUrl?: unknown;
   /**
+   * Origin HTTP của worker auth mà BFF dựng URL browser từ nó
+   * (`/authorize/confirm` sau verify OTP — §5.1.2 hàng 7). Rỗng ⇒ chưa cấu hình:
+   * verify không cấp `confirmUrl` và luồng có handle fail-closed ở bước cuối
+   * (không default nào đứng tên nó). Được đặt thì phải là origin http(s) —
+   * URL dựng từ origin sai là điều hướng browser tới chỗ sai, cấu hình đó phải
+   * lộ ra ở lần đầu chứ không lệch chữ ký im lặng.
+   */
+  authIssuer?: unknown;
+  /**
    * Phần `public` của runtime config — hiện tại chỉ có seam chế độ dữ liệu
    * `accountDataMode` (env `NITRO_PUBLIC_ACCOUNT_DATA_MODE`). Chỉ được đặt
    * `mock` dưới `nuxt dev`; artifact resolve ra `mock` là lỗi cấu hình —
@@ -168,6 +177,28 @@ export function validateAccountConfig(config: AccountRuntimeConfig): void {
   if (authUrl !== undefined && authUrl !== '') {
     if (typeof authUrl !== 'string' || !/^https?:\/\//u.test(authUrl)) {
       throw new Error('NUXT_AUTH_SERVICE_URL phải là origin http(s) của worker auth.');
+    }
+  }
+
+  // Auth issuer — origin mà BFF dựng URL browser `/authorize/confirm` từ nó.
+  // Rỗng = "chưa cấu hình": hợp lệ, và luồng continuation tự fail-closed ở bước
+  // verify (không cấp `confirmUrl`) — cùng hình thức với `mailServiceUrl`. Được
+  // đặt thì phải là origin http(s) KHÔNG mang path: `new URL('/authorize/confirm',
+  // issuer)` bỏ path của base, nên một issuer có path là cấu hình sai mà không
+  // gì bắt được cho tới khi URL thật được dựng lệch.
+  const issuer = config.authIssuer;
+  if (issuer !== undefined && issuer !== '') {
+    if (typeof issuer !== 'string' || !/^https?:\/\//u.test(issuer)) {
+      throw new Error('NUXT_AUTH_ISSUER phải là origin http(s) của worker auth.');
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(issuer);
+    } catch {
+      throw new Error('NUXT_AUTH_ISSUER phải là origin http(s) của worker auth.');
+    }
+    if (parsed.pathname !== '/' && parsed.pathname !== '') {
+      throw new Error('NUXT_AUTH_ISSUER không được mang path — chỉ nhận origin.');
     }
   }
 

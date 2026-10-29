@@ -156,7 +156,11 @@ describe('mock adapter', () => {
     });
 
     expect(unwrap(await codeMode.requestLoginChallenge('a@example.com')).mode).toBe('code');
-    expect((await codeMode.verifyLoginCode('123456')).ok).toBe(true);
+    const accepted = await codeMode.verifyLoginCode('123456');
+    // Mock không có BFF ⇒ không có continuation cấp được: trường tồn tại với giá
+    // trị `undefined`, không phải trường vắng mặt — caller đọc `.confirmUrl`
+    // an toàn trên mọi value thành công.
+    expect(accepted).toEqual({ ok: true, value: { confirmUrl: undefined } });
     expect((await codeMode.verifyLoginCode('000000')).ok).toBe(false);
   });
 

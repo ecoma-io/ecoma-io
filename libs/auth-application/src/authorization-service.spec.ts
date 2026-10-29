@@ -394,6 +394,85 @@ describe('confirmBrowser — the handle-theft guard', () => {
       }),
     ).rejects.toMatchObject({ redirectable: false });
   });
+
+  it('the SAME browser replays confirm on browser_confirmed — already-confirmed, NO second CAS', async () => {
+    // §5.1.2 hàng 2, cột "khi retry": hop confirm nằm trên ĐƯỜNG browser, nên
+    // một điều hướng trùng (reload, back, request lặp) của chính browser đã
+    // confirm không được là lỗi — đích tiếp theo giống hệt lần đầu. Cửa sổ
+    // idempotent đòi CẢ hai điều kiện: binding khớp VÀ state còn
+    // `browser_confirmed` VÀ chưa hết TTL.
+    const store = makeStore();
+    const bindingHash = await hashHandle('binding-cookie-hop-le');
+    const now = new Date();
+
+    const result = await confirmBrowser({
+      store,
+      transaction: {
+        ...TRANSACTION,
+        state: 'browser_confirmed',
+        browser_binding_hash: bindingHash,
+        expires_at: new Date(now.getTime() + 60_000),
+      },
+      presentedBinding: 'binding-cookie-hop-le',
+      now,
+    });
+
+    expect(result.status).toBe('already-confirmed');
+    // Không CAS lại, không event mới: trạng thái đã đúng là toàn bộ ý nghĩa
+    // của idempotency.
+    expect(store.calls).not.toContain('transition');
+  });
+
+  it('a replay on browser_confirmed but EXPIRED — falls through to the CAS path and is rejected', async () => {
+    // Cửa sổ idempotent NGẶT hết hạn: CAS đã gộp expiry vào WHERE, nhưng nhánh
+    // idempotent KHÔNG chạy CAS — nó đọc hàng rồi quyết định, nên expiry phải
+    // được so tường minh ở đây. Bỏ kiểm này là một transaction hết hạn được
+    // redirect tiếp như còn sống.
+    const store = makeStore({ transition: async () => false });
+    const bindingHash = await hashHandle('binding-cookie-hop-le');
+    const now = new Date();
+
+    await expect(
+      confirmBrowser({
+        store,
+        transaction: {
+          ...TRANSACTION,
+          state: 'browser_confirmed',
+          browser_binding_hash: bindingHash,
+          expires_at: new Date(now.getTime() - 1),
+        },
+        presentedBinding: 'binding-cookie-hop-le',
+        now,
+      }),
+    ).rejects.toMatchObject({ redirectable: false });
+  });
+
+  it.each(['awaiting_consent', 'ready_to_complete', 'completed', 'denied'] as const)(
+    'a replay binding match in terminal state %s — REJECTED, no idempotent window',
+    async (state) => {
+      // Chỉ `browser_confirmed` mở cửa sổ idempotent. Mọi state khác nghĩa là
+      // giao dịch đã đi tiếp (X bị event khác tiêu thụ, code đã cấp, bị deny)
+      // — một request đến muộn không được mở lại; CAS/throw giữ nguyên.
+      const store = makeStore({ transition: async () => false });
+      const bindingHash = await hashHandle('binding-cookie-hop-le');
+      const now = new Date();
+
+      await expect(
+        confirmBrowser({
+          store,
+          transaction: {
+            ...TRANSACTION,
+            state,
+            browser_binding_hash: bindingHash,
+            expires_at: new Date(now.getTime() + 60_000),
+          },
+          presentedBinding: 'binding-cookie-hop-le',
+          now,
+        }),
+      ).rejects.toMatchObject({ redirectable: false });
+      expect(store.calls).not.toContain('transition');
+    },
+  );
 });
 
 describe('completeAuthorization — fail-closed', () => {

@@ -25,6 +25,9 @@
  * browser được băm và so timing-safe với `browser_binding_hash` của transaction
  * (`confirmBrowser`): CAS chuyển `pending_browser → browser_confirmed`. Kết quả
  * là 302 về `${accountBaseUrl}/login/continue?handle=X` — `account` tiếp tục.
+ * Replay của CÙNG browser (cookie khớp, transaction đã `browser_confirmed`, còn
+ * TTL) nhận cùng 302 — hop này nằm trên đường browser nên điều hướng trùng là
+ * idempotent, không phải lỗi.
  *
  * ⚠️ Binding lệch ⇒ JSON `invalid_request` KHÔNG redirect: redirect kèm handle X
  * chính là đường rò continuation handle (T-04).
@@ -191,6 +194,12 @@ export async function handleAuthorize(params: {
 /**
  * `GET /authorize/confirm?handle=X` — bước 2 của §5.1.2: đối chiếu cookie B
  * (timing-safe qua hash) rồi CAS `pending_browser → browser_confirmed`.
+ *
+ * ⚠️ Replay của cùng browser (cookie khớp + đã `browser_confirmed`, còn TTL)
+ * nhận CÙNG `302 /login/continue?handle=X` — hop này là một bước bắt buộc của
+ * LUẬT browser, nên điều hướng trùng không được là lỗi (`confirmBrowser` trả
+ * `already-confirmed`, không đổi trạng thái). Mọi nhánh lỗi giữ nguyên JSON
+ * `invalid_request` KHÔNG redirect.
  */
 export async function handleAuthorizeConfirm(params: {
   readonly store: AuthStore;
@@ -218,6 +227,8 @@ export async function handleAuthorizeConfirm(params: {
     if (transaction === undefined) {
       return jsonOAuthError('invalid_request', 'transaction khong ton tai', 400);
     }
+    // Hai mode đều dẫn tới cùng một đích — đường tiếp theo không phân biệt lần
+    // confirm đầu và replay.
     await confirmBrowser({ store, transaction, presentedBinding: presented, now });
   } catch (error) {
     if (error instanceof OAuthProtocolError) {

@@ -224,7 +224,16 @@ export type AccountAdapter = {
     email: string,
     continuationHandle?: string,
   ): Promise<Result<LoginChallenge>>;
-  verifyLoginCode(code: string): Promise<Result<void>>;
+  /**
+   * Xác minh mã OTP và nhận URL bước kế tiếp của luồng continuation.
+   *
+   * `confirmUrl` (khi có) là URL `/authorize/confirm` **do server dựng** tuyệt
+   * đối từ cấu hình issuer (ADR-0012: UI không tự ghép chuỗi từ dữ liệu browser
+   * hay cấu hình client-side). Vắng mặt nghĩa là không có continuation cấp được:
+   * handle không khớp session, chưa cấu hình issuer hay DB không đọc được — UI
+   * hiện trạng thái kết thúc thay vì điều hướng. ⚠️ Không log giá trị này.
+   */
+  verifyLoginCode(code: string): Promise<Result<{ readonly confirmUrl?: string }>>;
 
   /**
    * Hoàn tất bàn giao về `auth` sau khi mã được chấp nhận (handle `X` từ

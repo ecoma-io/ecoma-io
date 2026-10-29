@@ -18,27 +18,30 @@ import {
 
 /**
  * Luồng authorize đầy đủ của ECOMA qua BROWSER thật: glue mint transaction →
- * provider tạo Interaction → account login OTP → consent → code → token →
- * verify JWT bằng JWKS công bố.
+ * provider tạo Interaction → account login OTP → hop `/authorize/confirm` →
+ * handoff → consent → code → token → verify JWT bằng JWKS công bố.
  *
  * ⚠️ Điểm KHÁC một luồng OIDC chuẩn, và là lý do test này tồn tại: browser
- * không bao giờ TỰ quay lại `auth` sau khi tới `/login?handle=X`. Nó bị giữ ở
- * account cho tới khi OTP verify xong, khi đó BFF account **push** kết quả về
- * auth qua Service Binding (`POST /internal/session/verified`). Nhưng push chỉ
- * được chấp nhận khi transaction đã `browser_confirmed` — và trạng thái đó chỉ
- * đạt được bằng `GET /authorize/confirm?handle=X` với cookie
- * `__Host-auth-browser` mà CHÍNH browser nhận được ở 302 của `/authorize`
- * (§5.3 lớp 2). Không UI production nào gọi confirm endpoint đó — nó là bước
- * browser thuần — nên test tự bước này bằng `page.request` (cùng cookie jar
- * với browser context, đúng nghĩa "browser của transaction").
+ * không bao giờ TỰ quay lại `auth` sau khi tới `/login?handle=X` cho tới khi
+ * OTP verify xong — khi đó trang login của account relay browser sang
+ * `GET /authorize/confirm?handle=X` (URL do BFF verify cấp, §5.1.2 hàng 7).
+ * Hop này CAS `pending_browser → browser_confirmed` rồi 302 về
+ * `/login/continue?handle=X`; từ đó `/login/continue` push kết quả xác thực về
+ * auth qua Service Binding (`POST /internal/session/verified`). Push chỉ được
+ * chấp nhận khi transaction đã `browser_confirmed` — cookie
+ * `__Host-auth-browser` mà browser nhận ở 302 của `/authorize` chính là bằng
+ * chứng "browser của transaction" (§5.3 lớp 2). Confirm hop đi qua browser
+ * thật (URL relay), nên contract của nó được chứng minh bằng `page.on('response')`
+ * listener — không dùng `page.request` thủ công nữa.
  *
  * Chuỗi bước (mỗi bước một assert trong test):
  *   1. GET /authorize (glue) → 302 `/auth?...&ecoma_x=X` + Set-Cookie B.
  *   2. GET /auth (provider) → 303 `https://account.../login?handle=X`.
- *   3. GET /authorize/confirm?handle=X qua page.request → 302 `/login/continue?handle=X`
- *      (CAS pending_browser → browser_confirmed trong db-auth).
- *   4. UI login: fill email → submit → OTP từ mail sink → fill code → submit →
- *      handoff tự relay (window.location.assign sang continueUrl của auth).
+ *   3. UI login: fill email → submit → OTP từ mail sink → fill code → submit →
+ *      trang relay sang `/authorize/confirm?handle=X` (product path) → 302
+ *      `/login/continue?handle=X` (listener assert 302, không `page.request`).
+ *   4. `/login/continue` handoff tự relay (window.location.assign sang
+ *      continueUrl của auth).
  *   5. Consent UI: approve → continue → 303 resume → callback.
  *   6. page.route chặn glob của callback và abort — code single-use
  *      KHÔNG được để backoffice tiêu thụ; test là RP của riêng mình.
@@ -89,6 +92,21 @@ test('completes the full browser authorize → OTP login → consent → token f
     await route.abort('aborted');
   });
 
+  // ── Bước 3 listener: hop `/authorize/confirm` của product path ───────────
+  // Gắn TRƯỚC khi điều hướng: sau verify OTP, trang login relay browser sang
+  // confirm endpoint (URL do BFF verify cấp). Listener ghi lại response của
+  // hop này để assert contract (302 → /login/continue?handle=X) mà không cần
+  // `page.request` thủ công — request phải do PRODUCT phát ra, mới là bằng
+  // chứng luồng thật.
+  let confirmHop: { status: number; location: URL } | undefined;
+  page.on('response', (response) => {
+    const url = new URL(response.url());
+    if (url.origin === origin && url.pathname === '/authorize/confirm') {
+      const location = response.headers()['location'] ?? '';
+      confirmHop = { status: response.status(), location: new URL(location, origin) };
+    }
+  });
+
   // Navigate glue endpoint bằng browser thật — Set-Cookie `__Host-auth-browser`
   // phải vào cookie jar của context (Secure + __Host- yêu cầu https, stack có).
   await page.goto(authorizeUrl, { waitUntil: 'commit' });
@@ -104,21 +122,7 @@ test('completes the full browser authorize → OTP login → consent → token f
   const browserCookies = await page.context().cookies(origin);
   expect(browserCookies.some((cookie) => cookie.name === '__Host-auth-browser')).toBe(true);
 
-  // ── Bước 3: browser chứng minh mình là browser của transaction ───────────
-  // GET /authorize/confirm với cookie của context (page.request chia sẻ jar).
-  // maxRedirects: 0 — test assert chính response 302 sang /login/continue.
-  const confirmResponse = await page.request.get(`${origin}/authorize/confirm?handle=${handleX}`, {
-    maxRedirects: 0,
-    failOnStatusCode: false,
-  });
-  expect(confirmResponse.status()).toBe(302);
-  const confirmLocation = confirmResponse.headers()['location'] ?? '';
-  expect(new URL(confirmLocation, origin).origin + new URL(confirmLocation, origin).pathname).toBe(
-    `${account}/login/continue`,
-  );
-  expect(new URL(confirmLocation, origin).searchParams.get('handle')).toBe(handleX);
-
-  // ── Bước 4: UI login OTP ─────────────────────────────────────────────────
+  // ── Bước 3: UI login OTP → product tự đi hop confirm ────────────────────
   // Trang login hiện form email (testid login-email + login-submit).
   const emailInput = page.getByTestId('login-email');
   await emailInput.waitFor({ state: 'visible', timeout: 30_000 });
@@ -140,8 +144,24 @@ test('completes the full browser authorize → OTP login → consent → token f
   await codeInput.fill(otp.code);
   await page.getByTestId('login-code-submit').click();
 
-  // Verify OK → handoff tự chạy → relay sang continueUrl của auth (consent
-  // path) — đích cuối là trang consent của account.
+  // Verify OK → product tự relay browser qua hop `/authorize/confirm` rồi 302
+  // về `/login/continue`. Contract của hop confirm (bằng chứng product path):
+  // request do trang login phát ra (không phải page.request), status 302, đích
+  // /login/continue cùng handle (§5.1.2 hàng 2 + hàng 7).
+  expect(confirmHop).toBeDefined();
+  expect(confirmHop?.status).toBe(302);
+  expect(confirmHop?.location.origin + confirmHop?.location.pathname).toBe(
+    `${account}/login/continue`,
+  );
+  expect(confirmHop?.location.searchParams.get('handle')).toBe(handleX);
+
+  // `/login/continue` là click-to-continue: push handoff chỉ chạy khi người
+  // dùng bấm nút relay — bấm nó rồi mới đến continueUrl của auth (consent
+  // path), đích cuối là trang consent của account.
+  const continueTarget = page.getByTestId('login-continue-target');
+  await continueTarget.waitFor({ state: 'visible', timeout: 30_000 });
+  await continueTarget.click();
+
   await page.waitForURL(`${account}/consent**`, { timeout: 60_000 });
   const consentUrl = new URL(page.url());
   expect(consentUrl.searchParams.get('handle')).not.toBeNull();
