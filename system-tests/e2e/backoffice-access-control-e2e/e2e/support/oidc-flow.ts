@@ -158,7 +158,8 @@ async function gotoLoginPageUntilReady(page: Page): Promise<void> {
       }
       if (exhausted) {
         throw new Error(
-          `login page not ready after ${attempt} attempts: goto kept failing — ${message.slice(0, 120)}`, { cause: error },
+          `login page not ready after ${attempt} attempts: goto kept failing — ${message.slice(0, 120)}`,
+          { cause: error },
         );
       }
       // Ngắn hơn expect timeout của trang chết — tổng budget do vòng giữ.
