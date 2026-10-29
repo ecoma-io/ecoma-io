@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Page, type Response } from '@playwright/test';
 
 /**
  * Luồng login browser đầy đủ của suite — quay OTP qua mail sink thật.
@@ -60,6 +60,113 @@ export interface LoginFlowResult {
   readonly finalHop: { readonly status: number; readonly setCookie: string | undefined };
 }
 
+/**
+ * Số lần điều hướng lại tối đa khi đích đến chưa sẵn sàng, và tổng ngân sách
+ * thời gian cho toàn bộ vòng — cùng hợp đồng "retry chỉ cho chữ ký chưa sẵn
+ * sàng" của gate (`global-setup.ts`): 404 Go-mux (Traefik chưa có router cho
+ * host — cửa sổ đăng ký router sau `pulumi up` thấy thật ở run CI
+ * 40920298937/40924766746), 502/503/504 (upstream chưa vào config), lỗi
+ * navigation net (ECONNRESET khi container restart). Mọi hình dạng khác là
+ * lỗi thật — không thử lại.
+ */
+const NAVIGATION_RETRIES = 5;
+const NAVIGATION_BUDGET_MS = 45_000;
+
+/**
+ * Trang chết "chưa sẵn sàng" mà browser đang đứng — đọc từ status của response
+ * ĐÍCH và nội dung body.
+ *
+ * ⚠️ `page.goto` resolve BÌNH THƯỜNG với mọi HTTP status: đáp xuống trang 404
+ * KHÔNG phải navigation error, exception nào cũng không mang chữ ký — chữ ký
+ * nằm trong NỘI DUNG TRANG (run 40924766746: 3 test đỏ cùng trang Go 404
+ * trong khi vòng retry cũ chỉ đọc message của exception, 0 lần thử lại). Hai
+ * kênh cùng lúc: status của response cuối redirect chain (404/502/503/504) và
+ * body text Go-mux (`404 page not found` — bắt đúng khi goto resolve ở hop
+ * 302 trung gian mà response object không phản ánh đích cuối).
+ */
+async function isDeadGatewayPage(
+  page: Page,
+  response: Response | null,
+): Promise<string | undefined> {
+  const status = response?.status() ?? 0;
+  if (status === 404 || status === 502 || status === 503 || status === 504) {
+    return `dead gateway page (status ${status})`;
+  }
+  const bodyText =
+    (await page
+      .locator('body')
+      .textContent({ timeout: 2_000 })
+      .catch(() => '')) ?? '';
+  if (bodyText.includes('404 page not found')) {
+    return 'dead gateway page (Go-mux 404 body)';
+  }
+  return undefined;
+}
+
+/**
+ * Điều hướng theo toàn bộ redirect chain tới trang login của account và chờ
+ * form email mount — THỬ LẠI khi đích rơi vào cửa sổ cold start.
+ *
+ * Vì sao phải retry ở tầng ĐIỀU HƯỚNG chứ không phải tầng expect: khi Traefik
+ * chưa có router cho `auth.<root>`, browser đứng yên trên trang Go 404 (`404
+ * page not found`) — page đã `load` xong và sẽ KHÔNG BAO GIỜ fetch lại, nên
+ * việc chờ form trên trang đó chỉ hết thời gian mà không có request nào mới.
+ * Retry đúng nghĩa phải `goto` LẠI: mỗi lần thử là một authorize request mới
+ * (state/code_challenge mới do BFF cấp — hợp lệ vì request trước chưa tạo
+ * interaction nào).
+ *
+ * Hai kênh fail chia MỘT budget: (1) trang chết — phát hiện qua status/body
+ * NGAY SAU goto, trước khi chờ form; (2) goto ném lỗi net thật (`net::`,
+ * `ERR_*`, 5xx trong message). Chờ form timeout trên trang KHÔNG chết là bug
+ * thật (trang khỏe, DOM sai) — fail tức thời, không retry.
+ */
+async function gotoLoginPageUntilReady(page: Page): Promise<void> {
+  const emailForm = page.getByTestId('login-email-form');
+  const deadline = Date.now() + NAVIGATION_BUDGET_MS;
+  for (let attempt = 1; ; attempt += 1) {
+    const exhausted = attempt >= NAVIGATION_RETRIES || Date.now() >= deadline;
+    try {
+      // Điểm vào duy nhất: BFF dựng authorize URL (URL login do server dựng).
+      const response = await page.goto('/api/auth/login', { waitUntil: 'load' });
+      // Trang login của account nhận browser sau hai redirect (auth glue →
+      // provider → interaction URL). Form email là bước đầu của interaction —
+      // nhưng chỉ chờ khi trang KHÔNG phải trang chết cold-start.
+      const dead = await isDeadGatewayPage(page, response);
+      if (dead !== undefined) {
+        if (exhausted) {
+          // Ném lỗi MỚI mang tín hiệu cuối cùng, không phải TimeoutError trần —
+          // người đọc log phải thấy ngay lý do "chưa sẵn sàng".
+          throw new Error(`login page not ready after ${attempt} attempts: ${dead}`);
+        }
+        await page.waitForTimeout(2_000);
+        continue;
+      }
+      await emailForm.waitFor({ state: 'visible', timeout: 15_000 });
+      return;
+    } catch (error) {
+      // Kênh goto-net: lỗi ném ra TỪ goto (không phải TimeoutError của form —
+      // lỗi đó chỉ xảy ra sau khi trang đã qua bước kiểm trang chết ⇒ bug thật).
+      const isFormTimeout = error instanceof Error && error.message.includes('login-email-form');
+      const message = error instanceof Error ? error.message : String(error);
+      const netNotReady =
+        !isFormTimeout &&
+        (/\b(502|503|504)\b/u.test(message) ||
+          /ERR_(CONNECTION|NETWORK|HTTP2)/u.test(message) ||
+          /net::/u.test(message));
+      if (isFormTimeout || !netNotReady) {
+        throw error;
+      }
+      if (exhausted) {
+        throw new Error(
+          `login page not ready after ${attempt} attempts: goto kept failing — ${message.slice(0, 120)}`, { cause: error },
+        );
+      }
+      // Ngắn hơn expect timeout của trang chết — tổng budget do vòng giữ.
+      await page.waitForTimeout(2_000);
+    }
+  }
+}
+
 /** Điều khiển browser đi hết luồng login, trả contract hop cuối. */
 export async function performBrowserLogin(
   page: Page,
@@ -77,13 +184,7 @@ export async function performBrowserLogin(
     }
   });
 
-  // Điểm vào duy nhất: BFF dựng authorize URL (URL login do server dựng).
-  await page.goto('/api/auth/login');
-
-  // Trang login của account nhận browser sau hai redirect (auth glue → provider
-  // → interaction URL). Form email là bước đầu của interaction.
-  const emailForm = page.getByTestId('login-email-form');
-  await expect(emailForm).toBeVisible();
+  await gotoLoginPageUntilReady(page);
   await page.getByTestId('login-email').fill(params.email);
   await page.getByTestId('login-submit').click();
 
