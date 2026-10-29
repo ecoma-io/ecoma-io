@@ -27,6 +27,16 @@ const BASE_PARAMS = {
   codeChallengeMethod: 'S256',
 } as const;
 
+/** Bắt lỗi từ một hàm có thể ném, để assert ngoài khối ném — tránh `no-conditional-expect`. */
+function captureProtocolError(thrower: () => unknown): unknown {
+  try {
+    thrower();
+  } catch (error) {
+    return error;
+  }
+  return undefined;
+}
+
 describe('parseAuthorizationRequest — state/nonce byte limits', () => {
   it('accepts state at exactly 512 bytes (boundary is inclusive)', () => {
     const request = parseAuthorizationRequest({
@@ -133,6 +143,48 @@ describe('filterAllowedScopes — invalid_scope policy', () => {
       'profile',
       'openid',
     ]);
+  });
+});
+
+describe('parseAuthorizationRequest — scope is required (strict policy)', () => {
+  it('rejects a missing scope with a direct invalid_request', () => {
+    // ⚠️ Tại bước parse, `redirect_uri` CHƯA được xác minh với bản đăng ký,
+    // nên mọi lỗi đều không được redirect — kể cả lỗi scope.
+    expect(() => parseAuthorizationRequest({ ...BASE_PARAMS, scope: undefined })).toThrowError(
+      expect.objectContaining({ code: 'invalid_request', redirectable: false }),
+    );
+  });
+
+  it('rejects an empty scope with a direct invalid_request', () => {
+    expect(() => parseAuthorizationRequest({ ...BASE_PARAMS, scope: '' })).toThrowError(
+      expect.objectContaining({ code: 'invalid_request', redirectable: false }),
+    );
+  });
+
+  it('rejects a whitespace-only scope with a direct invalid_request', () => {
+    expect(() => parseAuthorizationRequest({ ...BASE_PARAMS, scope: '   ' })).toThrowError(
+      expect.objectContaining({ code: 'invalid_request', redirectable: false }),
+    );
+  });
+
+  it('splits the scope on spaces into an ordered list', () => {
+    const request = parseAuthorizationRequest({ ...BASE_PARAMS, scope: 'openid profile' });
+    expect(request.scope).toEqual(['openid', 'profile']);
+  });
+
+  it('reports the scope error before a missing code_challenge — check order is unchanged', () => {
+    // Khi cả `scope` lẫn PKCE đều sai, lỗi đầu tiên phải là lỗi scope: nó nằm
+    // trước parse PKCE trong chuỗi kiểm tra của parseAuthorizationRequest.
+    const error = captureProtocolError(() =>
+      parseAuthorizationRequest({
+        ...BASE_PARAMS,
+        scope: '   ',
+        codeChallenge: undefined,
+        codeChallengeMethod: undefined,
+      }),
+    );
+    expect(error).toBeInstanceOf(OAuthProtocolError);
+    expect((error as OAuthProtocolError).message).toContain('scope is required');
   });
 });
 
