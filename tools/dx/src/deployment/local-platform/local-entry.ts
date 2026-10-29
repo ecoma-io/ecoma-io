@@ -26,6 +26,7 @@ import {
 } from './../../local-runtime/deploy-namespace.js';
 import { acquireLaneLock, stealLaneLock } from './../../local-runtime/local-lock.js';
 import {
+  ensureStack,
   exec,
   fullStackRef,
   localStateDir,
@@ -130,7 +131,9 @@ export function unitUpArgs(ctx: LocalDeployContext): string[] {
 
 /**
  * Ghi một giá trị vào stack config QUA STDIN (không argv) — fail-loud khi set
- * lỗi.
+ * lỗi. Stack phải tồn tại trước (`ensureStackForEntry`); hàm này cố ý KHÔNG
+ * tạo stack — tạo state bên trong một helper "set" biến đường lỗi thành đường
+ * mutation âm thầm.
  *
  * argv của process khác đọc được qua `/proc/<pid>/cmdline` (cùng user) và qua
  * `ps`; giá trị secret không đi qua argv. `--plaintext` BẮT BUỘC trên CLI
@@ -161,6 +164,26 @@ export function setStackConfig(
   if (result.status !== 0) {
     throw new Error(`pulumi config set ${configKey} failed:\n${result.stderr}`);
   }
+}
+
+/**
+ * Đảm bảo stack Pulumi của MỘT project tồn tại trước khi entry đọc/ghi stack
+ * config (`pulumi config get`/`config set`).
+ *
+ * Vì sao cần gọi TƯỜNG MINH: backend `file://` đòi thư mục state tồn tại trước
+ * (PU11) — trên worktree chưa từng deploy, `.pulumi-local-state` không có và
+ * `pulumi config get` exit 1 với lỗi `unable to open state directory`, lỗi mà
+ * `isConfigKeyMissing` KHÔNG nhận ra là "chưa có key". Không có bước này, up
+ * đầu tiên của platform chết ngay ở `resolvePostgresPassword` và up đầu tiên
+ * của unit chết ngay ở `prepare` — cả hai đều trước `pulumiUpForEntry` (lệnh
+ * `up` mới tự `ensureStack` qua `prepareStack: true`).
+ *
+ * `ensureStack` idempotent: mkdir + `stack init` khi thiếu, `stack select` khi
+ * đã có — gọi mỗi lần up là an toàn. Chỉ đường up gọi (down/smoke không bao giờ
+ * tạo state — contract `resolveEntryFoundation(false)` giữ nguyên).
+ */
+export function ensureStackForEntry(project: string, foundation: EntryFoundation): void {
+  ensureStack(deployProjectDir(project), project, foundation.ctx, foundation.env);
 }
 
 /**

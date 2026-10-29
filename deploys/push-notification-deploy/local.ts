@@ -29,6 +29,7 @@ import {
 } from '../../tools/dx/src/deployment/local-platform/local-env';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
 import {
+  ensureStackForEntry,
   pulumiDestroyForEntry,
   pulumiUpForEntry,
   resolveEntryFoundation,
@@ -39,6 +40,9 @@ import {
 } from '../../tools/dx/src/deployment/local-platform/local-entry';
 
 async function prepare(foundation: EntryFoundation): Promise<void> {
+  // Stack phải tồn tại trước khi `config set` — lần up đầu trên worktree mới,
+  // state dir chưa có và mọi lệnh config exit 1 (xem `ensureStackForEntry`).
+  ensureStackForEntry('push-notification-deploy', foundation);
   const secrets: ReadonlyArray<readonly [string, string]> = [
     ['namespace:runtimeSharedSecret', generateInternalHmacSecret()],
     ['namespace:adminToken', generateInternalHmacSecret()],

@@ -36,6 +36,7 @@ import {
 import { exec, fullStackRef } from '../../tools/dx/src/deployment/local-platform/pulumi-context';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
 import {
+  ensureStackForEntry,
   pulumiDestroyForEntry,
   pulumiUpForEntry,
   resolveEntryFoundation,
@@ -87,6 +88,11 @@ function resolveMailInternalAuthSecret(foundation: EntryFoundation): string {
 }
 
 async function prepare(foundation: EntryFoundation): Promise<void> {
+  // Stack phải tồn tại trước khi `config set` — lần up đầu trên worktree mới,
+  // state dir chưa có và mọi lệnh config exit 1 (xem `ensureStackForEntry`).
+  // Đọc cross-stack mailInternalAuthSecret của account stack KHÔNG cần bước
+  // này: account up chạy trước theo dependsOn nên stack của nó đã có.
+  ensureStackForEntry('transactional-mail-deploy', foundation);
   const mailInternalAuthSecret = resolveMailInternalAuthSecret(foundation);
   const secrets: ReadonlyArray<readonly [string, string]> = [
     ['namespace:mailInternalAuthSecret', mailInternalAuthSecret],

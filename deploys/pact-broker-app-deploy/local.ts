@@ -24,6 +24,7 @@
 import { exec, fullStackRef } from '../../tools/dx/src/deployment/local-platform/pulumi-context';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
 import {
+  ensureStackForEntry,
   pulumiDestroyForEntry,
   pulumiUpForEntry,
   resolveEntryFoundation,
@@ -75,6 +76,11 @@ function resolvePactApiMachineToken(foundation: EntryFoundation): string {
 }
 
 async function prepare(foundation: EntryFoundation): Promise<void> {
+  // Stack phải tồn tại trước khi `config set` — lần up đầu trên worktree mới,
+  // state dir chưa có và mọi lệnh config exit 1 (xem `ensureStackForEntry`).
+  // Đọc cross-stack machineToken của api stack KHÔNG cần bước này: api up chạy
+  // trước theo dependsOn nên stack của nó đã có.
+  ensureStackForEntry('pact-broker-app-deploy', foundation);
   const apiToken = resolvePactApiMachineToken(foundation);
   setStackConfig('pact-broker-app-deploy', 'namespace:apiToken', apiToken, foundation);
 }

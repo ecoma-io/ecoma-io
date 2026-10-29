@@ -48,6 +48,7 @@ import {
 import { exec } from '../../tools/dx/src/deployment/local-platform/pulumi-context';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
 import {
+  ensureStackForEntry,
   pulumiDestroyForEntry,
   pulumiUpForEntry,
   resolveEntryFoundation,
@@ -69,6 +70,12 @@ import { ROOT_DIR } from '../../tools/dx/src/utils';
 
 async function up(foundation: EntryFoundation): Promise<number> {
   try {
+    // Stack phải tồn tại TRƯỚC khi đọc/ghi stack config: trên worktree chưa
+    // từng deploy, `config get` trên backend `file://` exit 1 với lỗi
+    // "unable to open state directory" — lỗi không phân biệt được với "lỗi
+    // thật" và sẽ chặn nhánh sinh mật khẩu cho stack mới. Idempotent khi stack
+    // đã có (xem `ensureStackForEntry`).
+    ensureStackForEntry('platform-deploy', foundation);
     // Mật khẩu PostgreSQL: đọc lại từ stack config (canonical), chỉ sinh mới
     // khi stack mới VÀ chưa có volume. Fail-loud với hướng dẫn khi config mất
     // mà volume còn.

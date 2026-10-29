@@ -57,6 +57,7 @@ import {
 import { exec, fullStackRef } from '../../tools/dx/src/deployment/local-platform/pulumi-context';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
 import {
+  ensureStackForEntry,
   pulumiDestroyForEntry,
   pulumiUpForEntry,
   resolveEntryFoundation,
@@ -125,6 +126,11 @@ function resolveIdentityInternalSecret(foundation: EntryFoundation): string {
 }
 
 async function prepare(foundation: EntryFoundation): Promise<void> {
+  // Stack phải tồn tại trước khi đọc/ghi stack config — lần up đầu trên
+  // worktree mới, state dir chưa có và mọi lệnh config exit 1 (xem
+  // `ensureStackForEntry`). Đọc cross-stack của account stack KHÔNG cần bước
+  // này: account up chạy trước theo dependsOn nên stack của nó đã có.
+  ensureStackForEntry('auth-deploy', foundation);
   const rootHost = readRootHostFromEnv(foundation.ctx.worktreeRoot);
   if (rootHost === undefined) {
     console.error(
