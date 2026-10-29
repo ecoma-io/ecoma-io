@@ -239,13 +239,16 @@ jobs:
       # stack lock mồ côi — attempt kế của unit đó chết ngay "stack is currently
       # locked". Trước mỗi attempt lại: xoá lock file của các stack có owner PID
       # không còn sống (chỉ lock mồ côi — lock của process sống giữ nguyên), để
-      # lane idempotent chạy tiếp trên namespace đã tạo một phần.
+      # lane idempotent chạy tiếp trên namespace đã tạo một phần. Lock JSON do
+      # `json.Marshal` của Pulumi ghi NÉN với khóa thường `"pid":<n>` (struct
+      # `lockContent`, pkg/backend/diy/lock.go của CLI ghim 3.272.0) — không có
+      # khoảng trắng sau dấu hai chấm, không viết hoa "PID".
       - name: Deploy local platform stack
         run: |
           clear_orphaned_stack_locks() {
             find .pulumi-local-state/.pulumi/locks -name '*.json' -print0 2>/dev/null |
               while IFS= read -r -d '' lockfile; do
-                lock_pid=$(sed -n 's/.*pid \([0-9]*\).*/\1/p' "$lockfile" | head -1)
+                lock_pid=$(sed -n 's/.*"pid":\([0-9]*\).*/\1/p' "$lockfile" | head -1)
                 if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
                   echo "Removing orphaned Pulumi stack lock (pid $lock_pid dead): $lockfile"
                   rm -f "$lockfile"
