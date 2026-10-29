@@ -1,5 +1,12 @@
 {
-  "include": ["**/*.md", "**/*.markdown", "**/*.mdx"],
+  "include": [
+    "**/*.md",
+    "**/*.markdown",
+    "**/*.mdx",
+    "**/*.spec.{js,jsx,ts,tsx}",
+    "**/*.test.{js,jsx,ts,tsx}",
+    "**/*_test.py"
+  ],
   "exclude": [
     "**/*.generated.*",
     "**/testdata/**",

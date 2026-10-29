@@ -41,6 +41,12 @@ function fixtureWorkflow({
  * mà CLI thật không thể tạo ra — đặc biệt ca `secret-leak`, tức một bản CLI để
  * `include` vượt qua bộ lọc secret. Đó đúng là regression mà §3(4) cấm, và nó
  * phải làm probe đỏ chứ không được lặng lẽ xanh.
+ *
+ * Mô hình selection phản chiếu CLI pinned `1.12.12`: `.md` chỉ được chọn khi
+ * rule include glob markdown (ca 2 ra `unsupported_ext` khi không), và file
+ * `.spec.ts` chỉ được chọn khi rule include glob spec (ngược lại
+ * `default_path` — issue #399). Rule thật của repo được copy vào repo thí
+ * nghiệm, nên `ruleIncludesSpec` theo đúng rule đang ship.
  */
 const FAKE_OCR = `#!/usr/bin/env node
 const { execFileSync } = require('node:child_process');
@@ -76,12 +82,15 @@ if (from === to) {
 // dùng mà CLI đọc thêm, nên nó không đổi theo.
 const ruleFile = join(process.cwd(), '.opencodereview/rule.json');
 let ruleIncludesMd = false;
+let ruleIncludesSpec = false;
 if (existsSync(ruleFile)) {
   try {
     const rule = JSON.parse(readFileSync(ruleFile, 'utf8'));
     ruleIncludesMd = Array.isArray(rule.include) && rule.include.some((p) => /\\*\\.md$/.test(p));
+    ruleIncludesSpec = Array.isArray(rule.include) && rule.include.some((p) => /\\*\\.spec\\.\\{/.test(p));
   } catch {
     ruleIncludesMd = false;
+    ruleIncludesSpec = false;
   }
 }
 
@@ -98,8 +107,13 @@ if (!ruleIncludesMd) {
         const rule = JSON.parse(readFileSync(userRule, 'utf8'));
         ruleIncludesMd =
           Array.isArray(rule.include) && rule.include.some((p) => /\\*\\.md$/.test(p));
+        if (!ruleIncludesSpec) {
+          ruleIncludesSpec =
+            Array.isArray(rule.include) && rule.include.some((p) => /\\*\\.spec\\.\\{/.test(p));
+        }
       } catch {
         ruleIncludesMd = false;
+        ruleIncludesSpec = false;
       }
     }
   }
@@ -158,6 +172,14 @@ const decide = (path) => {
     return mode === 'rule-ignored' || !ruleIncludesMd
       ? { will_review: false, exclude_reason: 'unsupported_ext' }
       : { will_review: true };
+  }
+  // CLI thật loại mọi file test với exclude_reason "default_path" khi rule
+  // không include glob tương ứng (đo trên 1.12.12); rule thật của repo có
+  // include nên file test được chọn. CLI giả phản chiếu đúng nhị phân đó.
+  if (path.endsWith('.spec.ts')) {
+    return ruleIncludesSpec
+      ? { will_review: true }
+      : { will_review: false, exclude_reason: 'default_path' };
   }
   return { will_review: true };
 };
@@ -260,12 +282,16 @@ function runProbe(options: ProbeRunOptions = {}): ProbeRun {
 }
 
 describe('OpenCodeReview selection probe', () => {
-  it('accepts a CLI that selects markdown under the rule and filters secrets', () => {
+  it('accepts a CLI that selects markdown and test files under the rule and filters secrets', () => {
     const run = runProbe({ mode: 'compliant' });
     const output = `${run.stdout}\n${run.stderr}`;
     expect(output).toContain('secret_exclude');
     expect(output).toContain('unsupported_ext');
     expect(output).toContain('user_exclude');
+    // Ca 6: rule include glob file test phải đưa `src/auth/login.spec.ts` vào
+    // phạm vi — bảng preview in `true` cho đường dẫn đó.
+    expect(run.stdout).toContain('true');
+    expect(run.stdout).toContain('src/auth/login.spec.ts');
     expect(run.status).toBe(0);
   });
 
@@ -398,7 +424,7 @@ describe('OpenCodeReview selection probe environment contract', () => {
   it('names the case that aborted and the cases that never ran', () => {
     const run = runProbe({ gitShim: 'add ordinary markdown' });
     expect(run.stderr).toContain('aborted after starting case 1');
-    expect(run.stderr).toContain('case(s) 2-5 never ran');
+    expect(run.stderr).toContain('case(s) 2-6 never ran');
   });
 
   it('isolates the CLI user-level rule in $HOME from the probe', () => {

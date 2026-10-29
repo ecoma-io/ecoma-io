@@ -8,12 +8,16 @@ import { ROOT_DIR } from '../utils.js';
 /**
  * Rule của OpenCodeReview là *policy* của repository, không phải config của một
  * app: nó quyết định file nào được đưa vào AI Review. Spec này ghim phần policy
- * đó để một thay đổi vô tình không âm thầm bật/tắt phạm vi review.
+ * đó để một thay đổi vô tình không âm thầm bật/tắt phạm vi review. Phạm vi đó
+ * là markdown **cộng cả file test** (`*.spec.*`/`*.test.*` họ js-ts, `*_test.py`
+ * — issue #399): CLI mặc định loại mọi file test với `exclude_reason:
+ * "default_path"`, nên chỉ `include` của rule mới đưa chúng vào.
  *
- * Điều spec này KHÔNG chứng minh: CLI có thật sự chọn `.md` hay không. Bằng
- * chứng cho hành vi đó là `ocr review --preview --from <base> --to <head>` chạy
- * trên artifact thật (xem PR của issue #239), vì chỉ CLI mới có quyền quyết
- * định — spec này không mô phỏng lại doublestar của CLI.
+ * Điều spec này KHÔNG chứng minh: CLI có thật sự chọn `.md` hay file test hay
+ * không. Bằng chứng cho hành vi đó là `ocr review --preview --from <base> --to
+ * <head>` chạy trên artifact thật (xem PR của issue #239) và probe
+ * `ocr-selection-probe.mjs` (ca 6 ghim file test trên CLI pinned), vì chỉ CLI
+ * mới có quyền quyết định — spec này không mô phỏng lại doublestar của CLI.
  */
 /**
  * Project rule của repository.
@@ -45,6 +49,13 @@ const ALLOWED_EXCLUDES = new Set([
 
 const MARKDOWN_GLOBS = ['**/*.md', '**/*.markdown', '**/*.mdx'];
 
+/**
+ * Ba glob mở rộng phạm vi review sang **file test** (issue #399): CLI mặc định
+ * loại mọi file test với `exclude_reason: "default_path"`, nên chỉ `include`
+ * của rule mới đưa chúng vào. Giữ đúng ba glob này — thêm/bớt là đổi policy.
+ */
+const TEST_FILE_GLOBS = ['**/*.spec.{js,jsx,ts,tsx}', '**/*.test.{js,jsx,ts,tsx}', '**/*_test.py'];
+
 type RuleFile = { include?: unknown; exclude?: unknown };
 
 function readRule(): RuleFile {
@@ -52,10 +63,10 @@ function readRule(): RuleFile {
 }
 
 describe('OpenCodeReview project rule', () => {
-  it('includes every markdown extension the CLI does not support by default', () => {
+  it('includes every markdown and test file extension the CLI does not support by default', () => {
     const rule = readRule();
     expect(Array.isArray(rule.include)).toBe(true);
-    expect(rule.include).toStrictEqual(MARKDOWN_GLOBS);
+    expect(rule.include).toStrictEqual([...MARKDOWN_GLOBS, ...TEST_FILE_GLOBS]);
   });
 
   it('keeps a non-empty exclude list', () => {
