@@ -5,8 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
  * 127.0.0.1:0 dựng bằng certificate local của repo (`fbi.com`), script chạy với
  * hostname `fbi.com` và cờ `--connect 127.0.0.1:<port>` — TLS hostname check
  * vẫn chạy thật vì SNI/`servername` là `fbi.com`, khớp certificate. Exit code
- * và stderr là contract công khai của script (local-deploy gọi nó qua `node`
- * và đọc exit code), nên mỗi case spawn tiến trình riêng.
+ * và stderr là contract công khai của script (entry `local.ts smoke` của
+ * platform gọi nó qua `node` và đọc exit code), nên mỗi case spawn tiến trình riêng.
  *
  * Retry policy được chứng minh bằng đồng vị: 502 rồi thành công → exit 0
  * (retry-then-success), 500 thì fail tức thời (không RETRY trong stderr),

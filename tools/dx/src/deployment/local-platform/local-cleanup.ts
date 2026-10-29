@@ -15,8 +15,9 @@
  *   resolve được) là worktree SỐNG, resource của nó được giữ nguyên kể cả nếu
  *   developer đang không deploy.
  * - PostgreSQL volume persistent mặc định KHÔNG bị xoá — giữ đúng contract
- *   `local-destroy` (dữ liệu chỉ xoá khi opt-in tường minh). Hiện cleanup
- *   KHÔNG có cờ xoá volume: việc đó thuộc `local-destroy --remove-data`.
+ *   down của `platform-deploy` (dữ liệu chỉ xoá khi opt-in tường minh qua
+ *   `nx run platform-deploy:local-down -c local -- --remove-data`). Cleanup
+ *   KHÔNG có cờ xoá volume: việc đó thuộc về down của platform.
  * - Docker daemon không nói được / metadata not-readable ⇒ fail an toàn, không
  *   xoá gì.
  *

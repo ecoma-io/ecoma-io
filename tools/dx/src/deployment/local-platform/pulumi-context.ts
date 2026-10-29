@@ -2,7 +2,7 @@
  * Pulumi CLI/backend context cô lập theo worktree — nền tảng cho mọi lệnh Pulumi
  * của local deployment (up/preview/destroy/output/status).
  *
- * Bài toán: nhiều worktree cùng chạy `pnpm dx local-deploy` trên một host. Pulumi
+ * Bài toán: nhiều worktree cùng chạy local deployment trên một host. Pulumi
  * CLI giữ hai trạng thái chia sẻ trong CLI home mặc định (`~/.pulumi`): backend
  * đang login (credentials.json) và workspace file theo project
  * (`workspaces/<project>-<sha1(Pulumi.yaml path)>-workspace.json` — đã kiểm thực
@@ -92,9 +92,9 @@ export function hasPulumiState(worktreeRoot: string): boolean {
 /**
  * Kết quả một bước exec shell — fail-closed: caller phải kiểm `status`.
  *
- * Một bản duy nhất cho cả `pulumi-context` và `local-deploy` (import từ đây):
- * hai bản tự dựng là chỗ trôi lệch — một bên thêm `error`/`signal` thì bên kia
- * không. Các trường `error`/`signal` báo "process chưa chạy được/bị kill"
+ * Một bản duy nhất dùng chung cho mọi caller Pulumi (import từ đây): nhiều bản
+ * tự dựng là chỗ trôi lệch — một bên thêm `error`/`signal` thì bên kia không.
+ * Các trường `error`/`signal` báo "process chưa chạy được/bị kill"
  * (`status === null`), caller phân loại lỗi dựa vào chúng.
  */
 export interface ExecResult {
@@ -538,9 +538,8 @@ export function ensureStack(
  * state — lệnh `destroy`/`stack output` kiểu "đọc/teardown" KHÔNG được tạo state
  * trên worktree chưa từng deploy (mkdir + stack init biến teardown thành
  * mutation là sai ngữ nghĩa). Lệnh `up`/`config set` truyền `prepareStack:
- * true`; caller của lệnh đọc/teardown/preview chịu trách nhiệm tự xử lý "chưa
- * có gì để đọc/xoá" — riêng `preview` của local-deploy là read-only tuyệt đối
- * và LUÔN truyền `prepareStack: false` (prerequisite do nó tự kiểm).
+ * true`; caller của lệnh đọc/teardown chịu trách nhiệm tự xử lý "chưa có gì
+ * để đọc/xoá" (xem `resolveEntryFoundation` ở `local-entry.ts`).
  */
 export function pulumiRun(
   projectDir: string,

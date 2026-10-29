@@ -7,11 +7,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as lockModule from './local-lock.js';
 import {
   acquireLaneLock,
-  assertLaneLease,
   isPidAlive,
   isStaleLock,
   laneLockPath,
-  LANE_LEASE_ENV,
   LANE_LOCK_FILE_NAME,
   parseLockContent,
   redactCmdline,
@@ -36,7 +34,7 @@ function liveLockContent(token: string): string {
     pid: process.pid,
     token,
     startedAt: Date.now(),
-    cmdline: ['node', 'tools/dx', 'local-deploy'],
+    cmdline: ['node', 'tools/dx', 'local-status'],
   })}\n`;
 }
 
@@ -44,9 +42,8 @@ describe('regression: no exported default path', () => {
   it('the lock module exports no default path constant or zero-arg acquire (structural pollution guard)', () => {
     // #363 guard cấu trúc: signature bắt buộc `worktreeRoot` — mọi hình thái
     // "default path" (vd `DEFAULT_LOCK_PATH = join(tmpdir(), ...)`) từng là
-    // đường unit test chạm khóa thật (`/tmp/ecoma-local-deploy.lock`). Spec
-    // này chặn tái rơi vào pattern đó: thêm lại bất kỳ export nào dưới đây là
-    // test đỏ ngay.
+    // đường unit test chạm khóa thật. Spec này chặn tái rơi vào pattern đó:
+    // thêm lại bất kỳ export nào dưới đây là test đỏ ngay.
     const entries = Object.entries(lockModule);
     // Không export nào mang tên gợi ý default path.
     const offenderNames = entries.filter(([name]) => /default/iu.test(name)).map(([name]) => name);
@@ -137,10 +134,10 @@ describe('parseLockContent / isStaleLock', () => {
 
 describe('redactCmdline', () => {
   it('plain argv passes through unchanged', () => {
-    expect(redactCmdline(['node', 'tools/dx', 'local-deploy', '--worktree-root', '/wt'])).toEqual([
+    expect(redactCmdline(['node', 'tools/dx', 'local-status', '--worktree-root', '/wt'])).toEqual([
       'node',
       'tools/dx',
-      'local-deploy',
+      'local-status',
       '--worktree-root',
       '/wt',
     ]);
@@ -390,73 +387,6 @@ describe('stealLaneLock', () => {
     stealLaneLock(root);
     const lane = acquireLaneLock(root);
     expect(lane.token).not.toBe('stuck-token');
-    lane.release();
-  });
-});
-
-describe('assertLaneLease — fencing-lite', () => {
-  it('matching lease token passes', () => {
-    const root = tempWorktree();
-    const lane = acquireLaneLock(root);
-    expect(assertLaneLease(root, lane.token)).toBeUndefined();
-    lane.release();
-  });
-
-  it('missing lease (no env, no token) → error message', () => {
-    const root = tempWorktree();
-    const message = assertLaneLease(root, undefined, {});
-    expect(message).toContain(LANE_LEASE_ENV);
-  });
-
-  it('mismatched lease (orphaned lane with old token) → error message', () => {
-    const root = tempWorktree();
-    const lane = acquireLaneLock(root); // lane MỚI đã chiếm khóa
-    const message = assertLaneLease(root, 'orphaned-old-token');
-    expect(message).toContain('lease');
-    expect(message).toContain('orphaned');
-    lane.release();
-  });
-
-  it('lock file gone → error message (orchestrator died or released)', () => {
-    const root = tempWorktree();
-    const message = assertLaneLease(root, 'any-token');
-    expect(message).toContain('gone');
-  });
-
-  it('malformed lock content → error message (fail-closed)', () => {
-    const root = tempWorktree();
-    writeFileSync(laneLockPath(root), 'garbage', 'utf8');
-    const message = assertLaneLease(root, 'any-token');
-    expect(message).toContain('malformed');
-  });
-
-  it('token matches but holder pid is dead → error message (orphaned lane, fail-closed)', () => {
-    const root = tempWorktree();
-    // Holder GIẢ: token khớp lease nhưng pid chắc chắn chết — lane mồ côi mà
-    // chưa có lane mới chiếm khóa phải abort, không được mutate.
-    writeFileSync(
-      laneLockPath(root),
-      `${JSON.stringify({
-        pid: 999999999,
-        token: 'orphaned-holder-token',
-        startedAt: Date.now(),
-        cmdline: ['node', 'tools/dx', 'local-deploy'],
-      })}\n`,
-      'utf8',
-    );
-    const message = assertLaneLease(root, 'orphaned-holder-token');
-    expect(message).toContain('orphaned');
-    expect(message).toContain('no longer alive');
-    // Đối chứng: cùng nội dung với pid CÒN SỐNG thì pass.
-    writeFileSync(laneLockPath(root), liveLockContent('orphaned-holder-token'), 'utf8');
-    expect(assertLaneLease(root, 'orphaned-holder-token')).toBeUndefined();
-  });
-
-  it('reads the lease from env when the token argument is omitted', () => {
-    const root = tempWorktree();
-    const lane = acquireLaneLock(root);
-    expect(assertLaneLease(root, undefined, { [LANE_LEASE_ENV]: lane.token })).toBeUndefined();
-    expect(assertLaneLease(root, undefined, { [LANE_LEASE_ENV]: 'stale-token' })).toBeDefined();
     lane.release();
   });
 });

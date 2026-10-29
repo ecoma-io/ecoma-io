@@ -1,6 +1,6 @@
 import { defineCommand } from 'citty';
 
-import { localStatus } from './local-deploy.js';
+import { localStatus } from './local-status.js';
 import {
   requireDirectoryRoot,
   runLocalCommand,

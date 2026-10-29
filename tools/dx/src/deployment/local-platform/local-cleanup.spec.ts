@@ -590,7 +590,7 @@ describe('dockerInspectLabels', () => {
 });
 
 describe('local-cleanup entry', () => {
-  it('uses shared lock so cleanup cannot race with local-deploy', async () => {
+  it('uses shared lock so cleanup cannot race with a lane up or down', async () => {
     // Contract asserted at type level + code review; here we verify the command
     // module exists and exposes run/args (dispatch contract).
     const mod = await import('./local-cleanup-command.js');

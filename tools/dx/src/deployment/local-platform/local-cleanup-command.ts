@@ -7,8 +7,8 @@ import { runLocalCommand, worktreeRootArg } from './../../local-runtime/local-co
  * Entry `pnpm dx local-cleanup`.
  *
  * Dọn Docker resource mồ côi của worktree đã bị xoá. PostgreSQL volume
- * persistent mặc định KHÔNG bị xoá — giữ đúng contract `local-destroy`
- * (dữ liệu chỉ xoá khi `local-destroy --remove-data` opt-in tường minh).
+ * persistent mặc định KHÔNG bị xoá — giữ đúng contract down của
+ * `platform-deploy` (dữ liệu chỉ xoá khi opt-in `--remove-data` tường minh).
  * `--dry-run` không phát lệnh destructive nào — chỉ báo cáo.
  *
  * KHÔNG lấy khóa lane (#363): quyết định xoá của cleanup dựa trên presence

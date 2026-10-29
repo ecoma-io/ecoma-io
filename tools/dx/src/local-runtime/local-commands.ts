@@ -39,9 +39,9 @@ export const workerWorktreeRootArg = {
  * ngoài nhánh đã xử lý...) thành thông điệp `[local-<cmd>] <lý do>` + exit 1 —
  * thay vì stack trace Node với exit code không kiểm soát được.
  *
- * Nhận cả action đồng bộ lẫn async (Promise<number>): `local-deploy` cần
+ * Nhận cả action đồng bộ lẫn async (Promise<number>): up của entry deploy cần
  * sinh khoá ký ES256 qua WebCrypto (`crypto.subtle` — API chỉ có dạng
- * promise), nên luồng apply trả Promise. Lỗi rejection cũng bị nuốt vào
+ * promise), nên luồng up trả Promise. Lỗi rejection cũng bị nuốt vào
  * cùng biên lỗi — một Promise từ chối thoát ra ngoài là unhandled rejection
  * với exit code không kiểm soát được, đúng thứ boundary này cấm.
  */

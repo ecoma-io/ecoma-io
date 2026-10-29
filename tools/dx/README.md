@@ -110,21 +110,21 @@ Source tổ chức theo **capability** — mỗi thư mục con của `src/` là
 nhiệm, module nào cũng chỉ import chéo theo các hướng được liệt kê ở "Ranh giới
 phụ thuộc" dưới đây:
 
-| Path                             | Vai trò                                                                                                                                   |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `index.ts`                       | Entry point, đưa `app` cho `runMain` của citty.                                                                                           |
-| `src/index.ts`                   | Registry 15 lệnh — lazy-load qua `import()` của citty, không auto-discovery.                                                              |
-| `src/utils.ts`                   | `ROOT_DIR`, `runCommand`, `gitEnv` — dùng chung cho mọi capability.                                                                       |
-| `src/repository/`                | Chuẩn bị repository: `repo-prepare`, đồng bộ cấu hình agent, dò tool.                                                                     |
-| `src/pull-request/`              | Chính sách PR: `pr-check` (commitlint là nguồn sự thật cho parse + validate).                                                             |
-| `src/architecture/`              | Kiểm tra tag kiến trúc: `arch-check`, validator tag trên project graph Nx.                                                                |
-| `src/security/`                  | Kiểm tra an toàn: `commit-signing`, `gitleaks-scope`, `semgrep-scan`.                                                                     |
-| `src/deployment/`                | Cổng `provision-gate` và orchestration local platform (`local-platform/`).                                                                |
-| `src/deployment/local-platform/` | Labels, outputs contract, Pulumi context, `local-deploy`/`status`/`destroy`/`cleanup` và smoke test.                                      |
-| `src/local-runtime/`             | Tiện ích local dùng chung: namespace worktree, lock, args/lệnh `local-*`.                                                                 |
-| `src/workers/`                   | Worker runtime: discovery, config, process lifecycle, orchestration, CLI.                                                                 |
-| `src/review-tooling/`            | Spec cho các script OCR trong `scripts/` (script giữ nguyên vị trí cũ).                                                                   |
-| `scripts/`                       | Script standalone gọi bằng đường dẫn (`ocr-result-gate.mjs`, `ocr-selection-probe.mjs`) — được CI gọi qua đường dẫn tuyệt đối, không dời. |
+| Path                             | Vai trò                                                                                                                                                                                             |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `index.ts`                       | Entry point, đưa `app` cho `runMain` của citty.                                                                                                                                                     |
+| `src/index.ts`                   | Registry 12 lệnh — lazy-load qua `import()` của citty, không auto-discovery.                                                                                                                        |
+| `src/utils.ts`                   | `ROOT_DIR`, `runCommand`, `gitEnv` — dùng chung cho mọi capability.                                                                                                                                 |
+| `src/repository/`                | Chuẩn bị repository: `repo-prepare`, đồng bộ cấu hình agent, dò tool.                                                                                                                               |
+| `src/pull-request/`              | Chính sách PR: `pr-check` (commitlint là nguồn sự thật cho parse + validate).                                                                                                                       |
+| `src/architecture/`              | Kiểm tra tag kiến trúc: `arch-check`, validator tag trên project graph Nx.                                                                                                                          |
+| `src/security/`                  | Kiểm tra an toàn: `commit-signing`, `gitleaks-scope`, `semgrep-scan`.                                                                                                                               |
+| `src/deployment/`                | Cổng `provision-gate` và orchestration local platform (`local-platform/`).                                                                                                                          |
+| `src/deployment/local-platform/` | Labels, outputs contract, Pulumi context, `local-status`/`local-cleanup` và smoke test — lifecycle up/down của từng deploy project nằm ở entry colocated `deploys/<project>/local.ts`, không ở đây. |
+| `src/local-runtime/`             | Tiện ích local dùng chung: namespace worktree, lock, args/lệnh `local-*`.                                                                                                                           |
+| `src/workers/`                   | Worker runtime: discovery, config, process lifecycle, orchestration, CLI.                                                                                                                           |
+| `src/review-tooling/`            | Spec cho các script OCR trong `scripts/` (script giữ nguyên vị trí cũ).                                                                                                                             |
+| `scripts/`                       | Script standalone gọi bằng đường dẫn (`ocr-result-gate.mjs`, `ocr-selection-probe.mjs`) — được CI gọi qua đường dẫn tuyệt đối, không dời.                                                           |
 
 `docker-context.spec.ts` đứng ở gốc `src/`: nó kiểm hợp đồng `.dockerignore` của
 repo root, không thuộc capability nào cả.

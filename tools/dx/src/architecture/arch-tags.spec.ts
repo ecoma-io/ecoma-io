@@ -248,6 +248,37 @@ describe('validateRuntimeCompat', () => {
     expect(violations[0].detail).toContain('runtime:edge depends on cli (runtime:native)');
   });
 
+  it('allows a deployment project to depend on a composition app across runtimes (packaging edge, not an import)', () => {
+    // deploy unit build/mount app edge vào container native của mình (Dockerfile
+    // COPY, dist mount, WIC) — hai process không import nhau lúc runtime, nên
+    // ma trận runtime không áp cho edge đóng gói này. Carve-out CHỈ cho
+    // deployment: một composition khác vẫn bị chặn như thường.
+    const deploy = node('x-deploy', ['scope:public', 'type:deployment', 'runtime:native'], ['app']);
+    const projects = new Map(
+      [
+        deploy,
+        node('app', ['scope:public', 'type:composition', 'runtime:edge']),
+        node('lib', ['scope:public', 'type:domain', 'runtime:edge']),
+      ].map((n) => [n.name, n]),
+    );
+    expect(validateRuntimeCompat(deploy, projects)).toEqual([]);
+  });
+
+  it('still blocks a non-deployment project from depending on a composition app across runtimes', () => {
+    // Carve-out không phải lỗ: composition → composition lệch runtime vẫn là
+    // import thật (SSR render, lib import) và vẫn bị ma trận chặn.
+    const server = node('app', ['scope:public', 'type:composition', 'runtime:native'], ['spa']);
+    const projects = new Map(
+      [server, node('spa', ['scope:public', 'type:composition', 'runtime:edge'])].map((n) => [
+        n.name,
+        n,
+      ]),
+    );
+    const violations = validateRuntimeCompat(server, projects);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatchObject({ kind: 'runtime-compat' });
+  });
+
   it('blocks a universal project from depending on an edge project', () => {
     // universal là cam kết tương thích hai chiều: dependency edge-only của lib
     // universal sẽ khoá lib vào edge, phá chính cam kết đó.

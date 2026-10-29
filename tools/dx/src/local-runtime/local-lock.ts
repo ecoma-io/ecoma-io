@@ -1,6 +1,6 @@
 /**
- * Khóa lane local theo worktree — mutual exclusion giữa các lane mutation
- * (`local-deploy` apply / `local-destroy`) CÙNG MỘT worktree.
+ * Khóa lane local theo worktree — mutual exclusion giữa các mutation CÙNG MỘT
+ * worktree (up/down của entry colocated `deploys/<project>/local.ts`).
  *
  * Biên mutation thật (issue #363): hai worktree đã được cô lập hoàn toàn bởi
  * namespace Docker (`deploy-namespace.ts`) và backend `file://` theo worktree
@@ -9,8 +9,9 @@
  * nhau (task build image dài giữ khóa, các task song song cạn ngân sách chờ).
  * Chỉ còn một interleaving cần chặn: hai lane CÙNG worktree đụng `.env`,
  * `pulumi config set` (ngoài danh sách giữ khóa của Pulumi) và reconcile
- * namespace-wide cùng lúc. Khóa vì thế scoping theo worktree, giữ WHOLE-LANE:
- * orchestrator lấy một lần quanh cả lane, các task con không tự lấy khóa.
+ * namespace-wide cùng lúc. Khóa vì thế scoping theo worktree: MỖI entry tự
+ * lấy khóa quanh toàn bộ thao tác up/down của mình — hai entry khác project
+ * trong cùng worktree vẫn serialize với nhau qua cùng một file khóa.
  *
  * Hợp đồng:
  * - `acquireLaneLock(worktreeRoot)` trả về hàm release; không có default path
@@ -18,7 +19,7 @@
  *   #363: chặn unit test chạm khóa thật vì signature zero-arg không tồn tại).
  * - Lock file `<worktreeRoot>/.ecoma-lane.lock`, nội dung JSON
  *   `{ pid, token, startedAt, cmdline }` — holder identity in ngay trong
- *   thông báo lỗi khi bị chặn. `cmdline` là `process.argv` của orchestrator
+ *   thông báo lỗi khi bị chặn. `cmdline` là `process.argv` của holder
  *   SAU KHI lọc các argv mang hình nhạy cảm (`redactCmdline`): passphrase thật
  *   đi qua env/file của subprocess, không argv — lọc thêm một lớp phòng khi
  *   argv nào đó vẫn mang tên flag secret.
@@ -31,10 +32,6 @@
  *   `isPidAlive` (EPERM = còn sống) giữ nguyên từ #22.
  * - Release ràng buộc PID + token: một process không xoá được lock của process
  *   khác; exit handler tự buông khóa khi process kết thúc.
- * - Lease assertion: token trong lock chính là lease mà orchestrator truyền
- *   cho task con qua env `ECOMA_LANE_LEASE` — `assertLaneLease` kiểm process
- *   con còn đứng trong lane hợp lệ: token khớp VÀ holder pid còn sống (cha bị
- *   SIGKILL → lane mồ côi fail-closed, kể cả khi chưa có lane mới chiếm khóa).
  */
 import { closeSync, openSync, readFileSync, unlinkSync, writeSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
@@ -48,9 +45,6 @@ export const LANE_LOCK_FILE_NAME = '.ecoma-lane.lock';
 export function laneLockPath(worktreeRoot: string): string {
   return join(worktreeRoot, LANE_LOCK_FILE_NAME);
 }
-
-/** Môi trường biến env truyền lease token từ orchestrator xuống task con. */
-export const LANE_LEASE_ENV = 'ECOMA_LANE_LEASE';
 
 /**
  * Lọc các argv mang hình nhạy cảm (token/passphrase/secret/key + giá trị kề
@@ -310,9 +304,6 @@ function formatHolder(content: string): string {
  * Progress line in mỗi ~PROGRESS_INTERVAL_SECONDS với holder identity
  * (pid/cmdline/startedAt/elapsed) — người đọc quyết trong vài giây có đợi hay
  * `--steal-lock`; khoảng in không tham gia correctness.
- *
- * Trả về `{ release, token }`: `token` chính là lease mà orchestrator truyền
- * xuống task con qua `ECOMA_LANE_LEASE` (xem `assertLaneLease`).
  */
 export function acquireLaneLock(worktreeRoot: string): { release: () => void; token: string } {
   const lockPath = laneLockPath(worktreeRoot);
@@ -366,59 +357,4 @@ export function stealLaneLock(worktreeRoot: string): LockContent | null {
   const removed = safeUnlinkIfSame(lockPath, content);
   if (!removed) return null; // lock đổi giữa chừng — steal thất bại, không có gì bị gỡ
   return holder;
-}
-
-/**
- * Assert process hiện tại còn đứng trong lane hợp lệ — fencing-lite của task con.
- *
- * Orchestrator truyền token của khóa qua env `ECOMA_LANE_LEASE`; task con so
- * với token ĐANG trong lock file trước khi mutate. Lệch là lane mồ côi (cha bị
- * SIGKILL, lane khác đã chiếm khóa với token mới) hoặc gọi ngoài lane — abort
- * với exit 1, không warning.
- *
- * Trả về thông báo lỗi khi lệch, undefined khi khớp. Lock file không tồn tại
- * cũng là lệch: mutation không được phép chạy ngoài lane.
- */
-export function assertLaneLease(
-  worktreeRoot: string,
-  leaseToken: string | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): string | undefined {
-  const callerToken = leaseToken ?? env[LANE_LEASE_ENV];
-  if (callerToken === undefined || callerToken.length === 0) {
-    return (
-      `no ${LANE_LEASE_ENV} lease in the environment — this step must run inside a lane ` +
-      `(via the local-deploy orchestration), not standalone.`
-    );
-  }
-  let content: string;
-  try {
-    content = readFileSync(laneLockPath(worktreeRoot), 'utf8');
-  } catch {
-    return (
-      `the lane lock file of this worktree is gone — the orchestrator that started this ` +
-      `step died or released the lock. Aborting instead of mutating.`
-    );
-  }
-  const parsed = parseLockContent(content);
-  if (parsed === null) {
-    return `the lane lock content is malformed — refusing to mutate. Aborting instead of mutating.`;
-  }
-  if (parsed.token !== callerToken) {
-    return (
-      `the lane lease does not match the current lock holder — this step belongs to an ` +
-      `orphaned lane (its orchestrator was killed or stole-replaced). Aborting instead of mutating.`
-    );
-  }
-  // Token khớp thôi chưa đủ: holder chết mà lane mới chưa kịp acquire thì
-  // token cũ vẫn nằm trong file — lane mồ côi của holder đó phải abort, không
-  // được mutate. Cùng ngữ nghĩa liveness fail-closed với `isStaleLock` (EPERM
-  // = còn sống), nên một orchestrator khác-user sống vẫn pass.
-  if (!isPidAlive(parsed.pid)) {
-    return (
-      `the lane lock holder (pid=${String(parsed.pid)}) is no longer alive — this step ` +
-      `belongs to an orphaned lane. Aborting instead of mutating.`
-    );
-  }
-  return undefined;
 }
