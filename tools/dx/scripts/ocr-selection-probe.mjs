@@ -3,15 +3,15 @@
  * Probe xác nhận contract selection của OpenCodeReview trên **CLI pinned**.
  *
  * Vì sao cần probe này: `.opencodereview/rule.json` chỉ là một mảng glob trong
- * JSON. Assert shape của JSON (rule có include glob mọi file `.md`) **không**
- * chứng minh
- * được điều quan trọng: CLI pinned có thật sự chọn file `.md` khi đọc rule đó
- * hay không, và `include` có đang **vượt qua** bộ lọc secret của CLI hay không.
- * Issue #239 đúng là một lỗi ở mức đó — rule sai/hỏng khiến docs-only PR ra
- * `status: skipped`, `files_reviewed: 0`, và job vẫn xanh. Probe này chạy
- * chính `ocr review --preview` (không gọi LLM) trên một repo thí nghiệm và
- * kiểm từng đường dẫn, nên một regression ở CLI hoặc ở rule đều bị bắt trước
- * khi tốn một lần review thật.
+ * JSON. Assert shape của JSON (rule có include glob mọi file `.md` và file
+ * test) **không** chứng minh
+ * được điều quan trọng: CLI pinned có thật sự chọn file `.md` và file test khi
+ * đọc rule đó hay không, và `include` có đang **vượt qua** bộ lọc secret của
+ * CLI hay không. Issue #239 đúng là một lỗi ở mức đó — rule sai/hỏng khiến
+ * docs-only PR ra `status: skipped`, `files_reviewed: 0`, và job vẫn xanh.
+ * Probe này chạy chính `ocr review --preview` (không gọi LLM) trên một repo
+ * thí nghiệm và kiểm từng đường dẫn, nên một regression ở CLI hoặc ở rule đều
+ * bị bắt trước khi tốn một lần review thật.
  *
  * Nguồn dữ liệu:
  * - `ocr review --preview --format json --audience agent` là nguồn duy nhất:
@@ -25,7 +25,7 @@
  *   (`OCR_VERSION_PIN`) — cùng một nguồn mà workflow dùng để cài CLI, để một
  *   lần chạy lokal với bản CLI khác không thể bị coi là bằng chứng.
  *
- * Năm ca kiểm tra (mỗi ca một repo thí nghiệm riêng, không đụng repo thật):
+ * Sáu ca kiểm tra (mỗi ca một repo thí nghiệm riêng, không đụng repo thật):
  * 1. Có rule: file `.md` thường được chọn (`will_review: true`).
  * 2. Không rule: đúng file đó bị loại với `exclude_reason: "unsupported_ext"`
  *    — đó là chữ ký của chính lỗi #239, và nó chứng minh rule là thứ làm file
@@ -42,6 +42,12 @@
  * 5. Range rỗng (`from == to`): `total_files: 0`, `reviewable_count: 0`,
  *    `files: []` — cùng hình dạng với "mọi file bị loại", nên người đọc kết
  *    quả **không** được coi đây là một review sạch.
+ * 6. Có rule: file test (`src/auth/login.spec.ts`) được chọn (`will_review:
+ *    true`) — CLI mặc định loại mọi file test với `exclude_reason:
+ *    "default_path"` (đo trên bản `1.12.12`), nên chỉ `include` của rule mới
+ *    đưa chúng vào (issue #399). Ca này phải dùng đường dẫn sạch, không khớp
+ *    `exclude` nào của rule (không `fixtures/`, không `testdata/`, không
+ *    `__tests__/`).
  *
  * Hợp đồng exit code — ba trạng thái tách bạch, vì một phán đoán sai về rule
  * đắt hơn nhiều so với một lần không đo được:
@@ -81,14 +87,35 @@ const PREVIEW_MAX_BUFFER = 8 * 1024 * 1024;
 
 /**
  * Đuôi file `.md` mà contract yêu cầu. Cố ý chỉ có `md`: probe này ghim hành vi
- * của **rule hiện tại** (include ba đuôi markdown). Nếu rule đổi, ca 1 sẽ đỏ
- * và probe phải được cập nhật cùng lúc.
+ * của **rule hiện tại** (include ba đuôi markdown và ba glob file test). Nếu
+ * rule đổi, ca 1 (markdown) và ca 6 (file test) sẽ đỏ và probe phải được cập
+ * nhật cùng lúc.
  */
 const ORDINARY_MARKDOWN = 'docs/guide.md';
 /** Đường dẫn mà bộ lọc secret builtin của CLI bắt được (đo được, không suy đoán). */
 const SECRET_PATH_MARKDOWN = '.env.md';
 /** Đường dẫn khớp `exclude` của rule thật; đổi rule thì phải đổi ca này. */
 const RULE_EXCLUDED_MARKDOWN = 'testdata/fixture.md';
+/**
+ * Ba file test mà rule mở rộng phạm vi cho (issue #399) — mỗi glob `include`
+ * một đại diện, để một regression của CLI trên bất kỳ glob nào cũng làm ca 6 đỏ
+ * thay vì lọt qua nhờ hai glob còn lại (findings OCR của PR #404, run
+ * 40863940984). Đường dẫn sạch — không khớp `exclude` nào của rule — để ca này
+ * đo đúng `include`, không phải ca `user_exclude` vốn đã do ca 3/4 phụ trách.
+ * Glob python khớp hậu tố nên fixture là `login_test.py`, không phải
+ * `test_login.py`.
+ */
+const ORDINARY_TEST_FILES = [
+  'src/auth/login.spec.ts',
+  'src/auth/session.test.ts',
+  'tests/login_test.py',
+];
+/**
+ * File test trên đường dẫn secret builtin (`findings` cùng run): `include`
+ * của rule KHÔNG được vượt qua bộ lọc secret của CLI — cùng hợp đồng với ca 3,
+ * nhưng đo cho hình dạng file test.
+ */
+const SECRET_PATH_TEST_FILE = '.env.spec.ts';
 
 class UsageError extends Error {}
 
@@ -488,7 +515,7 @@ function findFile(value, path) {
 }
 
 /**
- * Chạy cả năm ca và trả về hai danh sách **tách biệt**:
+ * Chạy cả sáu ca và trả về hai danh sách **tách biệt**:
  * - `failures`: vi phạm contract đã đo được (assertion trên `files[]`) → exit 1.
  * - `environmentErrors`: ca không đo được (setup hỏng, CLI chết, preview không
  *   phải JSON) → exit 2 nếu không có vi phạm nào.
@@ -633,11 +660,63 @@ function runCases({ ocrBin, rulePath, keep }) {
         );
       }
     }
+
+    // Ca 6 dùng repo riêng: rule có include glob file test là tiền đề của ca,
+    // còn đường dẫn phải sạch (không khớp `exclude`) để đo đúng `include`.
+    caseCount = 6;
+    const withTestRule = createRepo(rulePath, { withRule: true }, track);
+    for (const testFile of ORDINARY_TEST_FILES) {
+      writeFixture(
+        withTestRule.dir,
+        testFile,
+        "describe('login', () => {\n  it('rejects a bad password', () => {});\n});\n",
+      );
+    }
+    writeFixture(withTestRule.dir, SECRET_PATH_TEST_FILE, '# pretend secret material\n');
+    const headWithTestRule = commitAll(withTestRule.dir, 'add ordinary test files');
+    const case6 = preview(ocrBin, withTestRule.dir, withTestRule.base, headWithTestRule);
+    if (!case6.ok) {
+      environmentErrors.push(`case 6: ${case6.error}`);
+    } else {
+      printFiles(
+        'case 6 — rule present, ordinary test files and secret-path test file',
+        case6.value,
+      );
+      for (const testFile of ORDINARY_TEST_FILES) {
+        const file = findFile(case6.value, testFile);
+        if (file === undefined) {
+          failures.push(`case 6: ${testFile} is missing from preview files`);
+        } else if (file.will_review !== true) {
+          failures.push(
+            `case 6: ${testFile} must be selected by the rule include — the CLI drops ` +
+              `test files by default (exclude_reason 'default_path') and only the project rule ` +
+              `(.github/ocr-rules.json, include globs **/*.spec.{js,jsx,ts,tsx}, ` +
+              `**/*.test.{js,jsx,ts,tsx}, **/*_test.py) brings them into review scope (issue #399) ` +
+              `(got will_review=${JSON.stringify(file.will_review)}, ` +
+              `exclude_reason=${JSON.stringify(file.exclude_reason)})`,
+          );
+        }
+      }
+      const secretTest = findFile(case6.value, SECRET_PATH_TEST_FILE);
+      if (secretTest === undefined) {
+        failures.push(`case 6: ${SECRET_PATH_TEST_FILE} is missing from preview files`);
+      } else if (
+        secretTest.will_review !== false ||
+        secretTest.exclude_reason !== 'secret_exclude'
+      ) {
+        failures.push(
+          `case 6: include must NOT bypass the CLI secret filter for test files — ` +
+            `${SECRET_PATH_TEST_FILE} must be excluded as 'secret_exclude' ` +
+            `(got will_review=${JSON.stringify(secretTest.will_review)}, ` +
+            `exclude_reason=${JSON.stringify(secretTest.exclude_reason)})`,
+        );
+      }
+    }
   } catch (error) {
     // Ném ra khỏi một ca là lỗi môi trường, không phải phán quyết về contract:
     // các ca chưa chạy phải được nêu tên, vì "3 environment error(s)" nghe như
-    // cả năm ca đã được thử trong khi thực ra không.
-    const rest = caseCount < 5 ? `; case(s) ${caseCount + 1}-5 never ran` : '';
+    // cả sáu ca đã được thử trong khi thực ra không.
+    const rest = caseCount < 6 ? `; case(s) ${caseCount + 1}-6 never ran` : '';
     environmentErrors.push(
       `aborted after starting case ${caseCount}: ${String(error instanceof Error ? error.message : error)}${rest}`,
     );
@@ -720,7 +799,9 @@ function main() {
     );
     return EXIT_ENVIRONMENT;
   }
-  console.log('[ocr-probe] VERDICT: markdown is selected by the rule, secret filtering is intact');
+  console.log(
+    '[ocr-probe] VERDICT: markdown and test files are selected by the rule, secret filtering is intact',
+  );
   return EXIT_CONTRACT_OK;
 }
 
