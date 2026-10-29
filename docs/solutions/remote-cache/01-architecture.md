@@ -61,7 +61,20 @@ Nx ────────────► │     Data Plane      │  (cache.e
 
 **Data plane** chỉ xử lý cache traffic. Nó không scan storage, không chạy garbage collection, không thực hiện administrative operation, và không phụ thuộc database trong request hot path.
 
-**Control plane** quản lý projects, API keys, B2 accounts, storage partitions, routing, capacity state, statistics và administrative mutations. Nó không nằm trên hot path. Control API là private interface — public Internet chỉ cần expose `cache.ecoma.io`.
+**Control plane** quản lý tenants, projects, memberships, API keys, B2 accounts, storage partitions, routing, capacity state, statistics, quota/usage và administrative mutations. Nó không nằm trên hot path. Control API là private interface — public Internet chỉ cần expose `cache.ecoma.io`.
+
+### 2.1 Control-plane domain model (target)
+
+Hai plane cùng nằm trong một service; domain model của control plane gồm:
+
+- **Tenant** — đơn vị sở hữu; mỗi project thuộc đúng một tenant; lifecycle state riêng (active/suspended/deleted) với semantics tường minh, không hồi sinh tự động.
+- **Project** — đơn vị isolation của cache; namespace và storage scope derive từ project, không từ input client.
+- **Membership** — quan hệ người dùng ↔ tenant kèm role; vòng đời độc lập với API key machine credential.
+- **API key** — machine credential scoped theo project, có read/write scope, revoke/expiry; hash-only ở storage, show-once lúc tạo; vòng đời độc lập với membership.
+- **Quota/usage** — attribution theo project; semantics chống double-count khi retry/upload đồng thời.
+- **Audit** — mọi administrative mutation có entry actor/action/target/time/outcome.
+
+Chi tiết contract/API lock trước Phase 5 theo [`roadmap`](../../architecture/roadmap.md) (freeze point P4.1). Tenancy là yêu cầu MVP — không defer.
 
 Các lớp module tách trách nhiệm, dependency đi **một chiều**:
 
@@ -205,7 +218,7 @@ Data plane observability không được làm tăng dependency trên request pat
 
 ## 12. Deployment shape
 
-`cache` là **một deploy unit** (một Cloudflare Worker) với một storage backend/partition ở MVP. Sau khi protocol và streaming được validate, mở rộng theo thứ tự: multiple projects → multiple partitions → multiple B2 accounts (initial scope → [`02-requirements.md`](./02-requirements.md) §5).
+`cache` là **một deploy unit** (một Cloudflare Worker). Control plane hỗ trợ multi-tenant từ MVP (tenant/project/membership/API key — §2.1); storage bắt đầu với một backend/partition. Sau khi protocol và streaming được validate, mở rộng theo thứ tự: multiple partitions → multiple B2 accounts (initial scope → [`02-requirements.md`](./02-requirements.md) §5).
 
 Kiến trúc ưu tiên **một deployable Worker nhỏ** thay vì distributed internal services.
 

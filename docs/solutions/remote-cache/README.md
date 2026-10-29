@@ -2,7 +2,7 @@
 
 Self-hosted remote cache cho Nx: tái sử dụng kết quả task để rút ngắn build/CI. Đây là **disposable build state** — mất cache thì task chạy lại được, không mất correctness.
 
-> **Target evolution (Phase 4+):** service được định hướng thành bounded context `remote-cache` — multi-tenant SaaS, Nx-first (MVP), roadmap protocol sau đó là Gradle → Turborepo → Bazel/Moonrepo (chỉ roadmap, không phải phạm vi MVP). Target sẽ sở hữu tenant/project/membership/API key/quota/retention/usage metering/audit; hiện tại vẫn là disposable build state theo A18. Roadmap → [`architecture/roadmap.md`](../../architecture/roadmap.md) Phase 4/7. MVP dùng API key riêng của service; entitlement integration deferred.
+> **Target evolution (Phase 4+):** service được định hướng thành bounded context `remote-cache` — multi-tenant SaaS, Nx-first (MVP), roadmap protocol sau đó là Gradle → Turborepo → Bazel/Moonrepo (chỉ roadmap, không phải phạm vi MVP). Target sở hữu tenant/project/membership/API key/quota/retention/usage metering/audit; hiện tại vẫn là disposable build state theo A18. Roadmap → [`architecture/roadmap.md`](../../architecture/roadmap.md) Phase 4/7. MVP dùng API key riêng của service; entitlement integration deferred.
 
 ## Responsibility
 
@@ -13,7 +13,7 @@ Self-hosted remote cache cho Nx: tái sử dụng kết quả task để rút ng
 ## Runtime
 
 - Deploy unit: Cloudflare Worker; data plane public duy nhất `https://cache.ecoma.io`.
-- Control plane (projects, API keys, partitions) private, qua Service Binding, không hostname công khai.
+- Control plane (tenants, projects, memberships, API keys, quota/usage, partitions) private, qua Service Binding, không hostname công khai. Multi-tenancy là yêu cầu MVP.
 
 ## Documents
 

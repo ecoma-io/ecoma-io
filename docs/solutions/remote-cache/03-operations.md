@@ -173,7 +173,7 @@ Không chạy full-bucket scan hay bulk delete trong request path. Cache expirat
 
 ## 10. Bootstrap
 
-MVP cần tối thiểu `1 project · 1 storage partition · 1 B2 bucket · 1 developer key · 1 CI key`:
+MVP cần tối thiểu `1 tenant · 1 project · 1 storage partition · 1 B2 bucket · 1 developer key · 1 CI key` (control-plane domain model → [`01-architecture.md`](./01-architecture.md) §2.1):
 
 ```text
 Create B2 bucket
@@ -182,7 +182,7 @@ Create least-privilege B2 credential
       ↓
 Configure + deploy Worker
       ↓
-Configure project
+Create tenant + project (control plane)
       ↓
 Create project-scoped API keys (developer key, CI write key)
       ↓
