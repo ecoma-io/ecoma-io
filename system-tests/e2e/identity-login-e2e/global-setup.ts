@@ -105,14 +105,18 @@ function resolveRootOrigin(): { hostname: string; port: string; ca: string } {
  * probe phải ĐỎ ở đây ngay (pattern của `local-smoke.mjs`).
  */
 function probeOnce(hostname: string, port: string, ca: string): Promise<ProbeResult> {
+  // Probe tới ĐÚNG hostname mà suite dùng (`account.<host>`) — SNI + TCP cùng
+  // đường với request thật: gate sẽ đỏ nếu chỉ root host resolve được còn
+  // subdomain không (xanh giả thì test vẫn chết DNS ở bước sau, muộn hơn cần).
+  const probeHost = `account.${hostname}`;
   return new Promise((resolve, reject) => {
     const request = https.get(
       {
-        host: hostname,
+        host: probeHost,
         port,
         path: '/api/auth/session',
         ca,
-        servername: hostname,
+        servername: probeHost,
         headers: {
           // `Host` tường minh cùng dạng `hostname:port` — khớp đúng rule
           // `Host(\`account.<host>\`)` của Traefik (xem `local-smoke.mjs`).

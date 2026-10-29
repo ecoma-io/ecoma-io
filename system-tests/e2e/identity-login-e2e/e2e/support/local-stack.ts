@@ -78,9 +78,9 @@ export interface FixtureIdentity {
   readonly email: string;
 }
 
-/** SHA-256 hex của địa chỉ đã normalize — cùng phép tính `normalizeAndHashEmail` (otp.ts). */
+/** SHA-256 hex của địa chỉ đã normalize — cùng phép tính `normalizeAndHashEmail` (otp.ts): trim + lowercase TRƯỚC khi băm, không thì hash của suite lệch hash server tra cứu. */
 export function fixtureEmailHash(email: string): string {
-  return createHash('sha256').update(email).digest('hex');
+  return createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
 }
 
 /**
@@ -107,12 +107,18 @@ export function resolveStackNamespace(): string {
   );
   const matches: string[] = [];
   for (const name of candidates) {
+    // `{{range}}` in MỌI host port của container lên MỘT dòng, phân cách bằng
+    // khoảng trắng ("33118 80 ") — tách lại theo whitespace trước khi so, không
+    // thì `includes` so nguyên chuỗi nhiều port và luôn false.
     const ports = dockerLines([
       'inspect',
       name,
       '--format',
       '{{range $p, $b := .NetworkSettings.Ports}}{{range $b}}{{.HostPort}} {{end}}{{end}}',
-    ]);
+    ])
+      .join(' ')
+      .split(/\s+/u)
+      .filter((value) => value.length > 0);
     if (ports.includes(port)) {
       matches.push(name);
     }
@@ -174,11 +180,16 @@ function containerName(namespace: string, kind: 'postgres' | 'mail-wic'): string
  * tự nào cần SQL escaping.
  */
 export function seedFixtureUser(namespace: string, identity: FixtureIdentity): void {
-  const hash = fixtureEmailHash(identity.email);
+  // Chuẩn hoá email theo đúng phép tính của server (`normalizeAndHashEmail`,
+  // otp.ts): trim + lowercase trước khi lưu `address_normalized` và băm
+  // `address_hash` — nếu không, hash của suite lệch hash server tra cứu và
+  // `lookupVerifiedAddress` miss.
+  const normalized = identity.email.trim().toLowerCase();
+  const hash = fixtureEmailHash(normalized);
   const script =
     `INSERT INTO account.users (sub) VALUES ('${identity.sub}') ON CONFLICT DO NOTHING;\n` +
     `INSERT INTO account.email_addresses (user_sub, address_normalized, address_hash, status, is_sign_in, verified_at)\n` +
-    `SELECT '${identity.sub}', '${identity.email}', '${hash}', 'verified', true, now()\n` +
+    `SELECT '${identity.sub}', '${normalized}', '${hash}', 'verified', true, now()\n` +
     `WHERE NOT EXISTS (\n` +
     `  SELECT 1 FROM account.email_addresses WHERE user_sub = '${identity.sub}' AND address_hash = '${hash}'\n` +
     `);`;
