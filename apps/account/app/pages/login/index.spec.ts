@@ -13,6 +13,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import LoginPage from './index.vue';
+import { createMockAccountAdapter } from '../../account-data/mock-adapter';
+import type { AccountAdapter } from '../../account-data/types';
 import { flushPromises, mountAccount } from '../../../tests/harness';
 import { accountStores } from '../../../tests/nuxt-runtime-bridge';
 
@@ -188,8 +190,120 @@ describe('login acceptance', () => {
       '/login/continue?handle=opaque-continuation-handle',
     );
   });
+
+  it('relays the server-issued confirmUrl verbatim and never calls completeHandoff', async () => {
+    // §5.1.2 hàng 7: sau verify, trang relay `confirmUrl` do server dựng bằng
+    // điều hướng browser — KHÔNG gọi `completeHandoff` (push là việc của
+    // `/login/continue`), KHÔNG tự ghép chuỗi hay thêm tham số.
+    const CONFIRM_URL = 'https://auth.example.com/authorize/confirm?handle=x-1';
+    const assign = vi.fn<(url: string) => void>();
+    vi.stubGlobal('window', Object.assign(window, { location: { assign } }));
+
+    const base = createMockAccountAdapter({ challengeMode: 'code' });
+    const adapter: AccountAdapter = {
+      ...base,
+      requestLoginChallenge: base.requestLoginChallenge,
+      verifyLoginCode: async () => ({ ok: true, value: { confirmUrl: CONFIRM_URL } }),
+      completeHandoff: vi.fn<() => Promise<{ ok: false; reason: string }>>(async () => ({
+        ok: false as const,
+        reason: 'must never be called from /login',
+      })),
+    };
+
+    const { wrapper } = await mountAccount(LoginPage, {
+      adapter,
+      adapterOptions: { challengeMode: 'code' },
+      route: { path: '/login', query: { handle: 'x-1' } },
+    });
+
+    await wrapper.find('[data-testid="login-email"]').setValue('user@example.com');
+    await wrapper.find('[data-testid="login-email-form"]').trigger('submit');
+    await flushPromises();
+    await wrapper.find('[data-testid="login-code"]').setValue('123456');
+    await wrapper.find('[data-testid="login-code-form"]').trigger('submit');
+    await flushPromises();
+
+    // Feedback verify được nhìn thấy trước khi điều hướng.
+    expect(wrapper.find('[data-testid="login-code-accepted"]').exists()).toBe(true);
+    // Relay nguyên vẹn — đúng URL server cấp.
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(assign).toHaveBeenCalledWith(CONFIRM_URL);
+    // completeHandoff không bao giờ được gọi từ trang này.
+    expect(adapter.completeHandoff).not.toHaveBeenCalled();
+    // ConfirmUrl không rò vào DOM/href/storage.
+    expect(wrapper.html()).not.toContain('authorize/confirm');
+    for (const anchor of wrapper.findAll('a')) {
+      expect(anchor.attributes('href') ?? '').not.toContain('authorize/confirm');
+    }
+    expect(localStorage.getItem(CONFIRM_URL)).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it('shows the continuation-unavailable state when the server issues no confirmUrl', async () => {
+    // Server không cấp URL (chưa cấu hình issuer/handle lệch binding): đăng nhập
+    // vẫn thành công, trang hiện trạng thái kết thúc — không điều hướng, không
+    // fallback tự chế.
+    const assign = vi.fn<(url: string) => void>();
+    vi.stubGlobal('window', Object.assign(window, { location: { assign } }));
+    const base = createMockAccountAdapter({ challengeMode: 'code' });
+    const adapter: AccountAdapter = {
+      ...base,
+      verifyLoginCode: async () => ({ ok: true, value: { confirmUrl: undefined } }),
+    };
+
+    const { wrapper } = await mountAccount(LoginPage, {
+      adapter,
+      adapterOptions: { challengeMode: 'code' },
+      route: { path: '/login', query: { handle: 'x-2' } },
+    });
+
+    await wrapper.find('[data-testid="login-email"]').setValue('user@example.com');
+    await wrapper.find('[data-testid="login-email-form"]').trigger('submit');
+    await flushPromises();
+    await wrapper.find('[data-testid="login-code"]').setValue('123456');
+    await wrapper.find('[data-testid="login-code-form"]').trigger('submit');
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="login-code-accepted"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="login-handoff-unavailable"]').exists()).toBe(true);
+    expect(assign).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it('starts a plain account login when no handle is present even with a confirmUrl', async () => {
+    // Không handle ⇒ đăng nhập account thuần: verify thành công hiện accepted
+    // và đứng yên — không có continuation nào để relay.
+    const assign = vi.fn<(url: string) => void>();
+    vi.stubGlobal('window', Object.assign(window, { location: { assign } }));
+    const base = createMockAccountAdapter({ challengeMode: 'code' });
+    const adapter: AccountAdapter = {
+      ...base,
+      verifyLoginCode: async () => ({
+        ok: true,
+        value: { confirmUrl: 'https://auth.example.com/authorize/confirm?handle=y' },
+      }),
+    };
+
+    const { wrapper } = await mountAccount(LoginPage, {
+      adapter,
+      adapterOptions: { challengeMode: 'code' },
+      route: { path: '/login', query: {} },
+    });
+
+    await wrapper.find('[data-testid="login-email"]').setValue('user@example.com');
+    await wrapper.find('[data-testid="login-email-form"]').trigger('submit');
+    await flushPromises();
+    await wrapper.find('[data-testid="login-code"]').setValue('123456');
+    await wrapper.find('[data-testid="login-code-form"]').trigger('submit');
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="login-code-accepted"]').exists()).toBe(true);
+    expect(assign).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
 });
 
+/** Adapter mock cơ bản cho spec — dùng mock thật của app làm nền. */
 describe('passwordless invariant', () => {
   it('/login has no password field and no password-recovery link', async () => {
     const { wrapper } = await mountAccount(LoginPage);

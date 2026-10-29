@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { loadAuthConfig, type AuthConfig } from './config';
-import { handleAuthorize, type AuthorizeQuery } from './browser-handlers';
-import type { AuthStore, RegisteredClient } from '@ecoma-io/auth-application';
+import { handleAuthorize, handleAuthorizeConfirm, type AuthorizeQuery } from './browser-handlers';
+import { hashHandle } from '@ecoma-io/auth-domain';
+import type {
+  AuthorizationTransactionRecord,
+  AuthStore,
+  RegisteredClient,
+} from '@ecoma-io/auth-application';
 
 /**
  * Unit cho glue `/authorize` — phần chọn `resource` theo client_id (registry
@@ -119,5 +124,125 @@ describe('handleAuthorize — resource selection by client_id', () => {
     expect(response.status).toBe(302);
     const target = new URL(response.headers.get('location') as string);
     expect(target.searchParams.get('resource')).toBe('https://backoffice.ecoma.io');
+  });
+});
+
+/** Transaction thật hình dạng, băm binding tính từ cookie test. */
+async function confirmedTransaction(): Promise<AuthorizationTransactionRecord> {
+  return {
+    transaction_id: 'b'.repeat(43),
+    handle_hash_x: await hashHandle('handle-x-confirm-test'),
+    state: 'browser_confirmed',
+    client_id: 'client-1',
+    redirect_uri: 'https://rp.example.com/cb',
+    requested_scopes: ['openid'],
+    code_challenge: 'a'.repeat(43),
+    code_challenge_method: 'S256',
+    browser_binding_hash: await hashHandle('binding-cookie-confirm-test'),
+    key_version: 1,
+    expires_at: new Date(Date.now() + 60_000),
+    sub: null,
+    acr: null,
+    authn_at: null,
+    account_session_ref: null,
+    client_state: null,
+    nonce: null,
+    event_id: null,
+    event_payload_hash: null,
+  };
+}
+
+function confirmStore(transaction: AuthorizationTransactionRecord) {
+  const calls: string[] = [];
+  const store: AuthStore & { calls: string[] } = {
+    calls,
+    findTransactionByHandleX: async () => transaction,
+    createTransaction: async () => {
+      calls.push('createTransaction');
+    },
+    transition: async () => {
+      calls.push('transition');
+      return true;
+    },
+    insertAuthorizationCode: async () => undefined,
+    findGrant: async () => undefined,
+    findClient: async () => undefined,
+    checkRevocation: async () => 'not_revoked',
+  };
+  return store;
+}
+
+describe('handleAuthorizeConfirm — first confirm and same-browser replay', () => {
+  const confirmQuery: AuthorizeQuery = { handle: 'handle-x-confirm-test' };
+
+  it('first confirm — 302 to /login/continue with the handle', async () => {
+    const transaction = await confirmedTransaction();
+    // pending_browser: lần confirm đầu — CAS chạy.
+    const store = confirmStore({ ...transaction, state: 'pending_browser' });
+    const response = await handleAuthorizeConfirm({
+      store,
+      query: confirmQuery,
+      cookieHeader: '__Host-auth-browser=binding-cookie-confirm-test',
+      accountBaseUrl: 'https://account.ecoma.io',
+      now: new Date(),
+    });
+    expect(response.status).toBe(302);
+    const location = new URL(response.headers.get('location') as string);
+    expect(location.origin + location.pathname).toBe('https://account.ecoma.io/login/continue');
+    expect(location.searchParams.get('handle')).toBe('handle-x-confirm-test');
+    expect(store.calls).toContain('transition');
+  });
+
+  it('same-browser replay (already browser_confirmed) — SAME 302, no state change', async () => {
+    // Hop confirm nằm trên đường browser (§5.1.2 hàng 2): điều hướng trùng của
+    // chính browser đã confirm phải nhận cùng đích, không phải `invalid_request`.
+    const transaction = await confirmedTransaction();
+    const store = confirmStore(transaction);
+    const response = await handleAuthorizeConfirm({
+      store,
+      query: confirmQuery,
+      cookieHeader: '__Host-auth-browser=binding-cookie-confirm-test',
+      accountBaseUrl: 'https://account.ecoma.io',
+      now: new Date(),
+    });
+    expect(response.status).toBe(302);
+    const location = new URL(response.headers.get('location') as string);
+    expect(location.origin + location.pathname).toBe('https://account.ecoma.io/login/continue');
+    expect(location.searchParams.get('handle')).toBe('handle-x-confirm-test');
+    // Idempotency: không CAS lại, không event mới.
+    expect(store.calls).not.toContain('transition');
+  });
+
+  it('replay from a DIFFERENT browser (binding mismatch) — JSON invalid_request, no redirect', async () => {
+    const transaction = await confirmedTransaction();
+    const store = confirmStore(transaction);
+    const response = await handleAuthorizeConfirm({
+      store,
+      query: confirmQuery,
+      cookieHeader: '__Host-auth-browser=cookie-of-the-thief',
+      accountBaseUrl: 'https://account.ecoma.io',
+      now: new Date(),
+    });
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe('invalid_request');
+  });
+
+  it('expired browser_confirmed replay — JSON invalid_request', async () => {
+    // Cửa sổ idempotent đòi còn TTL; hết hạn là đường CAS/thất bại như mọi
+    // state khác (hàng 12 của state machine).
+    const transaction = await confirmedTransaction();
+    transaction.expires_at = new Date(Date.now() - 1);
+    const store = confirmStore(transaction);
+    const response = await handleAuthorizeConfirm({
+      store,
+      query: confirmQuery,
+      cookieHeader: '__Host-auth-browser=binding-cookie-confirm-test',
+      accountBaseUrl: 'https://account.ecoma.io',
+      now: new Date(),
+    });
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe('invalid_request');
   });
 });

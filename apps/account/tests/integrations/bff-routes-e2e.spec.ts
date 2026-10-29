@@ -126,6 +126,7 @@ function fullRuntimeConfig(
     otpHmacSecret: OTP_SECRET,
     mailServiceUrl: 'https://mail.test',
     mailInternalAuthSecret: 'test-mail-internal-auth-secret-placeholder-0001',
+    authIssuer: 'https://auth.test',
     cloudflare: {
       env: {
         DB_ACCOUNT: { connectionString },
@@ -346,6 +347,99 @@ describe('BFF handoff and consent routes end-to-end', () => {
     }
     return request;
   }
+
+  // ── verify: URL confirm sau verify (§5.1.2 hàng 7) ─────────────────────────
+
+  /**
+   * Challenge → verify mang handle: cấp cookie thật và đọc response verify.
+   * Mã OTP đi qua mail stub như luồng production. `verifyHandle` tách khỏi
+   * `challengeHandle` để mô phỏng trình handle lạ (challenge bind A, verify
+   * trình B — B chưa từng được session này bind).
+   */
+  async function loginWithHandleAndGetVerifyResponse(params: {
+    challengeHandle?: string;
+    verifyHandle?: string;
+  }): Promise<Response> {
+    const mail = installMailStub();
+    let code: string;
+    let challengeCookies: string[] = [];
+    try {
+      const challengeResponse = await post('/api/auth/challenge', {
+        email: EMAIL_MAIN,
+        ...(params.challengeHandle === undefined ? {} : { handle: params.challengeHandle }),
+      });
+      expect(challengeResponse.status).toBe(204);
+      const variables = mail.sent[0]?.body['variables'] as { code?: string } | undefined;
+      code = variables?.code as string;
+      challengeCookies = setCookies(challengeResponse);
+    } finally {
+      mail.restore();
+    }
+    const challengeSessionCookie = cookieValue(challengeCookies, '__Host-account-session');
+    const verifyResponse = await post(
+      '/api/auth/verify',
+      {
+        email: EMAIL_MAIN,
+        code,
+        ...(params.verifyHandle === undefined ? {} : { handle: params.verifyHandle }),
+      },
+      challengeSessionCookie === undefined
+        ? {}
+        : { cookie: `__Host-account-session=${challengeSessionCookie}` },
+    );
+    return verifyResponse;
+  }
+
+  it('verify with a bound handle and matching session returns confirmUrl with correct origin/path/handle', async () => {
+    setRuntimeConfig(fullRuntimeConfig(connectionString, undefined));
+    const response = await loginWithHandleAndGetVerifyResponse({
+      challengeHandle: HANDLE,
+      verifyHandle: HANDLE,
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { ok?: boolean; confirmUrl?: string };
+    expect(body.ok).toBe(true);
+    expect(typeof body.confirmUrl).toBe('string');
+    const confirm = new URL(body.confirmUrl as string);
+    expect(confirm.origin).toBe('https://auth.test');
+    expect(confirm.pathname).toBe('/authorize/confirm');
+    expect(confirm.searchParams.get('handle')).toBe(HANDLE);
+  });
+
+  it('verify with a FOREIGN handle returns ok:true without confirmUrl', async () => {
+    setRuntimeConfig(fullRuntimeConfig(connectionString, undefined));
+    // Challenge bind HANDLE vào session（đúng luồng thật), nhưng verify trình
+    // handle khác chưa từng được bind — lớp bảo vệ thứ nhất §3.6 chặn, không
+    // cấp URL, đăng nhập vẫn thành công.
+    const response = await loginWithHandleAndGetVerifyResponse({
+      challengeHandle: HANDLE,
+      verifyHandle: 'foreign-handle-never-bound',
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { ok?: boolean; confirmUrl?: string | undefined };
+    expect(body.ok).toBe(true);
+    expect(body.confirmUrl).toBeUndefined();
+  });
+
+  it('verify without a handle in the body returns the old {ok:true} shape without the field', async () => {
+    setRuntimeConfig(fullRuntimeConfig(connectionString, undefined));
+    const response = await loginWithHandleAndGetVerifyResponse({ challengeHandle: HANDLE });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+  });
+
+  it('verify returns no confirmUrl when authIssuer config is empty', async () => {
+    const config = fullRuntimeConfig(connectionString, undefined);
+    setRuntimeConfig({ ...config, authIssuer: '' });
+    const response = await loginWithHandleAndGetVerifyResponse({
+      challengeHandle: HANDLE,
+      verifyHandle: HANDLE,
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { ok?: boolean; confirmUrl?: string | undefined };
+    expect(body.ok).toBe(true);
+    expect(body.confirmUrl).toBeUndefined();
+  });
 
   // ── handoff ────────────────────────────────────────────────────────────────
 

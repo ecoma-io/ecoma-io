@@ -351,6 +351,24 @@ export async function beginAuthorization(params: {
  *
  * Chuyển trạng thái có điều kiện: nếu `pending_browser` đã đổi thì một request
  * khác đã confirm, và ta không ghi đè.
+ *
+ * ## Replay của cùng browser — idempotent (§5.1.2 hàng 2, cột "khi retry")
+ *
+ * Browser quay lại `/authorize/confirm` lần thứ hai với CÙNG cookie B và
+ * transaction còn `browser_confirmed` (chưa hết TTL) là một replay hợp lệ: LUẬT
+ * browser của luồng là đi qua hop này, nên một điều hướng trùng (reload, back,
+ * hai tab cùng origin trình lại request) không được biến thành `invalid_request`
+ * — đích tiếp theo (`/login/continue`) giống hệt lần đầu, không có trạng thái
+ * nào thay đổi. Cửa sổ idempotent NGẶT: chỉ đúng state `browser_confirmed` và
+ * còn `expires_at > now`. Mọi state khác (`pending_browser` — chưa từng confirm,
+ * `awaiting_consent`/`ready_to_complete` — X đã bị event khác tiêu thụ,
+ * `completed`/`denied` — terminal) giữ nguyên đường CAS/throw cũ: một request
+ * đến muộn không được mở lại giao dịch đã đi tiếp.
+ *
+ * ⚠️ CAS đã gộp expiry vào WHERE (`transitionTransaction`), nhưng nhánh
+ * idempotent KHÔNG chạy CAS — nó đọc hàng rồi quyết định, nên phải tự so
+ * `expires_at` với `now` tường minh: bỏ kiểm này là một transaction hết hạn
+ * được redirect tiếp như còn sống.
  */
 export async function confirmBrowser(params: {
   store: AuthStore;
@@ -358,7 +376,7 @@ export async function confirmBrowser(params: {
   /** Cookie `__Host-auth-browser` do browser trình ra. */
   presentedBinding: string;
   now: Date;
-}): Promise<void> {
+}): Promise<{ status: 'confirmed' | 'already-confirmed' }> {
   const { store, transaction, presentedBinding, now } = params;
 
   const presentedHash = await hashHandle(presentedBinding);
@@ -370,6 +388,18 @@ export async function confirmBrowser(params: {
     throw OAuthProtocolError.directInvalidRequest('browser binding khong khop');
   }
 
+  if (transaction.state === 'browser_confirmed') {
+    if (transaction.expires_at > now) {
+      // Replay của chính browser đã confirm — không CAS lại, không event mới:
+      // trạng thái giữ nguyên là toàn bộ ý nghĩa của idempotency.
+      return { status: 'already-confirmed' };
+    }
+    // Còn browser_confirmed nhưng đã hết TTL (hàng 12 state machine) — không
+    // được redirect tiếp như còn sống; CAS không chạy vì state không còn
+    // pending_browser, nên phải từ chối tường minh.
+    throw OAuthProtocolError.directInvalidRequest('transaction da het han');
+  }
+
   const moved = await store.transition({
     transactionId: transaction.transaction_id,
     from: 'pending_browser',
@@ -379,6 +409,7 @@ export async function confirmBrowser(params: {
   if (!moved) {
     throw OAuthProtocolError.directInvalidRequest('transaction da duoc xac nhan boi request khac');
   }
+  return { status: 'confirmed' };
 }
 
 /**

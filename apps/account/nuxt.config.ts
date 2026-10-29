@@ -167,6 +167,15 @@ export default defineNuxtConfig({
     // Production (Workers) không đặt `NUXT_AUTH_SERVICE_URL`: binding thật được
     // nạp qua `__env__`, plugin thấy binding đã có hình dạng hợp lệ và no-op.
     authServiceUrl: '',
+    // Origin của worker auth mà BFF dựng URL browser cho nó (`/authorize/confirm`
+    // sau khi mã OTP được chấp nhận — §5.1.2 hàng 7 của
+    // `docs/services/auth/01-architecture.md`). Rỗng = chưa cấu hình ⇒ verify
+    // không cấp `confirmUrl` (luồng có handle fail-closed ở bước cuối, người dùng
+    // thấy trạng thái "không tiếp tục được"); luồng đăng nhập account thuần
+    // không bao giờ đọc key này. Cùng luật `NUXT_*` ở trên: không default, được
+    // đặt thì phải là origin http(s) không mang path — một path tại đây là lỗi
+    // cấu hình lộ ở lần dựng URL đầu (`server/utils/config-validation.ts`).
+    authIssuer: '',
     // Binding container của Cloudflare — preset `cloudflare-module` tự nạp qua
     // `globalThis.__env__` (production) và `getPlatformProxy` (dev), Nuxt core
     // không đụng vào key này. Khai báo ở đây để preset `node-server` (local Docker)

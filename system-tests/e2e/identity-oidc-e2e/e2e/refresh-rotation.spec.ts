@@ -69,14 +69,9 @@ async function obtainTokens(page: import('@playwright/test').Page): Promise<Toke
 
   await page.goto(authorizeUrl, { waitUntil: 'commit' });
   await page.waitForURL(`${account}/login**`, { timeout: 30_000 });
-  const handleX = new URL(page.url()).searchParams.get('handle');
-  expect(handleX).not.toBeNull();
-
-  const confirmResponse = await page.request.get(`${origin}/authorize/confirm?handle=${handleX}`, {
-    maxRedirects: 0,
-    failOnStatusCode: false,
-  });
-  expect(confirmResponse.status()).toBe(302);
+  // Browser đã đứng ở trang login account mang handle — hop `/authorize/confirm`
+  // không còn là bước thủ công của test: trang login tự relay browser qua hop
+  // này sau verify OTP (§5.1.2 hàng 7), rồi `/login/continue` push về auth.
 
   const emailInput = page.getByTestId('login-email');
   await emailInput.waitFor({ state: 'visible', timeout: 30_000 });

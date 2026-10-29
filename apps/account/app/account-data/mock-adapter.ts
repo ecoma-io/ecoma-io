@@ -400,15 +400,19 @@ export function createMockAccountAdapter(options: MockAdapterOptions = {}): Acco
         value: { email, mode: challengeMode, expiresAt: '2026-10-13T09:15:00.000Z' },
       };
     },
-    verifyLoginCode: async (code): Promise<Result<void>> => {
-      const refused = refuse<void>('verifyLoginCode');
+    verifyLoginCode: async (code): Promise<Result<{ readonly confirmUrl?: string }>> => {
+      const refused = refuse<{ readonly confirmUrl?: string }>('verifyLoginCode');
       if (refused) {
         return refused;
       }
       // Mock chấp nhận đúng một mã, và từ chối mọi mã khác — kể cả mã đúng khi
       // chế độ là `email-link`: bước này không tồn tại ở chế độ đó.
+      //
+      // ⚠️ `confirmUrl` là **object có trường undefined**, không phải `undefined`:
+      // hợp đồng nói "mock không có BFF ⇒ không có continuation cấp được" — value
+      // vẫn phải có hình dạng đầy đủ của nó để caller đọc `.confirmUrl` an toàn.
       return challengeMode === 'code' && code === '123456'
-        ? { ok: true, value: undefined }
+        ? { ok: true, value: { confirmUrl: undefined } }
         : { ok: false, reason: 'invalid code' };
     },
 

@@ -16,18 +16,21 @@
  * mã. `login-flow.spec.ts` chạy cả hai chế độ để chứng minh điều đó.
  *
  * ⚠️ **Continuation handle không bị đụng.** `?handle=X` do `auth` đưa tới và được
- * chuyển tiếp nguyên vẹn trong `continue_handoff`, không đọc, không diễn giải, không
- * log, không đưa vào storage, không dán vào link khác. Adapter thật nhận nó ở
- * lúc bàn giao qua `POST /api/auth/handoff` (server push
- * `/internal/session/verified` về `auth`); bản mock không có BFF nên bàn giao
- * giả lập chỉ giữ nguyên trạng thái.
+ * chuyển tiếp nguyên vẹn trong `requestLoginChallenge`, không đọc, không diễn
+ * giải, không log, không đưa vào storage, không dán vào link khác.
  *
- * ⚠️ **Bàn giao sau khi mã được chấp nhận.** Khi `continuationHandle` tồn tại,
- * trang gọi `adapter.completeHandoff(handle)` ngay sau verify thành công và
- * relay `continueUrl` bằng điều hướng browser (`window.location.assign`) — URL
- * do `auth` dựng, trang KHÔNG tự ghép chuỗi hay thêm tham số. Khi handoff thất
- * bại, người dùng thấy thông báo retry (mã OTP đã dùng; BFF push idempotent ⇒
- * thử lại an toàn). Không handle ⇒ đăng nhập account thuần, giữ nguyên accepted.
+ * ⚠️ **Hop `/authorize/confirm` sau khi mã được chấp nhận (§5.1.2 hàng 7).** Khi
+ * verify thành công và có `?handle=`, response verify của BFF mang `confirmUrl`
+ * — URL do **server** dựng tới `GET {authIssuer}/authorize/confirm?handle=X`.
+ * Trang chỉ relay nó bằng điều hướng browser (`window.location.assign`), KHÔNG
+ * tự ghép chuỗi, KHÔNG thêm tham số. Hop này là bắt buộc của protocol: cookie
+ * `__Host-auth-browser` của browser được xác nhận ở đó rồi auth mới chấp nhận
+ * push `session/verified` (điều kiện 2 §5.1.0 — chốt chặn handle-theft).
+ * `completeHandoff` (push back-channel) là việc của `/login/continue`, trang này
+ * KHÔNG gọi nó. Khi server không cấp URL (chưa cấu hình issuer, handle lệch
+ * binding…), người dùng thấy trạng thái "không tiếp tục được" — đăng nhập vẫn
+ * thành công, không có đường fallback tự chế. Không handle ⇒ đăng nhập account
+ * thuần, giữ nguyên accepted.
  */
 import type { LoginChallenge } from '../../account-data/types';
 
@@ -45,13 +48,11 @@ const code = ref('');
 const codeFailed = ref(false);
 
 /**
- * Trạng thái bàn giao (handoff) sau khi mã được chấp nhận.
- *
- * `handoffFailed` cho phép retry; `handoffUnavailable` (mock) hiển thị dòng
- * giải thích mà không hứa một URL tiếp theo nào — mock KHÔNG báo thành công.
+ * Continuation không cấp được sau verify — server từ chối hoặc chưa cấu hình.
+ * Người dùng thấy dòng giải thích (cùng câu chữ của `/login/continue`) mà không
+ * hứa một URL tiếp theo nào; đăng nhập vẫn thành công.
  */
-const handoffFailed = ref(false);
-const handoffUnavailable = ref(false);
+const continuationUnavailable = ref(false);
 
 /**
  * Mã đã được chấp nhận hay chưa.
@@ -59,8 +60,9 @@ const handoffUnavailable = ref(false);
  * ⚠️ Tách khỏi `codeFailed`: `codeFailed = false` không phân biệt được "mã đúng"
  * với "chưa bấm". Trước khi có trạng thái này, `verifyLoginCode` trả `ok: true`
  * không đổi gì trên màn hình — người dùng bấm "Đăng nhập" rồi im lặng, và không
- * có cách nào biết bước này đã xong. Chuyển hướng sang `/login/continue` là việc
- * của BFF (hợp đồng chưa có), nhưng **phản hồi** thì không được chờ.
+ * có cách nào biết bước này đã xong. Điều hướng sang `confirmUrl` xảy ra **sau**
+ * khi trạng thái này render — phản hồi verify phải được nhìn thấy trước khi rời
+ * trang.
  */
 const codeAccepted = ref(false);
 
@@ -107,6 +109,7 @@ async function requestChallenge(): Promise<void> {
   resendSent.value = false;
   codeFailed.value = false;
   codeAccepted.value = false;
+  continuationUnavailable.value = false;
   try {
     // Handle đi kèm đây và **chỉ** ở đây — xem khối chú thích của
     // `continuationHandle` ở trên.
@@ -133,12 +136,18 @@ async function submitCode(): Promise<void> {
   submitting.value = true;
   codeFailed.value = false;
   codeAccepted.value = false;
-  handoffFailed.value = false;
-  handoffUnavailable.value = false;
+  continuationUnavailable.value = false;
+  // URL confirm giữ **local** trong hàm này — không bao giờ vào state của trang
+  // hay bất kỳ biến nào sống lâu hơn một tick (FR-006k3: không log, không render,
+  // không storage; duy nhất một đường điều hướng tiêu thụ nó).
+  let confirmUrl: string | undefined;
   try {
     const verified = await adapter.verifyLoginCode(code.value.trim());
     codeFailed.value = !verified.ok;
-    codeAccepted.value = verified.ok;
+    if (verified.ok) {
+      codeAccepted.value = true;
+      confirmUrl = verified.value.confirmUrl;
+    }
   } catch {
     // Lỗi ném (network/transport) cũng là verify thất bại — không để unhandled
     // rejection; người dùng phải thấy trạng thái lỗi để có thể retry.
@@ -148,55 +157,19 @@ async function submitCode(): Promise<void> {
     submitting.value = false;
   }
 
-  // Bàn giao chạy SAU khi `submitting` đã về `false`: màn hình phản hồi verify
-  // không được chờ handoff (đó là một lần gọi server khác; nếu auth chết thì
-  // response verify vẫn phải đến). Handle tiếp tục được dùng đúng một lần trong
-  // luồng này.
+  // Điều hướng chạy SAU khi `submitting` đã về `false`: màn hình phản hồi verify
+  // ("Code accepted") được render trước khi rời trang — thành công phải nhìn
+  // thấy được, đúng nguyên tắc relay của `/login/continue`.
   if (codeAccepted.value && continuationHandle.value !== undefined) {
-    await runHandoff(continuationHandle.value);
-  }
-}
-
-/**
- * Đang bàn giao — cho phép hiện trạng retry sau khi thống nhất xong.
- */
-const handingOff = ref(false);
-
-async function runHandoff(handle: string): Promise<void> {
-  handingOff.value = true;
-  handoffFailed.value = false;
-  handoffUnavailable.value = false;
-  try {
-    const result = await adapter.completeHandoff(handle);
-    if (result.ok && typeof result.value.continueUrl === 'string') {
-      // Đích do `auth` quyết định: relay nguyên vẹn — không tự ghép chuỗi, không
-      // thêm tham số. Điều hướng client-side SPA không dùng được vì URL có thể
-      // origin của app khác (RP); `window.location.assign` là trung thực nhất.
-      window.location.assign(result.value.continueUrl);
+    if (typeof confirmUrl === 'string') {
+      // Đích do server quyết định: relay nguyên vẹn — không tự ghép chuỗi, không
+      // thêm tham số. Điều hướng client-side SPA không dùng được vì URL là origin
+      // của `auth`; `window.location.assign` là trung thực nhất.
+      window.location.assign(confirmUrl);
       return;
     }
-    if (result.ok) {
-      // `already_processed`: hợp đồng KHÔNG cấp URL ở outcome này. Hiện trạng
-      // "đang hoàn tất" thay vì lỗi — không hứa một đích mà hợp đồng không có.
-      handoffUnavailable.value = true;
-      return;
-    }
-    handoffFailed.value = true;
-  } catch {
-    // `completeHandoff` có thể ném (fetch thô trong adapter thật) — lỗi ném
-    // cũng là handoff thất bại; nuốt nó là trạng thái "im lặng" không có retry.
-    handoffFailed.value = true;
-  } finally {
-    handingOff.value = false;
+    continuationUnavailable.value = true;
   }
-}
-
-/** Retry bàn giao sau khi fail — handle không đổi, vì push idempotent. */
-async function retryHandoff(): Promise<void> {
-  if (handingOff.value || continuationHandle.value === undefined) {
-    return;
-  }
-  await runHandoff(continuationHandle.value);
 }
 
 function startOver(): void {
@@ -206,8 +179,7 @@ function startOver(): void {
   codeAccepted.value = false;
   requestFailed.value = false;
   resendSent.value = false;
-  handoffFailed.value = false;
-  handoffUnavailable.value = false;
+  continuationUnavailable.value = false;
 }
 </script>
 
@@ -307,28 +279,14 @@ function startOver(): void {
       </form>
 
       <!--
-        Trạng thái bàn giao nằm NGOÀI form nhập mã: nó là kết quả của lần gọi
-        server thứ hai (handoff), không thuộc về vòng đời của form. Retry chỉ
-        có khi handoff thất bại — mock/preview không có server để bàn giao và
-        hiển thị `handoffUnavailable` thay vì một retry vô nghĩa hiển thị như thành công.
+        Trạng thái "không tiếp tục được" nằm NGOÀI form nhập mã: nó là kết quả
+        của nhánh không cấp `confirmUrl` (chưa cấu hình issuer, handle lệch
+        binding), không thuộc về vòng đời của form. Không có retry — đăng nhập
+        đã thành công và không có đường điều hướng nào để thử lại; câu chữ dùng
+        chung catalog với `/login/continue`.
       -->
-      <div v-if="handoffFailed" class="space-y-3" data-testid="login-handoff-retry">
-        <p class="text-sm text-danger" role="alert">
-          {{ i18n.t('loginContinue.errorTitle') }} —
-          {{ i18n.t('loginContinue.errorBody') }}
-        </p>
-        <button
-          type="button"
-          class="account-button-secondary"
-          :disabled="handingOff"
-          data-testid="login-handoff-retry-button"
-          @click="retryHandoff"
-        >
-          {{ i18n.t('common.retry') }}
-        </button>
-      </div>
       <p
-        v-else-if="handoffUnavailable"
+        v-if="continuationUnavailable"
         class="text-sm text-muted"
         role="status"
         data-testid="login-handoff-unavailable"

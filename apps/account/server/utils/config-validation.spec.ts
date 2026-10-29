@@ -351,6 +351,53 @@ describe('validateAccountConfig — mail service URL', () => {
   });
 });
 
+describe('validateAccountConfig — auth issuer URL', () => {
+  it('accepts an absent issuer: the confirm-URL flow fails closed at verify time instead', () => {
+    // Rỗng = "chưa cấu hình auth issuer" — hợp lệ ở tầng config (luồng đăng nhập
+    // account không phụ thuộc), luồng có handle tự fail-closed ở verify không cấp URL.
+    expect(() => validateAccountConfig(validConfig())).not.toThrow();
+    expect(() => validateAccountConfig(validConfig({ authIssuer: '' }))).not.toThrow();
+  });
+
+  it('accepts an https origin', () => {
+    expect(() =>
+      validateAccountConfig(validConfig({ authIssuer: 'https://auth.ecoma.io' })),
+    ).not.toThrow();
+  });
+
+  it('accepts an http origin for local auth dev', () => {
+    expect(() =>
+      validateAccountConfig(validConfig({ authIssuer: 'http://127.0.0.1:8787' })),
+    ).not.toThrow();
+  });
+
+  it('rejects a URL that carries a path — only an origin is accepted', () => {
+    // `new URL('/authorize/confirm', issuer)` bỏ path của base, nên issuer có
+    // path là cấu hình sai dựng ra URL sai — phải lộ ở đây chứ không ở runtime.
+    expect(() =>
+      validateAccountConfig(validConfig({ authIssuer: 'https://auth.ecoma.io/sub' })),
+    ).toThrow(/NUXT_AUTH_ISSUER/u);
+  });
+
+  it('rejects a URL without an http(s) scheme', () => {
+    expect(() => validateAccountConfig(validConfig({ authIssuer: 'ftp://auth.ecoma.io' }))).toThrow(
+      /NUXT_AUTH_ISSUER/u,
+    );
+  });
+
+  it('rejects a bare host without a scheme', () => {
+    expect(() => validateAccountConfig(validConfig({ authIssuer: 'auth.ecoma.io' }))).toThrow(
+      /NUXT_AUTH_ISSUER/u,
+    );
+  });
+
+  it('rejects a non-string issuer', () => {
+    expect(() => validateAccountConfig(validConfig({ authIssuer: 42 }))).toThrow(
+      /NUXT_AUTH_ISSUER/u,
+    );
+  });
+});
+
 /**
  * `lazyConfigValidator` — thời điểm gọi: request đầu, không phải module-init.
  *

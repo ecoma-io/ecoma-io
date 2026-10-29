@@ -218,7 +218,7 @@ export function createServerAccountAdapter(
      * (tải lại trang) mà chi phí sửa là thay đổi hợp đồng bên server-side —
      * out of scope cho PR này (tài liệu hóa trong PR handoff).
      */
-    verifyLoginCode: async (code: string): Promise<Result<void>> => {
+    verifyLoginCode: async (code: string): Promise<Result<{ readonly confirmUrl?: string }>> => {
       const email = pendingLoginEmail;
       if (email === undefined) {
         // Không có challenge nào được yêu cầu từ phiên này (ví dụ vừa reload
@@ -233,7 +233,14 @@ export function createServerAccountAdapter(
       // Mã đã dùng — xỉa email pending cho lần verify kế (rotation là luồng
       // bình thường, một verify mới bắt đầu từ một challenge mới).
       pendingLoginEmail = undefined;
-      return { ok: true, value: undefined };
+      // `confirmUrl` do server dựng (`/authorize/confirm` của auth) — adapter
+      // chỉ relay giá trị có hình dạng chuỗi, mọi thứ khác là "không có".
+      const body: unknown = await response.json().catch(() => undefined);
+      const confirmUrl =
+        typeof (body as { confirmUrl?: unknown } | null)?.confirmUrl === 'string'
+          ? ((body as { confirmUrl: string }).confirmUrl as string)
+          : undefined;
+      return { ok: true, value: { confirmUrl } };
     },
 
     /**
