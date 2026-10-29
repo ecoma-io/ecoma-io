@@ -41,8 +41,8 @@
  * ⚠️ PostgreSQL THẬT (testcontainers): phần đáng tin cậy ở đây là trạng thái
  * `auth.authorization_transactions` sau khi gọi endpoint — transaction có thật,
  * browser binding đã băm đúng, không có gì cả. Stub SQL sẽ xanh ngay cả khi
- * glue ghi sai chỗ. Thiếu Docker ⇒ SKIP (cùng bộ luật với các suite hàng xóm;
- * skip không phải pass).
+ * glue ghi sai chỗ. Thiếu Docker ⇒ ĐỎ (cùng bộ luật với các suite hàng xóm;
+ * harness probe fail-loud, không có đường skip).
  */
 
 import type { Server } from 'node:http';
