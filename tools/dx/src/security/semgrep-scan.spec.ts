@@ -111,7 +111,8 @@ beforeAll(() => {
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `Docker is a mandatory development dependency for this repository (policy: docs/overview/06-testing.md §6); probe failed: ${reason}`, { cause: error },
+      `Docker is a mandatory development dependency for this repository (policy: docs/overview/06-testing.md §6); probe failed: ${reason}`,
+      { cause: error },
     );
   } finally {
     rmSync(probe, { recursive: true, force: true });
