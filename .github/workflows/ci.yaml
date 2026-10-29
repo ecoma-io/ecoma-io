@@ -232,18 +232,34 @@ jobs:
       # từ GitHub. `pulumi` CLI (ghim 3.272.0 trong node_modules/.bin) và Docker
       # daemon đều có sẵn trên runner. Timeout là trần cho lần build image lạnh
       # đầu tiên; các lần sau tận dụng layer cache Docker của runner.
-      # Vòng retry che race đã gặp ở CI: container init one-shot `rm: true` của
-      # provider docker v5.2.0 đôi khi bị Docker tự xoá trước khi provider kịp
-      # inspect → "No such container" (thử lại cho phép unit dở dang chạy tiếp).
+      # Vòng retry che hai race đã gặp ở CI: (1) container init one-shot
+      # `rm: true` của provider docker v5.2.0 đôi khi bị Docker tự xoá trước khi
+      # provider kịp inspect → "No such container"; (2) khi một unit chết giữa
+      # chừng, `--nx-bail` hủy các `pulumi up` đang chạy và file backend để lại
+      # stack lock mồ côi — attempt kế của unit đó chết ngay "stack is currently
+      # locked". Trước mỗi attempt lại: xoá lock file của các stack có owner PID
+      # không còn sống (chỉ lock mồ côi — lock của process sống giữ nguyên), để
+      # lane idempotent chạy tiếp trên namespace đã tạo một phần.
       - name: Deploy local platform stack
         run: |
-          for attempt in 1 2 3; do
-            echo "Deploy attempt ${attempt}/3"
+          clear_orphaned_stack_locks() {
+            find .pulumi-local-state/.pulumi/locks -name '*.json' -print0 2>/dev/null |
+              while IFS= read -r -d '' lockfile; do
+                lock_pid=$(sed -n 's/.*pid \([0-9]*\).*/\1/p' "$lockfile" | head -1)
+                if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
+                  echo "Removing orphaned Pulumi stack lock (pid $lock_pid dead): $lockfile"
+                  rm -f "$lockfile"
+                fi
+              done
+          }
+          for attempt in 1 2 3 4 5; do
+            echo "Deploy attempt ${attempt}/5"
+            clear_orphaned_stack_locks
             if pnpm dx local-deploy; then
               exit 0
             fi
             echo "Deploy attempt ${attempt} failed; preparing retry" >&2
-            sleep 5
+            sleep 10
           done
           exit 1
       # `@playwright/test` không có postinstall tải browser, nên runner sạch không
