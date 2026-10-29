@@ -48,7 +48,7 @@ import { exportPKCS8, generateKeyPair, importJWK, jwtVerify } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { signRequest, createNonce } from '@ecoma-io/auth-contracts';
-import { createPostgresClient } from '@ecoma-io/auth-infrastructure';
+import { withPostgresClient } from '@ecoma-io/auth-infrastructure';
 
 import { PROVIDER_ROUTES } from '../../src/oidc/provider';
 import { loadAuthConfig, type AuthEnv } from '../../src/config';
@@ -188,12 +188,17 @@ async function bootProvider(pem: string): Promise<void> {
   const env = makeEnv(pem);
   const config = await loadAuthConfig(env);
   const { createProvider } = await import('../../src/oidc/provider');
-  const postgresClient = createPostgresClient(config.hyperdrive);
-  const provider = await createProvider({
-    config,
-    postgresClient,
-    signingPem: config.signingKeyPem,
-  });
+  const postgresClientConfig = { hyperdrive: config.hyperdrive };
+  const provider = await withPostgresClient(
+    postgresClientConfig,
+    async (staticClientsLoader) =>
+      await createProvider({
+        config,
+        postgresClientConfig,
+        staticClientsLoader,
+        signingPem: config.signingKeyPem,
+      }),
+  );
   // Không gắn listener 'error' của provider: sự kiện này chỉ để chẩn đoán
   // (mọi lỗi giao thức đều đi qua response), và no-console cấm in từ test.
   // Giả lập nửa bridge của `dispatchToNode`: production luôn nhận https tại issuer

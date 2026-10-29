@@ -54,7 +54,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { bytesToBase64Url } from '@ecoma-io/auth-domain';
 
 import { loadAuthConfig, type AuthEnv } from '../../src/config';
-import { createPostgresClient } from '@ecoma-io/auth-infrastructure';
+import { withPostgresClient } from '@ecoma-io/auth-infrastructure';
 import { startAuthDatabase, type AuthDatabase } from './harness';
 
 /* ------------------------------------------------------------------ */
@@ -173,12 +173,17 @@ async function bootProvider(pem: string): Promise<void> {
   const env = makeEnv(pem);
   const config = await loadAuthConfig(env);
   const { createProvider } = await import('../../src/oidc/provider');
-  const postgresClient = createPostgresClient(config.hyperdrive);
-  const provider = await createProvider({
-    config,
-    postgresClient,
-    signingPem: config.signingKeyPem,
-  });
+  const postgresClientConfig = { hyperdrive: config.hyperdrive };
+  const provider = await withPostgresClient(
+    postgresClientConfig,
+    async (staticClientsLoader) =>
+      await createProvider({
+        config,
+        postgresClientConfig,
+        staticClientsLoader,
+        signingPem: config.signingKeyPem,
+      }),
+  );
   // Không gắn listener 'error' của provider: sự kiện này chỉ để chẩn đoán
   // (mọi lỗi giao thức đều đi qua response), và no-console cấm in từ test.
   nodeServer = createServer(((req: unknown, res: unknown) => {

@@ -5,7 +5,7 @@ import postgres from 'postgres';
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import type { PostgresClientLike } from '@ecoma-io/auth-infrastructure';
+import type { PostgresClientConfig } from '@ecoma-io/auth-infrastructure';
 
 import { PostgresAdapter } from '../../src/oidc/adapter';
 import { startAuthDatabase, type AuthDatabase } from './harness';
@@ -101,12 +101,23 @@ function stubGate(
   };
 }
 
-/** client runtime dùng như PostgresClientLike — adapter chỉ cần `unsafe`. */
-function asClient(runtime: postgres.Sql): PostgresClientLike {
-  return runtime as unknown as PostgresClientLike;
-}
-
 describe('PostgresAdapter', () => {
+  /**
+   * Config adapter dùng — issue #289: adapter nhận CONFIG (giá trị thuần) và tự mở
+   * client cho MỖI thao tác qua `withPostgresClient`. Connection string dựng lại từ
+   * options đã parse của client pool testcontainers (host đầu + port + credential +
+   * database) — đủ cho client một-lần của adapter, cùng credential runtime thật.
+   */
+  function adapterClientConfig(): PostgresClientConfig {
+    const o = runtime.options;
+    const auth =
+      o.pass === null || o.pass === undefined
+        ? String(o.user)
+        : `${String(o.user)}:${String(o.pass)}`;
+    const connectionString = `postgres://${auth}@${String(o.host[0])}:${String(o.port[0])}/${o.database}`;
+    return { hyperdrive: { connectionString } };
+  }
+
   const PAYLOAD = {
     accountId: 'sub-adapter-spec-00000000000000000000000000',
     clientId: 'client-adapter-spec',
@@ -137,7 +148,7 @@ describe('PostgresAdapter', () => {
     it('runs the gate before writing for every grantable kind (AuthorizationCode, AccessToken, RefreshToken)', async () => {
       for (const kind of ['AuthorizationCode', 'AccessToken', 'RefreshToken']) {
         const gate = stubGate();
-        const adapter = new PostgresAdapter(kind, asClient(runtime), gate);
+        const adapter = new PostgresAdapter(kind, adapterClientConfig(), gate);
         await adapter.upsert(trackId(`adp-${kind}-ok`), PAYLOAD, 600);
         expect(gate.calls).toHaveLength(1);
         expect(gate.calls[0]).toEqual({
@@ -155,7 +166,7 @@ describe('PostgresAdapter', () => {
     it('does not run the gate for non-grantable kinds (Session, Interaction, Grant, ReplayDetection)', async () => {
       for (const kind of ['Session', 'Interaction', 'Grant', 'ReplayDetection']) {
         const gate = stubGate();
-        const adapter = new PostgresAdapter(kind, asClient(runtime), gate);
+        const adapter = new PostgresAdapter(kind, adapterClientConfig(), gate);
         const payload = kind === 'Session' ? { ...PAYLOAD, uid: `uid-${kind}` } : { ...PAYLOAD };
         await adapter.upsert(trackId(`adp-ng-${kind}`), payload, 600);
         expect(gate.calls).toHaveLength(0);
@@ -164,7 +175,7 @@ describe('PostgresAdapter', () => {
 
     it('a gate throw blocks the write — no row lands in oidc_state (fail-closed)', async () => {
       const gate = stubGate({ deny: true });
-      const adapter = new PostgresAdapter('RefreshToken', asClient(runtime), gate);
+      const adapter = new PostgresAdapter('RefreshToken', adapterClientConfig(), gate);
       await expect(adapter.upsert(trackId('adp-rt-deny'), PAYLOAD, 600)).rejects.toThrow('denied');
       const rows = await runtime<{ id: string }[]>`
         SELECT id FROM auth.oidc_state WHERE id = ${'adp-rt-deny'}
@@ -178,7 +189,7 @@ describe('PostgresAdapter', () => {
         { accountId: PAYLOAD.accountId, grantId: PAYLOAD.grantId },
       ]) {
         const gate = stubGate();
-        const adapter = new PostgresAdapter('AuthorizationCode', asClient(runtime), gate);
+        const adapter = new PostgresAdapter('AuthorizationCode', adapterClientConfig(), gate);
         await expect(adapter.upsert(trackId('adp-ac-noid'), payload, 600)).rejects.toThrow(
           'thieu accountId/clientId',
         );
@@ -191,7 +202,7 @@ describe('PostgresAdapter', () => {
     });
 
     it('skips the gate entirely when no gate is wired (composition-root absent) — rows still land', async () => {
-      const adapter = new PostgresAdapter('RefreshToken', asClient(runtime));
+      const adapter = new PostgresAdapter('RefreshToken', adapterClientConfig());
       await adapter.upsert(trackId('adp-rt-nogate'), PAYLOAD, 600);
       const rows = await runtime<{ id: string }[]>`
         SELECT id FROM auth.oidc_state WHERE id = ${'adp-rt-nogate'}
@@ -202,7 +213,7 @@ describe('PostgresAdapter', () => {
 
   describe('consume() dual-write', () => {
     it('consume() writes BOTH the consumed_at column and payload.consumed — provider-visible consume-once', async () => {
-      const adapter = new PostgresAdapter('RefreshToken', asClient(runtime));
+      const adapter = new PostgresAdapter('RefreshToken', adapterClientConfig());
       const id = trackId('adp-rt-consume');
       await adapter.upsert(id, PAYLOAD, 600);
       await adapter.consume(id);
@@ -219,7 +230,7 @@ describe('PostgresAdapter', () => {
     });
 
     it('consume() on a non-consumable kind throws without writing', async () => {
-      const adapter = new PostgresAdapter('Session', asClient(runtime));
+      const adapter = new PostgresAdapter('Session', adapterClientConfig());
       await expect(adapter.consume('adp-session-x')).rejects.toThrow('khong ap dung');
       const rows = await runtime<{ id: string }[]>`
         SELECT id FROM auth.oidc_state WHERE id = ${'adp-session-x'}

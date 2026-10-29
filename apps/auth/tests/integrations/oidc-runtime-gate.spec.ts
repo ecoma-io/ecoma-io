@@ -169,31 +169,25 @@ describe('runtime composition — the production gate path via createIssuanceGat
   it('the composition gate mounts on the real provider and blocks issuance for a suspended account before any oidc_state write', async () => {
     // Config + gate dựng từ composition — chính lời gọi mà `buildRuntime` thực.
     const config = await loadAuthConfig(envWithStatus('suspended'));
-    const gate = createIssuanceGate(
-      envWithStatus('suspended'),
-      config,
-      runtime as unknown as PostgresClientLike,
-    );
+    const postgresClientConfig = { hyperdrive: config.hyperdrive };
+    const gate = createIssuanceGate(envWithStatus('suspended'), config, postgresClientConfig);
 
     // Provider thật với gate của composition — instance này khẳng định
     // option `issuanceGate` đi đúng vào adapter factory (`createAdapterFactory`).
     const provider = await createProvider({
       config,
-      postgresClient: runtime as unknown as PostgresClientLike,
+      postgresClientConfig,
+      staticClientsLoader: runtime as unknown as PostgresClientLike,
       signingPem: pem,
       issuanceGate: gate,
     });
     expect(provider).toBeDefined();
 
-    // `PostgresAdapter(kind, client, gate)` với CÙNG gate composition là
+    // `PostgresAdapter(kind, config, gate)` với CÙNG gate composition là
     // cách adapter factory dựng adapter của provider — gọi hạt nhân "gate
     // chặn trước khi ghi" trực tiếp, không cần đi toàn bộ protocol
     // (protocol-level phủ bởi `oidc-fullflow.spec` qua chính pipeline này).
-    const adapter = new PostgresAdapter(
-      'AuthorizationCode',
-      runtime as unknown as PostgresClientLike,
-      gate,
-    );
+    const adapter = new PostgresAdapter('AuthorizationCode', postgresClientConfig, gate);
 
     // Gate NÉM ngay trên checkStatus: AccountClient thật nhận 'suspended' từ
     // binding, `allowsIssuance` từ chối, factory deny-audit rồi throw.
@@ -231,24 +225,18 @@ describe('runtime composition — the production gate path via createIssuanceGat
     // Suspend chỉ là 1 nhánh; nhánh còn lại ghim "cấp vẫn sống" khi account
     // active — chính sức sống mà composition phải giữ nguyên sau swap.
     const config = await loadAuthConfig(envWithStatus('active'));
-    const gate = createIssuanceGate(
-      envWithStatus('active'),
-      config,
-      runtime as unknown as PostgresClientLike,
-    );
+    const postgresClientConfig = { hyperdrive: config.hyperdrive };
+    const gate = createIssuanceGate(envWithStatus('active'), config, postgresClientConfig);
     const provider = await createProvider({
       config,
-      postgresClient: runtime as unknown as PostgresClientLike,
+      postgresClientConfig,
+      staticClientsLoader: runtime as unknown as PostgresClientLike,
       signingPem: pem,
       issuanceGate: gate,
     });
     expect(provider).toBeDefined();
 
-    const adapter = new PostgresAdapter(
-      'AuthorizationCode',
-      runtime as unknown as PostgresClientLike,
-      gate,
-    );
+    const adapter = new PostgresAdapter('AuthorizationCode', postgresClientConfig, gate);
 
     // Gate CHẤP NHẬN (không throw) — và vì nó đi qua `findActiveGrant` +
     // `checkRevocationAtIssuance` rồi mới tới ghi, đường này cũng tự xác nhận
