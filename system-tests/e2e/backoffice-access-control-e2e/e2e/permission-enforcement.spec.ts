@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 
 import { expect, test } from '@playwright/test';
 
-import { SEED_ACTOR_SUB, TEST_EMAIL, TEST_ROLE_ID, TEST_SUB } from './support/fixtures';
+import { PERMISSION_IDENTITY, SEED_ACTOR_SUB, TEST_ROLE_ID } from './support/fixtures';
 import { CookieJar, resolveStackOrigin, stackGet } from './support/local-origin';
 import { performBrowserLogin } from './support/oidc-flow';
 import {
@@ -53,7 +53,7 @@ async function revokeAssignment(postgresContainer: string): Promise<void> {
     'ON_ERROR_STOP=1',
     '-c',
     `UPDATE backoffice.role_assignments SET revoked_at = now()
-      WHERE staff_sub = '${TEST_SUB}' AND role_id = '${TEST_ROLE_ID}' AND revoked_at IS NULL;`,
+      WHERE staff_sub = '${PERMISSION_IDENTITY.sub}' AND role_id = '${TEST_ROLE_ID}' AND revoked_at IS NULL;`,
   ]);
 }
 
@@ -89,14 +89,15 @@ test.describe.serial('permission enforcement for staff.read', () => {
     // cấp role. Suite cố ý KHÔNG seed staff trước login — thứ tự trạng thái là
     // một phần của test.
     const postgres = await resolvePostgresContainer(origin());
-    await seedAccountIdentity(postgres, { sub: TEST_SUB, email: TEST_EMAIL });
+    await seedAccountIdentity(postgres, PERMISSION_IDENTITY);
 
     const sinceMs = Date.now();
     const mailWic = mailWicContainerOf(postgres);
 
     await performBrowserLogin(page, {
-      email: TEST_EMAIL,
-      readOtp: () => readOtpFromMailSink(mailWic, { recipient: TEST_EMAIL, sinceMs }),
+      email: PERMISSION_IDENTITY.email,
+      readOtp: () =>
+        readOtpFromMailSink(mailWic, { recipient: PERMISSION_IDENTITY.email, sinceMs }),
     });
 
     // Session đã có (chứng minh bằng /api/me 200) nhưng /api/staff phải 403:
@@ -104,7 +105,7 @@ test.describe.serial('permission enforcement for staff.read', () => {
     const jar = await jarFromBrowser(page);
     const me = await stackGet(`${origin()}/api/me`, { cookie: jar.header() ?? '' });
     expect(me.status).toBe(200);
-    expect((JSON.parse(me.body) as { sub: string }).sub).toBe(TEST_SUB);
+    expect((JSON.parse(me.body) as { sub: string }).sub).toBe(PERMISSION_IDENTITY.sub);
 
     const staff = await stackGet(`${origin()}/api/staff`, { cookie: jar.header() ?? '' });
     expect(staff.status).toBe(403);
@@ -116,7 +117,7 @@ test.describe.serial('permission enforcement for staff.read', () => {
     const postgres = await resolvePostgresContainer(origin());
     // Bốn INSERT idempotent — chạy được lại sau test trước mà không phá state.
     await seedBackofficeGrant(postgres, {
-      staffSub: TEST_SUB,
+      staffSub: PERMISSION_IDENTITY.sub,
       actorSub: SEED_ACTOR_SUB,
       roleId: TEST_ROLE_ID,
       permissionId: 'staff.read',
@@ -125,8 +126,9 @@ test.describe.serial('permission enforcement for staff.read', () => {
     const sinceMs = Date.now();
     const mailWic = mailWicContainerOf(postgres);
     await performBrowserLogin(page, {
-      email: TEST_EMAIL,
-      readOtp: () => readOtpFromMailSink(mailWic, { recipient: TEST_EMAIL, sinceMs }),
+      email: PERMISSION_IDENTITY.email,
+      readOtp: () =>
+        readOtpFromMailSink(mailWic, { recipient: PERMISSION_IDENTITY.email, sinceMs }),
     });
     const jar = await jarFromBrowser(page);
 
@@ -135,7 +137,7 @@ test.describe.serial('permission enforcement for staff.read', () => {
 
     const body = JSON.parse(staff.body) as { staff: Array<{ sub: string; status: string }> };
     expect(Array.isArray(body.staff)).toBe(true);
-    const seededRow = body.staff.find((row) => row.sub === TEST_SUB);
+    const seededRow = body.staff.find((row) => row.sub === PERMISSION_IDENTITY.sub);
     expect(seededRow).toBeDefined();
     expect(seededRow?.status).toBe('active');
     // `displayName` do account profiles merge — local không có binding nên
@@ -155,8 +157,9 @@ test.describe.serial('permission enforcement for staff.read', () => {
     const sinceMs = Date.now();
     const mailWic = mailWicContainerOf(postgres);
     await performBrowserLogin(page, {
-      email: TEST_EMAIL,
-      readOtp: () => readOtpFromMailSink(mailWic, { recipient: TEST_EMAIL, sinceMs }),
+      email: PERMISSION_IDENTITY.email,
+      readOtp: () =>
+        readOtpFromMailSink(mailWic, { recipient: PERMISSION_IDENTITY.email, sinceMs }),
     });
     const jar = await jarFromBrowser(page);
 
