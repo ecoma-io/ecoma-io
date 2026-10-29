@@ -19,8 +19,9 @@ import { defineConfig, devices } from '@playwright/test';
  * `e2e`), mà runner CI không có `.env` (stack local không tồn tại ở đó) —
  * throw khi thiếu `ROOT_DOMAIN`/`ROOT_HOST` làm MỌI job CI đỏ với cùng một
  * graph error, kể cả lệnh `nx affected` không đụng gì đến suite (bài học đã trả
- * giá thật của `home-public-e2e`). Config trả placeholder `.invalid:443` vô hại;
- * fail-closed thật nằm ở `global-setup.ts` (probe trước test đầu tiên, exit 1
+ * giá thật của `home-public-e2e`). Config trả placeholder
+ * `office.placeholder.invalid:443` vô hại; fail-closed thật nằm ở
+ * `global-setup.ts` (probe trước test đầu tiên, exit 1
  * với remedy `pnpm dx local-deploy`).
  *
  * ═══ TLS verify thật, không `ignoreHTTPSErrors` ═══
@@ -83,16 +84,13 @@ function computeSpkiHash(pem: string): string {
 
 const SPKI_HASH = computeSpkiHash(LOCAL_CA_PEM);
 
-/** Tách `host:port` từ giá trị `ROOT_DOMAIN`/`ROOT_HOST`, mặc định port 443. */
-function withOrigin(raw: string): string {
-  const hostname = raw.split(':')[0];
-  const port = raw.includes(':') ? raw.split(':')[1] : '443';
-  return `${hostname}:${port}`;
-}
-
 /**
- * Origin gốc của stack local — giữ nguyên `host:port`. ⚠️ Port PHẢI giữ trong
- * baseURL: Traefik local nghe port ĐỘNG map ra loopback, không phải 443.
+ * Origin backoffice từ hostname gốc (`ROOT_DOMAIN`/`ROOT_HOST`, dạng
+ * `hostname:port`): GHÉP PREFIX `office.` — router Traefik của backoffice match
+ * `Host(office.<root>)`, và port giữ nguyên vì Traefik local nghe port ĐỘNG map
+ * ra loopback (#392 — cùng hợp đồng mà `e2e/support/local-origin.ts` của suite
+ * đã suy). Giá trị raw của `ROOT_DOMAIN` là hostname gốc, không router nào
+ * serve backoffice trên đó.
  *
  * ⚠️ KHÔNG throw khi thiếu (xem khối đầu file): trả placeholder `.invalid`
  * (RFC 2606) không resolve được — nếu gate global-setup bị bỏ qua thì mọi test
@@ -101,7 +99,7 @@ function withOrigin(raw: string): string {
 function resolveStackOrigin(): string {
   const raw = process.env.ROOT_DOMAIN ?? process.env.ROOT_HOST;
   if (raw !== undefined && raw.trim().length > 0) {
-    return withOrigin(raw.trim());
+    return withOfficeOrigin(raw.trim());
   }
   // Fallback cho lệnh gọi ngoài Nx: parse `.env` repo root (Nx load `.env` vào
   // env của task qua `nx run`, còn CLI trực tiếp thì không).
@@ -111,13 +109,20 @@ function resolveStackOrigin(): string {
     for (const line of text.split(/\r?\n/u)) {
       const match = /^ROOT_(?:DOMAIN|HOST)=(.*)$/u.exec(line.trim());
       if (match && match[1].trim().length > 0) {
-        return withOrigin(match[1].trim());
+        return withOfficeOrigin(match[1].trim());
       }
     }
   } catch {
     // `.env` vắng mặt — placeholder bên dưới thay thế; gate là đường fail-closed thật.
   }
-  return 'placeholder.invalid:443';
+  return 'office.placeholder.invalid:443';
+}
+
+/** Ghép hostname gốc (dạng `hostname:port`) thành `office.<hostname>:<port>`. */
+function withOfficeOrigin(raw: string): string {
+  const rootHostname = raw.split(':')[0];
+  const port = raw.includes(':') ? raw.split(':')[1] : '443';
+  return `office.${rootHostname}:${port}`;
 }
 
 const ROOT_ORIGIN = resolveStackOrigin();

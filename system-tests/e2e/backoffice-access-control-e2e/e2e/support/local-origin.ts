@@ -39,21 +39,31 @@ const LOCAL_CERT_PATH = join(
 export const LOCAL_CA_PEM = readFileSync(LOCAL_CERT_PATH, 'utf8');
 
 /**
- * Origin gốc của stack local, dạng `https://<host>:<port>` — đọc `ROOT_DOMAIN`
- * trước rồi `ROOT_HOST`. Khi chạy qua Nx, `.env` repo root đã nằm trong env
- * của task; chạy `npx playwright test` trực tiếp thì fallback parse `.env`.
+ * Origin backoffice của stack local — `https://office.<root>:<port>`.
+ *
+ * `ROOT_DOMAIN`/`ROOT_HOST` là HOSTNAME GỐC của stack (dạng `hostname:port`) —
+ * hợp đồng chung của mọi system suite (#392): `home-public-e2e` dùng nguyên
+ * hostname gốc, còn `identity-login-e2e`/`identity-oidc-e2e` tự ghép subdomain
+ * (`account.`, `auth.`); suite này ghép `office.` vì router Traefik của
+ * backoffice match `Host(office.<root>)`. Giá trị raw KHÔNG bao giờ được dùng
+ * làm origin — đó là hostname gốc, không router nào serve nó cho backoffice.
+ * (`login-kickoff.spec.ts` ghép tiếp `auth.` từ hostname `office.` đã có —
+ * cùng hình dạng suy diễn của `identity-oidc-e2e`.)
+ *
+ * Khi chạy qua Nx, `.env` repo root đã nằm trong env của task; chạy
+ * `npx playwright test` trực tiếp thì fallback parse `.env`.
  */
 export function resolveStackOrigin(): string {
   const fromEnv = process.env.ROOT_DOMAIN ?? process.env.ROOT_HOST;
   if (fromEnv !== undefined && fromEnv.trim().length > 0) {
-    return withPort(fromEnv.trim());
+    return officeOrigin(fromEnv.trim());
   }
   try {
     const text = readFileSync(join(SUITE_DIR, '../../../../../.env'), 'utf8');
     for (const line of text.split(/\r?\n/u)) {
       const match = /^ROOT_(?:DOMAIN|HOST)=(.*)$/u.exec(line.trim());
       if (match && match[1].trim().length > 0) {
-        return withPort(match[1].trim());
+        return officeOrigin(match[1].trim());
       }
     }
   } catch {
@@ -65,10 +75,11 @@ export function resolveStackOrigin(): string {
   );
 }
 
-function withPort(raw: string): string {
+/** Ghép hostname gốc (dạng `hostname:port`) thành origin `office.` của backoffice. */
+function officeOrigin(raw: string): string {
   const hostname = raw.split(':')[0];
   const port = raw.includes(':') ? raw.split(':')[1] : '443';
-  return `https://${hostname}:${port}`;
+  return `https://office.${hostname}:${port}`;
 }
 
 /** Headers + body thô của một response — đủ cho mọi assertion của suite. */
