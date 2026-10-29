@@ -30,6 +30,12 @@ export default defineCommand({
       description: 'Also remove the PostgreSQL persistent volume (DESTRUCTIVE — data loss)',
       default: false,
     },
+    'steal-lock': {
+      type: 'boolean',
+      description:
+        'Opt-in escape hatch: remove a stuck lane lock (holder pid/cmdline/startedAt are printed before stealing). Use only when the holder process is hung',
+      default: false,
+    },
     'worktree-root': worktreeRootArg,
   },
 
@@ -38,6 +44,7 @@ export default defineCommand({
       localDestroy({
         worktreeRoot: requireDirectoryRoot(args['worktree-root']),
         removeData: args['remove-data'],
+        stealLock: args['steal-lock'],
       }),
     );
   },

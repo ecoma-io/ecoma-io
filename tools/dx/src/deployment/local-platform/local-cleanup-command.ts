@@ -1,6 +1,5 @@
 import { defineCommand } from 'citty';
 
-import { acquireLocalDeployLock } from './../../local-runtime/local-lock.js';
 import { runLocalCleanup, type CleanupReport } from './local-cleanup.js';
 import { runLocalCommand, worktreeRootArg } from './../../local-runtime/local-commands.js';
 
@@ -12,8 +11,11 @@ import { runLocalCommand, worktreeRootArg } from './../../local-runtime/local-co
  * (dữ liệu chỉ xoá khi `local-destroy --remove-data` opt-in tường minh).
  * `--dry-run` không phát lệnh destructive nào — chỉ báo cáo.
  *
- * Lock phối hợp với `local-deploy`/`local-destroy`: cleanup chạy đồng thời với
- * deploy đang apply sẽ bị chặn để không race vào Docker.
+ * KHÔNG lấy khóa lane (#363): quyết định xoá của cleanup dựa trên presence
+ * của worktree + labels ownership (bắt buộc đủ bốn label) — không dựa trên
+ * pha của apply; race còn lại chỉ là nhiễu báo cáo (inspect lỗi giữa chừng
+ * → `skipped`, behavior fail-safe đã tài liệu hoá). Tầng bảo vệ thật là các
+ * check đó, không phải khóa.
  */
 export default defineCommand({
   meta: {
@@ -40,18 +42,13 @@ export default defineCommand({
       if (typeof args['worktree-root'] === 'string' && args['worktree-root'].length > 0) {
         worktreeRoot = args['worktree-root'];
       }
-      const lock = acquireLocalDeployLock();
-      try {
-        const report = runLocalCleanup({
-          worktreeRoot,
-          dryRun: args['dry-run'] === true,
-          env: process.env,
-        });
-        printReport(report);
-        return report.errors.length > 0 ? 1 : 0;
-      } finally {
-        lock();
-      }
+      const report = runLocalCleanup({
+        worktreeRoot,
+        dryRun: args['dry-run'] === true,
+        env: process.env,
+      });
+      printReport(report);
+      return report.errors.length > 0 ? 1 : 0;
     });
   },
 });

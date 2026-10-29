@@ -33,6 +33,12 @@ export default defineCommand({
         'Preview only — read-only: no stack init, no config/secret writes, no Docker apply, no .env write. Requires an already-deployed worktree (run local-deploy first on a fresh one)',
       default: false,
     },
+    'steal-lock': {
+      type: 'boolean',
+      description:
+        'Opt-in escape hatch: remove a stuck lane lock (holder pid/cmdline/startedAt are printed before stealing). Use only when the holder process is hung',
+      default: false,
+    },
     'worktree-root': worktreeRootArg,
   },
 
@@ -41,6 +47,7 @@ export default defineCommand({
       localDeploy({
         worktreeRoot: requireDirectoryRoot(args['worktree-root']),
         previewOnly: args.preview,
+        stealLock: args['steal-lock'],
       }),
     );
   },

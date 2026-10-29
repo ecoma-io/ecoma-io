@@ -26,6 +26,15 @@ pnpm dx local-destroy --remove-data  # teardown + XOÁ volume (in cảnh báo, m
 
 Luồng `local-deploy` (không `--preview`) không còn đi qua mảng bước hard-code nữa: `local-deploy` sinh một Nx Task Graph từ khai báo `local-up`/`local-smoke` trong `package.json` của từng deploy project (nguồn sự thật của thứ tự là target `dependsOn` của mỗi project, đọc bởi `local-deploy-graph.ts`), rồi spawn `nx run-many -p <projects> -t <targets> -c local`. Lane gồm **9 project** (`LOCAL_LANE_PROJECTS`): platform, home, backoffice, account, auth (+ wave 2 theo issue #264: pact-broker-api, pact-broker-app, transactional-mail, push-notification). Task platform `local-up` tự ghi `.env` của worktree (đúng các key sở hữu `ROOT_HOST`/`ROOT_DOMAIN`/`POSTGRES_PASSWORD`) ngay sau khi `pulumi up` xanh — mọi unit kế tiếp đọc `ROOT_HOST` từ file đó. Nx bail mặc định: một task thất bại dừng toàn chuỗi. Các target đều không cacheable (`cache: false` trong `nx.json` targetDefaults) vì chúng mutate Docker/state; lane chỉ có configuration `local`.
 
+### Khóa lane per worktree
+
+Hai lane mutation CÙNG worktree (`local-deploy` apply / `local-destroy`) được mutual exclusion bởi một khóa whole-lane per worktree (`tools/dx/src/local-runtime/local-lock.ts`):
+
+- File khóa là `<worktreeRoot>/.ecoma-lane.lock` (ngoài Git, `.gitignore`), nội dung JSON `{ pid, token, startedAt, cmdline }` của orchestrator. Hai worktree không bao giờ chặn nhau — namespace Docker và backend `file://` theo worktree đã cô lập toàn bộ tài nguyên chéo worktree.
+- Orchestrator lấy khóa MỘT LẦN quanh `spawn(nx)` — sau khi validate khai báo graph và resolve passphrase (fail-early trước khi giữ tài nguyên). Task con (`local-stack-step`) KHÔNG tự lấy khóa: nó assert lease qua env `ECOMA_LANE_LEASE` (token khóa orchestrator truyền xuống) khớp token đang trong file khóa trước khi mutate; lệch là lane mồ côi (orchestrator bị kill) hoặc gọi ngoài lane → exit 1, không warning.
+- Không có ngân sách chờ: lane sau đợi VÔ HẠN cho lane kia buông khóa, in progress line ~30 giây một lần với holder identity (pid/cmdline/startedAt/elapsed). Không hằng số thời gian nào tham gia correctness — khoảng in chỉ là UX.
+- Holder còn sống nhưng treo là trạng thái không máy nào tự đo được: gỡ bằng `pnpm dx local-deploy --steal-lock` hoặc `pnpm dx local-destroy --steal-lock` (opt-in tường minh, in holder identity trước khi chiếm).
+
 Các bất biến cross-stack thể hiện trực tiếp trong graph qua `dependsOn` và cơ chế persist/read-lại stack config (một giá trị chia hai stack, đọc bởi `local-stack-step.ts`):
 
 - account → auth: account tự sinh internal HMAC secret vào stack config của mình (`namespace:internalHmacSecret`) mà auth đọc lại khi up (`namespace:internalSecret`).
@@ -192,7 +201,16 @@ Resource thiếu bất kỳ label trong bốn, `worktree-id` sai pattern namespa
 - **Docker daemon không phản hồi** (`docker info` fail): cleanup trả lỗi ở stderr với chi tiết, exit 1, **không quét và không xoá gì**.
 - **Lỗi `ls` per-kind** (daemon lỗi giữa chừng): kind đó được bỏ với lỗi trong output; các kind khác vẫn xử lý — lệnh exit 1 khi có bất kỳ lỗi nào, không `return 0` nói dối.
 - **Worktree filter** (`--worktree-root`) chỉ dành cho diagnostics — nó lọc báo cáo, không thay check ownership/liveness; resource ngoài filter vẫn phải qua đủ check như thường.
-- **Phối hợp với deploy đang chạy**: cleanup và `local-deploy` apply chia sẻ một lock host-wide (`tools/dx/src/local-runtime/local-lock.ts`, file lock đối chiếu PID; lock stale chỉ khi PID chủ đã chết — lock sống bao lâu cũng không bị steal, release được ràng buộc ownership bằng PID + token nên không xoá được lock của process khác). Deploy đang apply hoặc cleanup đang quét thì lệnh thứ hai báo `lock bị giữ` và thoát — không race vào Docker daemon.
+- **Phối hợp với deploy đang chạy**: cleanup KHÔNG lấy khóa lane. Khóa lane
+  (`tools/dx/src/local-runtime/local-lock.ts`) bảo vệ mutual exclusion giữa hai
+  lane mutation CÙNG worktree (`local-deploy` apply / `local-destroy`) — một khóa
+  whole-lane per worktree tại `<worktreeRoot>/.ecoma-lane.lock`, do orchestrator
+  giữ quanh cả lane (`runNxOrchestratedDeploy`), task con chỉ assert lease qua
+  env `ECOMA_LANE_LEASE`. Cleanup không thuộc mô hình đó: quyết định xoá của nó
+  dựa trên presence của worktree trên đĩa + labels ownership bắt buộc đủ (mục
+  Labels ownership ở trên) — không dựa trên pha của apply, nên chạy cạnh deploy
+  đang chạy chỉ tốn chi phí nhiễu báo cáo (inspect lỗi giữa chừng → `skipped`,
+  behavior fail-safe ở trên), không bao giờ xoá resource một lane đang tạo lại.
 - Cleanup chạy không đòi checkout cũ hay thao tác Pulumi nào: nó chỉ nói chuyện Docker + filesystem của worktree path được ghi trong label.
 
 ## Giới hạn đã biết
