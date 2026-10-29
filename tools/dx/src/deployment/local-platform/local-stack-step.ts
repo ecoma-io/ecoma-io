@@ -22,7 +22,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { acquireLocalDeployLock } from './../../local-runtime/local-lock.js';
+import { assertLaneLease } from './../../local-runtime/local-lock.js';
 import { dockerResourceName } from './../../local-runtime/deploy-namespace.js';
 import {
   buildRootHost,
@@ -232,16 +232,24 @@ export function setStackSecret(
 /** Hình dạng tuỳ chọn của `runLocalStackStep`. */
 export interface LocalStackStepOptions {
   worktreeRoot?: string;
+  /**
+   * Lease token của lane — test seam; mặc định đọc env `ECOMA_LANE_LEASE`
+   * (orchestrator inject qua env của nx). Tham số tường minh giữ `runLocalStackStep`
+   * kiểm được trong unit test mà không phải đua env.
+   */
+  leaseToken?: string;
 }
 
 /**
  * Thực thi MỘT bước cho MỘT project — điểm vào của target Nx `local-stack-step`.
  *
- * Step `up` bao trọn trong lock host-wide (`/tmp/ecoma-local-deploy.lock`):
- * target Nx chạy nhiều task song song theo graph nhưng các task ĐÓ đã tuần tự
- * hoá nhau bằng `dependsOn`; lock giữ an toàn khi lệnh này chạy cạnh
- * `local-deploy`/`local-cleanup` khác trên cùng daemon. Step `smoke` không
- * mutate Docker nên không cần lock.
+ * KHÔNG tự lấy khóa: khóa WHOLE-LANE do orchestrator giữ quanh `spawn(nx)`
+ * (`runNxOrchestratedDeploy`), token khóa được truyền xuống qua env
+ * `ECOMA_LANE_LEASE`. Trước khi mutate, step ASSERT lease (`assertLaneLease`)
+ * — token env phải khớp token đang trong `.ecoma-lane.lock` của worktree.
+ * Lệch là lane mồ côi (cha bị SIGKILL) hoặc gọi ngoài lane → exit 1 fail-closed,
+ * không warning (#363, fencing-lite). Assert áp dụng cho CẢ `up` lẫn `smoke` —
+ * một luật duy nhất cho mọi step của lane.
  */
 export async function runLocalStackStep(
   project: string,
@@ -252,6 +260,12 @@ export async function runLocalStackStep(
 
   const ctx = resolveContext(options.worktreeRoot);
   console.log(`[local-stack-step] project=${project} step=${step} namespace=${ctx.namespace}`);
+
+  const leaseError = assertLaneLease(ctx.worktreeRoot, options.leaseToken);
+  if (leaseError !== undefined) {
+    console.error(`[local-stack-step] lane lease check failed: ${leaseError}`);
+    return 1;
+  }
 
   const passphrase = resolveLocalPassphrase(ctx.worktreeRoot, { create: step === 'up' });
   if (step === 'up' && passphrase.kind === 'none') {
@@ -265,12 +279,7 @@ export async function runLocalStackStep(
   const projectDir = join(ROOT_DIR, 'deploys', project);
 
   if (step === 'up') {
-    const lock = acquireLocalDeployLock();
-    try {
-      return await runUpStep(project, ctx, env, projectDir);
-    } finally {
-      lock();
-    }
+    return await runUpStep(project, ctx, env, projectDir);
   }
 
   // step === 'smoke'

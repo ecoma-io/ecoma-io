@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -346,8 +347,14 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
       return undefined;
     });
     try {
-      // `legacyApply` — suite này mock biên pulumi-context (runApply), không phải Nx spawn.
-      const exit = await localDeploy({ worktreeRoot: root, skipSmoke: true, legacyApply: true });
+      // `legacyApply` — suite này mock biên pulumi-context (runApply), không phải
+      // Nx spawn. Khóa lane rơi vào temp worktree (`acquireLaneLock(root)` bắt
+      // buộc `worktreeRoot`) — không đường nào chạm khóa thật của host.
+      const exit = await localDeploy({
+        worktreeRoot: root,
+        skipSmoke: true,
+        legacyApply: true,
+      });
       expect(exit).toBe(0);
       // Passphrase do công cụ sinh và lưu ngoài Git — không cần developer đặt.
       expect(existsSync(join(root, '.pulumi-local-passphrase'))).toBe(true);
@@ -388,7 +395,8 @@ describe('localDeploy apply (non-preview) retains initialization behavior', () =
       return undefined;
     });
 
-    // `legacyApply` — suite này mock biên pulumi-context (runApply), không phải Nx spawn.
+    // `legacyApply` — suite này mock biên pulumi-context (runApply), không phải
+    // Nx spawn. Khóa lane rơi vào temp worktree — không chạm khóa thật của host.
     const exit = await localDeploy({ worktreeRoot: root, skipSmoke: true, legacyApply: true });
     expect(exit).toBe(0);
 
@@ -827,6 +835,114 @@ describe('runNxOrchestratedDeploy — Nx Task Graph path', () => {
     expect(spawnSpy).toHaveBeenCalledTimes(1);
     // Passphrase file được tạo TRƯỚC khi bấm Nx (cha resolve, con không đua).
     expect(existsSync(join(root, '.pulumi-local-passphrase'))).toBe(true);
+    // Khóa whole-lane đã được RELEASE trong finally — file biến mất, đúng
+    // contract "giữ quanh spawn". Trạng thái giữ được chứng minh ở test kế tiếp.
+    expect(existsSync(join(root, '.ecoma-lane.lock'))).toBe(false);
+  });
+
+  it('orchestrator holds the lane lock around spawn(nx) and injects ECOMA_LANE_LEASE into the nx env', async () => {
+    const root = tempWorktree();
+    process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
+    const { runNxOrchestratedDeploy } = await import('./local-deploy.js');
+    let lockContentDuringSpawn: string | undefined;
+    const spawnSpy = vi.fn<() => SpawnSyncReturns>(() => {
+      // Chụp trạng thái lock NGAY TRONG spawn — bằng chứng lock còn giữ khi nx chạy.
+      lockContentDuringSpawn = readFileSync(join(root, '.ecoma-lane.lock'), 'utf8');
+      return { status: 0, stdout: '', stderr: '' };
+    });
+    const exit = runNxOrchestratedDeploy(resolveContext(root), {}, spawnSpy as never);
+    expect(exit).toBe(0);
+    const captured = lockContentDuringSpawn;
+    expect(captured).toBeDefined();
+    const parsed = JSON.parse(captured ?? '{}') as {
+      pid: number;
+      token: string;
+      startedAt: number;
+      cmdline: string[];
+    };
+    expect(parsed.pid).toBe(process.pid);
+    expect(parsed.token).toMatch(/^[0-9a-f]{32}$/u);
+    expect(parsed.startedAt).toBeLessThanOrEqual(Date.now());
+    expect(Array.isArray(parsed.cmdline)).toBe(true);
+
+    // Env của nx phải mang chính token đó — lease mà task con sẽ assert.
+    const firstCall = spawnSpy.mock.calls[0] as unknown as
+      | [string, string[], { env: Record<string, string> }]
+      | undefined;
+    expect(firstCall).toBeDefined();
+    expect(firstCall?.[2].env.ECOMA_LANE_LEASE).toBe(parsed.token);
+
+    // Sau khi spawn xong (release trong finally) lock file biến mất.
+    expect(existsSync(join(root, '.ecoma-lane.lock'))).toBe(false);
+  });
+
+  it('nx failure still releases the lane lock (release in finally, exit 1)', async () => {
+    const root = tempWorktree();
+    process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
+    const { runNxOrchestratedDeploy } = await import('./local-deploy.js');
+    const spawnSpy = vi.fn<() => SpawnSyncReturns>(() => ({ status: 1, stdout: '', stderr: '' }));
+    const exit = runNxOrchestratedDeploy(resolveContext(root), {}, spawnSpy as never);
+    expect(exit).toBe(1);
+    expect(existsSync(join(root, '.ecoma-lane.lock'))).toBe(false);
+  });
+
+  it('fail-early BEFORE acquiring the lock: bad passphrase → exit 1, no lock file left', async () => {
+    const root = tempWorktree();
+    const saved = process.env.PULUMI_CONFIG_PASSPHRASE;
+    const savedFile = process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
+    delete process.env.PULUMI_CONFIG_PASSPHRASE;
+    delete process.env.PULUMI_CONFIG_PASSPHRASE_FILE;
+    try {
+      // Worktree có state THẬT nhưng không passphrase → resolveLocalPassphrase
+      // fail-closed TRƯỚC khi acquire — không giữ tài nguyên khi chưa qua gate.
+      const stacksDir = join(root, '.pulumi-local-state', '.pulumi', 'stacks', 'platform-deploy');
+      mkdirSync(stacksDir, { recursive: true });
+      writeFileSync(join(stacksDir, 'local-wtest.json'), '{}', 'utf8');
+      const { runNxOrchestratedDeploy } = await import('./local-deploy.js');
+      const spawnSpy = vi.fn<() => SpawnSyncReturns>(() => ({ status: 0, stdout: '', stderr: '' }));
+      const exit = runNxOrchestratedDeploy(resolveContext(root), {}, spawnSpy as never);
+      expect(exit).toBe(1);
+      expect(spawnSpy).not.toHaveBeenCalled();
+      expect(existsSync(join(root, '.ecoma-lane.lock'))).toBe(false);
+    } finally {
+      if (saved !== undefined) process.env.PULUMI_CONFIG_PASSPHRASE = saved;
+      if (savedFile !== undefined) process.env.PULUMI_CONFIG_PASSPHRASE_FILE = savedFile;
+    }
+  });
+
+  it('stealLock removes a stuck live-holder lock (identity printed) and the lane proceeds', async () => {
+    const root = tempWorktree();
+    process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
+    // Holder GIẢ LẤY còn sống: pid của process hiện tại (không stale).
+    writeFileSync(
+      join(root, '.ecoma-lane.lock'),
+      `${JSON.stringify({
+        pid: process.pid,
+        token: 'stuck-holder-token',
+        startedAt: Date.now(),
+        cmdline: ['node', 'tools/dx', 'local-deploy'],
+      })}\n`,
+      'utf8',
+    );
+    const { runNxOrchestratedDeploy } = await import('./local-deploy.js');
+    const spawnSpy = vi.fn<() => SpawnSyncReturns>(() => ({ status: 0, stdout: '', stderr: '' }));
+    const exit = runNxOrchestratedDeploy(
+      resolveContext(root),
+      { stealLock: true },
+      spawnSpy as never,
+    );
+    expect(exit).toBe(0);
+    // Spawn phải chạy (lane đi tiếp sau steal); env của nx mang token MỚI —
+    // khác holder cũ đã bị gỡ. Lock file đã release trong finally.
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const firstCall = spawnSpy.mock.calls[0] as unknown as
+      | [string, string[], { env: Record<string, string> }]
+      | undefined;
+    expect(firstCall).toBeDefined();
+    const newToken: string | undefined = firstCall?.[2].env.ECOMA_LANE_LEASE;
+    expect(newToken).toMatch(/^[0-9a-f]{32}$/u);
+    expect(newToken).not.toBe('stuck-holder-token');
+    expect(existsSync(join(root, '.ecoma-lane.lock'))).toBe(false);
   });
 });
 

@@ -1,42 +1,92 @@
 /**
- * Khóa phối hợp nhỏ nhất giữa các lệnh `local-*` (deploy / destroy / cleanup)
- * để tránh race khi hai lệnh chạm Docker cùng lúc.
+ * Khóa lane local theo worktree — mutual exclusion giữa các lane mutation
+ * (`local-deploy` apply / `local-destroy`) CÙNG MỘT worktree.
  *
- * Không có cơ chế lock nào tồn tại trước đó (kiểm tra repo: `proper-lockfile`
- * chỉ xuất hiện trong lockfile, không phải dependency), nên đây là bản tự dựng
- * tối thiểu: một file lock với PID + token + timestamp, stale detection qua PID
- * liveness. Lock file nằm ở thư mục tạm của OS để mọi process trên host cùng thấy.
+ * Biên mutation thật (issue #363): hai worktree đã được cô lập hoàn toàn bởi
+ * namespace Docker (`deploy-namespace.ts`) và backend `file://` theo worktree
+ * (`pulumi-context.ts`), và `pulumi up`/`destroy` trên cùng stack tự serialize
+ * bởi state lock của Pulumi — khóa host-wide cũ vừa thừa vừa tự gây đói lẫn
+ * nhau (task build image dài giữ khóa, các task song song cạn ngân sách chờ).
+ * Chỉ còn một interleaving cần chặn: hai lane CÙNG worktree đụng `.env`,
+ * `pulumi config set` (ngoài danh sách giữ khóa của Pulumi) và reconcile
+ * namespace-wide cùng lúc. Khóa vì thế scoping theo worktree, giữ WHOLE-LANE:
+ * orchestrator lấy một lần quanh cả lane, các task con không tự lấy khóa.
  *
  * Hợp đồng:
- * - `acquireLocalDeployLock()` trả về hàm release. Nó đăng kỳ release vào
- *   `process 'exit'` nên ngay cả khi caller quên gọi release, lock cũng được
- *   giải phóng khi process kết thúc.
- * - Lock được giữ trong suốt thời gian lệnh chạy (deploy/up có thể mất vài phút)
- *   — cleanup gọi vào lúc đó sẽ nhận lỗi rõ và thoát, thay vì chạy đồng thời.
- * - Lock cũ (PID chết) được xoá tự động — tránh lock mồ côi sau crash làm mọi
- *   lệnh sau bị chặn vĩnh viễn. Lock còn sống KHÔNG bị xoá chỉ vì cũ (mtime).
- * - Release được ràng buộc với đúng acquisition (PID + token): một process
- *   không thể xoá lock của process khác, và exit handler được gỡ sau khi
- *   release tường minh để process sau không bị ảnh hưởng.
+ * - `acquireLaneLock(worktreeRoot)` trả về hàm release; không có default path
+ *   nào cả — MỌI call site bắt buộc truyền `worktreeRoot` (structural scoping,
+ *   #363: chặn unit test chạm khóa thật vì signature zero-arg không tồn tại).
+ * - Lock file `<worktreeRoot>/.ecoma-lane.lock`, nội dung JSON
+ *   `{ pid, token, startedAt, cmdline }` — holder identity in ngay trong
+ *   thông báo lỗi khi bị chặn. `cmdline` là `process.argv` của orchestrator
+ *   SAU KHI lọc các argv mang hình nhạy cảm (`redactCmdline`): passphrase thật
+ *   đi qua env/file của subprocess, không argv — lọc thêm một lớp phòng khi
+ *   argv nào đó vẫn mang tên flag secret.
+ * - Waiter đợi VÔ HẠN (không budget) nhưng in progress line định kỳ (~30s) —
+ *   khoảng in này chỉ là UX, KHÔNG tham gia correctness. Cái kết thúc đợi là
+ *   lane kia buông khóa; chủ treo-vẫn-sống xử bằng `--steal-lock`
+ *   (human-in-the-loop), không bằng đồng hồ — không hằng số thời gian nào
+ *   tham gia correctness (nguyên tắc #363).
+ * - Stale ⇔ PID chủ chết hoặc content malformed — ngữ nghĩa fail-closed của
+ *   `isPidAlive` (EPERM = còn sống) giữ nguyên từ #22.
+ * - Release ràng buộc PID + token: một process không xoá được lock của process
+ *   khác; exit handler tự buông khóa khi process kết thúc.
+ * - Lease assertion: token trong lock chính là lease mà orchestrator truyền
+ *   cho task con qua env `ECOMA_LANE_LEASE` — `assertLaneLease` kiểm process
+ *   con còn đứng trong lane hợp lệ: token khớp VÀ holder pid còn sống (cha bị
+ *   SIGKILL → lane mồ côi fail-closed, kể cả khi chưa có lane mới chiếm khóa).
  */
 import { closeSync, openSync, readFileSync, unlinkSync, writeSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-export const DEFAULT_LOCK_PATH = join(tmpdir(), 'ecoma-local-deploy.lock');
-const MAX_ATTEMPTS = 600;
-const RETRY_SLEEP_MS = 500;
+/** Tên file khóa lane của một worktree — nằm cạnh state dir, ngoài Git (.gitignore). */
+export const LANE_LOCK_FILE_NAME = '.ecoma-lane.lock';
+
+/** Đường dẫn file khóa lane của một worktree. */
+export function laneLockPath(worktreeRoot: string): string {
+  return join(worktreeRoot, LANE_LOCK_FILE_NAME);
+}
+
+/** Môi trường biến env truyền lease token từ orchestrator xuống task con. */
+export const LANE_LEASE_ENV = 'ECOMA_LANE_LEASE';
+
+/**
+ * Lọc các argv mang hình nhạy cảm (token/passphrase/secret/key + giá trị kề
+ * sau) trước khi ghi `cmdline` vào lock file — lock file nằm ngoài Git nhưng
+ * vẫn là file trên đĩa mà tiến trình cùng user đọc được, và `formatHolder` in
+ * cmdline vào stdout. Defense-in-depth cho nguyên tắc "secret không vào argv
+ * của orchestrator": passphrase thật đi qua env/file, cmdline chỉ là holder
+ * identity cho người đọc.
+ */
+const SECRET_ARG_SHAPE = /(?:token|passphrase|secret|password|api[-_]?key|credential)/iu;
+
+export function redactCmdline(argv: string[]): string[] {
+  const redacted: string[] = [];
+  let skipNext = false;
+  for (const arg of argv) {
+    if (skipNext) {
+      redacted.push('[redacted]');
+      skipNext = false;
+      continue;
+    }
+    const looksLikeSecretFlag = SECRET_ARG_SHAPE.test(arg);
+    // Cả hình `--passphrase=value` lẫn `--passphrase value`: flag nhạy cảm thì
+    // che chính flag (nó đã mang giá trị hoặc sắp mang giá trị kế tiếp).
+    if (looksLikeSecretFlag) redacted.push('[redacted]');
+    else redacted.push(arg);
+    // Chỉ nhảy qua arg kế tiếp với dạng tách giá trị (`--passphrase value`).
+    if (looksLikeSecretFlag && !arg.includes('=')) skipNext = true;
+  }
+  return redacted;
+}
 
 export interface LockContent {
   pid: number;
   token: string;
-}
-
-export interface AcquireOptions {
-  /** Đường dẫn file lock — test seam, mặc định là DEFAULT_LOCK_PATH. */
-  lockPath?: string;
+  startedAt: number;
+  cmdline: string[];
 }
 
 export function generateToken(): string {
@@ -44,12 +94,30 @@ export function generateToken(): string {
 }
 
 export function parseLockContent(content: string): LockContent | null {
-  const lines = content.split('\n');
-  const pid = Number.parseInt(lines[0] ?? '', 10);
-  const token = lines[1] ?? '';
-  if (!Number.isInteger(pid) || pid <= 0) return null;
-  if (token.length === 0) return null;
-  return { pid, token };
+  let raw: unknown;
+  try {
+    raw = JSON.parse(content);
+  } catch {
+    return null;
+  }
+  if (typeof raw !== 'object' || raw === null) return null;
+  const record = raw as Record<string, unknown>;
+  const pid = record['pid'];
+  const token = record['token'];
+  const startedAt = record['startedAt'];
+  const cmdline = record['cmdline'];
+  if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return null;
+  if (typeof token !== 'string' || token.length === 0) return null;
+  if (typeof startedAt !== 'number' || !Number.isFinite(startedAt) || startedAt <= 0) return null;
+  if (!Array.isArray(cmdline) || cmdline.some((entry) => typeof entry !== 'string')) {
+    return null;
+  }
+  return {
+    pid,
+    token,
+    startedAt,
+    cmdline: cmdline as string[],
+  };
 }
 
 /**
@@ -165,7 +233,7 @@ function ensureExitListener(): void {
   process.on('exit', exitListener);
 }
 
-function tryAcquire(lockPath: string): (() => void) | null {
+function tryAcquire(lockPath: string): { release: () => void; token: string } | null {
   const token = generateToken();
   let fd: number | undefined;
   try {
@@ -192,7 +260,17 @@ function tryAcquire(lockPath: string): (() => void) | null {
     return null; // đang bị giữ — caller quyết định retry/fail
   }
   try {
-    writeSync(fd, `${process.pid}\n${token}\n${Date.now()}\n`, 0, 'utf8');
+    writeSync(
+      fd,
+      `${JSON.stringify({
+        pid: process.pid,
+        token,
+        startedAt: Date.now(),
+        cmdline: redactCmdline(process.argv),
+      })}\n`,
+      0,
+      'utf8',
+    );
   } finally {
     closeSync(fd);
   }
@@ -204,27 +282,143 @@ function tryAcquire(lockPath: string): (() => void) | null {
     doRelease(token, lockPath);
     removeExitListenerIfIdle();
   };
-  return release;
+  return { release, token };
 }
 
-export function acquireLocalDeployLock(options: AcquireOptions = {}): () => void {
-  const lockPath = options.lockPath ?? DEFAULT_LOCK_PATH;
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+/** Khoảng nghỉ giữa hai lượt poll (giây, cho `sleep`) — chỉ là UX, không phải correctness. */
+const POLL_SLEEP_SECONDS = 1;
+/** Khoảng in progress line (giây) — chỉ là UX; correctness không phụ thuộc giá trị này. */
+const PROGRESS_INTERVAL_SECONDS = 30;
+
+function formatHolder(content: string): string {
+  const parsed = parseLockContent(content);
+  if (parsed === null) return `(unreadable lock content)`;
+  const elapsed = Math.max(0, Date.now() - parsed.startedAt);
+  const elapsedSeconds = Math.floor(elapsed / 1000);
+  const elapsedText =
+    elapsedSeconds >= 60
+      ? `${Math.floor(elapsedSeconds / 60)}m${elapsedSeconds % 60}s`
+      : `${elapsedSeconds}s`;
+  return `pid=${parsed.pid} cmdline=${JSON.stringify(parsed.cmdline)} startedAt=${new Date(
+    parsed.startedAt,
+  ).toISOString()} elapsed=${elapsedText}`;
+}
+
+/**
+ * Lấy khóa lane của một worktree — đợi vô hạn cho tới khi được.
+ *
+ * Progress line in mỗi ~PROGRESS_INTERVAL_SECONDS với holder identity
+ * (pid/cmdline/startedAt/elapsed) — người đọc quyết trong vài giây có đợi hay
+ * `--steal-lock`; khoảng in không tham gia correctness.
+ *
+ * Trả về `{ release, token }`: `token` chính là lease mà orchestrator truyền
+ * xuống task con qua `ECOMA_LANE_LEASE` (xem `assertLaneLease`).
+ */
+export function acquireLaneLock(worktreeRoot: string): { release: () => void; token: string } {
+  const lockPath = laneLockPath(worktreeRoot);
+  const waitStartedAt = Date.now();
+  let lastProgressAt = waitStartedAt;
+  for (;;) {
     const result = tryAcquire(lockPath);
     if (result !== null) return result;
+    let content: string | undefined;
     try {
-      const content = readFileSync(lockPath, 'utf8');
-      const parsed = parseLockContent(content);
-      if (parsed !== null && isPidAlive(parsed.pid)) {
-        spawnSync('sleep', [String(RETRY_SLEEP_MS / 1000)], { stdio: 'ignore' });
-      }
+      content = readFileSync(lockPath, 'utf8');
     } catch {
-      // File biến mất giữa chừng — retry ngay.
+      // File biến mất giữa chừng — retry ngay, không sleep.
+      content = undefined;
     }
+    const now = Date.now();
+    if (content !== undefined && now - lastProgressAt >= PROGRESS_INTERVAL_SECONDS * 1000) {
+      lastProgressAt = now;
+      console.log(
+        `[local-lock] waiting for the lane lock of ${worktreeRoot} — ` +
+          `held by ${formatHolder(content)} (waited ${Math.floor(
+            (now - waitStartedAt) / 1000,
+          )}s). If the holder is stuck, rerun with --steal-lock.`,
+      );
+    }
+    spawnSync('sleep', [String(POLL_SLEEP_SECONDS)], { stdio: 'ignore' });
   }
-  throw new Error(
-    'Another local deploy/cleanup command is running (lock held). ' +
-      'Wait for it to finish and retry, or remove the orphaned lock ' +
-      `${lockPath} if the owning process has died.`,
-  );
+}
+
+/**
+ * Gỡ khóa đang giữ (holder còn sống) — escape hatch người của `--steal-lock`.
+ *
+ * Một lần ghi nguyên tử cùng pattern `safeUnlinkIfSame`: chỉ unlink khi nội
+ * dung lock vẫn là snapshot đã inspect — giữa inspect và unlink, holder cũ có
+ * thể release hoặc lane khác đã acquire, khi đó KHÔNG đụng file.
+ *
+ * Trả về nội dung holder cũ (để caller in ra trước khi chiếm) hoặc null khi
+ * lock đã biến mất/không đọc được HOẶC bị thay đổi giữa inspect và unlink
+ * (TOCTOU: `safeUnlinkIfSame` trả false nghĩa là KHÔNG có gì bị gỡ — caller
+ * không được log "removed" cho một steal thất bại).
+ */
+export function stealLaneLock(worktreeRoot: string): LockContent | null {
+  const lockPath = laneLockPath(worktreeRoot);
+  let content: string;
+  try {
+    content = readFileSync(lockPath, 'utf8');
+  } catch {
+    return null; // không có khóa để steal
+  }
+  const holder = parseLockContent(content);
+  const removed = safeUnlinkIfSame(lockPath, content);
+  if (!removed) return null; // lock đổi giữa chừng — steal thất bại, không có gì bị gỡ
+  return holder;
+}
+
+/**
+ * Assert process hiện tại còn đứng trong lane hợp lệ — fencing-lite của task con.
+ *
+ * Orchestrator truyền token của khóa qua env `ECOMA_LANE_LEASE`; task con so
+ * với token ĐANG trong lock file trước khi mutate. Lệch là lane mồ côi (cha bị
+ * SIGKILL, lane khác đã chiếm khóa với token mới) hoặc gọi ngoài lane — abort
+ * với exit 1, không warning.
+ *
+ * Trả về thông báo lỗi khi lệch, undefined khi khớp. Lock file không tồn tại
+ * cũng là lệch: mutation không được phép chạy ngoài lane.
+ */
+export function assertLaneLease(
+  worktreeRoot: string,
+  leaseToken: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  const callerToken = leaseToken ?? env[LANE_LEASE_ENV];
+  if (callerToken === undefined || callerToken.length === 0) {
+    return (
+      `no ${LANE_LEASE_ENV} lease in the environment — this step must run inside a lane ` +
+      `(via the local-deploy orchestration), not standalone.`
+    );
+  }
+  let content: string;
+  try {
+    content = readFileSync(laneLockPath(worktreeRoot), 'utf8');
+  } catch {
+    return (
+      `the lane lock file of this worktree is gone — the orchestrator that started this ` +
+      `step died or released the lock. Aborting instead of mutating.`
+    );
+  }
+  const parsed = parseLockContent(content);
+  if (parsed === null) {
+    return `the lane lock content is malformed — refusing to mutate. Aborting instead of mutating.`;
+  }
+  if (parsed.token !== callerToken) {
+    return (
+      `the lane lease does not match the current lock holder — this step belongs to an ` +
+      `orphaned lane (its orchestrator was killed or stole-replaced). Aborting instead of mutating.`
+    );
+  }
+  // Token khớp thôi chưa đủ: holder chết mà lane mới chưa kịp acquire thì
+  // token cũ vẫn nằm trong file — lane mồ côi của holder đó phải abort, không
+  // được mutate. Cùng ngữ nghĩa liveness fail-closed với `isStaleLock` (EPERM
+  // = còn sống), nên một orchestrator khác-user sống vẫn pass.
+  if (!isPidAlive(parsed.pid)) {
+    return (
+      `the lane lock holder (pid=${String(parsed.pid)}) is no longer alive — this step ` +
+      `belongs to an orphaned lane. Aborting instead of mutating.`
+    );
+  }
+  return undefined;
 }
