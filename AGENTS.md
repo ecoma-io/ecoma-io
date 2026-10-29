@@ -101,4 +101,4 @@ The English rule applies to developer-authored content. The following are exempt
 - If deployment fails, report the actual failed step and the actionable error; do not silently substitute manual Docker/Pulumi commands or a different serving method.
 - Distinguish successful HTTPS smoke-test verification from whether the developer's browser trusts the local self-signed certificate.
 - Never expose credentials when reporting status or URLs.
-- After deleting a worktree that had a local deployment, clean up its Docker resources with `pnpm dx local-cleanup` (use `--dry-run` first to preview); persistent PostgreSQL volumes are kept — data removal stays with `pnpm dx local-destroy --remove-data`.
+- After deleting a worktree that had a local deployment, clean up its Docker resources with `pnpm dx local-cleanup` (use `--dry-run` first to preview). Cleanup deletes managed resources including persistent PostgreSQL volumes, but only for worktrees confirmed absent — ownership checks are mandatory and neither `local-destroy` nor `local-cleanup` can touch unrelated Docker volumes.

@@ -34,7 +34,7 @@ Routing của Traefik phải lọc theo network của worktree (`--providers.doc
 ## Invariants
 
 1. Chỉ Traefik publish host port, và chỉ trên loopback.
-2. Volume PostgreSQL sống độc lập với vòng đời container **và** vòng đời stack; đường xoá dữ liệu duy nhất là `pnpm dx local-destroy --remove-data` (in cảnh báo trước).
+2. Volume PostgreSQL sống độc lập với vòng đời container **và** vòng đời stack: `pnpm dx local-destroy` xoá volume sau teardown (mặc định vô điều kiện, in cảnh báo trước); `pnpm dx local-cleanup` xoá volume chỉ với resource mồ côi đủ điều kiện (labels ownership hợp lệ + worktree confirmed absent). Không có cờ nào giữ volume.
 3. Mật khẩu PostgreSQL local nằm trong Pulumi stack config (`postgres:password`) và bản sao trong `.env`, **không vào Git/log/output/URL**; ở local, stack config lưu **plaintext** (đánh đổi có chủ đích cho môi trường local development — staging/production vẫn dùng secret của Cloudflare Worker); mật khẩu trong stack config và dữ liệu trong volume phải cùng tuổi — destroy **không** `--remove` stack vì đó là cách hai nửa lệch nhau, và deploy fail với hướng dẫn thay vì sinh mật khẩu mới khi config mất mật khẩu nhưng volume còn.
 4. Preview và apply tách bạch: `pnpm dx local-deploy --preview` là read-only — không init state/stack, không `config set`/sinh secret, không ghi `.env`, không `up`/`destroy`, và chỉ chạy trên worktree đã apply ít nhất một lần (prerequisite kiểm read-only); Nx target `provision` là dry-run an toàn cho CI (không chạy `pulumi up`).
 5. Tên resource luôn qua namespace; không tên nào được suy từ thứ tự chạy hay timestamp.

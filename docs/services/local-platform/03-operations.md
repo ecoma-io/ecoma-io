@@ -20,8 +20,7 @@ Mọi lệnh Pulumi của luồng này chạy với `PULUMI_BACKEND_URL=file://<
 pnpm dx local-deploy            # apply thật: orchestration qua Nx Task Graph, smoke HTTPS + lane health cuối
 pnpm dx local-deploy --preview  # read-only: preview platform + home, không mutate gì
 pnpm dx local-status            # namespace, stack, resource names, trạng thái platform
-pnpm dx local-destroy           # teardown 9 stack theo thứ tự ngược phụ thuộc, giữ volume PostgreSQL
-pnpm dx local-destroy --remove-data  # teardown + XOÁ volume (in cảnh báo, mất dữ liệu vĩnh viễn)
+pnpm dx local-destroy           # teardown 9 stack theo thứ tự ngược phụ thuộc + XOÁ volume PostgreSQL (in cảnh báo, mất dữ liệu vĩnh viễn)
 ```
 
 Luồng `local-deploy` (không `--preview`) không còn đi qua mảng bước hard-code nữa: `local-deploy` sinh một Nx Task Graph từ khai báo `local-up`/`local-smoke` trong `package.json` của từng deploy project (nguồn sự thật của thứ tự là target `dependsOn` của mỗi project, đọc bởi `local-deploy-graph.ts`), rồi spawn `nx run-many -p <projects> -t <targets> -c local`. Lane gồm **9 project** (`LOCAL_LANE_PROJECTS`): platform, home, backoffice, account, auth (+ wave 2 theo issue #264: pact-broker-api, pact-broker-app, transactional-mail, push-notification). Task platform `local-up` tự ghi `.env` của worktree (đúng các key sở hữu `ROOT_HOST`/`ROOT_DOMAIN`/`POSTGRES_PASSWORD`) ngay sau khi `pulumi up` xanh — mọi unit kế tiếp đọc `ROOT_HOST` từ file đó. Nx bail mặc định: một task thất bại dừng toàn chuỗi. Các target đều không cacheable (`cache: false` trong `nx.json` targetDefaults) vì chúng mutate Docker/state; lane chỉ có configuration `local`.
@@ -87,11 +86,11 @@ Smoke xác nhận đúng hành vi ứng dụng qua Traefik, không chỉ "server
 
 ## Vòng đời dữ liệu
 
-- `local-destroy` destroy cả 9 stack local theo **thứ tự ngược phụ thuộc** của đồ thị up — các unit lá (mail, auth, pact-app...) trước, platform sau cùng — và mặc định **giữ** volume; container/network bị xoá nhưng dữ liệu PostgreSQL còn nguyên, deploy kế tiếp dùng lại. Một stack destroy thất bại không dừng các stack còn lại: cả 9 vẫn được destroy, `local-destroy` thoát exit 1.
-- Volume được khai `retainOnDelete` nên kể cả `pulumi destroy` trực tiếp cũng không xoá volume.
-- ⚠️ Đừng chạy `pulumi stack rm` trên stack local: nó xoá stack config (trong đó có `postgres:password`) trong khi volume còn lại — hai nửa lệch tuổi, Postgres kế tiếp không vào được dữ liệu cũ. Đó cũng là lý do `local-destroy` không dùng `destroy --remove`. Khi phát hiện tình huống này, `local-deploy` **fail với hướng dẫn** (không sinh mật khẩu mới): khôi phục mật khẩu cũ vào stack config, hoặc `pnpm dx local-destroy --remove-data` rồi `pnpm dx local-deploy` để bắt đầu lại từ dữ liệu rỗng.
+- `local-destroy` destroy cả 9 stack local theo **thứ tự ngược phụ thuộc** của đồ thị up — các unit lá (mail, auth, pact-app...) trước, platform sau cùng — rồi **xoá volume PostgreSQL** của worktree (mặc định vô điều kiện; mất dữ liệu vĩnh viễn, có cảnh báo trước khi xoá). Một stack destroy thất bại không dừng các stack còn lại: cả 9 vẫn được destroy, và bước xoá volume vẫn được thử; `local-destroy` thoát exit 1 khi có bất kỳ lỗi nào, không bao giờ báo thành công khi xoá volume thất bại.
+- Volume được khai `retainOnDelete` nên `pulumi destroy` trực tiếp không xoá volume; bước xoá volume của `local-destroy` là `docker volume rm` tường minh sau teardown, và `local-cleanup` xoá volume chỉ với resource mồ côi đủ điều kiện.
+- ⚠️ Đừng chạy `pulumi stack rm` trên stack local: nó xoá stack config (trong đó có `postgres:password`) trong khi volume còn lại — hai nửa lệch tuổi, Postgres kế tiếp không vào được dữ liệu cũ. Đó cũng là lý do `local-destroy` không dùng `destroy --remove`. Khi phát hiện tình huống này, `local-deploy` **fail với hướng dẫn** (không sinh mật khẩu mới): khôi phục mật khẩu cũ vào stack config, hoặc `pnpm dx local-destroy` (xoá volume, bắt đầu lại từ dữ liệu rỗng) rồi `pnpm dx local-deploy`.
 - ⚠️ Đừng đổi `postgres:password` trong stack config sau khi volume đã init: `POSTGRES_PASSWORD` chỉ có tác dụng lúc `initdb` trên volume rỗng. Pulumi sẽ thay container (envs nằm trong diff) nhưng Postgres không chạy lại initdb — superuser trong volume vẫn giữ mật khẩu cũ, kết nối bằng giá trị mới nhận `password authentication failed` trong khi healthcheck `pg_isready` vẫn xanh (nó không xác thực mật khẩu). Nguyên tắc: mật khẩu và volume phải cùng tuổi.
-- Healthcheck `pg_isready` không kiểm password; khi nghi ngờ lệch password (vd. đã `stack rm` ngoài luồng), kiểm bằng auth TCP thật hoặc tạo lại volume qua `local-destroy --remove-data` rồi `local-deploy`.
+- Healthcheck `pg_isready` không kiểm password; khi nghi ngờ lệch password (vd. đã `stack rm` ngoài luồng), kiểm bằng auth TCP thật hoặc tạo lại volume qua `local-destroy` rồi `local-deploy`.
 - **Mật khẩu PostgreSQL local lưu plaintext** trong Pulumi stack config (`.pulumi-local-state/`) và trong `.env` của worktree — cả hai đều ngoài Git (`.gitignore` chặn `.pulumi-local-state/`, `Pulumi.*.yaml`, `.env*`). Đây là đánh đổi **có chủ đích cho môi trường local development**, không phải khuôn mẫu cho staging/production: ở đó secret vẫn phải là secret của Cloudflare Worker. Mật khẩu không bao giờ được in ra log/stdout, không nằm trong Pulumi outputs, không nằm trong URL, và PostgreSQL không publish host port.
 
 ## Migration legacy `postgres:password` (secure/`[secret]`)
@@ -151,13 +150,12 @@ Nếu passphrase gốc không còn: không có đường phục hồi tự độ
 Không có đường convert an toàn. Cách duy nhất là bắt đầu lại từ dữ liệu rỗng:
 
 ```bash
-pnpm dx local-destroy --remove-data   # XOÁ dữ liệu vĩnh viễn — cân nhắc kỹ
+pnpm dx local-destroy   # XOÁ dữ liệu vĩnh viễn — cân nhắc kỹ
 pnpm dx local-deploy
 ```
 
-`--remove-data` là opt-in tường minh; mặc định `local-destroy` **giữ** volume.
-Cleanup (`pnpm dx local-cleanup`) cũng **không** xoá volume PostgreSQL persistent
-theo mặc định.
+`local-destroy` xoá volume PostgreSQL theo mặc định (không có cờ nào giữ volume).
+Cleanup (`pnpm dx local-cleanup`) xoá volume chỉ với resource mồ côi đủ điều kiện.
 
 ### Lưu ý về plaintext config
 
@@ -173,7 +171,7 @@ log/stdout, không nằm trong Pulumi outputs, không nằm trong URL.
 Worktree xoá mà quên `local-destroy` là Docker resource còn lại: container/network/volume mang tên `ecoma-<namespace>-<kind>` không ai quản lý. `pnpm dx local-cleanup` tìm và xoá resource mồ côi đó — worktree sở hữu nó không còn trên đĩa.
 
 ```bash
-pnpm dx local-cleanup                       # dọn thật (vẫn giữ volume PostgreSQL)
+pnpm dx local-cleanup                       # dọn thật, xoá cả volume PostgreSQL của resource mồ côi đủ điều kiện
 pnpm dx local-cleanup --dry-run             # chỉ báo cáo, không có lệnh destructive nào
 pnpm dx local-cleanup --worktree-root <dir> # lọc báo cáo theo worktree (diagnostics, không nới ràng buộc)
 ```
@@ -193,7 +191,7 @@ Mọi resource local deployment được gắn bốn label kể từ thay đổi
 
 Resource thiếu bất kỳ label trong bốn, `worktree-id` sai pattern namespace, hay `worktree-path` không absolute → **metadata không trọn vẹn (malformed) → skip, không xoá**. Quyết định xóa luôn dựa trên metadata hợp lệ, không dựa trên hình dạng tên.
 
-**Volume persistent mặc định được giữ**: cleanup không xoá volume PostgreSQL kể cả khi worktree mồ côi — đúng convention `local-destroy` (dữ liệu chỉ xoá khi `--remove-data` tường minh). Orphan volume được báo ra entries `kept` với lý do rõ để developer tự quyết.
+**Volume persistent bị xoá với resource mồ côi đủ điều kiện**: cleanup xoá volume PostgreSQL của resource có labels ownership hợp lệ và worktree confirmed absent — cùng convention mới của `local-destroy`. Volume không đủ điều kiện xoá (metadata không trọn vẹn, worktree còn sống) được báo ra entries `kept`/`skipped` với lý do rõ để developer tự quyết.
 
 ### An toàn và xử lý lỗi
 
