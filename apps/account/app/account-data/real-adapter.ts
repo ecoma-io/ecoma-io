@@ -203,6 +203,8 @@ export function createServerAccountAdapter(
       }
       // Nhớ email cho bước verify trong cùng phiên — xem `pendingLoginEmail`.
       pendingLoginEmail = email;
+      // Handle đi cùng challenge (opaque) — verify kế forward cho BFF.
+      pendingContinuationHandle = continuationHandle;
       const expiresAt = new Date(Date.now() + OTP_TTL_UI_SECONDS * 1000).toISOString();
       return { ok: true, value: { email, mode: 'code', expiresAt } };
     },
@@ -226,13 +228,20 @@ export function createServerAccountAdapter(
         // mà không có email.
         return { ok: false, reason: 'no challenge requested' };
       }
-      const response = await postJson('/api/auth/verify', { email, code });
+      const response = await postJson('/api/auth/verify', {
+        email,
+        code,
+        // Handle của flow continuation — thiếu nó là BFF không so được binding
+        // và không cấp `confirmUrl` (§5.1.2 hàng 7); đăng nhập thuần không gửi.
+        ...(pendingContinuationHandle === undefined ? {} : { handle: pendingContinuationHandle }),
+      });
       if (!response.ok) {
         return { ok: false, reason: `verify request failed with ${response.status}` };
       }
       // Mã đã dùng — xỉa email pending cho lần verify kế (rotation là luồng
       // bình thường, một verify mới bắt đầu từ một challenge mới).
       pendingLoginEmail = undefined;
+      pendingContinuationHandle = undefined;
       // `confirmUrl` do server dựng (`/authorize/confirm` của auth) — adapter
       // chỉ relay giá trị có hình dạng chuỗi, mọi thứ khác là "không có".
       const body: unknown = await response.json().catch(() => undefined);
@@ -849,3 +858,12 @@ export function createServerAccountAdapter(
  * module được hoist an toàn cho closure đọc sau này.
  */
 let pendingLoginEmail: string | undefined;
+
+/**
+ * Continuation handle đang chờ verify của phiên — cùng lớp giữ với
+ * `pendingLoginEmail` (module-local theo tab, không storage): `challenge` nhớ
+ * nó khi UI gửi vào, `verify` forward cho BFF để server so binding và dựng
+ * `confirmUrl`. Không giữ ở đây thì BFF không bao giờ thấy handle ⇒ verify
+ * luôn rơi nhánh `no_continuation` dù issuer đã cấu hình đúng.
+ */
+let pendingContinuationHandle: string | undefined;
