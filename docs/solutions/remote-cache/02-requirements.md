@@ -122,13 +122,13 @@ Mỗi dòng là một hành vi quan sát được.
 
 ### Multi-tenancy và control plane
 
-| #   | Kịch bản                                                                            | Kết quả mong đợi                                           |
-| --- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| A22 | Tenant A và tenant B cùng hash                                                      | Artifact của A không đọc/ghi được bằng credential của B    |
-| A23 | Credential scoped project A (tenant A) với ID project B (tenant B) do client tự gửi | Bị từ chối — scope resolve từ principal, không từ body/URL |
-| A24 | Tenant/project bị suspended                                                         | Write/read bị từ chối theo lifecycle state                 |
-| A25 | Administrative mutation (key/membership/project/quota)                              | Có audit entry với actor/action/target/time/outcome        |
-| A26 | Upload retry sau khi request đầu đã ghi đủ artifact                                 | Usage không bị double-count                                |
+| #   | Kịch bản                                                                            | Kết quả mong đợi                                                                  |
+| --- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| A22 | Tenant A và tenant B cùng hash                                                      | Artifact của A không đọc/ghi được bằng credential của B                           |
+| A23 | Credential scoped project A (tenant A) với ID project B (tenant B) do client tự gửi | Bị từ chối — scope resolve từ principal, không từ body/URL                        |
+| A24 | Tenant/project không ở trạng thái `active` (suspended/deleted)                      | Write/read bị từ chối (fail-closed) — kể cả khi cached configuration chưa refresh |
+| A25 | Administrative mutation (key/membership/project/quota)                              | Có audit entry với actor/action/target/time/outcome                               |
+| A26 | Upload retry sau khi request đầu đã ghi đủ artifact                                 | Usage không bị double-count                                                       |
 
 ---
 

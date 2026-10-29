@@ -67,14 +67,14 @@ Nx ────────────► │     Data Plane      │  (cache.e
 
 Hai plane cùng nằm trong một service; domain model của control plane gồm:
 
-- **Tenant** — đơn vị sở hữu; mỗi project thuộc đúng một tenant; lifecycle state riêng (active/suspended/deleted) với semantics tường minh, không hồi sinh tự động.
-- **Project** — đơn vị isolation của cache; namespace và storage scope derive từ project, không từ input client.
+- **Tenant** — đơn vị sở hữu; mỗi project thuộc đúng một tenant; lifecycle state riêng (active/suspended/deleted) với semantics tường minh, không hồi sinh tự động. Enforcement **fail-closed**: credential của tenant/project không ở trạng thái `active` MUST bị từ chối — kể cả khi cached configuration chưa phản ánh trạng thái mới (stale cache không được biến suspend/delete thành allow).
+- **Project** — đơn vị isolation của cache; namespace và storage scope derive từ project, không từ input client; lifecycle state riêng (active/suspended/deleted) cùng semantics với tenant.
 - **Membership** — quan hệ người dùng ↔ tenant kèm role; vòng đời độc lập với API key machine credential.
 - **API key** — machine credential scoped theo project, có read/write scope, revoke/expiry; hash-only ở storage, show-once lúc tạo; vòng đời độc lập với membership.
 - **Quota/usage** — attribution theo project; semantics chống double-count khi retry/upload đồng thời.
-- **Audit** — mọi administrative mutation có entry actor/action/target/time/outcome.
+- **Audit** — mọi administrative mutation có entry actor/action/target/time/outcome; query được qua control plane.
 
-Chi tiết contract/API lock trước Phase 5 theo [`roadmap`](../../architecture/roadmap.md) (freeze point P4.1). Tenancy là yêu cầu MVP — không defer.
+Chi tiết contract/API lock trước Phase 5 theo [`roadmap`](../../architecture/roadmap.md) (freeze point P4.1). Tenancy là yêu cầu MVP — không defer. Chuyển từ disposable infra sang SaaS bounded context cần ADR mới theo A18 ([`01-architecture.md`](../../architecture/01-architecture.md) §8) — tạo cùng lúc với P4.1.
 
 Các lớp module tách trách nhiệm, dependency đi **một chiều**:
 
@@ -218,7 +218,7 @@ Data plane observability không được làm tăng dependency trên request pat
 
 ## 12. Deployment shape
 
-`cache` là **một deploy unit** (một Cloudflare Worker). Control plane hỗ trợ multi-tenant từ MVP (tenant/project/membership/API key — §2.1); storage bắt đầu với một backend/partition. Sau khi protocol và streaming được validate, mở rộng theo thứ tự: multiple partitions → multiple B2 accounts (initial scope → [`02-requirements.md`](./02-requirements.md) §5).
+`cache` là **một deploy unit** (một Cloudflare Worker). Control plane hỗ trợ multi-tenant từ MVP (tenant/project/membership/API key/quota/usage/audit — §2.1); storage bắt đầu với một backend/partition. Sau khi protocol và streaming được validate, mở rộng theo thứ tự: multiple partitions → multiple B2 accounts (initial scope → [`02-requirements.md`](./02-requirements.md) §5).
 
 Kiến trúc ưu tiên **một deployable Worker nhỏ** thay vì distributed internal services.
 

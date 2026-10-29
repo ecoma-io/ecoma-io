@@ -173,7 +173,7 @@ Không chạy full-bucket scan hay bulk delete trong request path. Cache expirat
 
 ## 10. Bootstrap
 
-MVP cần tối thiểu `1 tenant · 1 project · 1 storage partition · 1 B2 bucket · 1 developer key · 1 CI key` (control-plane domain model → [`01-architecture.md`](./01-architecture.md) §2.1):
+MVP cần tối thiểu `1 tenant · 1 project · 1 storage partition · 1 B2 bucket · 1 developer key · 1 CI key` (control-plane domain model → [`01-architecture.md`](./01-architecture.md) §2.1). Đây là floor khởi tạo, không phải success criteria: MVP chỉ đạt success khi có **hai tenant trở lên dùng đồng thời** ([`02-requirements.md`](./02-requirements.md) §7) — tenant thứ hai được provision qua control plane sau bootstrap:
 
 ```text
 Create B2 bucket
@@ -209,13 +209,13 @@ Create new key → Update consumer → Verify new key → Revoke old key
 
 **Failure modes:**
 
-| Tình huống                      | Xử lý                                                                                                                           |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| **Cache miss (`404`)**          | Bình thường, **không** cần can thiệp. Nx thực thi task rồi ghi artifact mới                                                     |
-| **B2 unavailable**              | Kiểm tra B2 availability · credentials · bucket config · Worker→B2 connectivity. **Không** coi cache failure là mất source data |
-| **Worker unavailable**          | Kiểm tra deployment · routes · bindings · secrets · runtime logs. Rollback nếu do deployment                                    |
-| **Control plane unavailable**   | Data plane tiếp tục dùng cached configuration; administrative change tạm thời không dùng được                                   |
-| **Stream không replay an toàn** | `503`. Không retry mù one-shot request body                                                                                     |
+| Tình huống                      | Xử lý                                                                                                                                                                                                                                                                                                               |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Cache miss (`404`)**          | Bình thường, **không** cần can thiệp. Nx thực thi task rồi ghi artifact mới                                                                                                                                                                                                                                         |
+| **B2 unavailable**              | Kiểm tra B2 availability · credentials · bucket config · Worker→B2 connectivity. **Không** coi cache failure là mất source data                                                                                                                                                                                     |
+| **Worker unavailable**          | Kiểm tra deployment · routes · bindings · secrets · runtime logs. Rollback nếu do deployment                                                                                                                                                                                                                        |
+| **Control plane unavailable**   | Data plane tiếp tục dùng cached configuration; administrative change tạm thời không dùng được. Cache freshness/invalidation và hành vi với credential có lifecycle state thay đổi khi control plane outage MUST được pin trước khi implement (fail-closed theo §2.1 — [`01-architecture.md`](./01-architecture.md)) |
+| **Stream không replay an toàn** | `503`. Không retry mù one-shot request body                                                                                                                                                                                                                                                                         |
 
 **Incident priorities:**
 
