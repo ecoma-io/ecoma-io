@@ -38,7 +38,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { PROVIDER_ROUTES } from '../../src/oidc/provider';
 import { loadAuthConfig, type AuthEnv } from '../../src/config';
-import { createPostgresClient } from '@ecoma-io/auth-infrastructure';
+import { withPostgresClient } from '@ecoma-io/auth-infrastructure';
 import { startAuthDatabase, type AuthDatabase } from './harness';
 
 /* ------------------------------------------------------------------ */
@@ -138,12 +138,17 @@ async function bootProvider(pem: string): Promise<void> {
   const env = makeEnv(pem);
   const config = await loadAuthConfig(env);
   const { createProvider } = await import('../../src/oidc/provider');
-  const postgresClient = createPostgresClient(config.hyperdrive);
-  const provider = await createProvider({
-    config,
-    postgresClient,
-    signingPem: config.signingKeyPem,
-  });
+  const postgresClientConfig = { hyperdrive: config.hyperdrive };
+  const provider = await withPostgresClient(
+    postgresClientConfig,
+    async (staticClientsLoader) =>
+      await createProvider({
+        config,
+        postgresClientConfig,
+        staticClientsLoader,
+        signingPem: config.signingKeyPem,
+      }),
+  );
   nodeServer = createServer(((req: unknown, res: unknown) => {
     const incoming = req as { headers: Record<string, string | string[] | undefined> };
     incoming.headers['x-forwarded-proto'] = 'https';

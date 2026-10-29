@@ -23,7 +23,7 @@
 import { Provider, interactionPolicy, errors as oidcErrors } from 'oidc-provider';
 
 import type { AuthConfig } from '../config';
-import type { PostgresClientLike } from '@ecoma-io/auth-infrastructure';
+import type { PostgresClientConfig, PostgresClientLike } from '@ecoma-io/auth-infrastructure';
 import type { IssuanceGate } from './adapter';
 import { createAdapterFactory } from './adapter';
 
@@ -124,8 +124,20 @@ const CLAIMS = {
 /** Deps mà factory cần — tường minh thay vì đọc từ biến toàn cục. */
 export interface ProviderDeps {
   readonly config: AuthConfig;
-  /** Client postgres.js cho adapter (đã qua createPostgresClient; prepare: false). */
-  readonly postgresClient: PostgresClientLike;
+  /**
+   * Config postgres.js cho adapter — adapter mở MỘT client mới cho MỖI thao tác
+   * từ config này (issue #289: socket của driver gắn request context, client
+   * cache theo isolate là lỗi chéo-request). Config là giá trị thuần nên an toàn
+   * khi sống theo isolate; client thì không — không client nào được dựng hoặc
+   * lưu ở factory.
+   */
+  readonly postgresClientConfig: PostgresClientConfig;
+  /**
+   * Client DÙNG MỘT LẦN để load static clients lúc factory chạy. Caller mở qua
+   * `withPostgresClient` và đã đóng sau khi factory trả — factory không giữ
+   * tham chiếu nào ngoài kết quả đã load (xem `loadStaticClients`).
+   */
+  readonly staticClientsLoader: PostgresClientLike;
   /**
    * PEM PKCS#8 của khoá ký — cùng PEM mà `loadAuthConfig` đã kiểm. Factory cần bản
    * rõ để export JWK có `d` cho keystore của provider; `signingKeyProvider` chỉ giữ
@@ -278,7 +290,7 @@ function rotateRefreshToken(ctx: {
  * khi thiếu PEM thay vì để provider tự ứng phó.
  */
 export async function createProvider(deps: ProviderDeps): Promise<Provider> {
-  const { config, postgresClient, signingPem } = deps;
+  const { config, postgresClientConfig, staticClientsLoader, signingPem } = deps;
 
   // Private JWK cho keystore: provider ký qua node:crypto KeyObject
   // (keystore.js getKeyObject), nên cần `d` — private scalar EC. Export bằng
@@ -317,8 +329,9 @@ export async function createProvider(deps: ProviderDeps): Promise<Provider> {
 
   // Clients tĩnh — load từ db (javadoc của loadStaticClients giải thích vì sao
   // phải tĩnh). Một isolate cache kết quả qua cachedProvider của main.ts nên
-  // chi phí là một query per isolate, không per request.
-  const staticClients = await loadStaticClients(postgresClient);
+  // chi phí là một query per isolate, không per request. Load qua client DÙNG
+  // MỘT LẦN của caller (issue #289) — client đã đóng khi factory trả.
+  const staticClients = await loadStaticClients(staticClientsLoader);
   if (staticClients.length === 0) {
     // Rỗng gần như chắc chắn là lỗi seed/migration: một deployment auth không
     // có client nào là deployment không thể authorize. Ném sớm thay vì provider
@@ -327,7 +340,7 @@ export async function createProvider(deps: ProviderDeps): Promise<Provider> {
   }
 
   const provider = new Provider(config.issuer, {
-    adapter: createAdapterFactory(postgresClient, deps.issuanceGate),
+    adapter: createAdapterFactory(postgresClientConfig, deps.issuanceGate),
 
     // Clients tĩnh — provider structuredClone mảng này vào staticClients Map
     // (helpers/initialize_clients.js), key theo `metadata.client_id`.

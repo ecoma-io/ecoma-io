@@ -162,7 +162,18 @@ function wiredAdapter(
     postgresClient: runtime as unknown as PostgresClientLike,
     checkStatus,
   });
-  const factory = createAdapterFactory(runtime as unknown as PostgresClientLike, gate);
+  // Adapter production nhận CONFIG (giá trị thuần) và tự mở client cho từng
+  // thao tác (issue #289); lane test này giữ lane `postgresClient` của gate
+  // (client pool dài hạn của testcontainers) và chỉ đổi lane của adapter.
+  // Connection string dựng lại từ options đã parse của client pool — host đầu
+  // + port + database + credential là đủ cho client một-lần của adapter.
+  const o = runtime.options;
+  const auth =
+    o.pass === null || o.pass === undefined
+      ? String(o.user)
+      : `${String(o.user)}:${String(o.pass)}`;
+  const connectionString = `postgres://${auth}@${String(o.host[0])}:${String(o.port[0])}/${o.database}`;
+  const factory = createAdapterFactory({ hyperdrive: { connectionString } }, gate);
   return factory('AuthorizationCode');
 }
 

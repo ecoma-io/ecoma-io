@@ -53,6 +53,7 @@ import {
   checkRevocationAtIssuance,
   createPostgresClient,
   insertAuditEvent,
+  withPostgresClient,
   type PostgresClientLike,
 } from '@ecoma-io/auth-infrastructure';
 
@@ -268,14 +269,22 @@ async function bootProvider(pem: string): Promise<void> {
   const env = makeEnv(pem);
   const config = await loadAuthConfig(env);
   const { createProvider } = await import('../../src/oidc/provider');
-  const postgresClient = createPostgresClient(config.hyperdrive);
-  const provider = await createProvider({
-    config,
-    postgresClient,
-    signingPem: config.signingKeyPem,
-    // ⚠️ Wire gate như production (`buildRuntime` của `oidc/runtime.ts`).
-    issuanceGate: makeIssuanceGate(config, postgresClient),
-  });
+  const postgresClientConfig = { hyperdrive: config.hyperdrive };
+  // Client pool dài hạn cho gate (lane `postgresClient` của `createIssuanceGateFromDeps`)
+  // + client dùng-một-lần để load static clients — đúng hai lane của issue #289.
+  const poolClient = createPostgresClient(config.hyperdrive);
+  const provider = await withPostgresClient(
+    postgresClientConfig,
+    async (staticClientsLoader) =>
+      await createProvider({
+        config,
+        postgresClientConfig,
+        staticClientsLoader,
+        signingPem: config.signingKeyPem,
+        // ⚠️ Wire gate như production (`buildRuntime` của `oidc/runtime.ts`).
+        issuanceGate: makeIssuanceGate(config, poolClient),
+      }),
+  );
   nodeServer = createServer(((req: unknown, res: unknown) => {
     const incoming = req as { headers: Record<string, string | string[] | undefined> };
     incoming.headers['x-forwarded-proto'] = 'https';

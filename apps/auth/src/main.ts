@@ -15,7 +15,11 @@
 import { Hono } from 'hono';
 
 import { INTERNAL_BODY_LIMIT_BYTES, type VerifyFailureReason } from '@ecoma-io/auth-contracts';
-import { createAuthorizationStore, createPostgresClient } from '@ecoma-io/auth-infrastructure';
+import {
+  createAuthorizationStore,
+  createPostgresClient,
+  withPostgresClient,
+} from '@ecoma-io/auth-infrastructure';
 import {
   AccountClient,
   AccountDependencyError,
@@ -365,13 +369,17 @@ app.get('/.well-known/oauth-authorization-server', async (c) => {
  */
 app.get('/authorize', async (c) => {
   const config = await getConfig(c.env as AuthEnv);
-  const runtime = await getRuntime(c.env as AuthEnv);
-  return await handleAuthorize({
-    config,
-    store: createAuthorizationStore({ client: runtime.postgresClient }),
-    query: c.req.query(),
-    cookieHeader: c.req.header('cookie'),
-    now: new Date(),
+  // Client postgres sống đúng request này (issue #289) — `withPostgresClient`
+  // `end()` trong `finally`, kể cả khi handler ném. Cùng hình dạng lifecycle với
+  // `probeDatabase` ở trên.
+  return await withPostgresClient({ hyperdrive: config.hyperdrive }, async (client) => {
+    return await handleAuthorize({
+      config,
+      store: createAuthorizationStore({ client }),
+      query: c.req.query(),
+      cookieHeader: c.req.header('cookie'),
+      now: new Date(),
+    });
   });
 });
 
@@ -382,13 +390,14 @@ app.get('/authorize', async (c) => {
  */
 app.get('/authorize/confirm', async (c) => {
   const config = await getConfig(c.env as AuthEnv);
-  const runtime = await getRuntime(c.env as AuthEnv);
-  return await handleAuthorizeConfirm({
-    store: createAuthorizationStore({ client: runtime.postgresClient }),
-    query: c.req.query(),
-    cookieHeader: c.req.header('cookie'),
-    accountBaseUrl: config.accountBaseUrl,
-    now: new Date(),
+  return await withPostgresClient({ hyperdrive: config.hyperdrive }, async (client) => {
+    return await handleAuthorizeConfirm({
+      store: createAuthorizationStore({ client }),
+      query: c.req.query(),
+      cookieHeader: c.req.header('cookie'),
+      accountBaseUrl: config.accountBaseUrl,
+      now: new Date(),
+    });
   });
 });
 
@@ -578,15 +587,21 @@ app.post(INTERNAL_VERIFIED_ROUTE, async (c) => {
       secret: config.internalSecret,
       kid: config.internalKid,
     });
-    const result = await runSessionVerified({
-      provider: runtime.provider,
-      postgresClient: runtime.postgresClient,
-      store: createAuthorizationStore({ client: runtime.postgresClient }),
-      handleKey: config.handleKey,
-      accountBaseUrl: config.accountBaseUrl,
-      now: new Date(),
-      checkStatus: (accountId) => account.checkStatus({ accountId, nowMs: Date.now() }),
-      rawBody: raw,
+    // Client postgres sống đúng request này (issue #289). Toàn bộ đường nghiệp vụ
+    // — kể cả các câu gọi HTTP tới account ở giữa — nằm trong phạm vi MỘT client:
+    // khối chỉ kết thúc khi handler trả, nên client không sống qua ranh giới
+    // request nào. `withPostgresClient` `end()` trong `finally`.
+    const result = await withPostgresClient({ hyperdrive: config.hyperdrive }, async (client) => {
+      return await runSessionVerified({
+        provider: runtime.provider,
+        postgresClient: client,
+        store: createAuthorizationStore({ client }),
+        handleKey: config.handleKey,
+        accountBaseUrl: config.accountBaseUrl,
+        now: new Date(),
+        checkStatus: (accountId) => account.checkStatus({ accountId, nowMs: Date.now() }),
+        rawBody: raw,
+      });
     });
     return c.json(result.body, result.status);
   } catch (error) {
@@ -610,7 +625,6 @@ app.post(INTERNAL_CONSENT_CONTEXT_ROUTE, async (c) => {
   }
 
   try {
-    const runtime = await getRuntime(c.env as AuthEnv);
     // Body ĐÃ verify chữ ký — parse ở đây, một lần.
     let payload: unknown;
     try {
@@ -618,11 +632,17 @@ app.post(INTERNAL_CONSENT_CONTEXT_ROUTE, async (c) => {
     } catch {
       return c.json({ error: 'invalid_payload' }, 400);
     }
-    const result = await runConsentContext({
-      postgresClient: runtime.postgresClient,
-      payload,
-      now: new Date(),
-    });
+    // Client postgres sống đúng request này (issue #289) — xem `/authorize`.
+    const result = await withPostgresClient(
+      { hyperdrive: verified.config.hyperdrive },
+      async (client) => {
+        return await runConsentContext({
+          postgresClient: client,
+          payload,
+          now: new Date(),
+        });
+      },
+    );
     return c.json(result.body, result.status);
   } catch (error) {
     if (isInfrastructureError(error)) {
@@ -653,13 +673,21 @@ app.post(INTERNAL_CONSENT_DECIDE_ROUTE, async (c) => {
     } catch {
       return c.json({ error: 'invalid_payload' }, 400);
     }
-    const result = await runConsentDecide({
-      provider: runtime.provider,
-      postgresClient: runtime.postgresClient,
-      payload,
-      handleKey: verified.config.handleKey,
-      now: new Date(),
-    });
+    // Client postgres sống đúng request này (issue #289). Khối transaction
+    // `client.begin(...)` của decide nằm TRONG phạm vi client này — một
+    // transaction = một client (xem JSDoc `withPostgresClient`).
+    const result = await withPostgresClient(
+      { hyperdrive: verified.config.hyperdrive },
+      async (client) => {
+        return await runConsentDecide({
+          provider: runtime.provider,
+          postgresClient: client,
+          payload,
+          handleKey: verified.config.handleKey,
+          now: new Date(),
+        });
+      },
+    );
     return c.json(result.body, result.status);
   } catch (error) {
     if (isInfrastructureError(error)) {
@@ -682,17 +710,22 @@ app.post(INTERNAL_CONNECTED_APPLICATIONS_ROUTE, async (c) => {
   }
 
   try {
-    const runtime = await getRuntime(c.env as AuthEnv);
     let payload: unknown;
     try {
       payload = JSON.parse(new TextDecoder().decode(verified.raw)) as unknown;
     } catch {
       return c.json({ error: 'invalid_payload' }, 400);
     }
-    const result = await runConnectedApplicationsList({
-      postgresClient: runtime.postgresClient,
-      payload,
-    });
+    // Client postgres sống đúng request này (issue #289) — xem `/authorize`.
+    const result = await withPostgresClient(
+      { hyperdrive: verified.config.hyperdrive },
+      async (client) => {
+        return await runConnectedApplicationsList({
+          postgresClient: client,
+          payload,
+        });
+      },
+    );
     return c.json(result.body, result.status);
   } catch (error) {
     if (isInfrastructureError(error)) {
@@ -715,18 +748,24 @@ app.post(INTERNAL_CONNECTED_APPLICATION_REVOKE_ROUTE, async (c) => {
   }
 
   try {
-    const runtime = await getRuntime(c.env as AuthEnv);
     let payload: unknown;
     try {
       payload = JSON.parse(new TextDecoder().decode(verified.raw)) as unknown;
     } catch {
       return c.json({ error: 'invalid_payload' }, 400);
     }
-    const result = await runConnectedApplicationRevoke({
-      postgresClient: runtime.postgresClient,
-      payload,
-      now: new Date(),
-    });
+    // Client postgres sống đúng request này (issue #289). Khối transaction
+    // `client.begin(...)` của revoke nằm TRONG phạm vi client này.
+    const result = await withPostgresClient(
+      { hyperdrive: verified.config.hyperdrive },
+      async (client) => {
+        return await runConnectedApplicationRevoke({
+          postgresClient: client,
+          payload,
+          now: new Date(),
+        });
+      },
+    );
     return c.json(result.body, result.status);
   } catch (error) {
     if (isInfrastructureError(error)) {
