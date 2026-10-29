@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { OAuthProtocolError } from './errors';
 import {
   canTransition,
+  filterAllowedScopes,
   MAX_NONCE_LENGTH_BYTES,
   MAX_STATE_LENGTH_BYTES,
   parseAuthorizationRequest,
@@ -108,6 +109,30 @@ describe('parseAuthorizationRequest — state/nonce byte limits', () => {
         codeChallengeMethod: undefined,
       }),
     ).toThrowError(OAuthProtocolError);
+  });
+});
+
+describe('filterAllowedScopes — invalid_scope policy', () => {
+  it('rejects a scope outside the allowed list with invalid_scope, redirectable', () => {
+    // ⚠️ Hàm này chạy SAU khi `redirect_uri` đã khớp bản đăng ký, nên mặc
+    // định lỗi được redirect về `redirect_uri` kèm mã `invalid_scope` theo
+    // RFC 6749 §4.1.2.1 — không phải `invalid_request`.
+    expect(() => filterAllowedScopes(['openid', 'admin'], ['openid', 'profile'])).toThrowError(
+      expect.objectContaining({ code: 'invalid_scope', redirectable: true }),
+    );
+  });
+
+  it('returns a direct (non-redirectable) invalid_scope error when redirectable is false', () => {
+    expect(() => filterAllowedScopes(['admin'], ['openid'], { redirectable: false })).toThrowError(
+      expect.objectContaining({ code: 'invalid_scope', redirectable: false }),
+    );
+  });
+
+  it('passes an allowed list through unchanged and preserves order', () => {
+    expect(filterAllowedScopes(['profile', 'openid'], ['openid', 'profile'])).toEqual([
+      'profile',
+      'openid',
+    ]);
   });
 });
 

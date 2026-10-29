@@ -191,7 +191,7 @@ describe('beginAuthorization — the open-redirect boundary', () => {
         browserBinding: 'binding-1',
         now: new Date(),
       }),
-    ).rejects.toMatchObject({ redirectable: true });
+    ).rejects.toMatchObject({ code: 'invalid_scope', redirectable: true });
   });
 
   it('the returned handle is the CLEARTEXT, not a hash', async () => {
