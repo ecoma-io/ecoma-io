@@ -67,7 +67,7 @@ Nx ────────────► │     Data Plane      │  (cache.e
 
 Hai plane cùng nằm trong một service; domain model của control plane gồm:
 
-- **Tenant** — đơn vị sở hữu; mỗi project thuộc đúng một tenant; lifecycle state riêng (active/suspended/deleted) với semantics tường minh, không hồi sinh tự động. Enforcement **fail-closed**: credential của tenant/project không ở trạng thái `active` MUST bị từ chối — kể cả khi cached configuration chưa phản ánh trạng thái mới (stale cache không được biến suspend/delete thành allow).
+- **Tenant** — đơn vị sở hữu; mỗi project thuộc đúng một tenant; lifecycle state riêng (active/suspended/deleted) với semantics tường minh, không hồi sinh tự động. Enforcement **fail-closed**: credential của tenant/project không ở trạng thái `active` MUST bị từ chối — kể cả khi cached configuration chưa phản ánh trạng thái mới (stale cache không được biến suspend/delete thành allow). Cơ chế để data plane biết lifecycle state mà không query DB trong hot path là **open decision** (candidates: cached config TTL ngắn + fail-closed khi stale/unknown, re-check-at-write-time) — [`roadmap`](../../architecture/roadmap.md) §Open decisions.
 - **Project** — đơn vị isolation của cache; namespace và storage scope derive từ project, không từ input client; lifecycle state riêng (active/suspended/deleted) cùng semantics với tenant.
 - **Membership** — quan hệ người dùng ↔ tenant kèm role; vòng đời độc lập với API key machine credential.
 - **API key** — machine credential scoped theo project, có read/write scope, revoke/expiry; hash-only ở storage, show-once lúc tạo; vòng đời độc lập với membership.

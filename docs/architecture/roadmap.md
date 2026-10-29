@@ -102,3 +102,4 @@ Staging/production pipeline, delivery runner và migration runner **chưa tồn 
 - Remote Cache control-plane storage engine (PostgreSQL vs D1) — open decision.
 - Remote Cache usage rights: MVP dùng API key riêng; entitlement integration deferred.
 - Remote Cache quota-exceeded write behavior: hành vi khi write vượt quota (429/403, non-fatal cho caller — cache miss phải dẫn đến build bình thường) phải được pin trước khi implement P4.3.
+- Remote Cache lifecycle enforcement mechanism: cách data plane biết lifecycle state của tenant/project mà không query database trong hot path (bất biến fail-closed ở `solutions/remote-cache` §2.1 vs. data plane không phụ thuộc DB) — candidates: cached configuration với TTL ngắn + fail-closed khi stale/unknown, re-check-at-write-time cho write path — phải được chốt trước khi implement P4.4.
