@@ -369,6 +369,20 @@
               "type:contracts"
             ]
           },
+          // scope:staff-access — bounded context Staff Access (roadmap Phase 1):
+          // staff directory, role/permission catalog, assignment, entitlement, audit.
+          // Trước Phase 1 nghiệp vụ này nằm trong `backoffice`; scope riêng theo
+          // đúng ranh giới ownership của bounded context (`05` §6.3), cùng chính
+          // sách mặc định như các bounded context khác.
+          {
+            "sourceTag": "scope:staff-access",
+            "onlyDependOnLibsWithTags": [
+              "scope:staff-access",
+              "scope:shared",
+              "scope:platform",
+              "type:contracts"
+            ]
+          },
           // scope:shared là ĐÁY của trục ownership: CHỈ được phụ thuộc shared —
           // không platform, không implementation, không contract của scope nghiệp vụ
           // nào. `onlyDependOnLibsWithTags` khớp bất kỳ tag nào trong danh sách nên
