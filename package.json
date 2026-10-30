@@ -8,7 +8,7 @@
     "prepare": "pnpm dx repo-prepare"
   },
   "dependencies": {
-    "jose": "6.2.13",
+    "jose": "6.2.14",
     "postgres": "3.4.9"
   },
   "devDependencies": {
@@ -39,7 +39,7 @@
     "@pulumi/cloudflare": "^6.22.1",
     "@pulumi/command": "^1.2.1",
     "@pulumi/docker": "^5.2.0",
-    "@pulumi/docker-build": "0.0.22",
+    "@pulumi/docker-build": "0.0.23",
     "@pulumi/pulumi": "3.273.0",
     "@swc/helpers": "~0.5.18",
     "@tailwindcss/vite": "^4.3.3",

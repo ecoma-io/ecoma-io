@@ -30,7 +30,7 @@ Thư mục context:
 
 - [Account](./domains/account/README.md) — bounded context `account` (một deploy unit): UI + BFF + login/consent + credential + browser session, sở hữu `db-account`.
 - [Auth](./domains/auth/README.md) — bounded context `auth` (một deploy unit): API-only OAuth 2.0/OIDC authorization server (issuer `https://auth.ecoma.io`), sở hữu `db-auth`.
-- [Staff Access](./domains/staff-access/README.md) — bounded context `staff-access` (target: deploy unit riêng — Phase 1): staff directory, role/permission catalog, product entitlement, authorization audit. Ngày nay trách nhiệm nằm trong `backoffice`; evolution → [`domains/staff-access/README.md`](./domains/staff-access/README.md) §4; 12 ADR → [`adr/`](./domains/staff-access/adr/README.md).
+- [Staff Access](./domains/staff-access/README.md) — bounded context `staff-access` (target: deploy unit riêng — Phase 1): staff directory, role/permission catalog, product entitlement, authorization audit. Ngày nay trách nhiệm nằm trong `backoffice`; evolution → [`domains/staff-access/README.md`](./domains/staff-access/README.md) §4; 14 ADR → [`adr/`](./domains/staff-access/adr/README.md).
 - [Pact Broker](./domains/pact-broker/README.md) — bounded context `pact-broker` (hai deploy unit API + dashboard): hợp đồng consumer-driven contract testing (pacts, verifications, can-i-deploy), sở hữu tenant/membership/role của chính broker và machine credentials, sở hữu `db-pact-broker`.
 - [Transactional Mail](./domains/transactional-mail/README.md) — control plane của bounded context `transactional-mail` (Cloudflare D1).
 - [Push Notification](./domains/push-notification/README.md) — control plane của bounded context `push-notification` (Cloudflare D1).

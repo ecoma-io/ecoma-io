@@ -27,7 +27,7 @@ Enforcement chia đôi: **catalog govern ở Staff Access; backend enforce ở r
 ## 3. Entitlement và truyền trạng thái
 
 - Mỗi sản phẩm authorize bằng dữ liệu/quy tắc **thuộc quyền sở hữu của chính nó**; không gọi Staff Access đồng bộ trên mỗi request để hỏi quyền (ADR-0009).
-- Thay đổi entitlement/role được ghi cùng transactional outbox trong một transaction (A8) và truyền đến các sản phẩm bằng event bất đồng bộ. **Cơ chế cụ thể và cách bảo đảm revocation latency là quyết định chưa chốt** — xem [`architecture/01-architecture.md`](../../architecture/01-architecture.md) §10 và ADR-0002.
+- Thay đổi entitlement/role được ghi cùng transactional outbox trong một transaction (A8) và truyền đến các sản phẩm bằng event bất đồng bộ. **Cách bảo đảm revocation latency đã chốt** — [ADR-0014](./adr/0014-revocation-sla-mechanism.md): event-driven invalidation với deadline delivery theo event class, freshness bound + fail-closed, re-check-at-write-time cho write path.
 - Entitlement event **không** phải internal authorization-result contract: nó truyền **tính khả dụng sản phẩm**, không truyền verdict allow/deny cho từng request.
 
 ## 4. Evolution từ `backoffice`
@@ -47,4 +47,4 @@ Việc chuyển này **không** âm thầm sửa quyết định cũ: [ADR-0013]
 | [`01-architecture.md`](./01-architecture.md) | Ranh giới, domain model khái niệm, authorization model và nơi enforce, invariants   |
 | [`02-requirements.md`](./02-requirements.md) | Yêu cầu bảo mật, threat model, acceptance matrix, non-goals, tham chiếu             |
 | [`03-onboarding.md`](./03-onboarding.md)     | Onboarding staff: gate displayName, fail-closed vs degrade, cache, chỗ gắn gate 2FA |
-| [`adr/`](./adr/README.md)                    | Architectural decision record — mười ba quyết định đã chốt (ADR-0001…0013)          |
+| [`adr/`](./adr/README.md)                    | Architectural decision record — mười bốn quyết định đã chốt (ADR-0001…0014)         |
