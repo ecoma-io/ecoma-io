@@ -2,7 +2,7 @@
 
 > 📌 Thư mục này là bounded context **Staff Access** (đích — Phase 1, xem [`../README.md`](../README.md) §4): ADR này chốt quyết định cho nghiệp vụ staff/RBAC khi được tách khỏi `backoffice` (A21–A24). Ngày nay `backoffice` còn sở hữu staff/RBAC.
 
-> **Trạng thái:** Accepted · **Ngày:** 2026-10-21 · **Quyết định từ:** [`01-architecture.md`](../01-architecture.md) §10 (hàng 1) · **Issue:** #87
+> **Trạng thái:** Accepted (Superseded (in part) by [ADR-0013](./0013-staff-access-ownership-transfer.md) — tên database/schema `db-staff-access`/`staff_access` theo ownership mới; engine, mô hình role và chặn chéo giữ nguyên) · **Ngày:** 2026-10-21 · **Quyết định từ:** [`01-architecture.md`](../01-architecture.md) §10 (hàng 1) · **Issue:** #87
 
 ## Bối cảnh
 

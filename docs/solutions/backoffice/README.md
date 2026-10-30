@@ -1,8 +1,8 @@
 # Backoffice
 
-`backoffice` là **composition: UI quản trị + BFF** phục vụ vận hành nội bộ. Nó phối hợp các API của các bounded context — Staff Access cho nhân sự/quyền, Pact Broker và Remote Cache cho nghiệp vụ sản phẩm. **Không sở hữu database nghiệp vụ** là **target architecture**: ngày nay app `backoffice` vẫn sở hữu staff/RBAC theo A21–A24 (dòng Trạng thái bên dưới); khi tách xong sang Staff Access, composition không ghi database nghiệp vụ thay cho bất kỳ domain nào.
+`backoffice` là **composition: UI quản trị + BFF** phục vụ vận hành nội bộ. Nó phối hợp các API của các bounded context — Staff Access cho nhân sự/quyền, Pact Broker và Remote Cache cho nghiệp vụ sản phẩm. **Không sở hữu database nghiệp vụ** là **target architecture**: việc Staff Access tiếp quản staff/RBAC đã được chốt bằng [ADR-0013](../../domains/staff-access/adr/0013-staff-access-ownership-transfer.md) (supersede phạm vi tương ứng của A21–A24); ngày nay app `backoffice` vẫn sở hữu staff/RBAC chờ P1.4 dựng deploy unit (dòng Trạng thái bên dưới). Khi chuyển xong, composition không ghi database nghiệp vụ thay cho bất kỳ domain nào.
 
-> **Trạng thái:** `apps/backoffice` là Nuxt app (`ssr: false`, AppShell, i18n `en`/`vi`/`zh-CN`). Ba trang staff/roles/permissions vẫn đọc dữ liệu mẫu trong bộ nhớ (`mock-adapter`), nhưng phía server **đã có auth runtime và persistence thật**: migrations `0001–0006` (staff/RBAC/bff-sessions), binding `DB_BACKOFFICE`, authn middleware và authorization check. App chưa đi qua pipeline release — lý do vẫn còn nguyên ở [`architecture/02-delivery.md`](../../architecture/02-delivery.md) §7.5. Ngày nay app còn sở hữu luôn nghiệp vụ staff/RBAC; tách nghiệp vụ đó sang Staff Access là **target architecture** — xem [`docs/domains/staff-access/README.md`](../../domains/staff-access/README.md) §4.
+> **Trạng thái:** `apps/backoffice` là Nuxt app (`ssr: false`, AppShell, i18n `en`/`vi`/`zh-CN`). Ba trang staff/roles/permissions vẫn đọc dữ liệu mẫu trong bộ nhớ (`mock-adapter`), nhưng phía server **đã có auth runtime và persistence thật**: migrations `0001–0006` (staff/RBAC/bff-sessions), binding `DB_BACKOFFICE`, authn middleware và authorization check. App chưa đi qua pipeline release — lý do vẫn còn nguyên ở [`architecture/02-delivery.md`](../../architecture/02-delivery.md) §7.5. Ngày nay app còn sở hữu luôn nghiệp vụ staff/RBAC; chuyển nghiệp vụ đó sang Staff Access đã được quyết (ADR-0013), implement còn pending — xem [`docs/domains/staff-access/README.md`](../../domains/staff-access/README.md) §4.
 
 ## 1. Vai trò composition
 
@@ -20,7 +20,7 @@
 
 | Trách nhiệm                                    | Tài liệu canonical                                                                          |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Domain staff/role/permission/entitlement/audit | [`docs/domains/staff-access/`](../../domains/staff-access/README.md) (12 ADR nằm ở đó)      |
-| 12 ADR staff/RBAC                              | [`docs/domains/staff-access/adr/`](../../domains/staff-access/adr/README.md)                |
+| Domain staff/role/permission/entitlement/audit | [`docs/domains/staff-access/`](../../domains/staff-access/README.md) (13 ADR nằm ở đó)      |
+| 13 ADR staff/RBAC                              | [`docs/domains/staff-access/adr/`](../../domains/staff-access/adr/README.md)                |
 | Onboarding staff                               | [`docs/domains/staff-access/03-onboarding.md`](../../domains/staff-access/03-onboarding.md) |
 | UI/BFF design (thư mục này)                    | các tài liệu dưới đây khi được viết khi composition implement                               |
