@@ -18,6 +18,7 @@ Tài liệu này mô tả ranh giới, domain model khái niệm và authorizati
 - **Staff directory** và **staff lifecycle** — sổ staff, tư cách thành viên và các chuyển trạng thái của nó.
 - **Role/permission catalog** — danh mục các permission được phép gán, thuộc sở hữu của `backoffice`.
 - **Staff-role assignment** — gán role cho một staff member, kèm phạm vi (scope) và hạn theo thời gian nếu có.
+- **Product entitlement** — tính khả dụng sản phẩm của từng nhân sự; ranh giới với authorization chốt ở §3.1.
 - **Authorization audit** — bản ghi của các thao tác nhạy cảm quyền.
 - **Privileged-operation workflow** — quy trình phê duyệt và thực thi thao tác vận hành nhạy cảm.
 
@@ -30,9 +31,9 @@ Tài liệu này mô tả ranh giới, domain model khái niệm và authorizati
 
 ## 3. Boundary và ownership
 
-| Sở hữu của `backoffice`                                                                                                                                           | Không sở hữu                                                                                                                                                                                |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Staff directory · staff lifecycle · permission catalog · staff-role assignment · role-management governance · privileged-operation workflow · authorization audit | Dữ liệu danh tính của account · credential/MFA/passkey · browser session · OAuth 2.0/OIDC protocol · dữ liệu nghiệp vụ của resource-owning backend · authorization policy của từng resource |
+| Sở hữu của `backoffice`                                                                                                                                                                 | Không sở hữu                                                                                                                                                                                |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Staff directory · staff lifecycle · permission catalog · staff-role assignment · product entitlement · role-management governance · privileged-operation workflow · authorization audit | Dữ liệu danh tính của account · credential/MFA/passkey · browser session · OAuth 2.0/OIDC protocol · dữ liệu nghiệp vụ của resource-owning backend · authorization policy của từng resource |
 
 - **Account ID là tham chiếu danh tính xuyên service.** Một **staff member** liên kết tới đúng **một** Account ID (`sub`): không tái phát hành, không tái sử dụng. Đây là **reference**, không phải khoá ngoại xuyên database — không có FK từ database của `backoffice` sang database của `account`. Email **không** phải khoá danh tính chính.
 - **`account`** sở hữu dữ liệu danh tính canonical của account: hồ sơ, email đã xác thực, credential, MFA/passkey, browser session, account lifecycle, authn audit. Nó **không** sở hữu staff membership, staff role, permission assignment hay authorization policy của `backoffice`, và **không** được ghi vào dữ liệu staff/role/permission của `backoffice`.
@@ -40,6 +41,14 @@ Tài liệu này mô tả ranh giới, domain model khái niệm và authorizati
 - **`backoffice` không phải một IdP thứ hai và không phải credential store.** Authentication tới `backoffice` đi qua `account`/`auth` như mọi application khác; `backoffice` chỉ tiêu thụ Account ID và token đã xác thực, và **không** giữ duplicate credential/MFA/passkey state.
 - **Database trust.** `staff-access` sở hữu database của nó: `db-staff-access`, PostgreSQL, schema `staff_access` ([ADR-0013](./adr/0013-staff-access-ownership-transfer.md) — canonical; đổi tên quyết định storage của [ADR-0001](./adr/0001-storage-schema-staff-rbac.md), engine/mô hình role/chặn chéo giữ nguyên theo ADR-0001). `account` và `auth` **không** được ghi vào dữ liệu staff/role/permission dù chung hạ tầng/instance — chung PostgreSQL instance ≠ chung write authority. Runtime role chỉ có quyền tối thiểu, tách migrator/runtime privilege; pattern ba role `ecoma_owner`/`ecoma_staff_access_migrator`/`ecoma_staff_access_runtime`, chặn chéo `REVOKE CONNECT` (kể cả rút khỏi `PUBLIC`) và Hyperdrive riêng với query cache OFF theo ADR-0001/ADR-0013; pattern tham chiếu ở [`../account/03-operations.md`](../account/03-operations.md) §3 — **tham chiếu, không sao chép**.
 - **Trục trạng thái tách đôi.** `staff status` (`active` | `suspended` | `terminated`) là trục **khác hẳn** với account status (`active` | `suspended` | `deleted`); hai khái niệm khác nhau và không suy ra nhau. Ba giá trị cụ thể của `staff status` là **đề xuất** — điều đã chốt là **sự tách trục**, không phải từng nhãn (§4.2).
+
+### 3.1. Ranh giới entitlement vs authorization
+
+- **Entitlement trả lời đúng một câu hỏi:** "nhân sự X có được dùng sản phẩm P không" — **product availability**, nhị phân theo cặp (staff, product). Nó **không** mang per-resource, **không** mang per-operation, **không** evaluate điều kiện nào.
+- **Authorization trả lời câu hỏi per-resource/per-operation** và được **resource-owning backend enforce** bằng dữ liệu của chính nó + permission catalog — **catalog govern, backend enforce** (§5). Entitlement **không bao giờ** tham gia đường quyết định per-operation.
+- **Read model và event của entitlement chỉ mang tính khả dụng sản phẩm** — **không** mang verdict allow/deny, **không** mang permission list, **không** mang nội dung role, **không** mang per-resource scope. Ràng buộc này được enforce cơ học ở lớp contract (Nx project `@ecoma-io/staff-access-contracts`).
+- **Chiều ngược:** thu hồi entitlement xóa bỏ tính khả dụng sản phẩm; nó **không** tự tính hay truyền bất kỳ verdict authorization nào về resource cụ thể — điều đó vẫn thuộc enforcement của sản phẩm (ví dụ ranh giới entitlement → membership của `pact-broker` → [`../pact-broker/01-architecture.md`](../pact-broker/01-architecture.md) §4).
+- **Non-goal:** entitlement **không** phải input policy engine cho quyết định kiểu ABAC — ABAC/policy engine vẫn **deferred** ([ADR-0006](./adr/0006-no-abac-rebac-policy-engine.md), §4.7). Cơ chế lan truyền trạng thái → [`README.md`](./README.md) §3 và domain map → [`../README.md`](../README.md) §5.2; mô hình enforce → §5.
 
 ## 4. Domain model (khái niệm — không phải schema)
 
