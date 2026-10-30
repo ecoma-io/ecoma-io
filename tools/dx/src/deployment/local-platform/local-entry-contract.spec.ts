@@ -15,6 +15,7 @@ const LANE_PROJECTS = [
   'pact-broker-app-deploy',
   'transactional-mail-deploy',
   'push-notification-deploy',
+  'staff-access-deploy',
 ] as const;
 
 /** Mọi project trong `deploys/` phải thuộc một trong hai loại: lane project (có local lane) hoặc job deploy (chỉ build image). */
