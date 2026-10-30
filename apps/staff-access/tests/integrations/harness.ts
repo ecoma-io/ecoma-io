@@ -202,6 +202,7 @@ const DATA_TABLES = [
   'role_assignments',
   'authorization_audit',
   'entitlements',
+  'entitlement_outbox_events',
 ] as const;
 
 /**

@@ -14,8 +14,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   getEntitlement,
   upsertEntitlement,
-  type StaffAccessQueryable,
+  type StaffAccessTransaction,
 } from '@ecoma-io/staff-access-infrastructure';
+import { validateEntitlementEvent } from '@ecoma-io/staff-access-contracts';
 
 import { type StaffAccessDatabase, startStaffAccessDatabase } from './harness.ts';
 
@@ -38,9 +39,15 @@ const RUNTIME = 'ecoma_staff_access_runtime';
  *   chặn hai lớp (grant + trigger).
  * - `entitlements`: SELECT + INSERT + UPDATE — read model availability-only
  *   (SR-021) nhưng ghi vẫn cần cho đường revoke entitlement.
+ * - `entitlement_outbox_events`: SELECT + INSERT; UPDATE **chỉ ở cấp cột**
+ *   published_at/attempts/last_error (has_table_privilege bất khả tri cấp cột,
+ *   sweep tính bằng table-level ACL — same pattern role_assignments). Điểm
+ *   khác biệt được test riêng dưới đây: UPDATE cột khác phải chết ở cả GRANT
+ *   lẫn CHECK; DELETE không nằm trong vòng đời (outbox chỉ append + đánh dấu).
  */
 const EXPECTED_PRIVILEGES: Record<string, readonly string[]> = {
   authorization_audit: ['INSERT', 'SELECT'],
+  entitlement_outbox_events: ['INSERT', 'SELECT'],
   entitlements: ['INSERT', 'SELECT', 'UPDATE'],
   permissions: ['SELECT'],
   role_assignments: ['INSERT', 'SELECT'],
@@ -677,14 +684,25 @@ describe('database enforcement of domain invariants', () => {
           const { rows } = await runtime.query(sql, params as unknown[]);
           return rows;
         },
-      } as unknown as StaffAccessQueryable;
+      } as unknown as StaffAccessTransaction;
 
-      await upsertEntitlement(fake, { staffId, product: 'backoffice', status: 'entitled' });
-      await upsertEntitlement(fake, { staffId, product: 'backoffice', status: 'revoked' });
+      const first = await upsertEntitlement(
+        fake,
+        { staffId, product: 'backoffice', status: 'entitled' },
+        crypto.randomUUID(),
+      );
+      const second = await upsertEntitlement(
+        fake,
+        { staffId, product: 'backoffice', status: 'revoked' },
+        crypto.randomUUID(),
+      );
       const third = await getEntitlement(fake, staffId, 'backoffice');
       expect(third?.status).toBe('revoked');
-      // Hai lần ghi ⇒ revision đi qua 1 → 2 (trigger bump mỗi lần đổi status).
+      // Hai lần ghi ⇒ revision đi qua 1 → 2 (trigger bump mỗi lần đổi status);
+      // event mang đúng revision của lần state change tương ứng (A8).
       expect(third?.revision).toBe('2');
+      expect(first.revision).toBe(1);
+      expect(second.revision).toBe(2);
     } finally {
       await runtime.end();
     }
@@ -711,4 +729,274 @@ describe('database enforcement of domain invariants', () => {
       await migrator.end();
     }
   });
+
+  it('0004: the runtime role cannot mutate outbox identity or payload columns', async () => {
+    // UPDATE của outbox chỉ ở cấp cột published_at/attempts/last_error (đánh
+    // dấu publish cho relay P2.2) — sửa identity/payload của event đã ghi phải
+    // chết ở GRANT column-level (lớp một; không có trigger nào exempt ở đây).
+    const migrator = await db.asMigrator();
+    let eventId = '';
+    try {
+      const { staffId } = await seedStaffAndRole(migrator);
+      const { rows } = await migrator.query<{ event_id: string }>(
+        `INSERT INTO staff_access.entitlement_outbox_events
+           (aggregate_id, event_type, payload)
+         VALUES ($1, 'entitlement.granted', '{"revision":1}') RETURNING event_id`,
+        [`${staffId}/backoffice`],
+      );
+      eventId = rows[0]?.event_id ?? '';
+    } finally {
+      await migrator.end();
+    }
+    const runtime = await db.connectAsRuntime();
+    try {
+      // Đánh dấu published là đường hợp lệ duy nhất của runtime.
+      const { rowCount } = await runtime.query(
+        `UPDATE staff_access.entitlement_outbox_events
+            SET published_at = now(), attempts = attempts + 1
+          WHERE event_id = $1`,
+        [eventId],
+      );
+      expect(rowCount).toBe(1);
+      // Đổi identity/payload qua UPDATE phải chết ở grant column-level.
+      await expect(
+        runtime.query(
+          `UPDATE staff_access.entitlement_outbox_events SET payload = $1 WHERE event_id = $2`,
+          ['{}', eventId],
+        ),
+      ).rejects.toThrow(/permission denied/iu);
+      await expect(
+        runtime.query(
+          `UPDATE staff_access.entitlement_outbox_events SET event_type = $1 WHERE event_id = $2`,
+          ['entitlement.revoked', eventId],
+        ),
+      ).rejects.toThrow(/permission denied/iu);
+      await expect(
+        runtime.query(
+          `UPDATE staff_access.entitlement_outbox_events SET aggregate_id = $1 WHERE event_id = $2`,
+          ['other/other', eventId],
+        ),
+      ).rejects.toThrow(/permission denied/iu);
+      // DELETE cũng không nằm trong vòng đời.
+      await expect(
+        runtime.query(`DELETE FROM staff_access.entitlement_outbox_events WHERE event_id = $1`, [
+          eventId,
+        ]),
+      ).rejects.toThrow(/permission denied/iu);
+    } finally {
+      await runtime.end();
+    }
+  });
 });
+
+/**
+ * Đường ghi entitlement + outbox của P2.1 (issue #437) trên PostgreSQL thật,
+ * đúng credential runtime — invariant A8 kiểm chứng bằng hành vi:
+ * commit thì cả state lẫn event tồn tại; rollback thì không cái nào tồn tại.
+ */
+describe('entitlement outbox same-transaction writes', () => {
+  let db: StaffAccessDatabase;
+
+  beforeAll(async () => {
+    db = await startStaffAccessDatabase();
+  }, 180_000);
+
+  afterAll(async () => {
+    await db?.stop();
+  });
+
+  it('committing the transaction persists both the entitlement state and its outbox event', async () => {
+    const migrator = await db.asMigrator();
+    let staffId = '';
+    try {
+      staffId = await seedStaff(migrator);
+    } finally {
+      await migrator.end();
+    }
+
+    const runtime = await db.connectAsRuntime();
+    try {
+      // Một transaction thật của postgres.js-style API: BEGIN/COMMIT quanh
+      // đường ghi repo — commit là đường production duy nhất.
+      await runtime.query('BEGIN');
+      const tx = asTx(runtime);
+      const event = await upsertEntitlement(
+        tx,
+        { staffId, product: 'backoffice', status: 'entitled' },
+        crypto.randomUUID(),
+      );
+      await runtime.query('COMMIT');
+
+      // State commit: read model thấy đúng revision của lần ghi.
+      const row = await getEntitlement(tx, staffId, 'backoffice');
+      expect(row?.status).toBe('entitled');
+      expect(Number(row?.revision)).toBe(1);
+      expect(event.revision).toBe(1);
+      expect(event.type).toBe('entitlement.granted');
+      expect(event.producer).toBe('staff-access');
+      expect(event.staff_id).toBe(staffId);
+      expect(event.product).toBe('backoffice');
+
+      // Event commit cùng transaction: đúng một hàng outbox, payload khớp
+      // envelope qua validator của contract đã lock (P1.2).
+      const { rows: outboxRows } = await runtime.query<{
+        event_id: string;
+        event_type: string;
+        aggregate_id: string;
+        payload: unknown;
+        published_at: string | null;
+      }>(
+        `SELECT event_id, event_type, aggregate_id, payload, published_at
+           FROM staff_access.entitlement_outbox_events
+          WHERE aggregate_id = $1`,
+        [`${staffId}/backoffice`],
+      );
+      expect(outboxRows).toHaveLength(1);
+      const outbox = outboxRows[0];
+      expect(outbox?.event_id).toBe(event.event_id);
+      expect(outbox?.event_type).toBe('entitlement.granted');
+      expect(outbox?.published_at).toBeNull();
+      expect(validateEntitlementEvent(outbox?.payload)).toMatchObject({ ok: true });
+    } finally {
+      await runtime.end();
+    }
+  });
+
+  it('rolling back the transaction leaves neither the state change nor the event', async () => {
+    const migrator = await db.asMigrator();
+    let staffId = '';
+    try {
+      staffId = await seedStaff(migrator);
+    } finally {
+      await migrator.end();
+    }
+
+    const runtime = await db.connectAsRuntime();
+    try {
+      await runtime.query('BEGIN');
+      const tx = asTx(runtime);
+      await upsertEntitlement(
+        tx,
+        { staffId, product: 'pact-broker', status: 'entitled' },
+        crypto.randomUUID(),
+      );
+      // Bất thường giữa chừng (đúng nghĩa `fn` phải ném): ROLLBACK là đường
+      // database diễn tả, state + event phải cùng biến mất.
+      await runtime.query('ROLLBACK');
+
+      const client = await db.connect();
+      try {
+        const { rows: entRows } = await client.query<{ count: string }>(
+          `SELECT count(*)::text AS count FROM staff_access.entitlements
+            WHERE staff_id = $1 AND product = 'pact-broker'`,
+          [staffId],
+        );
+        expect(entRows[0]?.count).toBe('0');
+        const { rows: outboxRows } = await client.query<{ count: string }>(
+          `SELECT count(*)::text AS count FROM staff_access.entitlement_outbox_events
+            WHERE aggregate_id = $1`,
+          [`${staffId}/pact-broker`],
+        );
+        expect(outboxRows[0]?.count).toBe('0');
+      } finally {
+        await client.end();
+      }
+    } finally {
+      await runtime.end();
+    }
+  });
+
+  it('two upserts produce two events with strictly increasing revisions from the database', async () => {
+    const migrator = await db.asMigrator();
+    let staffId = '';
+    try {
+      staffId = await seedStaff(migrator);
+    } finally {
+      await migrator.end();
+    }
+
+    const runtime = await db.connectAsRuntime();
+    try {
+      await runtime.query('BEGIN');
+      const tx = asTx(runtime);
+      const first = await upsertEntitlement(
+        tx,
+        { staffId, product: 'remote-cache', status: 'entitled' },
+        crypto.randomUUID(),
+      );
+      const second = await upsertEntitlement(
+        tx,
+        { staffId, product: 'remote-cache', status: 'revoked' },
+        crypto.randomUUID(),
+      );
+      await runtime.query('COMMIT');
+
+      // Trigger bump MỌI UPDATE (kể cả same-status) — hai lần ghi trong cùng tx
+      // cho revision 1 rồi 2; event = revision của state change cùng lần.
+      expect(first.revision).toBe(1);
+      expect(first.type).toBe('entitlement.granted');
+      expect(second.revision).toBe(2);
+      expect(second.type).toBe('entitlement.revoked');
+      expect(first.event_id).not.toBe(second.event_id);
+
+      const { rows: outboxRows } = await runtime.query<{ payload: unknown }>(
+        `SELECT payload FROM staff_access.entitlement_outbox_events
+          WHERE aggregate_id = $1 ORDER BY occurred_at, event_id`,
+        [`${staffId}/remote-cache`],
+      );
+      expect(outboxRows).toHaveLength(2);
+      for (const row of outboxRows) {
+        expect(validateEntitlementEvent(row.payload)).toMatchObject({ ok: true });
+      }
+    } finally {
+      await runtime.end();
+    }
+  });
+
+  it('a duplicate event_id on the same table dies at the primary key (idempotency key)', async () => {
+    const migrator = await db.asMigrator();
+    let staffId = '';
+    try {
+      staffId = await seedStaff(migrator);
+    } finally {
+      await migrator.end();
+    }
+
+    const runtime = await db.connectAsRuntime();
+    try {
+      await runtime.query('BEGIN');
+      const tx = asTx(runtime);
+      const reused = crypto.randomUUID();
+      await upsertEntitlement(tx, { staffId, product: 'backoffice', status: 'entitled' }, reused);
+      // Lặp lại event_id cũ là hình "producer không biết lần trước đã commit"
+      // của đường khác — PK của outbox chặn: hai lần đổi state không bao giờ
+      // là cùng event.
+      await expect(
+        upsertEntitlement(tx, { staffId, product: 'backoffice', status: 'revoked' }, reused),
+      ).rejects.toThrow(/duplicate key value|entitlement_outbox_events_pkey/iu);
+      await runtime.query('ROLLBACK');
+    } finally {
+      await runtime.end();
+    }
+  });
+});
+
+/** Seed một staff active, trả id (sub unique mỗi lần gọi). */
+async function seedStaff(client: import('pg').Client): Promise<string> {
+  const { rows } = await client.query<{ id: string }>(
+    `INSERT INTO staff_access.staff (sub, display_name, status)
+     VALUES ('sub_' || translate(md5(random()::text || clock_timestamp()::text), '0189', 'abcd'),
+             'Outbox Staff', 'active') RETURNING id`,
+  );
+  return rows[0]?.id ?? '';
+}
+
+/** Bọc client pg thành {@link StaffAccessTransaction} — hình fake dùng chung cho hai test trên. */
+function asTx(client: import('pg').Client): StaffAccessTransaction {
+  return {
+    unsafe: async <T>(sql: string, params?: readonly unknown[]) => {
+      const { rows } = await client.query(sql, params as unknown[]);
+      return rows as T[];
+    },
+  } as unknown as StaffAccessTransaction;
+}
