@@ -22,7 +22,7 @@ Roadmap triển khai các phase sau Phase 0. Phase 0 chỉ audit + tài liệu; 
 - **P2.2** Relay outbox → Cloudflare Queues (hoặc cơ chế được ADR lựa chọn) với idempotency key, retry, DLQ, replay.
 - **P2.3** Consumer idempotent ở từng sản phẩm: duplicate/out-of-order handling, revision/version.
 - **P2.4** Reconciliation job + metric freshness.
-- **P2.5** Thiết kế/test cơ chế đáp ứng revocation SLA (normal ≤60s, high ≤5s) — **không** mặc định queue-only đạt ≤5s; fail-closed/fail-open, re-check-at-write-time là control thứ hai.
+- **P2.5** Thiết kế/test cơ chế đáp ứng revocation SLA (normal ≤60s, high ≤5s) — **đã chốt** [ADR-0014](../domains/staff-access/adr/0014-revocation-sla-mechanism.md): event-driven invalidation với deadline delivery theo event class, freshness bound + fail-closed, re-check-at-write-time; queue-only không đạt ≤5s.
 - **Depends on:** P1.2, ADR-0002/0009 audit.
 - **Parallel:** P2.1/P2.5 song song; P2.2 sau P2.1; P2.3 sau P2.2; P2.4 song song với P2.3.
 
@@ -89,7 +89,7 @@ Phase 6 depends on Phase 2, 3, 4, 5.
 - Staff Access API/event contracts (P1.2) lock trước Phase 2 consumer implementation.
 - Entitlement event schema (P2.1) lock trước Phase 3/5.
 - Remote Cache control-plane API (P4.1) lock trước Phase 5 integration.
-- Revocation SLA mechanism (P2.5) lock trước Phase 3 rollout.
+- Revocation SLA mechanism (P2.5) — đã lock bằng [ADR-0014](../domains/staff-access/adr/0014-revocation-sla-mechanism.md) trước Phase 3 rollout.
 
 ## Deploy infra prerequisite (không thuộc phase nào ở đây)
 
@@ -97,7 +97,6 @@ Staging/production pipeline, delivery runner và migration runner **chưa tồn 
 
 ## Open decisions cần giải quyết trong Phase 1–2 (không phải Phase 0)
 
-- Cơ chế cụ thể đáp ứng revocation ≤5s (ADR-0002 target, chưa chốt).
 - Relay outbox: Worker relay / Queue / NATS (01 §10).
 - Remote Cache control-plane storage engine (PostgreSQL vs D1) — open decision.
 - Remote Cache usage rights: MVP dùng API key riêng; entitlement integration deferred.
