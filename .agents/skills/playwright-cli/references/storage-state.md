@@ -269,7 +269,7 @@ npx playwright-cli open https://example.com
 ## Security Notes
 
 - Never commit storage state files containing auth tokens
-- Add `*.auth-state.json` to `.gitignore`
+- `state-save` writes to the current working directory by default (e.g. `storage-state-{timestamp}.json`), and any custom filename is allowed. These names are **not** covered by the repository `.gitignore` (only `.playwright-cli/` is ignored). Prefer saving into the ignored directory: `npx playwright-cli state-save .playwright-cli/auth.json`
 - Delete state files after automation completes
 - Use environment variables for sensitive data
 - By default, sessions run in-memory mode which is safer for sensitive operations
