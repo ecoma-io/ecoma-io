@@ -51,6 +51,34 @@ export interface StaffAccessQueryable {
 }
 
 /**
+ * Brand danh nghia cho transaction — pattern `NONCE_CLAIM_TARGET` cua
+ * auth-infrastructure.
+ *
+ * ⚠️ Co y **khong export**: mot `unique symbol` chi `declare` duoc o dung
+ * module nay, nen khong module nao khac tao duoc gia tri khop
+ * {@link StaffAccessTransaction} bang structural typing. Day la rang doi cua
+ * invariant A8 (issue #437): repository ghi entitlement nhan **chi** tx nay,
+ * nen mot duong goi `upsertEntitlement(client, ...)` vo tinh (ghi state +
+ * event ngoai mot transaction) khong bien dich — thay vi bien dich roi commit
+ * nua viec. `declare` (khong phai `const ... = Symbol()`) la bat buoc: khong
+ * co gia tri runtime nao mang thuoc tinh nay, khong ton mot byte trong bundle.
+ */
+declare const STAFF_ACCESS_TRANSACTION: unique symbol;
+
+/**
+ * Mot transaction DA BAT DAU — doi tuong ma `begin` truyen cho callback.
+ *
+ * Vi brand, no KHONG khop {@link StaffAccessClient} (client co `begin`/`end`
+ * nhung thieu thuoc tinh brand), nen repository ghi khong the nham nhan mot
+ * client va tu mo transaction "ngam" ben trong: nguoi goi phai mo transaction
+ * truoc, va viec commit/rollback nam o duong `begin` duy nhat do.
+ */
+export interface StaffAccessTransaction extends StaffAccessQueryable {
+  /** Brand danh nghia — xem JSDoc cua {@link STAFF_ACCESS_TRANSACTION}. */
+  readonly [STAFF_ACCESS_TRANSACTION]: true;
+}
+
+/**
  * Ket noi toi `db-staff-access` — client cap do cua `postgres()`, khong phai
  * mot transaction. Chua `begin` de duong transaction cua repo co type an;
  * khong co brand danh nghia nhu auth-infrastructure vi serving path cua
@@ -64,8 +92,12 @@ export interface StaffAccessClient extends StaffAccessQueryable {
    * ⚠️ `fn` PHAI nem de rollback. Nuot loi roi `return` se `COMMIT` mot
    * transaction chi da lam nua viec — voi audit/assignment do la mot ghi
    * audit mat vet hoac mot grant roi vao trang thai leo thang.
+   *
+   * Callback nhan {@link StaffAccessTransaction} (co brand): repository ghi
+   * entitlement nhan chi tx nay de invariant A8 (state + outbox cung mot
+   * transaction) duoc giu o muc type, khong phai hua loi bang comment.
    */
-  begin<T>(fn: (tx: StaffAccessQueryable) => Promise<T>): Promise<T>;
+  begin<T>(fn: (tx: StaffAccessTransaction) => Promise<T>): Promise<T>;
   /**
    * Dong pool.
    *

@@ -54,5 +54,7 @@ export {
   getEntitlement,
   listEntitlementsForStaff,
   upsertEntitlement,
+  type EntitlementEvent,
   type EntitlementRow,
 } from './entitlement-repository';
+export type { StaffAccessTransaction } from './postgres';

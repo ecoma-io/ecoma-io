@@ -17,6 +17,9 @@
   "exclude": ["out-tsc", "dist", "src/**/*.test.ts", "src/**/*.spec.ts"],
   "references": [
     {
+      "path": "../staff-access-contracts/tsconfig.lib.json"
+    },
+    {
       "path": "../staff-access-domain/tsconfig.lib.json"
     }
   ]

@@ -41,7 +41,7 @@ describe('staff-access migration runner on a real PostgreSQL', () => {
       expect(result.applied).toBe(files.length);
 
       // Không có bảng lịch sử để đối chiếu: catalog là nguồn sự thật duy nhất —
-      // đếm bảng `CREATE TABLE staff_access.*` (7 bảng data) qua catalog thật.
+      // đếm bảng `CREATE TABLE staff_access.*` (8 bảng data) qua catalog thật.
       // Gom relname phía JS thay vì `array_agg`: pg trả array qua nhiều hàng
       // là hình dạng dễ assert và không phụ thuộc parser của type `_text`.
       const { rows } = await migrator.query<{ relname: string }>(
@@ -54,6 +54,7 @@ describe('staff-access migration runner on a real PostgreSQL', () => {
       expect(rows.map((row) => row.relname)).toEqual(
         [
           'authorization_audit',
+          'entitlement_outbox_events',
           'entitlements',
           'permissions',
           'role_assignments',
@@ -62,7 +63,7 @@ describe('staff-access migration runner on a real PostgreSQL', () => {
           'staff',
         ].toSorted(),
       );
-      expect(result.tablesInStaffAccessSchema).toBe(7);
+      expect(result.tablesInStaffAccessSchema).toBe(8);
     } finally {
       await migrator.end();
     }
@@ -72,12 +73,12 @@ describe('staff-access migration runner on a real PostgreSQL', () => {
     // Runner không có ledger — nó chạy LẠI mọi file. Tính idempotent của DDL
     // (`IF NOT EXISTS`, `CREATE OR REPLACE`, `DROP TRIGGER IF EXISTS`) là thứ
     // làm lần chạy thứ hai thành công mà không đổi gì: applied = số file,
-    // schema vẫn 7 bảng. Một migration mất idempotency lộ ngay ở đây.
+    // schema vẫn 8 bảng. Một migration mất idempotency lộ ngay ở đây.
     const migrator = await db.connectAsMigrator();
     try {
       const result = await applyAllMigrations(migrator);
       expect(result.applied).toBe(listMigrations().length);
-      expect(result.tablesInStaffAccessSchema).toBe(7);
+      expect(result.tablesInStaffAccessSchema).toBe(8);
     } finally {
       await migrator.end();
     }
@@ -158,6 +159,85 @@ describe('staff-access migration runner on a real PostgreSQL', () => {
         { id: 'role.read', status: 'active' },
         { id: 'staff.read', status: 'active' },
       ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('creates the entitlement outbox with its unpublished partial index and closed vocabularies', async () => {
+    // P2.1 (issue #437): bảng outbox tồn tại sau applyAllMigrations; hình dạng
+    // phải đúng mẫu `account_outbox_events` — event_id là PK (idempotency key)
+    // và partial index chỉ phục vụ relay claim (P2.2).
+    const client = await db.connect();
+    try {
+      // PK trên event_id + cột bắt buộc NOT NULL.
+      const { rows: pkRows } = await client.query<{
+        column_name: string;
+        data_type: string;
+        is_nullable: string;
+      }>(
+        `SELECT column_name, data_type, is_nullable
+           FROM information_schema.columns
+          WHERE table_schema = 'staff_access' AND table_name = 'entitlement_outbox_events'
+          ORDER BY ordinal_position`,
+      );
+      const columns = Object.fromEntries(pkRows.map((row) => [row.column_name, row]));
+      expect(columns['event_id']?.data_type).toBe('uuid');
+      expect(columns['aggregate_id']?.is_nullable).toBe('NO');
+      expect(columns['event_type']?.is_nullable).toBe('NO');
+      expect(columns['payload']?.is_nullable).toBe('NO');
+      expect(columns['occurred_at']?.is_nullable).toBe('NO');
+      expect(columns['published_at']?.is_nullable).toBe('YES');
+
+      const { rows: indexRows } = await client.query<{ indexdef: string }>(
+        `SELECT indexdef FROM pg_indexes
+          WHERE schemaname = 'staff_access' AND tablename = 'entitlement_outbox_events'
+          ORDER BY indexname`,
+      );
+      // pg_index bọc biểu thức WHERE trong ngoặc (`WHERE (published_at IS NULL)`)
+      // — so sánh phần cốt lõi thay vì nguyên văn toàn chuỗi.
+      const hasUnpublishedPartial = indexRows.some(
+        (row) =>
+          row.indexdef.includes('(occurred_at)') &&
+          row.indexdef.includes('published_at IS NULL') &&
+          row.indexdef.includes('WHERE'),
+      );
+      expect(hasUnpublishedPartial).toBe(true);
+
+      // Vocab đóng: một event_type lạ và một aggregate_type lạ phải chết ở CHECK
+      // — một drift contract không lọt qua outbox.
+      const { rows: staffRows } = await client.query<{ id: string }>(
+        `INSERT INTO staff_access.staff (sub, display_name, status)
+         VALUES ('sub_' || translate(md5(random()::text || clock_timestamp()::text), '0189', 'abcd'),
+                 'Outbox Migration Staff', 'active') RETURNING id`,
+      );
+      const staffId = staffRows[0]?.id ?? '';
+      await expect(
+        client.query(
+          `INSERT INTO staff_access.entitlement_outbox_events
+             (aggregate_id, event_type, payload) VALUES ($1, 'entitlement.suspended', '{}')`,
+          [`${staffId}/backoffice`],
+        ),
+      ).rejects.toThrow(/entitlement_outbox_events_event_type_check|violates check constraint/iu);
+      await expect(
+        client.query(
+          `INSERT INTO staff_access.entitlement_outbox_events
+             (aggregate_id, event_type, aggregate_type, payload)
+           VALUES ($1, 'entitlement.granted', 'assignment', '{}')`,
+          [`${staffId}/backoffice`],
+        ),
+      ).rejects.toThrow(
+        /entitlement_outbox_events_aggregate_type_check|violates check constraint/iu,
+      );
+      // Payload mang key secret phải chết ở CHECK SR-014.
+      await expect(
+        client.query(
+          `INSERT INTO staff_access.entitlement_outbox_events
+             (aggregate_id, event_type, payload)
+           VALUES ($1, 'entitlement.granted', jsonb_build_object($2::text, 'x'))`,
+          [`${staffId}/backoffice`, 'token'],
+        ),
+      ).rejects.toThrow(/payload_no_secret_keys|violates check constraint/iu);
     } finally {
       await client.end();
     }

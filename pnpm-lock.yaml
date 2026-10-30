@@ -905,6 +905,9 @@ importers:
 
   libs/staff-access-infrastructure:
     dependencies:
+      '@ecoma-io/staff-access-contracts':
+        specifier: workspace:*
+        version: link:../staff-access-contracts
       '@ecoma-io/staff-access-domain':
         specifier: workspace:*
         version: link:../staff-access-domain

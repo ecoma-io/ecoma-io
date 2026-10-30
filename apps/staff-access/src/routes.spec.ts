@@ -6,7 +6,7 @@ import { decodeKeysetCursor, encodeKeysetCursor } from './cursor';
 import type { AppEnv } from './types';
 import type {
   StaffAccessClient,
-  StaffAccessQueryable,
+  StaffAccessTransaction,
 } from '@ecoma-io/staff-access-infrastructure';
 
 /**
@@ -20,7 +20,7 @@ import type {
 // StaffAccessClient); fake client duoc cast o bien nho mot lan.
 const { withStaffAccessClientMock, unsafeMock, beginMock, endMock } = vi.hoisted(() => {
   const unsafe = vi.fn<(sql: string, params?: readonly unknown[]) => Promise<unknown[]>>();
-  const begin = vi.fn<(fn: (tx: StaffAccessQueryable) => Promise<unknown>) => Promise<unknown>>();
+  const begin = vi.fn<(fn: (tx: StaffAccessTransaction) => Promise<unknown>) => Promise<unknown>>();
   const end = vi.fn<() => Promise<void>>();
   const withClient =
     vi.fn<(config: unknown, fn: (db: StaffAccessClient) => Promise<unknown>) => Promise<unknown>>();
@@ -47,6 +47,18 @@ vi.mock('@ecoma-io/staff-access-infrastructure', async (importOriginal) => {
     ),
   };
 });
+
+/**
+ * Fake `begin` của mock truyền client vào callback — đúng vi phạm brand của
+ * {@link StaffAccessTransaction} mà runtime thật không bao giờ có; cast tại
+ * **một** chỗ ghi nhận lệch loại (client ≠ tx), không để loang ra các test.
+ */
+function beginPassingClientAsTx(): (
+  fn: (tx: StaffAccessTransaction) => Promise<unknown>,
+) => Promise<unknown> {
+  return async (fn: (tx: StaffAccessTransaction) => Promise<unknown>): Promise<unknown> =>
+    fn(buildFakeClient() as unknown as StaffAccessTransaction);
+}
 
 const CONFIG = { hyperdrive: { connectionString: 'postgres://hyperdrive.invalid/db' } };
 
@@ -237,9 +249,7 @@ describe('staff-access management routes', () => {
       }
       return [];
     });
-    beginMock.mockImplementation(async (fn: (tx: StaffAccessQueryable) => Promise<unknown>) =>
-      fn(buildFakeClient()),
-    );
+    beginMock.mockImplementation(beginPassingClientAsTx());
     const app = buildTestApp();
     const response = await app.request('/staff/stf_1/assignments', {
       method: 'POST',
@@ -280,9 +290,7 @@ describe('staff-access management routes', () => {
       }
       return [];
     });
-    beginMock.mockImplementation(async (fn: (tx: StaffAccessQueryable) => Promise<unknown>) =>
-      fn(buildFakeClient()),
-    );
+    beginMock.mockImplementation(beginPassingClientAsTx());
     const app = buildTestApp();
     const response = await app.request('/assignments/revoke', {
       method: 'POST',
