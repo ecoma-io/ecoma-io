@@ -8,7 +8,7 @@ script `prepare`.
 ```bash
 pnpm dx --help              # liệt kê các lệnh
 pnpm dx repo-prepare        # hook, kiểm tra tool, đồng bộ cấu hình agent
-pnpm dx sync-agent-config   # chỉ đồng bộ cấu hình agent (CLAUDE.md + .agent/skills/ → .claude/skills/)
+pnpm dx sync-agent-config   # chỉ đồng bộ cấu hình agent (CLAUDE.md + .agents/skills/ → .claude/skills/)
 pnpm dx pr-check            # kiểm PR theo policy của repository
 ```
 
@@ -19,7 +19,7 @@ pnpm dx pr-check            # kiểm PR theo policy của repository
 1. Cài git hook (`lefthook install`).
 2. Kiểm tra Docker, Helm, kustomize và kubeconform có chạy được không.
 3. Đồng bộ cấu hình agent: viết `CLAUDE.md` cạnh mọi `AGENTS.md` còn thiếu
-   và đồng bộ `.agent/skills/` → `.claude/skills/`.
+   và đồng bộ `.agents/skills/` → `.claude/skills/`.
 
 ### Kiểm tra tool
 
@@ -57,11 +57,11 @@ tra này trên một máy rồi fail mọi commit vì daemon chưa từng tồn 
   nơi có `AGENTS.md` mà thiếu file đó. `AGENTS.md` vẫn là source of truth:
   `CLAUDE.md` đã tồn tại không bao giờ bị ghi đè (kể cả file viết tay), và các
   thư mục bị ignore sẽ bị bỏ qua.
-- **Skills** — đồng bộ `.agent/skills/` → `.claude/skills/`, giữ nguyên cấu
+- **Skills** — đồng bộ `.agents/skills/` → `.claude/skills/`, giữ nguyên cấu
   trúc thư mục và tất cả file hỗ trợ (không chỉ `SKILL.md`). Copy file mới và
   file thay đổi, đồng thời xóa file/thư mục đích không còn đối ứng, nên chạy
   lặp lại là idempotent. `.claude/skills/` hoàn toàn là generated output —
-  custom skills phải đặt trong `.agent/skills/`. Nếu `.agent/skills/` không
+  custom skills phải đặt trong `.agents/skills/`. Nếu `.agents/skills/` không
   tồn tại, bước skills được bỏ qua với thông báo rõ ràng và `.claude/skills/`
   hiện có được giữ nguyên; nếu có nhưng rỗng, nó được đồng bộ như một nguồn
   rỗng (làm trống đích). Bước này tôn trọng `.gitignore` cho việc duyệt và cho
