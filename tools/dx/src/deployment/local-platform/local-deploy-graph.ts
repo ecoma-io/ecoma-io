@@ -52,10 +52,12 @@ export interface LocalLaneTask {
  * Project deploy thuộc chuỗi local — thứ tự khai là thứ tự hiển thị mặc định.
  *
  * Wave 2 (#264): năm project cũ (spine platform → home → backoffice →
- * account → auth) + bốn unit mới — `pact-broker-api-deploy` và
+ * account → auth) + các unit mới — `pact-broker-api-deploy` và
  * `push-notification-deploy` phụ thuộc platform (network + StackReference),
  * `pact-broker-app-deploy` phụ thuộc pact-api (api token + alias DNS),
  * `transactional-mail-deploy` phụ thuộc account (secret HMAC cross-stack).
+ * P1.4 (#428): `staff-access-deploy` phụ thuộc platform (network +
+ * StackReference) — cùng hình WIC một worker như pact-broker-api.
  * `transactional-mailer-job-deploy` và `web-push-notification-job-deploy` KHÔNG
  * thuộc lane: không có target `local-up` — runtime của chúng là worker thứ hai
  * bên trong container WIC của unit tương ứng.
@@ -70,6 +72,7 @@ export const LOCAL_LANE_PROJECTS = [
   'pact-broker-app-deploy',
   'transactional-mail-deploy',
   'push-notification-deploy',
+  'staff-access-deploy',
 ] as const;
 export type LocalLaneProject = (typeof LOCAL_LANE_PROJECTS)[number];
 
