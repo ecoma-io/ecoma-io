@@ -422,10 +422,11 @@ const postgresPassword = new pulumi.Config('postgres').require('password');
  *
  * `retainOnDelete` là mảnh thứ hai của đảm bảo đó: không có nó, `pulumi
  * destroy` xoá CẢ volume (đã kiểm thực nghiệm — volume biến mất cùng stack),
- * và lời hứa "mặc định giữ dữ liệu" của `tools/dx local-destroy` thành giả.
- * Với `retainOnDelete`, xoá resource khỏi state KHÔNG xoá volume Docker —
- * dữ liệu chỉ biến mất khi `local-destroy --remove-data` gọi `docker volume
- * rm` tường minh sau một cảnh báo.
+ * và destroy lỗi sẽ không tách được khỏi lỗi xoá volume (down tự gọi `docker
+ * volume rm` sau destroy, xem `runPlatformDown`). Với `retainOnDelete`, xoá
+ * resource khỏi state KHÔNG xoá volume Docker — volume chỉ biến mất khi down
+ * của entry gọi `docker volume rm` tường minh (vô điều kiện, cảnh báo trước
+ * khi mất dữ liệu).
  */
 const postgresVolume = new docker.Volume(
   'postgres-volume',

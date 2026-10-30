@@ -6,9 +6,10 @@ import { runLocalCommand, worktreeRootArg } from './../../local-runtime/local-co
 /**
  * Entry `pnpm dx local-cleanup`.
  *
- * Dọn Docker resource mồ côi của worktree đã bị xoá. PostgreSQL volume
- * persistent mặc định KHÔNG bị xoá — giữ đúng contract down của
- * `platform-deploy` (dữ liệu chỉ xoá khi opt-in `--remove-data` tường minh).
+ * Dọn Docker resource mồ côi của worktree đã bị xoá. PostgreSQL volume bị
+ * XOÁ như mọi resource mồ côi đủ điều kiện — cùng contract với down vô điều
+ * kiện của `platform-deploy`; sự an toàn nằm ở check ownership + presence
+ * (thiếu label, worktree còn sống là KHÔNG xoá), không ở hành vi "giữ".
  * `--dry-run` không phát lệnh destructive nào — chỉ báo cáo.
  *
  * KHÔNG lấy khóa lane (#363): quyết định xoá của cleanup dựa trên presence
@@ -21,7 +22,7 @@ export default defineCommand({
   meta: {
     name: 'local-cleanup',
     description:
-      'Remove orphaned local deployment Docker resources whose worktree no longer exists (preserves live worktrees and persistent PostgreSQL volumes)',
+      'Remove orphaned local deployment Docker resources whose worktree no longer exists (never touches live worktrees or resources without valid ownership labels)',
   },
 
   args: {

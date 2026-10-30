@@ -159,8 +159,13 @@ describe('shared entry infrastructure', () => {
     expect(source).toContain('stealLaneLock');
   });
 
-  it('keeps the platform volume deletion behind an explicit --remove-data opt-in', () => {
+  it('deletes the platform PostgreSQL volume unconditionally on down (no opt-out flag)', () => {
+    // Volume deletion là hành vi MẶC ĐỊNH của down — cờ opt-in cũ
+    // `--remove-data` đã bị xoá hoàn toàn và không được thay bằng cờ/config
+    // tương đương. Fail-closed theo nguồn: tái xuất hiện chuỗi cờ trong entry
+    // (parsing, tham số, tài liệu runtime) là đỏ.
     const source = readEntry('platform-deploy');
-    expect(source).toContain('--remove-data');
+    expect(source).not.toContain('--remove-data');
+    expect(source).not.toContain('removeData');
   });
 });

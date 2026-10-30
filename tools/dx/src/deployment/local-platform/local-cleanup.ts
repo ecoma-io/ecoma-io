@@ -14,10 +14,11 @@
  * - Worktree còn tồn tại trên đĩa (theo `normalizeWorktreeRoot` — path phải
  *   resolve được) là worktree SỐNG, resource của nó được giữ nguyên kể cả nếu
  *   developer đang không deploy.
- * - PostgreSQL volume persistent mặc định KHÔNG bị xoá — giữ đúng contract
- *   down của `platform-deploy` (dữ liệu chỉ xoá khi opt-in tường minh qua
- *   `nx run platform-deploy:local-down -c local -- --remove-data`). Cleanup
- *   KHÔNG có cờ xoá volume: việc đó thuộc về down của platform.
+ * - PostgreSQL volume bị XOÁ như mọi resource mồ côi đủ điều kiện khác —
+ *   cùng contract với down của `platform-deploy` (down xoá volume vô điều
+ *   kiện, không còn opt-in giữ dữ liệu). An toàn của volume không nằm ở hành
+ *   vi "giữ" mà ở chính các check ownership + presence: thiếu label, metadata
+ *   mâu thuẫn hay worktree còn sống là volume KHÔNG bao giờ bị xoá.
  * - Docker daemon không nói được / metadata not-readable ⇒ fail an toàn, không
  *   xoá gì.
  *
@@ -48,7 +49,11 @@ import {
 } from './../../local-runtime/deploy-namespace.js';
 import type { ExecResult } from './pulumi-context.js';
 
-/** Loại resource mà cleanup quét. */
+/**
+ * Kind volume PostgreSQL trong `CLEANUP_KINDS` — được cleanup XOÁ như mọi
+ * resource mồ côi đủ điều kiện (labels ownership hợp lệ + worktree confirmed
+ * absent), cùng contract với down vô điều kiện của `platform-deploy`.
+ */
 export const POSTGRES_VOLUME_KIND: DeployResourceKind = 'postgres-volume';
 
 export const CLEANUP_KINDS: readonly DeployResourceKind[] = [
@@ -272,12 +277,6 @@ export function decideResourceAction(
           reason:
             `cannot determine whether the worktree exists (${ownership.worktreePath}) — ` +
             'fail-closed, keeping the resource',
-        };
-      }
-      if (kind === POSTGRES_VOLUME_KIND) {
-        return {
-          action: 'kept',
-          reason: 'persistent PostgreSQL volume — cleanup does not delete it',
         };
       }
       return { action: 'remove' };

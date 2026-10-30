@@ -282,8 +282,8 @@ const redirectUriLocal = pulumi.interpolate`https://office.${rootHostname}:${tra
  *   CTE của `pact-broker-api-deploy`.
  * - Redirect URI: `ON CONFLICT DO NOTHING` (PK `(client_id, redirect_uri)`)
  *   — thêm URI mới khi port đổi; URI của port cũ vẫn còn trong bảng (vô hại,
- *   origin cũ không còn router nào trỏ về) và `local-destroy --remove-data`
- *   là đường dọn sạch chính thức.
+ *   origin cũ không còn router nào trỏ về) và down platform xoá volume là
+ *   đường dọn sạch chính thức.
  *
  * Chạy bằng role **migrator** qua `docker exec` trust auth trong container
  * PostgreSQL (cùng đường với provision script phía trên — platform không

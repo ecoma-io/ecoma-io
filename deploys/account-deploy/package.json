@@ -46,7 +46,7 @@
         ]
       },
       "local-down": {
-        "//": "Teardown của RIÊNG project này (`local.ts down` = `pulumi destroy --yes`; platform tự xoá volume khi `--remove-data`). KHÔNG có `dependsOn` — không thứ tự teardown toàn cục: mỗi project tự xoá resource của mình trong namespace của worktree, và `pulumi destroy` tự serialize trên stack state. Idempotent: worktree chưa từng deploy là no-op exit 0; lỗi destroy thật thì exit 1. Cache bị tắt ở targetDefaults `nx.json` (cùng một-lane policy với local-up).",
+        "//": "Teardown của RIÊNG project này (`local.ts down` = `pulumi destroy --yes`; platform tự xoá volume PostgreSQL mọi lần down). KHÔNG có `dependsOn` — không thứ tự teardown toàn cục: mỗi project tự xoá resource của mình trong namespace của worktree, và `pulumi destroy` tự serialize trên stack state. Idempotent: worktree chưa từng deploy là no-op exit 0; lỗi destroy thật thì exit 1. Cache bị tắt ở targetDefaults `nx.json` (cùng một-lane policy với local-up).",
         "executor": "nx:run-commands",
         "options": {
           "cwd": "deploys/account-deploy",

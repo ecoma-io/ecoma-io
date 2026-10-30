@@ -215,7 +215,9 @@ export function pulumiUpForEntry(project: string, foundation: EntryFoundation): 
  * secret cross-stack) trong khi volume `retainOnDelete` còn lại — deploy kế
  * tiếp sẽ không có mật khẩu khớp volume cũ và phải fail có hướng dẫn. Giữ stack
  * rỗng resource là cách hai nửa (mật khẩu trong config, dữ liệu trong volume)
- * luôn cùng tuổi.
+ * luôn cùng tuổi. Với `platform-deploy` còn đảm bảo thêm: volume sau destroy
+ * được entry xoá tường minh (`runPlatformDown`) — bắt buộc destroy KHÔNG tự
+ * xoá volume (`retainOnDelete`), nếu không hai kết quả không tách rời được.
  *
  * Chỉ đủ `namespace:worktreeRoot`: destroy không chạy chương trình (chỉ đọc
  * state), không cần `platformStackRef`, và KHÔNG được ghi config mới vào stack.

@@ -142,13 +142,13 @@ describe('decideResourceAction', () => {
     expect(decision.action).toBe('remove');
   });
 
-  it('keeps orphan postgres volume by default (persistent data)', () => {
+  it('selects orphan postgres volume for removal like any other kind', () => {
     const decision = decideResourceAction(
       'postgres-volume',
       { state: 'owned', worktreePath: '/some/dead/wt', worktreeId: 'wabc' },
       { worktreePresence: () => 'absent' },
     );
-    expect(decision.action).toBe('kept');
+    expect(decision.action).toBe('remove');
   });
 });
 
@@ -272,17 +272,18 @@ describe('runLocalCleanup', () => {
       execDocker: fakeDockerExec(docker),
       worktreePresence: () => 'absent',
     });
-    // network, traefik, postgres, home removed; postgres volume kept
+    // network, traefik, postgres, home and the postgres volume all removed
     expect(docker.removed).toEqual(
       expect.arrayContaining([
         `network/ecoma-${ns}-network`,
         `container/ecoma-${ns}-home`,
         `container/ecoma-${ns}-traefik`,
         `container/ecoma-${ns}-postgres`,
+        `volume/ecoma-${ns}-postgres-volume`,
       ]),
     );
     const volumeEntry = report.entries.find((e) => e.kind === 'postgres-volume');
-    expect(volumeEntry?.action).toBe('kept');
+    expect(volumeEntry?.action).toBe('removed');
   });
 
   it('pact WIC orphan resources (container, image, state volume) are identified and removed', () => {
@@ -495,11 +496,11 @@ describe('runLocalCleanup', () => {
     // Set thay cho sort: cùng đẳng thức tập hợp — `.sort` bị linter cấm,
     // `.toSorted` cần lib es2023 mà dx không dùng (cùng cách index.spec.ts).
     expect(new Set(wouldRemove.map((e) => e.name))).toEqual(
-      new Set([`ecoma-${ns}-home`, `ecoma-${ns}-network`]),
+      new Set([`ecoma-${ns}-home`, `ecoma-${ns}-network`, `ecoma-${ns}-postgres-volume`]),
     );
   });
 
-  it('persistent postgres volume preserved by default', () => {
+  it('orphan postgres volume is removed in execute mode (data policy matches platform down)', () => {
     const wt = tempWorktree();
     const ns = worktreeNamespace(wt);
     const docker: FakeDocker = {
@@ -517,8 +518,8 @@ describe('runLocalCleanup', () => {
       execDocker: fakeDockerExec(docker),
       worktreePresence: () => 'absent',
     });
-    expect(report.entries[0]?.action).toBe('kept');
-    expect(docker.removed).toHaveLength(0);
+    expect(report.entries[0]?.action).toBe('removed');
+    expect(docker.removed).toEqual([`volume/ecoma-${ns}-postgres-volume`]);
   });
 
   it('docker ls failure reported accurately without pretending success', () => {

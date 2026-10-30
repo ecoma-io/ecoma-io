@@ -24,11 +24,14 @@
  * HTTPS qua Traefik với certificate local (script `.mjs` cùng bản với
  * orchestration cũ).
  *
- * `down` giữ volume PostgreSQL theo mặc định (dữ liệu persistent của
- * developer) và KHÔNG dùng `pulumi stack rm`; khi được gọi với cờ
- * `--remove-data`, xoá luôn volume sau khi destroy với cảnh báo trước — đúng
- * contract `local-cleanup` (#420): node platform là nơi duy nhất biết volume
- * nào thuộc namespace của mình.
+ * `down` xoá volume PostgreSQL VÔ ĐIỀU KIỆN sau khi destroy — không có tuỳ
+ * chọn nào để giữ lại dữ liệu local (cờ opt-in giữ dữ liệu cũ đã bị xoá hoàn
+ * toàn, KHÔNG thay bằng cờ/config tương đương). Destroy KHÔNG tự xoá volume
+ * (`retainOnDelete`) nên hai kết quả tách rời: lỗi destroy và lỗi xoá volume
+ * được theo dõi, báo và phản ánh vào exit code riêng biệt (xem
+ * `runPlatformDown`). KHÔNG dùng `pulumi stack rm` — entry up của platform
+ * fail có hướng dẫn khi config mất mà volume còn; down giữ stack rỗng
+ * resource là cách hai nửa (config, volume) luôn cùng tuổi.
  */
 // oxlint-disable no-console -- entry CLI chạy trên Node; console là kênh
 // output DUY NHẤT của lifecycle gate (nx:run-commands gộp stdout/stderr).
@@ -45,11 +48,10 @@ import {
   upsertLocalEnv,
 } from '../../tools/dx/src/deployment/local-platform/local-env';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
-import { exec } from '../../tools/dx/src/deployment/local-platform/pulumi-context';
+import { runPlatformDown } from '../../tools/dx/src/deployment/local-platform/platform-down';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
 import {
   ensureStackForEntry,
-  pulumiDestroyForEntry,
   pulumiUpForEntry,
   resolveEntryFoundation,
   runEntrySmoke,
@@ -63,8 +65,6 @@ import {
   ROOT_DOMAIN_ENV_KEY,
   ROOT_HOST_ENV_KEY,
 } from '../../tools/dx/src/deployment/local-platform/platform-outputs-contract';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
-import { dockerResourceName } from '../../tools/dx/src/local-runtime/deploy-namespace';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
 import { ROOT_DIR } from '../../tools/dx/src/utils';
 
@@ -120,54 +120,14 @@ async function up(foundation: EntryFoundation): Promise<number> {
   }
 }
 
-async function down(foundation: EntryFoundation, removeData: boolean): Promise<number> {
-  const volumeName = dockerResourceName(foundation.ctx.namespace, 'postgres-volume');
-  try {
-    pulumiDestroyForEntry('platform-deploy', foundation);
-  } catch (error) {
-    // Destroy KHÔNG chặn bước xoá volume khi người dùng yêu cầu `--remove-data`:
-    // lời hứa của lệnh là XOÁ dữ liệu — nếu stack Pulumi đã biến mất (`pulumi
-    // stack rm` ngoài luồng, state hỏng...) thì destroy coi như đã xong phần
-    // đó, và bước xoá volume vẫn phải chạy. Với lỗi Pulumi khác (daemon down,
-    // sai passphrase...), cũng tiếp tục tới volume theo yêu cầu nhưng báo rõ.
-    if (removeData !== true) {
-      console.error(
-        `[platform-deploy] down failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      return 1;
-    }
-    console.error(
-      '[platform-deploy] Pulumi destroy did not complete (stderr above) — continuing to ' +
-        'delete the volume as requested by --remove-data. Resources left in state (if any) ' +
-        'are not cleaned up; re-check manually.',
-    );
-  }
-  if (removeData === true) {
-    console.warn(
-      `[platform-deploy] WARNING: deleting PostgreSQL volume ${volumeName} — the local database ` +
-        'data of this worktree will be permanently lost.',
-    );
-    const vol = exec('docker', ['volume', 'rm', volumeName], ROOT_DIR, process.env);
-    if (vol.status !== 0) {
-      console.error(
-        `[platform-deploy] volume deletion failed (it may already be gone):\n${vol.stderr}`,
-      );
-      return 1;
-    }
-    console.log(`[platform-deploy] volume ${volumeName} deleted.`);
-  } else {
-    console.log(
-      `[platform-deploy] PostgreSQL volume ${volumeName} KEPT (data intact). ` +
-        'To delete it: run again with --remove-data.',
-    );
-  }
-  return 0;
+async function down(foundation: EntryFoundation): Promise<number> {
+  // Toàn bộ sequence destroy + xoá volume (vô điều kiện) sống trong
+  // `runPlatformDown` — tách module để spec bấm được ma trận lỗi thật qua
+  // injection. Caller giữ khóa lane (`withLaneLock`) quanh cả sequence.
+  return runPlatformDown(foundation);
 }
 
-async function main(
-  command: string,
-  flags: { stealLock: boolean; removeData: boolean },
-): Promise<number> {
+async function main(command: string, flags: { stealLock: boolean }): Promise<number> {
   if (command === 'up') {
     const foundation = resolveEntryFoundation(true);
     if (foundation === undefined) {
@@ -183,9 +143,7 @@ async function main(
       );
       return 0;
     }
-    return withLaneLock(foundation.ctx.worktreeRoot, flags.stealLock, () =>
-      down(foundation, flags.removeData),
-    );
+    return withLaneLock(foundation.ctx.worktreeRoot, flags.stealLock, () => down(foundation));
   }
   if (command === 'smoke') {
     const foundation = resolveEntryFoundation(false);
@@ -202,7 +160,6 @@ const args = process.argv.slice(2);
 const command = args[0] ?? '';
 const flags = {
   stealLock: args.includes('--steal-lock'),
-  removeData: args.includes('--remove-data'),
 };
 void main(command, flags).then((code) => {
   process.exit(code);

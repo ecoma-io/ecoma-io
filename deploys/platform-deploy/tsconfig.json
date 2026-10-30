@@ -51,6 +51,7 @@
     "../../tools/dx/src/deployment/local-platform/platform-outputs-contract.ts",
     "../../tools/dx/src/deployment/local-platform/local-env.ts",
     "../../tools/dx/src/deployment/local-platform/local-entry.ts",
+    "../../tools/dx/src/deployment/local-platform/platform-down.ts",
     "../../tools/dx/src/deployment/local-platform/pulumi-context.ts",
     "../../tools/dx/src/local-runtime/local-lock.ts",
     "../../tools/dx/src/utils.ts",
