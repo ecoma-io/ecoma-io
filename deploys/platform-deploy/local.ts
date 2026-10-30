@@ -109,9 +109,17 @@ async function up(foundation: EntryFoundation): Promise<number> {
       `${ROOT_HOST_ENV_KEY}=${outputs.rootHost}, ${ROOT_DOMAIN_ENV_KEY}=${outputs.rootHost} and ` +
         `${POSTGRES_PASSWORD_ENV_KEY} written to ${envPath}`,
     );
-    // Health gate container CỦA CHÍNH unit — PostgreSQL là container cuối cùng
-    // lên và `pg_isready` là probe chậm nhất; Traefik lên trước nó.
-    return waitForOwnContainerHealthy(foundation.ctx, 'postgres');
+    // Health gate container CỦA CHÍNH unit: cả hai container platform có
+    // healthcheck Docker riêng (traefik `healthcheck` subcommand, postgres
+    // `pg_isready`). Gate postgres trước — container cuối cùng lên và probe
+    // chậm nhất (Traefik lên trước nó); gate traefik sau — routing entrypoint
+    // mà mọi consumer (smoke, E2E, các lane unit khác) đi qua, nên một Traefik
+    // unhealthy phải đỏ platform up chứ không để unit kế tiếp tự phát hiện.
+    const postgresGate = waitForOwnContainerHealthy(foundation.ctx, 'postgres');
+    if (postgresGate !== 0) {
+      return postgresGate;
+    }
+    return waitForOwnContainerHealthy(foundation.ctx, 'traefik');
   } catch (error) {
     console.error(
       `[platform-deploy] up failed: ${error instanceof Error ? error.message : String(error)}`,

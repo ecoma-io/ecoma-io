@@ -59,7 +59,11 @@ const BACKOFF_MAX_MS = 5_000;
 
 const RETRYABLE_ERROR_CODES = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT']);
 // 404 hẹp: cửa sổ router Traefik cũ gỡ — mới đăng ký (giống `local-smoke.mjs`).
-const RETRYABLE_STATUSES = new Set([404, 502, 504]);
+// 502/503/504 là upstream chưa sẵn sàng — retry. 503 CỦA APP (body JSON
+// "authorization unavailable" từ Nitro) đã bị bắt và fail tức thời ở nhánh
+// `isAppAuthorizationUnavailable` trước khi chạm set này, nên thêm 503 vào đây
+// không nuốt fail-closed của app — chỉ retry đúng 503 TRỐNG của router.
+const RETRYABLE_STATUSES = new Set([404, 502, 503, 504]);
 // Lỗi TLS/certificate: verification bị vi phạm — không bao giờ retry, không nuốt.
 const TLS_ERROR_CODES = new Set([
   'UNABLE_TO_VERIFY_LEAF_SIGNATURE',

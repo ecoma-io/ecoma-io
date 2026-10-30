@@ -192,4 +192,41 @@ describe('shared entry infrastructure', () => {
     expect(source).not.toContain('--remove-data');
     expect(source).not.toContain('removeData');
   });
+
+  it('platform up health-gates both traefik and postgres (routing entrypoint included)', () => {
+    // Gate chỉ postgres là thiếu: Traefik là entrypoint routing mà mọi consumer
+    // (smoke, E2E, lane unit) đi qua — một Traefik unhealthy khi postgres healthy
+    // phải đỏ platform up ngay, không để unit kế tiếp tự phát hiện. Ghim theo
+    // nguồn: entry platform phải gọi `waitForOwnContainerHealthy` cho CẢ HAI kind.
+    const source = readEntry('platform-deploy');
+    const gatedKinds = [
+      ...source.matchAll(/waitForOwnContainerHealthy\([^,]+,\s*'([a-z-]+)'/gu),
+    ].map((match) => match[1]);
+    expect(gatedKinds).toEqual(expect.arrayContaining(['postgres', 'traefik']));
+  });
+
+  it('every E2E suite gate retries the shared cold-start status window (404/502/503/504)', () => {
+    // Cửa sổ cold-start của Traefik trả 404/502/503/504 (503 = upstream chưa có,
+    // không body JSON). Suite backoffice phân biệt 503 CỦA APP (body Nitro
+    // "authorization unavailable" — fail tức thời ở nhánh riêng trước khi chạm
+    // set) nên set 503-retry của nó không nuốt fail-closed của app; thiếu 503
+    // trong set là đỏ router cold-start ngay khi Traefik còn đang lên.
+    for (const suite of [
+      'home-public-e2e',
+      'identity-oidc-e2e',
+      'identity-login-e2e',
+      'backoffice-access-control-e2e',
+    ]) {
+      const source = readFileSync(
+        join(ROOT_DIR, 'system-tests', 'e2e', suite, 'global-setup.ts'),
+        'utf8',
+      );
+      const match = /RETRYABLE_STATUSES = new Set\(\[([^\]]+)\]\)/u.exec(source);
+      expect(match, `${suite} must declare RETRYABLE_STATUSES`).not.toBeNull();
+      const statuses = match?.[1]?.split(',').map((s) => Number(s.trim())) ?? [];
+      expect(statuses, `${suite} cold-start window must include 404/502/503/504`).toEqual(
+        expect.arrayContaining([404, 502, 503, 504]),
+      );
+    }
+  });
 });
