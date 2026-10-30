@@ -633,6 +633,28 @@ importers:
         specifier: 12.2.1
         version: 12.2.1(supports-color@10.2.2)
 
+  apps/staff-access-relay:
+    dependencies:
+      '@ecoma-io/staff-access-relay-application':
+        specifier: workspace:*
+        version: link:../../libs/staff-access-relay-application
+      '@ecoma-io/staff-access-relay-infrastructure':
+        specifier: workspace:*
+        version: link:../../libs/staff-access-relay-infrastructure
+      pg:
+        specifier: ^8.23.1
+        version: 8.23.1
+    devDependencies:
+      '@testcontainers/postgresql':
+        specifier: 12.2.1
+        version: 12.2.1(supports-color@10.2.2)
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
+      testcontainers:
+        specifier: 12.2.1
+        version: 12.2.1(supports-color@10.2.2)
+
   apps/transactional-mail:
     dependencies:
       '@ecoma-io/internal-auth-contracts':
@@ -914,6 +936,21 @@ importers:
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
+
+  libs/staff-access-relay-application: {}
+
+  libs/staff-access-relay-infrastructure:
+    dependencies:
+      '@ecoma-io/staff-access-relay-application':
+        specifier: workspace:*
+        version: link:../staff-access-relay-application
+      pg:
+        specifier: ^8.23.1
+        version: 8.23.1
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
 
   libs/transactional-mail-application:
     dependencies:
