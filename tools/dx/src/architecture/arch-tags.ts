@@ -381,10 +381,14 @@ export function validateRuntimeCompat(
     // trong container native qua WIC/node-server). Chỉ deployment được phép
     // carve-out này, và edge vẫn qua mọi lượt deployment graph khác.
     // Carve-out CHỈ dành cho app `runtime:edge` được đóng gói vào container
-    // native của deploy unit — composition app với runtime khác (browser...)
-    // không nằm trong nghĩa đó, nên vẫn qua ma trận runtime.
+    // native của deploy unit — yêu cầu NGHIÊM: deploy unit phải `runtime:native`
+    // (một deployment gắn runtime khác đã sai schema sở hữu riêng; không ghim
+    // là lỗ bypass ma trận cho mọi `type:deployment`), và composition app với
+    // runtime khác (browser...) không nằm trong nghĩa đó, nên vẫn qua ma trận
+    // runtime.
     if (
       project.tags.includes(DEPLOYMENT_TYPE) &&
+      runtimeTag === 'runtime:native' &&
       depNode.tags.includes('type:composition') &&
       depRuntime === 'runtime:edge'
     ) {

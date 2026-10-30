@@ -34,7 +34,11 @@ import {
   resolveContext,
   resolveLocalPassphrase,
   type LocalDeployContext,
-} from './index.js';
+  // Import module NGUỒN cụ thể, không qua barrel `./index.js`: index re-export
+  // lại module này, import ngược barrel là module cycle ESM (index → local-entry
+  // → index) — chạy đúng hôm nay chỉ nhờ mọi binding tiêu thụ sau khi load xong,
+  // nhưng là TDZ hazard khi có binding đọc ở module top level.
+} from './pulumi-context.js';
 
 /** Root của workspace, suy từ vị trí file này (`libs/deployment/src`) — ba mức về root. */
 const WORKSPACE_ROOT = resolve(import.meta.dirname, '../../..');

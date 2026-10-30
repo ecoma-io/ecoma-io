@@ -17,7 +17,10 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { ROOT_HOST_ENV_KEY, type ExecResult } from './index.js';
+// Import module NGUỒN cụ thể, không qua barrel `./index.js` (index re-export
+// lại module này — import ngược barrel là module cycle ESM, xem local-entry.ts).
+import type { ExecResult } from './pulumi-context.js';
+import { ROOT_HOST_ENV_KEY } from './platform-outputs-contract.js';
 
 /**
  * "Chưa có key" của `pulumi config get` — CHỈ khi CLI báo đúng vậy.

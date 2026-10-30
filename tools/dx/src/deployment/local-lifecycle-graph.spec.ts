@@ -98,10 +98,24 @@ function readSuiteContract(root: string): SuiteContract {
   const nx = nxSection(root);
   const target = nx.targets?.['system-test'] as Record<string, unknown> | undefined;
   // Nx cho phép `dependsOn` ở dạng chuỗi (`'^build'`, `'project:target'`) hoặc
-  // object — chuẩn hoá: entry chuỗi không phải local-up target object, bỏ qua.
-  const dependsOn = ((target?.['dependsOn'] ?? []) as unknown[]).flatMap((d) =>
-    typeof d === 'object' && d !== null ? [d as { projects?: string[]; target?: string }] : [],
-  );
+  // object — chuẩn hoá CẢ HAI, không bỏ lặng dạng nào: entry chuỗi cũng là
+  // prerequisite thật, để nó "thoát" các kiểm tra dưới đây là lỗ hổng fail-open
+  // (suite tự thoát contract bằng cách đổi sang chuỗi). `'project:target'` tách
+  // theo dấu hai chấm cuối (project scope có thể chứa ':'); `'target'` không có
+  // ':' là self/implicit — không trỏ được vào project nào, coi như thiếu project.
+  const dependsOn = ((target?.['dependsOn'] ?? []) as unknown[]).flatMap((d) => {
+    if (typeof d === 'object' && d !== null) {
+      return [d as { projects?: string[]; target?: string }];
+    }
+    if (typeof d === 'string') {
+      const separator = d.lastIndexOf(':');
+      if (separator > 0) {
+        return [{ projects: [d.slice(0, separator)], target: d.slice(separator + 1) }];
+      }
+      return [{ target: d }];
+    }
+    return [];
+  });
   const configurations = target?.['configurations'] as Record<string, unknown> | undefined;
   return {
     name,
