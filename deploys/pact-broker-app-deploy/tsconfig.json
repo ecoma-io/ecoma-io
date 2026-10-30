@@ -5,14 +5,18 @@
   // rồi để chúng lệch nhau. Ranh giới là một chiều: deploy → lib, và lib KHÔNG
   // được import ngược deploy hay `tools/dx` (contract test của lib chặn).
   //
-  // Pulumi runtime `nodejs` chạy thẳng `index.ts` qua ts-node vendor 7.0.1 dưới
-  // CommonJS — không có bước build nào chạy trước để sinh package. Package import
-  // vẫn resolve được lúc chạy thật vì pnpm workspace tạo symlink
-  // `node_modules/@ecoma-io/deployment → libs/deployment` và `main` của package
-  // trỏ thẳng vào TS nguồn (`./src/index.ts`), nên ts-node transpile luôn cả lib
-  // theo tsconfig của deploy unit. Specifier qua TÊN PACKAGE bắt buộc: đường dẫn
-  // tương đối `libs/...` là import xuyên project bị `@nx/enforce-module-boundaries`
-  // chặn, còn package import là đúng kênh workspace.
+  // Pulumi runtime `nodejs` chạy thẳng `index.ts` qua ts-node/esm hooks
+  // (automatic ESM mode: package khai `"type": "module"`, và ts-node hiện đại
+  // được resolve từ peer của `@pulumi/pulumi` — devDependency `ts-node` của repo
+  // root; không có nó, Pulumi rơi về ts-node 7.0.1 vendored, không có ESM loader
+  // và không remap specifier `.js` sang `.ts`) — không có bước build nào chạy
+  // trước để sinh package. Package import vẫn resolve được lúc chạy thật vì pnpm
+  // workspace tạo symlink `node_modules/@ecoma-io/deployment → libs/deployment`
+  // và `exports` của package trỏ thẳng vào TS nguồn (`./src/index.ts`), nên
+  // ts-node transpile luôn cả lib theo tsconfig của deploy unit. Specifier qua
+  // TÊN PACKAGE bắt buộc: đường dẫn tương đối `libs/...` là import xuyên project
+  // bị `@nx/enforce-module-boundaries` chặn, còn package import là đúng kênh
+  // workspace.
   //
   // `module: nodenext` vẫn giữ để typecheck theo chuẩn ESM; TypeScript với
   // `customConditions: ["@ecoma-io/source"]` của `tsconfig.base.json` resolve
@@ -23,8 +27,8 @@
   // Output của `tsc --build` nằm ở `bin/deploys/<p>/`. Pulumi không dùng output
   // này — runtime `nodejs` chạy thẳng `index.ts`.
   //
-  // Pulumi runtime `nodejs` chạy thẳng `index.ts` dưới CommonJS, nên
-  // `import.meta` KHÔNG dùng được — thay bằng `__dirname` + `node:path`.
+  // Chương trình chạy qua automatic ESM mode của Pulumi (xem phần comment ở
+  // trên), nên dùng `import.meta.dirname` thay cho `__dirname`.
   "compilerOptions": {
     "strict": true,
     "outDir": "bin",
