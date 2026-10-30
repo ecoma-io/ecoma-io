@@ -71,7 +71,7 @@ export async function resolvePostgresContainer(origin: string): Promise<string> 
   if (candidates.length === 0) {
     throw new Error(
       `no traefik container publishes host port ${port} — the stack behind ${origin} is not running. ` +
-        'Start it with `pnpm dx local-deploy` first.',
+        'Start it with `pnpm nx affected -t system-test -c local` first.',
     );
   }
   if (candidates.length > 1) {

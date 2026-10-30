@@ -83,7 +83,7 @@ function withOrigin(raw: string): string {
  * port của một stack KHÁC (hoặc đã chết) — đọc nó chỉ đổi một DNS-failure
  * mơ hồ thành một connection-refused nhắm sai stack, không giúp gì thêm.
  * Gate trong `global-setup.ts` probe origin từ ENV (bắt buộc phải có) và
- * fail với remedy đúng một lệnh `pnpm dx local-deploy` — đó là fail-closed
+ * fail với remedy đúng một lệnh `pnpm nx affected -t system-test -c local` — đó là fail-closed
  * thật. Placeholder `.invalid` (RFC 2606) không resolve được: nếu ai đó bỏ
  * qua gate thì mọi test đỏ với DNS failure thay vì xanh giả.
  */

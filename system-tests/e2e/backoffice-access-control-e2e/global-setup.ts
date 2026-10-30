@@ -110,7 +110,7 @@ function resolveBackofficeOrigin(): { hostname: string; port: string; ca: string
   }
   throw new Error(
     'backoffice-access-control-e2e global setup failed: ROOT_DOMAIN (or ROOT_HOST) is not set and no .env file defines it. ' +
-      'Run `pnpm dx local-deploy` first — it writes the dynamic Traefik host:port into the repo-root .env.',
+      'Deploy the local stack first (Nx provisions the `local-up` prerequisites) — deploying writes the dynamic Traefik host:port into the repo-root .env.',
   );
 }
 
@@ -203,7 +203,7 @@ function isAppAuthorizationUnavailable(body: string): boolean {
 function fail(origin: string, elapsedMs: number, error: Error): never {
   console.error(
     `stack gate FAILED after ${elapsedMs}ms: ${origin}/api/staff is not serving the expected unauthenticated contract — ${error.message}. ` +
-      'The local stack is not reachable or not ready. Start it with `pnpm dx local-deploy`, then rerun the suite. ' +
+      'The local stack is not reachable or not ready. Start it with `pnpm nx affected -t system-test -c local` (Nx provisions the local-up prerequisites first), then rerun the suite. ' +
       'This suite must FAIL when the stack is down; skipping is never an acceptable result.',
   );
   process.exit(1);
@@ -225,7 +225,7 @@ async function main(): Promise<void> {
         console.error(
           `stack gate FAILED after ${Date.now() - startedAt}ms: ${origin}/api/staff returned 503 "authorization unavailable" ` +
             'with the pre-BFF contract — the running backoffice image predates the OIDC BFF wiring (PR #358). ' +
-            'Redeploy the local stack with `pnpm dx local-deploy`, then rerun the suite. This suite tests login ' +
+            'Redeploy the local stack with `pnpm nx affected -t system-test -c local`, then rerun the suite. This suite tests login ' +
             'and permission enforcement through the BFF and cannot run against a stack without it.',
         );
         process.exit(1);

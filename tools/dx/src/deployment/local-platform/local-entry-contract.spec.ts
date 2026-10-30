@@ -65,7 +65,7 @@ describe('local lane colocated entry contract', () => {
 
   it('every local-up runs the colocated entry, not a DX command', () => {
     // Entry colocated là biên duy nhất — `npx tsx local.ts up` từ cwd project.
-    // Trỏ về lệnh DX (`pnpm dx local-deploy`...) là hồi quy kiến trúc.
+    // Trỏ về lệnh DX (`pnpm nx affected -t system-test -c local` (which provisions the required `local-up` prerequisites first)...) là hồi quy kiến trúc.
     const commands = LANE_PROJECTS.map((project) => {
       const target = nxTargets(project)['local-up'] as {
         options?: { command?: string; cwd?: string };

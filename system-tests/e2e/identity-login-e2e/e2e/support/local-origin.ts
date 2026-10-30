@@ -58,7 +58,7 @@ export function resolveAccountOrigin(): string {
   if (fromEnv === undefined || fromEnv.trim().length === 0) {
     throw new Error(
       'ROOT_DOMAIN (or ROOT_HOST) is not set in the environment. Run this suite from the ' +
-        'checkout that ran `pnpm dx local-deploy` (Nx loads its repo-root .env), or export ' +
+        'checkout that owns the local stack (deploy it there; Nx loads its repo-root .env), or export ' +
         'ROOT_DOMAIN=<host>:<port> explicitly.',
     );
   }

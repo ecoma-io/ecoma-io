@@ -93,7 +93,7 @@ function resolveRootOrigin(): { hostname: string; port: string; ca: string } {
   }
   throw new Error(
     'identity-oidc-e2e global setup failed: ROOT_DOMAIN (or ROOT_HOST) is not set and no .env file defines it. ' +
-      'Run `pnpm dx local-deploy` first — it writes the dynamic Traefik host:port into the repo-root .env.',
+      'Deploy the local stack first (Nx provisions the `local-up` prerequisites) — deploying writes the dynamic Traefik host:port into the repo-root .env.',
   );
 }
 
@@ -171,7 +171,7 @@ function classify(error: NodeJS.ErrnoException): Error {
 function fail(origin: string, elapsedMs: number, error: Error): never {
   console.error(
     `stack gate FAILED after ${elapsedMs}ms: https://auth.${origin}/.well-known/openid-configuration is not serving the expected contract — ${error.message}. ` +
-      'The local stack is not reachable or not ready. Start it with `pnpm dx local-deploy`, then rerun the suite. ' +
+      'The local stack is not reachable or not ready. Start it with `pnpm nx affected -t system-test -c local` (Nx provisions the local-up prerequisites first), then rerun the suite. ' +
       'This suite must FAIL when the stack is down; skipping is never an acceptable result.',
   );
   process.exit(1);

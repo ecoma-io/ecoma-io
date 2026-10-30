@@ -85,14 +85,14 @@ function resolveRootOrigin(): { hostname: string; port: string; ca: string } {
     return { ...readHostPort(raw.trim()), ca };
   }
   // Không fallback đọc `.env` — khác skeleton một chút có chủ đích: stack local
-  // thuộc WORKTREE chạy `pnpm dx local-deploy` (namespace Docker derive từ path
+  // thuộc WORKTREE sở hữu stack (namespace Docker derive từ path
   // worktree đó), `.env` repo root cạnh suite có thể là port của một stack khác
   // hoặc đã chết. Env là nguồn duy nhất; thiếu env là fail với remedy đúng một
   // lệnh. (Nx tự load `.env` repo root vào env của task nên chạy qua `nx run`
   // không rơi vào nhánh này khi checkout đó chính là nơi chạy stack.)
   throw new Error(
     'identity-login-e2e global setup failed: ROOT_DOMAIN (or ROOT_HOST) is not set in the environment. ' +
-      'This suite targets the local platform stack of the checkout that ran `pnpm dx local-deploy` — ' +
+      'This suite targets the local platform stack of the checkout that owns it (deploy the stack there with `pnpm nx affected -t system-test -c local`) — ' +
       'run it there (its .env supplies the dynamic Traefik host:port) or export ROOT_DOMAIN explicitly, ' +
       'then rerun the suite. The suite must FAIL when the stack is unreachable; skipping is never acceptable.',
   );
@@ -170,7 +170,7 @@ function fail(origin: string, elapsedMs: number, error: Error): never {
   console.error(
     `stack gate FAILED after ${elapsedMs}ms: ${origin}/api/auth/session is not serving the expected ` +
       `account contract (unauthenticated request must answer 401) — ${error.message}. ` +
-      'The local stack is not reachable or not ready. Start it with `pnpm dx local-deploy` ' +
+      'The local stack is not reachable or not ready. Start it with `pnpm nx affected -t system-test -c local` (Nx provisions the local-up prerequisites first) ' +
       '(in the checkout that owns the stack), then rerun the suite. ' +
       'This suite must FAIL when the stack is down; skipping is never an acceptable result.',
   );

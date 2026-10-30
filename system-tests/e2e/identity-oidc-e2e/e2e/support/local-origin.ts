@@ -76,7 +76,7 @@ export function resolveStackOrigin(): string {
   }
   throw new Error(
     'ROOT_DOMAIN (or ROOT_HOST) is not set and no .env file defines it. ' +
-      'Run `pnpm dx local-deploy` first — it writes the dynamic Traefik host:port into the repo-root .env.',
+      'Deploy the local stack first (Nx provisions the `local-up` prerequisites) — deploying writes the dynamic Traefik host:port into the repo-root .env.',
   );
 }
 
