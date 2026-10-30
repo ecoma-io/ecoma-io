@@ -1,6 +1,7 @@
 {
   "name": "pact-broker-api-deploy",
   "private": true,
+  "type": "module",
   "main": "index.ts",
   "dependencies": {
     "@ecoma-io/deployment": "workspace:*"

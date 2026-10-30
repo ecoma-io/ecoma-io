@@ -37,12 +37,13 @@ import {
 /**
  * Thư mục chứa chương trình này — gốc để định vị cert local.
  *
- * Dùng `__dirname` chứ không phải `import.meta.url` vì Pulumi runtime `nodejs`
- * chạy chương trình dưới CommonJS: `import.meta` không hợp lệ ở đó, và bật
- * `"type": "module"` sẽ làm Pulumi rơi về ts-node vendor 7.0.1 (không có ESM
- * loader) nên không resolve được import ở trên.
+ * `import.meta.dirname` khả dụng vì package của chương trình khai
+ * `"type": "module"`: Pulumi runtime `nodejs` chạy chương trình qua ts-node/esm
+ * hooks (automatic ESM mode — điều kiện `type: "module"` + ts-node hiện đại
+ * resolvable từ peer của `@pulumi/pulumi`, ts-node 7.0.1 vendored không có ESM
+ * loader và không remap specifier `.js` sang `.ts`).
  */
-const programDir = __dirname;
+const programDir = import.meta.dirname;
 
 /**
  * Đường dẫn tuyệt đối tới một file tĩnh trong repo dùng làm bind-mount source.

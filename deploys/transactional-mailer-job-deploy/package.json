@@ -1,6 +1,7 @@
 {
   "name": "transactional-mailer-job-deploy",
   "private": true,
+  "type": "module",
   "main": "index.ts",
   "ecoma": {
     "deployment": {

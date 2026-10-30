@@ -1,6 +1,7 @@
 {
   "name": "backoffice-deploy",
   "private": true,
+  "type": "module",
   "main": "index.ts",
   "dependencies": {
     "@ecoma-io/deployment": "workspace:*"

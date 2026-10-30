@@ -54,7 +54,7 @@ import { readPlatformOutputs, resolvePostgresPassword, upsertLocalEnv } from './
 import { runPlatformDown } from './platform-down.js';
 
 /** Root của workspace, suy từ vị trí file này (`deploys/platform-deploy`). */
-const WORKSPACE_ROOT = join(__dirname, '../..');
+const WORKSPACE_ROOT = join(import.meta.dirname, '../..');
 
 async function up(foundation: EntryFoundation): Promise<number> {
   try {

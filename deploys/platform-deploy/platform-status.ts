@@ -31,7 +31,7 @@ import {
 } from '@ecoma-io/deployment';
 
 /** Root của workspace, suy từ vị trí file này (`deploys/platform-deploy`). */
-const WORKSPACE_ROOT = join(__dirname, '../..');
+const WORKSPACE_ROOT = join(import.meta.dirname, '../..');
 
 /** Tên Nx project của platform — duy nhất sở hữu stack outputs mà status đọc. */
 const PLATFORM_PROJECT = 'platform-deploy';
