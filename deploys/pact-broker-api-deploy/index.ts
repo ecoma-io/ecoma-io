@@ -477,7 +477,10 @@ const wic = new docker.Container(
       // budget auth nhưng retries thấp hơn vì worker duy nhất, không probe
       // mở pool PostgreSQL như `/ready` của auth.
       retries: 30,
-      startPeriod: '120s',
+      // Chuỗi đúng dạng Go duration Docker chuẩn hoá khi đọc ngược (`2m0s`,
+      // không phải `120s`) — lệch dạng không đổi giá trị nhưng biến mỗi cặp
+      // refresh + up thành diff ảo trên healthcheck.
+      startPeriod: '2m0s',
     },
   },
   { dependsOn: [seed, wicImage, wicStateVolume, wicStateInit] },
