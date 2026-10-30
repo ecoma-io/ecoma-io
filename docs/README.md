@@ -34,6 +34,7 @@ Thư mục context:
 - [Pact Broker](./domains/pact-broker/README.md) — bounded context `pact-broker` (hai deploy unit API + dashboard): hợp đồng consumer-driven contract testing (pacts, verifications, can-i-deploy), sở hữu tenant/membership/role của chính broker và machine credentials, sở hữu `db-pact-broker`.
 - [Transactional Mail](./domains/transactional-mail/README.md) — control plane của bounded context `transactional-mail` (Cloudflare D1).
 - [Push Notification](./domains/push-notification/README.md) — control plane của bounded context `push-notification` (Cloudflare D1).
+- [Remote Cache](./domains/remote-cache/README.md) — bounded context `remote-cache` (xác lập bằng ADR-0015; deploy unit còn ở dạng disposable build state, evolution Phase 4): tenant, project, membership, API key, quota/retention/usage/audit; storage `db-remote-cache`. Thiết kế deploy unit → [`solutions/remote-cache/`](./solutions/remote-cache/README.md).
 
 Bounded context chưa có thư mục tài liệu riêng (`llm`, `payment`) — thiết kế hiện nằm ở [Architecture](./architecture/01-architecture.md) §2/§4 và catalog trong [Domains](./domains/README.md) §3.
 
@@ -42,7 +43,7 @@ Bounded context chưa có thư mục tài liệu riêng (`llm`, `payment`) — t
 Application/composition/deploy unit — index đầy đủ → [Solutions](./solutions/README.md):
 
 - [Backoffice](./solutions/backoffice/README.md) — composition/UI + BFF vận hành nội bộ; **không** sở hữu database nghiệp vụ (staff/RBAC thuộc Staff Access — target; hiện tại app `backoffice` vẫn sở hữu theo A21–A24).
-- [Remote Cache](./solutions/remote-cache/README.md) — self-hosted Nx remote cache (target: multi-tenant SaaS bounded context, Nx-first); disposable build state theo A18, roadmap mở rộng protocol → [Roadmap](./architecture/roadmap.md) Phase 7.
+- [Remote Cache](./solutions/remote-cache/README.md) — spec deploy unit của bounded context `remote-cache` (xác lập bằng [ADR-0015](./domains/remote-cache/adr/0015-remote-cache-bounded-context.md)): self-hosted Nx remote cache (Nx-first), control/data plane, storage partitioning, runbook; roadmap mở rộng protocol → [Roadmap](./architecture/roadmap.md) Phase 7.
 - [Local Platform](./solutions/local-platform/README.md) — hạ tầng Docker local dùng chung (network, Traefik, PostgreSQL) mỗi worktree một bộ, và đường deploy local của deploy unit; đặt trong `solutions/` vì nó phục vụ **mọi** service, không phải vì nó là một — ngoại lệ này được ghi ở [`AGENTS.md`](./AGENTS.md) §3.
 - [Transactional Mailer Job](./solutions/transactional-mailer-job/README.md) — delivery plane của `transactional-mail` (Cloudflare Queue + D1 `mail-job`).
 - [Web Push Notification Job](./solutions/web-push-notification-job/README.md) — delivery plane của `push-notification` (Cloudflare Queue + D1 `push-job`).
