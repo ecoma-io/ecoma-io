@@ -97,8 +97,14 @@ function ownedLabels(worktreePath: string): Record<string, string> {
   return ownershipLabels(worktreePath, ns);
 }
 
+function legacyOwnedLabels(worktreePath: string): Record<string, string> {
+  const labels = ownedLabels(worktreePath);
+  labels['io.ecoma.managed-by'] = 'dx';
+  return labels;
+}
+
 describe('decideResourceAction', () => {
-  it('skips (neverremoves) resource without managed-by dx', () => {
+  it('skips (never removes) resource without managed-by ownership label', () => {
     const decision = decideResourceAction(
       'home',
       { state: 'missing' },
@@ -206,6 +212,11 @@ describe('classifyOwnership', () => {
     expect(classifyOwnership({ 'traefik.enable': 'true' }).state).toBe('missing');
   });
 
+  it('empty managed-by string is treated as missing (fail-closed)', () => {
+    const labels = { 'io.ecoma.managed-by': '' };
+    expect(classifyOwnership(labels).state).toBe('missing');
+  });
+
   it('malformed when managed-by ok but other labels missing', () => {
     const path = tempWorktreeDir();
     const labels = ownershipLabels(path, worktreeNamespace(path));
@@ -301,6 +312,59 @@ describe('runLocalCleanup', () => {
     );
     const volumeEntry = report.entries.find((e) => e.kind === 'postgres-volume');
     expect(volumeEntry?.action).toBe('removed');
+  });
+
+  it('legacy managed-by=dx orphan resources are still removed (bounded compatibility)', () => {
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const docker: FakeDocker = {
+      names: new Map([
+        ['container', [`ecoma-${ns}-home`]],
+        ['network', [`ecoma-${ns}-network`]],
+        ['volume', [`ecoma-${ns}-postgres-volume`]],
+      ]),
+      labels: new Map([
+        [`container/ecoma-${ns}-home`, legacyOwnedLabels(wt)],
+        [`network/ecoma-${ns}-network`, legacyOwnedLabels(wt)],
+        [`volume/ecoma-${ns}-postgres-volume`, legacyOwnedLabels(wt)],
+      ]),
+      removed: [],
+    };
+    const report = runLocalCleanup({
+      dryRun: false,
+      env: {},
+      execDocker: fakeDockerExec(docker),
+      worktreePresence: () => 'absent',
+    });
+    expect(docker.removed).toEqual(
+      expect.arrayContaining([
+        `container/ecoma-${ns}-home`,
+        `network/ecoma-${ns}-network`,
+        `volume/ecoma-${ns}-postgres-volume`,
+      ]),
+    );
+    expect(report.errors).toEqual([]);
+  });
+
+  it('non-owned managed-by value is never removed by cleanup', () => {
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const labels = ownedLabels(wt);
+    labels['io.ecoma.managed-by'] = 'some-other-tool';
+    const docker: FakeDocker = {
+      names: new Map([['container', [`ecoma-${ns}-home`]]]),
+      labels: new Map([['container/ecoma-' + ns + '-home', labels]]),
+      removed: [],
+    };
+    const report = runLocalCleanup({
+      dryRun: false,
+      env: {},
+      execDocker: fakeDockerExec(docker),
+      worktreePresence: () => 'absent',
+    });
+    expect(docker.removed).toHaveLength(0);
+    const entry = report.entries.find((e) => e.kind === 'home');
+    expect(entry?.action).toBe('skipped');
   });
 
   it('pact WIC orphan resources (container, image, state volume) are identified and removed', () => {
