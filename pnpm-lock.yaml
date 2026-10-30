@@ -602,6 +602,34 @@ importers:
         specifier: workspace:*
         version: link:../../libs/web-push-notification-job-infrastructure
 
+  apps/staff-access:
+    dependencies:
+      '@ecoma-io/staff-access-contracts':
+        specifier: workspace:*
+        version: link:../../libs/staff-access-contracts
+      '@ecoma-io/staff-access-domain':
+        specifier: workspace:*
+        version: link:../../libs/staff-access-domain
+      '@ecoma-io/staff-access-infrastructure':
+        specifier: workspace:*
+        version: link:../../libs/staff-access-infrastructure
+      hono:
+        specifier: ^4.13.13
+        version: 4.13.13
+      pg:
+        specifier: ^8.23.1
+        version: 8.23.1
+    devDependencies:
+      '@testcontainers/postgresql':
+        specifier: 12.2.1
+        version: 12.2.1(supports-color@10.2.2)
+      '@types/pg':
+        specifier: ^8.15.6
+        version: 8.23.1
+      testcontainers:
+        specifier: 12.2.1
+        version: 12.2.1(supports-color@10.2.2)
+
   apps/transactional-mail:
     dependencies:
       '@ecoma-io/internal-auth-contracts':
@@ -659,6 +687,8 @@ importers:
   deploys/platform-deploy: {}
 
   deploys/push-notification-deploy: {}
+
+  deploys/staff-access-deploy: {}
 
   deploys/transactional-mail-deploy: {}
 
@@ -821,6 +851,17 @@ importers:
         version: link:../push-notification-domain
 
   libs/staff-access-contracts: {}
+
+  libs/staff-access-domain: {}
+
+  libs/staff-access-infrastructure:
+    dependencies:
+      '@ecoma-io/staff-access-domain':
+        specifier: workspace:*
+        version: link:../staff-access-domain
+      postgres:
+        specifier: ^3.4.9
+        version: 3.4.9
 
   libs/transactional-mail-application:
     dependencies:

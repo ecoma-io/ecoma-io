@@ -139,6 +139,15 @@ export function localStackSecrets(
       ['namespace:migratorPassword', generatePostgresPassword()],
     ] as const;
   }
+  if (project === 'staff-access-deploy') {
+    // Database roles của db-staff-access (P1.4 #428) — cùng hình tối thiểu
+    // backoffice-deploy: provision tạo roles rồi ALTER PASSWORD từ config;
+    // không secret chia sẻ cross-stack nào (chưa có consumer nội bộ).
+    return [
+      ['namespace:runtimePassword', generatePostgresPassword()],
+      ['namespace:migratorPassword', generatePostgresPassword()],
+    ] as const;
+  }
   if (project === 'pact-broker-app-deploy') {
     // Machine token mà BFF dùng gọi pact-broker-api (`NITRO_PACT_BROKER_API_
     // TOKEN`). CÙNG GIÁ TRỊ stack `pact-broker-api-deploy` đã persist làm
@@ -310,6 +319,7 @@ const LANE_HEALTH_CONTAINERS = [
   { kind: 'pact-app', label: 'pact-broker-app-deploy' },
   { kind: 'mail-wic', label: 'transactional-mail-deploy' },
   { kind: 'push-wic', label: 'push-notification-deploy' },
+  { kind: 'staff-access-wic', label: 'staff-access-deploy' },
 ] as const;
 
 const LANE_HEALTH_BUDGET_MS = 90_000;

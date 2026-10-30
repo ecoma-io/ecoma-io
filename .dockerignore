@@ -21,7 +21,8 @@
 # `deploys/home-deploy/Dockerfile`, `deploys/backoffice-deploy/Dockerfile`,
 # `deploys/account-deploy/Dockerfile`, `deploys/auth-deploy/Dockerfile`,
 # `deploys/pact-broker-app-deploy/Dockerfile`,
-# `deploys/pact-broker-api-deploy/Dockerfile` và `pnpm install` của workspace:
+# `deploys/pact-broker-api-deploy/Dockerfile`,
+# `deploys/staff-access-deploy/Dockerfile` và `pnpm install` của workspace:
 # `pnpm-workspace.yaml`, `package.json`, `pnpm-lock.yaml`, `patches/`,
 # `tools/dx/package.json`, `apps/home/**`, `apps/backoffice/**`,
 # `apps/account/**`, `apps/pact-broker-app/**`, `libs/ui-ecoma-logo/**`,
@@ -69,15 +70,16 @@ tools/dx/*
 !tools/dx/package.json
 
 # Image WIC (auth-deploy, pact-broker-api-deploy, transactional-mail-deploy,
-# push-notification-deploy) COPY đúng MỘT file entrypoint mỗi unit của thư mục
-# `deploys/` — script của container wrangler dev. Cùng trình tự mở-lại-đúng-file
-# như `tools/dx` phía trên: `deploys/*` chặn phần còn lại của thư mục (Pulumi
-# program, Pulumi.yaml... không thuộc build context).
+# push-notification-deploy, staff-access-deploy) COPY đúng MỘT file entrypoint
+# mỗi unit của thư mục `deploys/` — script của container wrangler dev. Cùng
+# trình tự mở-lại-đúng-file như `tools/dx` phía trên: `deploys/*` chặn phần
+# còn lại của thư mục (Pulumi program, Pulumi.yaml... không thuộc build context).
 deploys/*
 !deploys/auth-deploy/wic-entrypoint.sh
 !deploys/pact-broker-api-deploy/wic-entrypoint.sh
 !deploys/transactional-mail-deploy/wic-entrypoint.sh
 !deploys/push-notification-deploy/wic-entrypoint.sh
+!deploys/staff-access-deploy/wic-entrypoint.sh
 
 # Blacklist bên trong các subtree đã mở: dependency, kết quả build trung gian
 # và cache dev không bao giờ là input — copy vào context chỉ làm chậm và có

@@ -318,4 +318,15 @@ describe('root .dockerignore: required build inputs are included', () => {
     expect(isExcluded('deploys/transactional-mail-deploy/index.ts')).toBe(true);
     expect(isExcluded('deploys/transactional-mail-deploy/Dockerfile')).toBe(true);
   });
+
+  it('staff-access WIC entrypoint enters the context while the rest of its deploy stays out', () => {
+    // Image WIC của staff-access-deploy (P1.4 #428) COPY đúng một file nữa của
+    // `deploys/` — cùng trình tự re-include; thiếu dòng `!` là `docker build`
+    // chết ngay ở COPY với lỗi "not found" trong CI (không tái hiện local khi
+    // build bằng context khác).
+    expect(isExcluded('deploys/staff-access-deploy/wic-entrypoint.sh')).toBe(false);
+    expect(isExcluded('deploys/staff-access-deploy/index.ts')).toBe(true);
+    expect(isExcluded('deploys/staff-access-deploy/Dockerfile')).toBe(true);
+    expect(isExcluded('deploys/staff-access-deploy/package.json')).toBe(true);
+  });
 });

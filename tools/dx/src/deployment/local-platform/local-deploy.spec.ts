@@ -696,7 +696,7 @@ describe('localDestroy — volume removal coping with lost Pulumi stacks', () =>
 });
 
 describe('localDestroy — full coverage: all stacks in reverse dependency order', () => {
-  it('destroys ALL FIVE stacks — auth, account, backoffice, home, platform (no orphan stacks)', () => {
+  it('destroys ALL TEN stacks — units, auth, account, backoffice, home, platform (no orphan stacks)', () => {
     const wt = tempWorktree();
     mkdirSync(join(wt, '.pulumi-local-state'), { recursive: true });
     process.env.PULUMI_CONFIG_PASSPHRASE = 'unit-test-passphrase';
@@ -713,6 +713,7 @@ describe('localDestroy — full coverage: all stacks in reverse dependency order
       'account-deploy',
       'pact-broker-app-deploy',
       'backoffice-deploy',
+      'staff-access-deploy',
       'push-notification-deploy',
       'pact-broker-api-deploy',
       'home-deploy',
@@ -744,6 +745,7 @@ describe('localDestroy — full coverage: all stacks in reverse dependency order
       'account-deploy',
       'pact-broker-app-deploy',
       'backoffice-deploy',
+      'staff-access-deploy',
       'push-notification-deploy',
       'pact-broker-api-deploy',
       'home-deploy',
@@ -762,14 +764,15 @@ describe('runNxOrchestratedDeploy — Nx Task Graph path', () => {
     expect(plan.args[scriptIndex + 1]).toBe('run-many');
     expect(plan.args).toContain('-c');
     expect(plan.args[plan.args.indexOf('-c') + 1]).toBe('local');
-    // Task sequence dẫn xuất từ khai báo Nx — spine thuần `local-up` (10 task:
-    // 9 stack + smoke CUỐI). Ghi `.env` sống bên TRONG task platform local-up —
+    // Task sequence dẫn xuất từ khai báo Nx — spine thuần `local-up` (11 task:
+    // 10 stack + smoke CUỐI). Ghi `.env` sống bên TRONG task platform local-up —
     // không còn task trung gian nào giữa platform và các unit.
     expect(plan.taskSequence).toEqual([
       'platform-deploy:local-up',
       'home-deploy:local-up',
       'pact-broker-api-deploy:local-up',
       'push-notification-deploy:local-up',
+      'staff-access-deploy:local-up',
       'backoffice-deploy:local-up',
       'pact-broker-app-deploy:local-up',
       'account-deploy:local-up',

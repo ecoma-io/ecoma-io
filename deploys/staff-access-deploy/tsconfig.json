@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "outDir": "bin",
+    "rootDir": "../..",
+    "target": "es2020",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "sourceMap": true,
+    "experimentalDecorators": true,
+    "pretty": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "composite": true,
+    "declaration": true,
+    "types": ["node"]
+  },
+  "files": [
+    "index.ts",
+    "../../tools/dx/src/local-runtime/deploy-namespace.ts",
+    "../../tools/dx/src/local-runtime/shell-quote.ts",
+    "../../tools/dx/src/deployment/local-platform/deploy-labels.ts",
+    "../../tools/dx/src/deployment/local-platform/platform-outputs-contract.ts"
+  ]
+}

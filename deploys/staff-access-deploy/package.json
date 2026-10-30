@@ -1,0 +1,55 @@
+{
+  "name": "staff-access-deploy",
+  "private": true,
+  "main": "index.ts",
+  "ecoma": {
+    "deployment": {
+      "status": "scaffold"
+    }
+  },
+  "nx": {
+    "implicitDependencies": [
+      "platform-deploy"
+    ],
+    "tags": [
+      "type:deployment",
+      "scope:staff-access",
+      "runtime:native"
+    ],
+    "targets": {
+      "provision": {
+        "//": "Target KHÔNG chạy `pulumi up`: nó chỉ in ra stack mà operator sẽ chạy tay, nên `nx run <project>:provision` là lệnh an toàn để kiểm tra hợp đồng thứ tự của task graph mà không đụng hạ tầng thật. Thứ tự được đảm bảo bởi `dependsOn: ['^provision']` khai trong `nx.json` cho mọi project `tag:type:deployment`.",
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "deploys/staff-access-deploy",
+          "command": "npx tsx ../../tools/dx provision-gate"
+        }
+      },
+      "local-up": {
+        "//": "Local lane — duy nhất một lane (`-c local`). Unit nằm trong LOCAL_LANE_PROJECTS. dependsOn platform:local-up — stack đọc network + postgres qua StackReference, platform chưa up là StackReference rỗng. Edge `build` là build prerequisite NGOÀI lane (validator chấp nhận target `build`, không tham gia spine topo): WIC container chạy `wrangler dev` từ bundle `dist/` mount lúc container start — bundle chưa build là wrangler fail entry-point và container restart loop (#247).",
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "deploys/staff-access-deploy",
+          "command": "npx tsx ../../tools/dx local-stack-step --stack staff-access-deploy --step up"
+        },
+        "configurations": {
+          "local": {}
+        },
+        "dependsOn": [
+          {
+            "projects": [
+              "platform-deploy"
+            ],
+            "target": "local-up"
+          },
+          {
+            "projects": [
+              "@ecoma-io/staff-access"
+            ],
+            "target": "build"
+          }
+        ]
+      }
+    }
+  }
+}

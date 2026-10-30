@@ -475,8 +475,9 @@ describe('runLocalStackStep smoke', () => {
     expect(nodeCalls).toHaveLength(1);
     expect(nodeCalls[0][0]).toMatch(/local-smoke\.mjs$/u);
     expect(nodeCalls[0][1]).toBe('fbi.com:40030');
-    // Health gate chạy SAU smoke xanh, đụng đúng BỐN container lane (#264).
-    expect(inspectNames).toHaveLength(4);
+    // Health gate chạy SAU smoke xanh, đụng đúng NĂM container lane (#264;
+    // staff-access-wic thêm ở P1.4 #428).
+    expect(inspectNames).toHaveLength(5);
   });
 
   it('smoke script failure → exit 1 without reaching the health gate (chain fails loudly at the leaf)', async () => {
@@ -593,10 +594,25 @@ describe('localStackSecrets — per-stack secret contract', () => {
       'pact-broker-app-deploy',
       'transactional-mail-deploy',
       'push-notification-deploy',
+      'staff-access-deploy',
     ]) {
       const keys = localStackSecretsKeys(project, base);
       expect(new Set(keys).size).toBe(keys.length);
     }
+  });
+
+  it('staff-access-deploy receives exactly the two role passwords (no cross-stack share)', () => {
+    // Cùng hình tối thiểu backoffice-deploy: provision tạo roles rồi ALTER
+    // PASSWORD từ config; staff-access chưa có consumer nội bộ nên KHÔNG có
+    // secret chia sẻ cross-stack nào (không internalHmacSecret, không mail).
+    const keys = localStackSecretsKeys('staff-access-deploy', base);
+    expect(keys).toEqual(['namespace:runtimePassword', 'namespace:migratorPassword']);
+    // Mật khẩu sinh độc lập mỗi lần gọi — orchestration là nguồn duy nhất.
+    const a = localStackSecrets('staff-access-deploy', base);
+    const b = localStackSecrets('staff-access-deploy', base);
+    expect(a.find(([k]) => k === 'namespace:runtimePassword')?.[1]).not.toBe(
+      b.find(([k]) => k === 'namespace:runtimePassword')?.[1],
+    );
   });
 
   it('pact-broker-api-deploy receives exactly the two role passwords plus the machine token', () => {
@@ -904,7 +920,7 @@ describe('resolvePactApiMachineToken — persistence contract (pact-api<->pact-a
 });
 
 describe('verifyLaneHealth — wave-2 container health gate', () => {
-  it('all four lane containers healthy → exit 0 (one docker inspect per container)', () => {
+  it('all five lane containers healthy → exit 0 (one docker inspect per container)', () => {
     const ctx = resolveContext(tempWorktree());
     const inspected: string[] = [];
     execMock.mockImplementation((_command, args) => {
@@ -915,13 +931,15 @@ describe('verifyLaneHealth — wave-2 container health gate', () => {
       return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
     });
     expect(verifyLaneHealth(ctx)).toBe(0);
-    // Đúng BỐN container wave-2: WIC của pact-api/mail/push + BFF pact-app —
-    // thiếu một kind là gate khẳng định ít hơn những gì lane triển khai.
-    expect(inspected).toHaveLength(4);
+    // Đúng NĂM container wave-2: WIC của pact-api/mail/push/staff-access + BFF
+    // pact-app — thiếu một kind là gate khẳng định ít hơn những gì lane triển
+    // khai (staff-access-wic thêm ở P1.4 #428).
+    expect(inspected).toHaveLength(5);
     expect(inspected.some((name) => name.endsWith('-pact-api-wic'))).toBe(true);
     expect(inspected.some((name) => name.endsWith('-pact-app'))).toBe(true);
     expect(inspected.some((name) => name.endsWith('-mail-wic'))).toBe(true);
     expect(inspected.some((name) => name.endsWith('-push-wic'))).toBe(true);
+    expect(inspected.some((name) => name.endsWith('-staff-access-wic'))).toBe(true);
     // Namespace của ctx đi vào TẤT CẢ tên container — không đụng worktree khác.
     for (const name of inspected) {
       expect(name).toBe(`ecoma-${ctx.namespace}-${name.split(`ecoma-${ctx.namespace}-`)[1]}`);
@@ -960,13 +978,13 @@ describe('verifyLaneHealth — wave-2 container health gate', () => {
 
   it('health starting → retries until healthy within budget → exit 0', () => {
     const ctx = resolveContext(tempWorktree());
-    // Hai lượt đầu: CẢ BỐN container đang `starting` (4 inspect mỗi lượt) —
+    // Hai lượt đầu: CẢ NĂM container đang `starting` (5 inspect mỗi lượt) —
     // lượt thứ ba tất cả healthy. Poll dừng ngay khi mọi container xanh.
     let polls = 0;
     execMock.mockImplementation((_command, args) => {
       if (args[0] === 'inspect') {
         polls += 1;
-        const health = polls <= 8 ? 'starting' : 'healthy';
+        const health = polls <= 10 ? 'starting' : 'healthy';
         return { status: 0, stdout: `running|${health}\n`, stderr: '' } satisfies ExecResult;
       }
       if (args[0] === 'sleep') {
@@ -975,7 +993,7 @@ describe('verifyLaneHealth — wave-2 container health gate', () => {
       return { status: 0, stdout: '', stderr: '' } satisfies ExecResult;
     });
     expect(verifyLaneHealth(ctx)).toBe(0);
-    expect(polls).toBe(12);
+    expect(polls).toBe(15);
   });
 
   it('health unhealthy at budget exhaustion → exit 1 (no infinite poll)', () => {

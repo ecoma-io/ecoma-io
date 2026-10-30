@@ -213,6 +213,7 @@ describe('build-prerequisite edges (target "build" outside the lane)', () => {
       'home-deploy',
       'pact-broker-api-deploy',
       'push-notification-deploy',
+      'staff-access-deploy',
       'backoffice-deploy',
       'pact-broker-app-deploy',
       'account-deploy',
@@ -225,6 +226,7 @@ describe('build-prerequisite edges (target "build" outside the lane)', () => {
       'account-deploy',
       'pact-broker-app-deploy',
       'backoffice-deploy',
+      'staff-access-deploy',
       'push-notification-deploy',
       'pact-broker-api-deploy',
       'home-deploy',
@@ -289,10 +291,10 @@ describe('localUpProjectSequence — structural invariants', () => {
     }
     const expected = specTopoSequence(declared, [...LOCAL_LANE_PROJECTS]);
     expect(localUpProjectSequence()).toEqual(expected);
-    expect(expected).toHaveLength(9);
+    expect(expected).toHaveLength(10);
   });
 
-  it('covers exactly the nine local stacks — destroy must not inherit a silently smaller set', () => {
+  it('covers exactly the ten local stacks — destroy must not inherit a silently smaller set', () => {
     expect([...LOCAL_LANE_PROJECTS]).toEqual([
       'platform-deploy',
       'home-deploy',
@@ -303,6 +305,7 @@ describe('localUpProjectSequence — structural invariants', () => {
       'pact-broker-app-deploy',
       'transactional-mail-deploy',
       'push-notification-deploy',
+      'staff-access-deploy',
     ]);
   });
 });
@@ -318,7 +321,7 @@ describe('localDeployTaskSequence — legacy parity and wave-2 extension', () =>
 
     const mapped = DEPLOY_STEPS.map((step) => STEP_TO_TASK[step]);
     expect(mapped).toHaveLength(8);
-    expect(tasks).toHaveLength(10); // 9 local-up + 1 local-smoke
+    expect(tasks).toHaveLength(11); // 10 local-up + 1 local-smoke
     expect(tasks[0]).toBe(mapped[0]); // platform-up
     // Không task trung gian nào giữa platform-up và các unit — mọi task là
     // local-up, trừ smoke CUỐI.
@@ -370,13 +373,14 @@ describe('localDeployTaskSequence — legacy parity and wave-2 extension', () =>
 });
 
 describe('localDestroyStackOrder — reverse dependency order', () => {
-  it('destroys dependents first and platform LAST (wave-2 units → auth → account → backoffice → home → platform)', () => {
+  it('destroys dependents first and platform LAST (wave-2 units → staff-access → auth → account → backoffice → home → platform)', () => {
     expect(localDestroyStackOrder()).toEqual([
       'transactional-mail-deploy',
       'auth-deploy',
       'account-deploy',
       'pact-broker-app-deploy',
       'backoffice-deploy',
+      'staff-access-deploy',
       'push-notification-deploy',
       'pact-broker-api-deploy',
       'home-deploy',
