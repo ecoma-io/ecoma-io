@@ -42,6 +42,7 @@ import {
   fullStackRef,
   generateAppSecret,
   generatePostgresPassword,
+  isConfigKeyMissing,
   pulumiDestroyForEntry,
   pulumiUpForEntry,
   readRootHostFromEnv,
@@ -52,7 +53,16 @@ import {
 
 import { generateEs256SigningKeyPem } from './local-generators.js';
 
-/** Đọc lại giá trị từ stack config; `undefined` khi chưa có (không phân biệt lỗi). */
+/**
+ * Đọc lại giá trị từ stack config.
+ *
+ * - `undefined` CHỈ khi key thực sự chưa có (CLI báo "no value for the key" /
+ *   "configuration key ... not found"). Khi đó caller được phép sinh giá trị mới.
+ * - Lỗi thật (sai passphrase, state lock, backend hỏng) → throw: regen secret
+ *   trên các lỗi đó sẽ ĐÈ giá trị đang sống trong state → JWKS đổi làm mọi
+ *   token đã cấp không còn verify được. Cùng pattern `lookupPostgresPassword`
+ *   của `platform-env.ts` (nguồn `isConfigKeyMissing` ở lib dùng chung).
+ */
 function readStackConfig(
   project: string,
   configKey: string,
@@ -64,10 +74,25 @@ function readStackConfig(
     deployProjectDir(project),
     foundation.env,
   );
-  if (read.status === 0 && read.stdout.trim().length > 0) {
-    return read.stdout.trim();
+  if (read.status === 0) {
+    const value = read.stdout.trim();
+    if (value.length > 0) return value;
+    // Giá trị rỗng trong config — coi như "chưa có" (rỗng không phải giá trị
+    // hợp lệ cho secret).
+    return undefined;
   }
-  return undefined;
+  if (isConfigKeyMissing(read)) return undefined;
+  // KHÔNG nhúng raw stdout/stderr: stdout của `config get` khi exit 0 CHÍNH LÀ
+  // secret — nếu CLI đổi hành vi exit-code, raw output trong error string là
+  // đường leak thật. Thông điệp cố định + hướng dẫn tự chạy lệnh.
+  throw new Error(
+    `pulumi config get ${configKey} failed (exit ${String(read.status)}) — refusing to ` +
+      `regenerate the secret on a read error (would rotate the signing key and break ` +
+      `already-issued tokens). Run \`pulumi config get ${configKey} --stack ` +
+      `${fullStackRef(project, foundation.ctx)}\` in deploys/${project} to see the ` +
+      `original stderr — the output of that command is never logged because it may ` +
+      `contain the secret.`,
+  );
 }
 
 /**

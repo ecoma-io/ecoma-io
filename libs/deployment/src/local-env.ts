@@ -30,7 +30,15 @@ import { ROOT_HOST_ENV_KEY, type ExecResult } from './index.js';
  */
 export function isConfigKeyMissing(result: ExecResult): boolean {
   const output = `${result.stdout}\n${result.stderr}`;
-  return /no value for the key|configuration key .* not found/iu.test(output);
+  // So khớp chuỗi con bằng indexOf thay vì regex `.*`: pattern
+  // `/configuration key .* not found/` trên input lặp nhiều lần
+  // 'configuration key ' là quadratic theo CodeQL (js/polynomial-redos). Hai
+  // phép indexOf là tuyến tính, cùng ngữ nghĩa với pattern cũ trên mọi input.
+  const lower = output.toLowerCase();
+  const marker = lower.indexOf('configuration key ');
+  return (
+    lower.includes('no value for the key') || (marker !== -1 && lower.includes('not found', marker))
+  );
 }
 
 /**
