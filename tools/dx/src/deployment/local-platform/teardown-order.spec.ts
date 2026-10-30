@@ -120,7 +120,7 @@ function readUpEdges(): UpEdges {
         );
       }
     }
-    edges.set(project, deps.toSorted());
+    edges.set(project, deps);
   }
   return edges;
 }
@@ -172,7 +172,7 @@ function readDownDependsOnProjects(project: string): readonly string[] {
     }
     if (dep.projects !== undefined) projects.push(...dep.projects);
   }
-  return projects.toSorted();
+  return projects;
 }
 
 /**
@@ -294,7 +294,7 @@ describe('local-down teardown order (config level)', () => {
   it('covers every lane project in both directions (no deploy edge lost, no teardown edge invented)', () => {
     // Chốt tập: inverse map phải phủ đúng 9 lane project, mỗi cạnh local-up
     // deploy-lifecycle đã biết xuất hiện đúng một lần ở chiều ngược lại.
-    expect([...expectedDependents.keys()].toSorted()).toEqual([...LANE_PROJECTS].toSorted());
+    expect(new Set(expectedDependents.keys())).toEqual(new Set(LANE_PROJECTS));
     // Spot-check ba hình dạng cạnh đại diện đủ ba nhánh (fail thẳng với message
     // rõ nếu graph local-up đổi cấu trúc mà teardown chưa theo).
     expect(expectedDependents.get('platform-deploy')).toEqual([
@@ -333,8 +333,8 @@ describe('local-down teardown order (resolved Nx task graph)', () => {
 
   it('resolves the real task graph via the repository invocation shape', () => {
     taskGraph = resolveNxTaskGraph();
-    expect(Object.keys(taskGraph.dependencies).toSorted()).toEqual(
-      LANE_PROJECTS.map((p) => `${p}:local-down:local`).toSorted(),
+    expect(new Set(Object.keys(taskGraph.dependencies))).toEqual(
+      new Set(LANE_PROJECTS.map((p) => `${p}:local-down:local`)),
     );
   });
 

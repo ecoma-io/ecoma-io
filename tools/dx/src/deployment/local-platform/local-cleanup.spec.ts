@@ -873,4 +873,129 @@ describe('runLocalCleanup — additional safety', () => {
     const entry = report.entries.find((e) => e.name === imageName);
     expect(entry?.action).toBe('would-remove');
   });
+
+  it('dry-run never issues a destructive command for any eligible resource kind', () => {
+    // Toàn bộ các kind đủ điều kiện xoá (container + network + image + volume
+    // state WIC) trong MỘT lần chạy dry-run: báo cáo đầy đủ `would-remove`,
+    // và lệnh rm nào cũng KHÔNG được phát — trong đó volume state WIC có hình
+    // lệnh khác container (không --force), nên phải khẳng định riêng thay vì
+    // tin vào seam chung.
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const homeName = `ecoma-${ns}-home`;
+    const networkName = `ecoma-${ns}-network`;
+    const stateName = `ecoma-${ns}-auth-wic-state`;
+    const imageName = `ecoma-${ns}-auth-wic:local`;
+    const docker: FakeDocker = {
+      names: new Map([
+        ['container', [homeName]],
+        ['network', [networkName]],
+        ['image', [imageName]],
+        ['volume', [stateName]],
+      ]),
+      labels: new Map([
+        [`container/${homeName}`, ownedLabels(wt)],
+        [`network/${networkName}`, ownedLabels(wt)],
+        [`image/${imageName}`, ownedLabels(wt)],
+        [`volume/${stateName}`, ownedLabels(wt)],
+      ]),
+      removed: [],
+    };
+    const report = runLocalCleanup({
+      dryRun: true,
+      env: {},
+      execDocker: fakeDockerExec(docker),
+      worktreePresence: () => 'absent',
+    });
+    expect(docker.removed).toHaveLength(0);
+    expect(
+      new Set(report.entries.filter((e) => e.action === 'would-remove').map((e) => e.name)),
+    ).toEqual(new Set([homeName, networkName, stateName, imageName]));
+    expect(report.entries.some((e) => e.action === 'removed')).toBe(false);
+  });
+
+  it('docker commands are limited to info, ls, inspect and per-resource rm', () => {
+    // Contract "không có broad Docker cleanup": mọi lệnh docker cleanup phát ra
+    // phải là read-only (info/ls/inspect) hoặc rm đúng MỘT resource đã qua
+    // validate ownership. Một lệnh prune/system/rm-all thoát qua seam là lỗi
+    // phạm vi xoá — chặn ở đây thay vì tin vào đường đọc code.
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const homeName = `ecoma-${ns}-home`;
+    const docker: FakeDocker = {
+      names: new Map([['container', [homeName]]]),
+      labels: new Map([[`container/${homeName}`, ownedLabels(wt)]]),
+      removed: [],
+    };
+    const captured: string[][] = [];
+    const exec = (args: string[], env: NodeJS.ProcessEnv) => {
+      captured.push([...args]);
+      return fakeDockerExec(docker)(args, env);
+    };
+    runLocalCleanup({
+      dryRun: false,
+      env: {},
+      execDocker: exec,
+      worktreePresence: () => 'absent',
+    });
+    expect(captured.length).toBeGreaterThan(0);
+    const rmViolations: string[] = [];
+    for (const args of captured) {
+      // `info`/`ls`/`inspect`/`rm` là args[0] (docker <verb> ...); duy nhất
+      // `container rm --force <name>` dùng args[1] làm verb. Lấy cả hai, khớp
+      // theo tập hợp — một lệnh prune sẽ nêu `prune`/`system` ở một trong hai.
+      const verbs = [args[0], args[1] ?? ''];
+      expect(
+        verbs.some((v) => ['info', 'ls', 'inspect', 'rm'].includes(v)),
+        `cleanup must not issue docker ${args.join(' ')}`,
+      ).toBe(true);
+      if (verbs.includes('rm')) {
+        // rm phải nhắm đúng một resource, không bao giờ dạng all/prune. Vi phạm
+        // được gom rồi khẳng định ngoài vòng lặp (vitest(no-conditional-expect)).
+        if (args.length <= 2) rmViolations.push(`rm without a target: docker ${args.join(' ')}`);
+        if (args.includes('--all')) rmViolations.push(`--all: docker ${args.join(' ')}`);
+        if (args.includes('--prune')) rmViolations.push(`--prune: docker ${args.join(' ')}`);
+        const target = args.at(-1) ?? '';
+        if (!target.startsWith('ecoma-')) {
+          rmViolations.push(`rm target outside the ecoma- namespace: docker ${args.join(' ')}`);
+        }
+      }
+    }
+    expect(rmViolations, 'every docker rm must target exactly one owned ecoma-* resource').toEqual(
+      [],
+    );
+  });
+
+  it('partial rm failure: sibling removal proceeds and the failure is reported once', () => {
+    // #10 surfacing: một rm thất bại KHÔNG dừng các rm độc lập còn lại — mỗi
+    // kind được xử lý độc lập; failure phải nổi lên đúng một lần trong errors
+    // với stderr nguyên chữ, và entry tương ứng là `kept` kèm reason (không
+    // nuốt thành "removed" và không biến thành im lặng).
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const okName = `ecoma-${ns}-home`;
+    const failName = `ecoma-${ns}-traefik`;
+    const docker: FakeDocker = {
+      names: new Map([['container', [failName, okName]]]),
+      labels: new Map([
+        [`container/${failName}`, ownedLabels(wt)],
+        [`container/${okName}`, ownedLabels(wt)],
+      ]),
+      removed: [],
+      failRm: new Set([`container/${failName}`]),
+    };
+    const report = runLocalCleanup({
+      dryRun: false,
+      env: {},
+      execDocker: fakeDockerExec(docker),
+      worktreePresence: () => 'absent',
+    });
+    expect(docker.removed).toEqual([`container/${okName}`]);
+    const failEntry = report.entries.find((e) => e.name === failName);
+    expect(failEntry?.action).toBe('kept');
+    expect(failEntry?.reason).toContain('remove command failed');
+    expect(failEntry?.reason).toContain(`rm ${`container/${failName}`} fail (fake)`);
+    expect(report.errors).toHaveLength(1);
+    expect(report.errors[0]).toContain(failName);
+  });
 });
