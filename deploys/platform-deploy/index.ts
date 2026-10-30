@@ -6,7 +6,7 @@
  * local deployment đồng thời trên một máy developer, nên mọi tên resource ở đây
  * đều bắt đầu từ namespace hash của worktree root. Hai worktree không bao giờ
  * đụng tên, và stack Pulumi local phải đi kèm namespace vì Pulumi state là
- * nguồn sự thật của resource (`tools/dx/src/local-runtime/deploy-namespace.ts`).
+ * nguồn sự thật của resource (`deploy-namespace` của `@ecoma-io/deployment`).
  *
  * Chương trình này KHÔNG đọc `.env`: nó nhận `namespace:worktreeRoot` qua Pulumi
  * config do entry `local-up` của chính project (`local.ts`) truyền vào. `.env` là artifact tiện dụng sinh
@@ -19,34 +19,20 @@ import * as docker from '@pulumi/docker';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-// `tools/dx` là workspace project `type:tooling`, còn deploy unit là
-// `type:deployment`. Import **nguồn** là chủ ý: deploy unit phải dùng CHUNG một
-// định nghĩa namespace và contract outputs, và Pulumi runtime `nodejs` chạy thẳng
-// `index.ts` — không có bước build `tools/dx` nào chạy trước để sinh package. Copy
-// hàm vào deploy unit sẽ tạo hai nơi định nghĩa cùng một thứ và để chúng lệch nhau.
-//
-// Specifier KHÔNG chữ `.js` (extensionless) — xem tsconfig cùng project để biết
-// vì sao `.js` lại fail lúc chạy thật.
-//
-// `@nx/enforce-module-boundaries` cấm import xuyên project bằng đường dẫn
-// tương đối theo mặc định; ở đây ngoại lệ đó được bật tường minh cho đúng hai
-// dòng này thay vì nới luật ở `.oxlintrc.json` — nới ở config là mở cho MỌI
-// project, còn disable ở đúng chỗ thì giữ được ranh giới cho phần còn lại của
-// repo.
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
+// Helper/contract dùng chung qua workspace package `@ecoma-io/deployment`
+// (`libs/deployment`) — một nguồn sự thật cho mọi deploy unit; copy hàm vào
+// deploy unit sẽ tạo hai nơi định nghĩa cùng một thứ và để chúng lệch nhau.
+// Ranh giới là một chiều: deploy → lib; lib KHÔNG được import ngược deploy
+// hay `tools/dx` (contract test của lib chặn).
 import {
-  dockerResourceName,
-  normalizeWorktreeRoot,
-  worktreeNamespace,
-} from '../../tools/dx/src/local-runtime/deploy-namespace';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do dòng trên
-import { ownershipLabels } from '../../tools/dx/src/deployment/local-platform/deploy-labels';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do dòng trên
-import {
-  extractTraefikHostPort,
   LOCAL_ROOT_HOSTNAME,
   TRAEFIK_INTERNAL_PORT,
-} from '../../tools/dx/src/deployment/local-platform/platform-outputs-contract';
+  dockerResourceName,
+  extractTraefikHostPort,
+  normalizeWorktreeRoot,
+  ownershipLabels,
+  worktreeNamespace,
+} from '@ecoma-io/deployment';
 
 /**
  * Thư mục chứa chương trình này — gốc để định vị cert local.
@@ -453,7 +439,7 @@ const postgresVolume = new docker.Volume(
  * trong cùng network mới chạm được nó, qua alias ổn định `ecoma-postgres`.
  *
  * Resource này CỐ Ý không xuất ra stack output: contract `PlatformOutputs` chỉ có
- * sáu khoá (xem `tools/dx/src/deployment/local-platform/platform-outputs-contract.ts`) và không khoá nào
+ * sáu khoá (xem `platform-outputs-contract` của `@ecoma-io/deployment`) và không khoá nào
  * mang id của database. Giữ nó trong state để Pulumi quản lý vòng đời — đó là
  * mục đích duy nhất cần tới biến.
  */
@@ -504,7 +490,7 @@ const postgres = new docker.Container('postgres', {
 
 /**
  * Outputs của platform stack — đây là CONTRACT với `home-deploy`, mô tả ở
- * `tools/dx/src/deployment/local-platform/platform-outputs-contract.ts`. Không secret nào được export.
+ * `platform-outputs-contract` của `@ecoma-io/deployment`. Không secret nào được export.
  */
 export const namespace = ns;
 export const networkName = network.name;

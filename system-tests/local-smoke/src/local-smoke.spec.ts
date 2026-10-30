@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import { afterEach, describe, expect, it } from 'vitest';
 
 /**
@@ -17,13 +19,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { join } from 'node:path';
 import https from 'node:https';
 import net from 'node:net';
 
-import { ROOT_DIR } from '../../utils.js';
+// Root của workspace, suy từ vị trí file này (`system-tests/local-smoke/src`).
+const ROOT_DIR = join(__dirname, '../../..');
 
-const script = join(ROOT_DIR, 'tools/dx/src/deployment/local-platform/local-smoke.mjs');
+const script = join(ROOT_DIR, 'system-tests/local-smoke/src/local-smoke.mjs');
 const certPath = join(ROOT_DIR, 'deploys/platform-deploy/local-certs/fbi.com.crt');
 const keyPath = join(ROOT_DIR, 'deploys/platform-deploy/local-certs/fbi.com.key');
 

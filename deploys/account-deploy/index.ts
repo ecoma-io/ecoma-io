@@ -43,18 +43,15 @@ import * as docker from '@pulumi/docker';
 import * as dockerBuild from '@pulumi/docker-build';
 import * as pulumi from '@pulumi/pulumi';
 
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem backoffice-deploy
 import {
+  type PlatformOutputs,
   dockerResourceName,
   normalizeWorktreeRoot,
+  ownershipLabels,
+  shellQuote,
+  sqlQuote,
   worktreeNamespace,
-} from '../../tools/dx/src/local-runtime/deploy-namespace';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import { shellQuote, sqlQuote } from '../../tools/dx/src/local-runtime/shell-quote';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import { ownershipLabels } from '../../tools/dx/src/deployment/local-platform/deploy-labels';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import type { PlatformOutputs } from '../../tools/dx/src/deployment/local-platform/platform-outputs-contract';
+} from '@ecoma-io/deployment';
 
 /**
  * Image Node pin (theo DIGEST) để chạy migration runner trong container gắn

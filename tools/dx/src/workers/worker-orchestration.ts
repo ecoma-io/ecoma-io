@@ -34,7 +34,7 @@ import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 
-import { normalizeWorktreeRoot, worktreeNamespace } from './../local-runtime/deploy-namespace.js';
+import { normalizeWorktreeRoot, worktreeNamespace } from '@ecoma-io/deployment';
 import { discoverWorkerEntries, type DiscoveredWorkerEntry } from './worker-discovery.js';
 import {
   allocateWorkerPort,

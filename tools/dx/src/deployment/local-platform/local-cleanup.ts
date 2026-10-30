@@ -8,7 +8,7 @@
  * vòng sống vào resource khác sau khi worktree biến mất.
  *
  * An toàn là tính chất ĐẦU TIÊN, không phải kiểm tra cuối:
- * - Ownership phải được chứng minh bằng label (`deploy-labels.ts`): resource
+ * - Ownership phải được chứng minh bằng label (`deploy-labels` của `@ecoma-io/deployment`): resource
  *   thiếu label, sai giá trị hay metadata mâu thuẫn KHÔNG bao giờ bị xoá, dù
  *   tên có trông giống resource ecoma.
  * - Worktree còn tồn tại trên đĩa (theo `normalizeWorktreeRoot` — path phải
@@ -35,19 +35,17 @@ import { resolve, normalize } from 'node:path';
 
 import {
   classifyOwnership,
+  labelsFromInspect,
+  type DeployResourceKind,
+  dockerResourceName,
   LABEL_MANAGED_BY,
   LABEL_MANAGED_BY_VALUE,
-  labelsFromInspect,
-  OWNERSHIP_LABELS,
-  type OwnershipCheck,
-} from './deploy-labels.js';
-import {
-  dockerResourceName,
   NAMESPACE_LENGTH,
   normalizeWorktreeRoot,
-  type DeployResourceKind,
-} from './../../local-runtime/deploy-namespace.js';
-import type { ExecResult } from './pulumi-context.js';
+  OWNERSHIP_LABELS,
+  type OwnershipCheck,
+  type ExecResult,
+} from '@ecoma-io/deployment';
 
 /**
  * Kind volume PostgreSQL trong `CLEANUP_KINDS` — được cleanup XOÁ như mọi

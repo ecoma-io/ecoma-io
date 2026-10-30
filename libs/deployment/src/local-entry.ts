@@ -10,9 +10,9 @@
  * mutate stack config của chính project trong namespace của mình.
  *
  * Module này giữ phần có tái sử dụng của entry (resolve context + passphrase,
- * `pulumi up`/`destroy` với config chuẩn lane, `config set` qua stdin, smoke
- * HTTPS). Phần khác nhau theo project (bảng secret) sống trong từng entry —
- * module này không liệt kê tên deploy project nào.
+ * `pulumi up`/`destroy` với config chuẩn lane, `config set` qua stdin). Phần
+ * khác nhau theo project (bảng secret) sống trong từng entry — module này
+ * không liệt kê tên deploy project nào.
  *
  * Readiness KHÔNG nằm ở đây: mỗi container long-running trong chương trình
  * Pulumi của từng deploy project khai `wait: true` + healthcheck Docker của
@@ -22,7 +22,7 @@
  */
 
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import {
   ensureStack,
@@ -34,13 +34,14 @@ import {
   resolveContext,
   resolveLocalPassphrase,
   type LocalDeployContext,
-} from './pulumi-context.js';
-import { readRootHostFromEnv } from './local-env.js';
-import { ROOT_DIR } from '../../utils.js';
+} from './index.js';
+
+/** Root của workspace, suy từ vị trí file này (`libs/deployment/src`) — ba mức về root. */
+const WORKSPACE_ROOT = resolve(import.meta.dirname, '../../..');
 
 /** Thư mục của một deploy project (tuyệt đối, không phụ thuộc cwd của caller). */
 export function deployProjectDir(project: string): string {
-  return join(ROOT_DIR, 'deploys', project);
+  return join(WORKSPACE_ROOT, 'deploys', project);
 }
 
 /** Nền tảng đã resolve cho MỘT lần chạy entry `up`/`down`. */
@@ -79,7 +80,7 @@ export function resolveEntryFoundation(create: boolean): EntryFoundation | undef
  * từng được ghi bởi một phiên bản trước — giữ để stack config không mang key
  * chết mà người đọc tưởng đang được dùng.
  */
-export function unitUpArgs(ctx: LocalDeployContext): string[] {
+function unitUpArgs(ctx: LocalDeployContext): string[] {
   return [
     'up',
     '--yes',
@@ -197,31 +198,4 @@ export function pulumiDestroyForEntry(project: string, foundation: EntryFoundati
     foundation.env,
     { prepareStack: false },
   );
-}
-
-/**
- * Smoke HTTPS qua Traefik — cùng script `.mjs` với bản orchestration cũ.
- *
- * Chỉ entry của platform có step `smoke` (node lá của chuỗi dependsOn). Đọc
- * `ROOT_HOST` từ `.env` (artifact mà post-up của platform ghi); thiếu là
- * platform chưa up hoặc `.env` đã bị xoá — fail với hướng dẫn, không đoán.
- */
-export function runEntrySmoke(worktreeRoot: string): number {
-  const rootHost = readRootHostFromEnv(worktreeRoot);
-  if (rootHost === undefined) {
-    console.error('[local-entry] smoke: missing ROOT_HOST in .env — platform up has not run?');
-    return 1;
-  }
-  const smoke = exec(
-    'node',
-    [join(ROOT_DIR, 'tools/dx/src/deployment/local-platform/local-smoke.mjs'), rootHost],
-    ROOT_DIR,
-    process.env,
-  );
-  if (smoke.status !== 0) {
-    console.error(`[local-entry] smoke HTTPS failed:\n${smoke.stdout}\n${smoke.stderr}`);
-    return 1;
-  }
-  console.log(`[local-entry] smoke OK: https://${rootHost}/`);
-  return 0;
 }

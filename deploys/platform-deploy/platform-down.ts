@@ -35,11 +35,22 @@
  * no-op chết và lỗi destroy không thể tách khỏi lỗi xoá volume (xem comment
  * của `postgresVolume` trong `deploys/platform-deploy/index.ts`).
  */
+// oxlint-disable no-console -- teardown CLI chạy trên Node; console là kênh
+// output DUY NHẤT báo kết quả từng bước (nx:run-commands gộp stdout/stderr).
 
-import { dockerResourceName } from './../../local-runtime/deploy-namespace.js';
-import { ROOT_DIR } from './../../utils.js';
-import { pulumiDestroyForEntry, type EntryFoundation } from './local-entry.js';
-import { describeSpawnFailure, exec, type ExecResult } from './pulumi-context.js';
+import { join } from 'node:path';
+
+import {
+  describeSpawnFailure,
+  dockerResourceName,
+  exec,
+  pulumiDestroyForEntry,
+  type EntryFoundation,
+  type ExecResult,
+} from '@ecoma-io/deployment';
+
+/** Root của workspace, suy từ vị trí file này (`deploys/platform-deploy`). */
+const WORKSPACE_ROOT = join(__dirname, '../..');
 
 /**
  * Pattern phân loại "volume không tồn tại" trên stderr/stdout của docker —
@@ -49,7 +60,7 @@ import { describeSpawnFailure, exec, type ExecResult } from './pulumi-context.js
 const VOLUME_ABSENT_PATTERN = /not found|no such volume/iu;
 
 function execDockerDefault(args: string[], env: NodeJS.ProcessEnv): ExecResult {
-  return exec('docker', args, ROOT_DIR, env);
+  return exec('docker', args, WORKSPACE_ROOT, env);
 }
 
 /**

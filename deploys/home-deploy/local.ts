@@ -14,15 +14,11 @@
 // oxlint-disable no-console -- entry CLI chạy trên Node; console là kênh
 // output DUY NHẤT của lifecycle gate (nx:run-commands gộp stdout/stderr).
 
-// Import **nguồn** `tools/dx` — cùng quy ước với `index.ts` của project này
-// (specifier extensionless, disable module-boundary từng dòng; xem comment
-// block import của `index.ts`).
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
 import {
   pulumiDestroyForEntry,
   pulumiUpForEntry,
   resolveEntryFoundation,
-} from '../../tools/dx/src/deployment/local-platform/local-entry';
+} from '@ecoma-io/deployment';
 
 async function main(command: string): Promise<number> {
   if (command === 'up') {

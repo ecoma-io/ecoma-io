@@ -143,19 +143,17 @@ phụ thuộc nội bộ của một context.
 `<bc>-contracts` đứng ngoài chuỗi này: nó là artifact mà provider **publish** và consumer **depend on**, không phải một tầng để
 import theo hướng trên.
 
-**Ngoại lệ đã biết — `deploys/*-deploy` → `tools/dx` (nguồn).** `platform-deploy` và `home-deploy` import **nguồn** của
-`tools/dx` qua đường dẫn tương đối (`../../tools/dx/src/...`, bật tường minh `@nx/enforce-module-boundaries` tại đúng dòng
-import) để dùng chung một định nghĩa namespace và contract outputs — lý do và ràng buộc ts-node ghi ở `tsconfig.json` của
-từng deploy project. Nx ghi nhận cạnh này trên project graph dưới dạng `static` (plugin `@nx/js/typescript` suy từ import),
-nên cache cả `typecheck` lẫn `lint` của deploy project vẫn phụ thuộc đúng file `tools/dx/src` được import — **đo thực
-nghiệm** (CLI 3.x, `platform-deploy:lint`): thêm một dòng vào `tools/dx/src/deployment/local-platform/pulumi-context.ts` là task lint cache-miss
-chạy lại thật, revert là cache hit, vì fileset `dependencies: True` của target lint kéo file dependency vào tập input.
-KHÔNG thêm `implicitDependencies` cho cạnh này: nó chỉ thêm cạnh trùng lặp vào graph, không đổi tập input cache. Cạnh đó
-**không** nằm
-trong `validateDeploymentGraph` theo cùng chuẩn `deploys/<unit>-deploy → platform-deploy`: nó là Tooling (định nghĩa chia sẻ
-thời gian chạy), không phải prerequisite lifecycle giữa hai stack — import tương đối không sinh cycle lifecycle vì `tools/dx`
-không deploy resource nào. Deploy project mới import `tools/dx` theo đường này phải giữ hai oxlint-disable tường minh tại
-đúng dòng import, không nới luật chung.
+**Lib deployment dùng chung — `libs/deployment` (`@ecoma-io/deployment`, `type:tooling` + `scope:shared` +
+`runtime:native`).** Helper/contract lifecycle local mà nhiều deploy unit cùng dùng (entry foundation:
+resolve context/passphrase, `pulumi up`/`destroy` với config chuẩn lane; namespace + ownership labels;
+contract outputs; secret primitives dùng chung; shell/SQL quoting) sống ở lib này. `deploys/*` và `tools/dx`
+import nó qua TÊN PACKAGE (workspace dependency, không import tương đối); ranh giới là MỘT CHIỀU — lib
+KHÔNG được import `tools/dx` hay `deploys/*` (contract test của lib chặn), còn `deploys/*` KHÔNG được
+import `tools/dx`. Code lifecycle chỉ có MỘT consumer sống ngay tại owner của nó (vd `platform-down` +
+xoá volume PostgreSQL ở `deploys/platform-deploy`, smoke script ở `system-tests/local-smoke`); lib không
+nhận code chỉ để cho import compile. Cạnh `deploys/* → libs/deployment` không nằm trong
+`validateDeploymentGraph` theo cùng chuẩn `deploys/<unit>-deploy → platform-deploy`: nó là Tooling dùng
+chung thời gian chạy, không phải prerequisite lifecycle giữa hai stack.
 
 ## 4. Contracts
 

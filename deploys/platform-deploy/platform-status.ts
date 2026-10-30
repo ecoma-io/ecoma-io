@@ -1,37 +1,43 @@
 /**
- * Đọc-trắng-hại-đọc trạng thái lane local của một worktree — `pnpm dx
- * local-status`.
+ * Đọc-trắng-hại-đọc trạng thái lane local của một worktree — SỞ HỮU bởi
+ * `platform-deploy` (platform là unit duy nhất sở hữu stack outputs mà status
+ * đọc), bề mặt CLI là `pnpm dx local-status` (adapter mỏng chỉ spawn entry
+ * này).
  *
  * READ-ONLY tuyệt đối: không tạo stack, không deploy, không ghi `.env`, không
  * destroy gì. Thất bại backend/parse → exit != 0 (không nuốt lỗi thật thành
- * "chưa deploy"). Tách khỏi module orchestration cũ (`local-deploy.ts`) để
- * command read-only không phụ thuộc module orchestration đã bị xoá (Issue
- * #423) — nguồn logic giữ nguyên từng dòng.
+ * "chưa deploy").
  */
+// oxlint-disable no-console -- CLI đọc-trắng-hại-đọc chạy trên Node; console
+// là kênh output DUY NHẤT của nó (`pnpm dx local-status` spawn với stdio
+// inherit, không có logger nào khác).
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { dockerResourceName } from './../../local-runtime/deploy-namespace.js';
 import {
+  describeSpawnFailure,
+  dockerResourceName,
   exec,
   fullStackRef,
   localStateDir,
+  POSTGRES_PASSWORD_ENV_KEY,
   pulumiEnv,
   resolveContext,
   resolveLocalPassphrase,
-  describeSpawnFailure,
+  ROOT_HOST_ENV_KEY,
   type ExecResult,
   type LocalDeployContext,
-} from './pulumi-context.js';
-import { POSTGRES_PASSWORD_ENV_KEY, ROOT_HOST_ENV_KEY } from './platform-outputs-contract.js';
-import { ROOT_DIR } from '../../utils.js';
+} from '@ecoma-io/deployment';
+
+/** Root của workspace, suy từ vị trí file này (`deploys/platform-deploy`). */
+const WORKSPACE_ROOT = join(__dirname, '../..');
 
 /** Tên Nx project của platform — duy nhất sở hữu stack outputs mà status đọc. */
 const PLATFORM_PROJECT = 'platform-deploy';
 
 function projectDir(project: string): string {
-  return join(ROOT_DIR, 'deploys', project);
+  return join(WORKSPACE_ROOT, 'deploys', project);
 }
 
 /**
@@ -187,3 +193,14 @@ export function localStatus(options: { worktreeRoot?: string }): number {
     }
   }
 }
+
+/**
+ * CLI entry khi chạy trực tiếp (`npx tsx platform-status.ts --worktree-root
+ * <dir>`): nhận cùng cờ với adapter `pnpm dx local-status` và forward nguyên
+ * ngữ nghĩa — cùng `--worktree-root` tùy chọn, cùng exit code. Module này chỉ
+ * có ĐÚNG một cách thực thi: trực tiếp qua tsx (adapter của dx spawn đúng thế)
+ * — không đường import nào khác, nên chạy main ở mức module là đủ.
+ */
+const rootArgIndex = process.argv.indexOf('--worktree-root');
+const rootArg = rootArgIndex >= 0 ? process.argv[rootArgIndex + 1] : undefined;
+process.exitCode = localStatus({ worktreeRoot: rootArg });

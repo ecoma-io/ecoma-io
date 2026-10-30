@@ -9,7 +9,7 @@
  * Ranh giới ownership: `home-deploy` KHÔNG tự tạo network, Traefik hay
  * PostgreSQL. Nó đọc chúng qua Pulumi stack reference tới `platform-deploy`
  * (producer của contract `PlatformOutputs` ở
- * `tools/dx/src/deployment/local-platform/platform-outputs-contract.ts`) rồi join vào network đó. Không có
+ * `platform-outputs-contract` của `@ecoma-io/deployment`) rồi join vào network đó. Không có
  * shared database access và không có resource dùng chung nào ở đây.
  *
  * Mọi tên resource đều đi qua `dockerResourceName(ns, kind)` để hai worktree
@@ -21,30 +21,18 @@ import * as docker from '@pulumi/docker';
 import * as dockerBuild from '@pulumi/docker-build';
 import * as pulumi from '@pulumi/pulumi';
 
-// `tools/dx` là workspace project `type:tooling`, còn deploy unit là
-// `type:deployment`. Import **nguồn** (specifier không đuôi — chi tiết vì sao
-// KHÔNG dùng `.js` ghi ở `tsconfig.json` của project này và của
-// `platform-deploy`) là chủ ý: hai deploy unit phải dùng CHUNG một định nghĩa
-// namespace và contract outputs, và Pulumi runtime `nodejs` chạy thẳng
-// `index.ts` — không có bước build `tools/dx` nào chạy trước để sinh package.
-// Copy hàm vào deploy unit
-// sẽ tạo hai nơi định nghĩa cùng một thứ và để chúng lệch nhau.
-//
-// `@nx/enforce-module-boundaries` cấm import xuyên project bằng đường dẫn
-// tương đối theo mặc định; ở đây ngoại lệ đó được bật tường minh cho đúng hai
-// dòng này thay vì nới luật ở `.oxlintrc.json` — nới ở config là mở cho MỌI
-// project, còn disable ở đúng chỗ thì giữ được ranh giới cho phần còn lại của
-// repo.
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
+// Helper/contract dùng chung qua workspace package `@ecoma-io/deployment`
+// (`libs/deployment`) — một nguồn sự thật cho mọi deploy unit; copy hàm vào
+// deploy unit sẽ tạo hai nơi định nghĩa cùng một thứ và để chúng lệch nhau.
+// Ranh giới là một chiều: deploy → lib; lib KHÔNG được import ngược deploy
+// hay `tools/dx` (contract test của lib chặn).
 import {
+  type PlatformOutputs,
   dockerResourceName,
   normalizeWorktreeRoot,
+  ownershipLabels,
   worktreeNamespace,
-} from '../../tools/dx/src/local-runtime/deploy-namespace';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do dòng trên
-import { ownershipLabels } from '../../tools/dx/src/deployment/local-platform/deploy-labels';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do dòng trên
-import type { PlatformOutputs } from '../../tools/dx/src/deployment/local-platform/platform-outputs-contract';
+} from '@ecoma-io/deployment';
 
 /** Cổng nội bộ mà Nitro preset `node-server` nghe (khớp `EXPOSE`/`ENV PORT` của image). */
 const HOME_INTERNAL_PORT = 3000;

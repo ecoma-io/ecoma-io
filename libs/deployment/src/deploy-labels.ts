@@ -11,24 +11,17 @@
  * because its name resembles an Ecoma resource."
  *
  * Mọi label giống nằm ở đây là một bản duy nhất: deploy units (producer) và
- * cleanup (consumer) import CÙNG hằng số/hàm, không copy chuỗi.
+ * cleanup (consumer) import CÙNG hằng số/hàm, không copy chuỗi. Hash namespace
+ * đi qua `namespaceFromCanonicalPath` của `deploy-namespace` — một bản duy nhất
+ * (bản sao nội tuyến cũ trong file này đã bị xoá: hai bản hash là chỗ trôi lệch
+ * giữa label `worktree-id` và tên resource namespace-scoped).
  */
 
 /**
  * Namespace prefix của label — dùng `io.ecoma` (reverse-DNS) để không đụng
  * label namespace chính thức của Docker (`io.docker.*`, compose, OCI...).
  */
-import { xxh64 } from '@node-rs/xxhash';
-
-// Bản sao nội tuyến của `namespaceFromCanonicalPath` từ `deploy-namespace.ts`,
-// để deploy unit (Pulumi runtime nodejs chạy thẳng `index.ts` qua ts-node 7)
-// không phải import xuyên file với specifier `.js` mà runtime không resolve được.
-// Logic hash giữ nguyên — phải khớp byte-for-byte với nguồn.
-const NAMESPACE_LENGTH = 12;
-function namespaceFromCanonicalPath(canonicalPath: string): string {
-  const digest = xxh64(Buffer.from(canonicalPath, 'utf8'));
-  return `w${digest.toString(16).padStart(16, '0').slice(0, NAMESPACE_LENGTH)}`;
-}
+import { namespaceFromCanonicalPath } from './deploy-namespace.js';
 
 export const LABEL_PREFIX = 'io.ecoma';
 

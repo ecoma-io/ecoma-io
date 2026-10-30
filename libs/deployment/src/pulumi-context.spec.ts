@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
 
-import { worktreeNamespace } from './../../local-runtime/deploy-namespace.js';
+import { worktreeNamespace } from './deploy-namespace.js';
 import {
   ensureStack,
   fullStackRef,
@@ -37,6 +37,17 @@ afterAll(() => {
 });
 
 describe('resolveContext', () => {
+  it('the default worktree root resolves to the workspace root, not a parent directory', () => {
+    // Anchor sai một mức là namespace lệch và cả lane up thành stack khác
+    // (đo thật trên PR #424: `libs/` thay vì repo root → `we6044…` thay vì
+    // `wc241…`). Pin đúng thuộc tính: default context suy từ root THẬT của
+    // checkout này, nơi `.pulumi-local-state` + `deploys/` + `.env` sống.
+    const ctx = resolveContext();
+    expect(ctx.worktreeRoot).not.toMatch(/\/libs$/u);
+    expect(existsSync(join(ctx.worktreeRoot, 'deploys'))).toBe(true);
+    expect(existsSync(join(ctx.worktreeRoot, '.oxlintrc.json'))).toBe(true);
+  });
+
   it('each worktree gets its own namespace, stack, and state backend', () => {
     const a = resolveContext(tempWorktree());
     const b = resolveContext(tempWorktree());

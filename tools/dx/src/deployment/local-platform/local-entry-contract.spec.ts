@@ -131,6 +131,32 @@ describe('local lane colocated entry contract', () => {
     }
   });
 
+  it('no deploy source imports tools/dx — the ownership boundary has no exception left', () => {
+    // PR #424 xoá nốt ngoại lệ `deploys/* → tools/dx`: helper/contract dùng
+    // chung chỉ được đi qua `@ecoma-io/deployment` (libs/deployment). Import
+    // nguồn dx (`tools/dx/src/...`, `@ecoma-io/dx`) từ bất kỳ file nào của
+    // deploy unit là hồi quy kiến trúc — kể cả qua oxlint-disable cũ. Fail
+    // -closed: quét TOÀN bộ `deploys/`, không chỉ entry lane.
+    const forbidden = /from\s+['"](?:tools\/dx|@ecoma-io\/dx)/u;
+    const offenders: string[] = [];
+    const scan = (dir: string): void => {
+      for (const name of readdirSync(dir)) {
+        const path = join(dir, name);
+        const stat = statSync(path);
+        if (stat.isDirectory()) {
+          if (name === 'node_modules' || name === 'bin') continue;
+          scan(path);
+          continue;
+        }
+        if (!name.endsWith('.ts') && !name.endsWith('.mjs')) continue;
+        const source = readFileSync(path, 'utf8');
+        if (forbidden.test(source)) offenders.push(path);
+      }
+    };
+    scan(join(ROOT_DIR, 'deploys'));
+    expect(offenders).toEqual([]);
+  });
+
   it('no orphan lease machinery remains — LANE_LEASE_ENV and assertLaneLease are gone from the codebase', () => {
     // Lease assertion từng là cơ chế fencing của orchestrator đã xoá; sự tồn tại
     // của nó giờ chỉ là dead code gây hiểu nhầm. Fail-closed: tái xuất hiện là đỏ.

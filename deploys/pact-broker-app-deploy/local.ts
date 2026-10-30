@@ -17,24 +17,17 @@
 // oxlint-disable no-console -- entry CLI chạy trên Node; console là kênh
 // output DUY NHẤT của lifecycle gate (nx:run-commands gộp stdout/stderr).
 
-// Import **nguồn** `tools/dx` — cùng quy ước với `index.ts` của project này
-// (specifier extensionless, disable module-boundary từng dòng; xem comment
-// block import của `index.ts`).
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
-import { exec, fullStackRef } from '../../tools/dx/src/deployment/local-platform/pulumi-context';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
 import {
+  deployProjectDir,
   ensureStackForEntry,
+  exec,
+  fullStackRef,
   pulumiDestroyForEntry,
   pulumiUpForEntry,
   resolveEntryFoundation,
   setStackConfig,
   type EntryFoundation,
-} from '../../tools/dx/src/deployment/local-platform/local-entry';
-import { join } from 'node:path';
-
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
-import { ROOT_DIR } from '../../tools/dx/src/utils';
+} from '@ecoma-io/deployment';
 
 /**
  * Machine token plaintext dùng chung pact-broker-api <-> pact-broker-app —
@@ -54,7 +47,7 @@ function resolvePactApiMachineToken(foundation: EntryFoundation): string {
       '--stack',
       fullStackRef('pact-broker-api-deploy', foundation.ctx),
     ],
-    join(ROOT_DIR, 'deploys', 'pact-broker-api-deploy'),
+    deployProjectDir('pact-broker-api-deploy'),
     foundation.env,
   );
   if (read.status === 0 && read.stdout.trim().length > 0) {

@@ -27,7 +27,10 @@ import { shellQuote, sqlQuote } from './shell-quote.js';
 /** Shell POSIX thuần — không bash, không zsh: cùng ngữ nghĩa mà `command.local.Command` dùng. */
 const POSIX_SHELL = '/bin/sh';
 
-const DX_ROOT = resolve(import.meta.dirname, '../..');
+// Anchor repo root từ vị trí file này (`libs/deployment/src`) — ba mức `../`
+// về root; spec đọc trực tiếp file caller ở `deploys/` nên anchor sai một mức
+// là ENOENT ngay khi chạy.
+const REPO_ROOT = resolve(import.meta.dirname, '../../..');
 
 const cleanup: string[] = [];
 
@@ -228,7 +231,7 @@ describe('shellQuote + sqlQuote together (the backoffice-deploy ALTER ROLE bound
 });
 
 describe('wiring', () => {
-  const CALLER = join(DX_ROOT, '../../deploys/backoffice-deploy/index.ts');
+  const CALLER = join(REPO_ROOT, 'deploys/backoffice-deploy/index.ts');
 
   it('pins the backoffice provision SQL to the two-boundary shellQuote composition', () => {
     // Test tổ hợp phía trên chỉ chứng minh module `shell-quote` ĐÚNG — nó
@@ -236,9 +239,10 @@ describe('wiring', () => {
     // quotes của shell (`-c "... ${sqlQuote(pw)} ..."`), mọi test module vẫn
     // xanh trong khi lỗ hổng quay lại (đã đo: shell mở rộng `$(...)` trước
     // psql). Assert này đọc chính file caller và yêu cầu mật khẩu đi qua
-    // `-c ${shellQuote(...)}` — cùng mẫu wiring mà namedInputs phía dưới
-    // đảm bảo CHẠY THẬT khi file này đổi (xem namedInputs trong package.json
-    // của project).
+    // `-c ${shellQuote(...)}` — cùng mẫu wiring mà `namedInputs` của
+    // `@ecoma-io/deployment` đảm bảo CHẠY THẬT khi file này đổi: spec đọc
+    // caller nên caller đổi là input `production` của lib đổi (xem
+    // `namedInputs` trong package.json của project).
     const source = readFileSync(CALLER, 'utf8');
 
     for (const role of ['ecoma_backoffice_migrator', 'ecoma_backoffice_runtime']) {

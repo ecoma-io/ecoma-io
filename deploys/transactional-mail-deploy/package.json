@@ -2,6 +2,9 @@
   "name": "transactional-mail-deploy",
   "private": true,
   "main": "index.ts",
+  "dependencies": {
+    "@ecoma-io/deployment": "workspace:*"
+  },
   "ecoma": {
     "deployment": {
       "status": "scaffold"
@@ -10,6 +13,7 @@
   "nx": {
     "implicitDependencies": [
       "platform-deploy",
+      "@ecoma-io/deployment",
       "@ecoma-io/transactional-mail",
       "@ecoma-io/transactional-mailer-job"
     ],
@@ -73,6 +77,13 @@
         },
         "configurations": {
           "local": {}
+        }
+      },
+      "test": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "deploys/transactional-mail-deploy",
+          "command": "vitest"
         }
       }
     }

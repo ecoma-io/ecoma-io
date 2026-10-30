@@ -644,23 +644,59 @@ importers:
         specifier: workspace:*
         version: link:../../libs/web-push-notification-job-infrastructure
 
-  deploys/account-deploy: {}
+  deploys/account-deploy:
+    dependencies:
+      '@ecoma-io/deployment':
+        specifier: workspace:*
+        version: link:../../libs/deployment
 
-  deploys/auth-deploy: {}
+  deploys/auth-deploy:
+    dependencies:
+      '@ecoma-io/deployment':
+        specifier: workspace:*
+        version: link:../../libs/deployment
 
-  deploys/backoffice-deploy: {}
+  deploys/backoffice-deploy:
+    dependencies:
+      '@ecoma-io/deployment':
+        specifier: workspace:*
+        version: link:../../libs/deployment
 
-  deploys/home-deploy: {}
+  deploys/home-deploy:
+    dependencies:
+      '@ecoma-io/deployment':
+        specifier: workspace:*
+        version: link:../../libs/deployment
 
-  deploys/pact-broker-api-deploy: {}
+  deploys/pact-broker-api-deploy:
+    dependencies:
+      '@ecoma-io/deployment':
+        specifier: workspace:*
+        version: link:../../libs/deployment
 
-  deploys/pact-broker-app-deploy: {}
+  deploys/pact-broker-app-deploy:
+    dependencies:
+      '@ecoma-io/deployment':
+        specifier: workspace:*
+        version: link:../../libs/deployment
 
-  deploys/platform-deploy: {}
+  deploys/platform-deploy:
+    dependencies:
+      '@ecoma-io/deployment':
+        specifier: workspace:*
+        version: link:../../libs/deployment
 
-  deploys/push-notification-deploy: {}
+  deploys/push-notification-deploy:
+    dependencies:
+      '@ecoma-io/deployment':
+        specifier: workspace:*
+        version: link:../../libs/deployment
 
-  deploys/transactional-mail-deploy: {}
+  deploys/transactional-mail-deploy:
+    dependencies:
+      '@ecoma-io/deployment':
+        specifier: workspace:*
+        version: link:../../libs/deployment
 
   deploys/transactional-mailer-job-deploy: {}
 
@@ -764,6 +800,12 @@ importers:
       '@types/pg':
         specifier: ^8.23.1
         version: 8.23.1
+
+  libs/deployment:
+    dependencies:
+      '@node-rs/xxhash':
+        specifier: 1.7.8
+        version: 1.7.8
 
   libs/internal-auth-contracts: {}
 
@@ -944,6 +986,9 @@ importers:
       '@commitlint/parse':
         specifier: ^21.2.3
         version: 21.2.3
+      '@ecoma-io/deployment':
+        specifier: workspace:*
+        version: link:../../libs/deployment
       '@node-rs/xxhash':
         specifier: 1.7.8
         version: 1.7.8

@@ -6,6 +6,7 @@
   "dependencies": {
     "@commitlint/load": "^21.2.3",
     "@commitlint/parse": "^21.2.3",
+    "@ecoma-io/deployment": "workspace:*",
     "@node-rs/xxhash": "1.7.8",
     "citty": "^0.2.2"
   },
@@ -20,8 +21,7 @@
         "{projectRoot}/**/*",
         "sharedGlobals",
         "{workspaceRoot}/.github/workflows/code-analysis.yml",
-        "{workspaceRoot}/lefthook.yml",
-        "{workspaceRoot}/deploys/backoffice-deploy/index.ts"
+        "{workspaceRoot}/lefthook.yml"
       ]
     }
   }

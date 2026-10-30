@@ -1,157 +1,38 @@
 /**
- * Helper dữ liệu dùng chung của lane local — kỹ thuật thuần, KHÔNG orchestration.
+ * Quản lý `.env` và mật khẩu PostgreSQL của lane local — SỞ HỮU bởi
+ * `platform-deploy`.
  *
- * Entry lifecycle colocated của từng deploy project (`deploys/<p>/local.ts`)
- * import từ đây: các hàm chỉ là MỘT biến đổi dữ liệu có kiểm fail-closed
- * (sinh secret theo hình đúng, đọc lại password canonical từ stack config,
- * upsert `.env` chỉ trên key sở hữu, đọc `ROOT_HOST` từ `.env`). Module này
- * cố ý KHÔNG biết thứ tự giữa các project và KHÔNG gọi lệnh DX nào.
- *
- * Các secret generator giữ nguyên ngữ nghĩa từng hàm (khối comment của mỗi
- * generator giải thích vì sao hình giá trị là CONTRACT của consumer phía app).
+ * `.env` của worktree và mật khẩu PostgreSQL là artifact của up platform: đây
+ * là nơi quyết định giá trị (stack config là nguồn sự thật canonical, `.env`
+ * chỉ là bản sao), nên logic đọc/sinh/ghi sống cạnh entry của platform thay vì
+ * trong lib dùng chung. Mọi unit khác chỉ ĐỌC `ROOT_HOST`/`POSTGRES_PASSWORD`
+ * từ `.env` (xem `readRootHostFromEnv` của `@ecoma-io/deployment`) — không unit
+ * nào ghi file này.
  */
 
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { dockerResourceName } from './../../local-runtime/deploy-namespace.js';
 import {
   buildRootHost,
-  LOCAL_ENV_OWNED_KEYS,
-  ROOT_HOST_ENV_KEY,
-} from './platform-outputs-contract.js';
-import {
   chmodFilePrivate,
   describeSpawnFailure,
+  dockerResourceName,
   exec,
   fullStackRef,
+  isConfigKeyMissing,
+  LOCAL_ENV_OWNED_KEYS,
   pulumiRun,
   type ExecResult,
   type LocalDeployContext,
-} from './pulumi-context.js';
-import { ROOT_DIR } from '../../utils.js';
+} from '@ecoma-io/deployment';
 
-/**
- * "Chưa có key" của `pulumi config get` — CHỈ khi CLI báo đúng vậy.
- *
- * Exit != 0 không phân biệt được: sai passphrase (không giải được secret),
- * state lock, backend hỏng... đều exit != 0. Regen secret trên các lỗi đó sẽ
- * ĐÈ mật khẩu đang tồn tại trong state (`config set` chỉ cần salt để mã hoá
- * giá trị mới là thành công trên DIY backend) → container Postgres bị khoá
- * khỏi volume đã init bằng mật khẩu cũ. Export để spec phủ trực tiếp.
- */
-export function isConfigKeyMissing(result: ExecResult): boolean {
-  const output = `${result.stdout}\n${result.stderr}`;
-  return /no value for the key|configuration key .* not found/iu.test(output);
-}
+/** Thư mục gốc của workspace, suy từ vị trí file này (`deploys/platform-deploy`). */
+const WORKSPACE_ROOT = join(__dirname, '../..');
 
 /** Key trong Pulumi stack config lưu mật khẩu PostgreSQL local. */
 export const POSTGRES_PASSWORD_CONFIG_KEY = 'postgres:password';
-
-/**
- * Sinh mật khẩu PostgreSQL cho stack local mới.
- *
- * `randomBytes` của `node:crypto` — nguồn ngẫu nhiên mật mã an toàn. KHÔNG
- * dùng `Math.random`, timestamp, hard-code hay giá trị đoán được: mật khẩu này
- * là superuser credential của database local, và tài liệu yêu cầu sinh ngẫu
- * nhiên bằng API mật mã an toàn.
- *
- * `base64url` → chỉ ký tự `A-Za-z0-9-_`, nên an toàn khi đặt trong file `.env`
- * (không cần quote) và khi truyền làm argument cho `pulumi config set`.
- */
-export function generatePostgresPassword(): string {
-  return randomBytes(24).toString('base64url');
-}
-
-/**
- * Sinh secret HMAC cho envelope internal `ecoma-internal-v1` hai chiều
- * auth <-> account.
- *
- * Một secret ứng dụng dùng {@link generateAppSecret} (32 byte): cùng hình
- * base64url, nhưng đủ entropy chuẩn HMAC-SHA-256 thay vì đoán theo ngưỡng ký
- * tự. Tách tên riêng vì NGHĨA khác với `generatePostgresPassword`: đây là
- * secret HMAC ứng dụng (không phải credential database), và entry up của
- * account là nơi giữ bất biến "auth và account nhận CÙNG giá trị" — sinh hai
- * lần độc lập là mọi envelope internal chết `bad_signature` lúc runtime.
- */
-export function generateInternalHmacSecret(): string {
-  return generateAppSecret();
-}
-
-/**
- * Sinh secret ỨNG DỤNG 32 byte base64url — hình chuẩn cho mọi secret mà
- * contract phía consumer kiểm theo byte (không phải credential database).
- *
- * 32 byte = 256 bit là kích thước chuẩn HMAC-SHA-256: contract của
- * `auth-domain` (`importKey`) bắt ĐÚNG 32 byte từ `AUTH_HANDLE_KEY`,
- * và cookie keyring của oidc-provider cũng là key ký ứng dụng — dùng mật
- * khẩu 24 byte của database cho secret ứng dụng là che giấu hai NGHĨA khác
- * nhau sau một hình dạng giá trị chung (#284). `base64url` giữ tính an toàn
- * khi nhúng: chỉ ký tự `A-Za-z0-9-_`, an toàn trong `.env`, argv của
- * `pulumi config set` và container env không cần quote.
- */
-export function generateAppSecret(): string {
-  return randomBytes(32).toString('base64url');
-}
-
-/**
- * Sinh khoá HMAC-SHA-256 32 byte dạng **64 ký tự hex chữ thường** cho lane
- * transactional-mail local (keyring `request_fingerprint`, khoá quarantine).
- *
- * Hình giá trị là CONTRACT của loader: cả `FINGERPRINT_KEY_HEX` (config.ts của
- * control plane) lẫn `HEX_KEY_64` (config.ts của consumer) chỉ chấp nhận
- * `/^[0-9a-f]{64}$/` — chặn cả hex HOA. `hex` encoding đúng 64 ký tự; một
- * hình khác làm hai Worker chết ngay lúc boot với lỗi "phai la 64 hex chu
- * thuong".
- */
-export function generateHexKey64(): string {
-  return randomBytes(32).toString('hex');
-}
-
-/**
- * Sinh root key AES-256 **32 byte dạng base64** cho lane push-notification
- * local (Worker Secret `PUSH_CREDENTIAL_ROOT_KEY_K1` của cặp WIC push).
- *
- * Hình giá trị là CONTRACT của composition root (`main.ts` của app push):
- * giá trị được `atob` giải mã rồi kiểm ĐÚNG 32 byte (AES-256) — hình khác làm
- * cả control plane lẫn consumer chết ngay lúc boot với lỗi độ dài key. Base64
- * chuẩn (có `+/=`) là hình secret production dùng nên giữ nguyên ở local; giá
- * trị xoay mỗi lần `up` là vô hại vì D1 `push` trên volume state là ephemeral
- * theo thiết kế local (không credential nào sống qua hai lần up).
- */
-export function generateBase64Key32(): string {
-  return randomBytes(32).toString('base64');
-}
-
-/**
- * Sinh PEM PKCS#8 cho khoá ký ES256 của auth (Worker Secret `AUTH_SIGNING_KEY`).
- *
- * WebCrypto ở runtime local Node: `crypto.subtle.generateKey({ name:
- * 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])` rồi
- * `exportKey('pkcs8')` — đúng spec PKCS#8 mà `SigningKeyProvider.fromPem`
- * parse (`BEGIN PRIVATE KEY`). Khóa sinh MỖI LẦN GỌI; caller quyết định khi
- * nào gọi (một lần cho mỗi lần up auth trên namespace mới) và stack config
- * là nơi giữ nó ổn định giữa các lần deploy — JWKS đổi giữa chừng là mọi
- * token đã cấp không còn verify được.
- *
- * `forge` không được dùng; `node:crypto` là dependency duy nhất — cùng nguồn
- * với `generatePostgresPassword`.
- */
-export async function generateEs256SigningKeyPem(): Promise<string> {
-  const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
-    'sign',
-    'verify',
-  ]);
-  const pkcs8 = await crypto.subtle.exportKey('pkcs8', pair.privateKey);
-  const derBase64 = Buffer.from(pkcs8).toString('base64');
-  const lines = derBase64.match(/.{1,64}/gu) ?? [];
-  // KHÔNG phần tử '' cuối: join('\n') với '' đuôi sinh PEM kết thúc bằng '\n'
-  // — `requireSecret` của app từ chối mọi giá trị có whitespace đầu/cuối, WIC
-  // local rơi vào /ready 503 config_invalid vĩnh viễn (đo trực tiếp ở #249).
-  // PEM RFC 7468 không đòi newline cuối; generator này chỉ phục vụ config set.
-  return ['-----BEGIN PRIVATE KEY-----', ...lines, '-----END PRIVATE KEY-----'].join('\n');
-}
 
 /** Kết quả đọc mật khẩu PostgreSQL từ stack config (nguồn sự thật canonical). */
 export type PostgresPasswordLookup =
@@ -234,7 +115,7 @@ export function probePostgresVolume(
   volumeName: string,
   env: NodeJS.ProcessEnv,
 ): PostgresVolumeProbe {
-  const result = exec('docker', ['volume', 'inspect', volumeName], ROOT_DIR, env);
+  const result = exec('docker', ['volume', 'inspect', volumeName], WORKSPACE_ROOT, env);
   if (result.status === 0) return { state: 'present' };
   if (result.status === null) {
     return { state: 'unknown', detail: describeSpawnFailure(result) };
@@ -271,7 +152,7 @@ export function resolvePostgresPassword(
   ctx: LocalDeployContext,
   env: NodeJS.ProcessEnv,
 ): { ok: true; password: string; generated: boolean } | { ok: false; error: string } {
-  const platformDir = join(ROOT_DIR, 'deploys', 'platform-deploy');
+  const platformDir = join(WORKSPACE_ROOT, 'deploys', 'platform-deploy');
   const lookup = lookupPostgresPassword(
     exec(
       'pulumi',
@@ -329,7 +210,7 @@ export function resolvePostgresPassword(
     };
   }
 
-  const password = generatePostgresPassword();
+  const password = randomBytes(24).toString('base64url');
   // Giá trị đi qua STDIN, không qua argv: argv của process khác đọc được qua
   // `/proc/<pid>/cmdline` (cùng user) và qua `ps` — mật khẩu local không cần
   // rò ra tới đó. `pulumi config set` đọc giá trị từ stdin khi không có
@@ -437,23 +318,6 @@ export function upsertLocalEnv(
   writeFileSync(envPath, `${next.join('\n')}\n`, { encoding: 'utf8', mode: 0o600 });
   chmodFilePrivate(envPath, 0o600);
   return { envPath };
-}
-
-/**
- * Đọc `ROOT_HOST` từ `.env` của worktree — artifact mà up của platform ghi sau
- * khi `pulumi up` xanh.
- *
- * `.env` không trở thành nguồn sự thật của resource vì hàm này chỉ đọc: giá trị
- * sai chỉ làm issuer/audience của auth lệch hostname và luồng fail ở smoke.
- */
-export function readRootHostFromEnv(worktreeRoot: string): string | undefined {
-  const envPath = join(worktreeRoot, '.env');
-  if (!existsSync(envPath)) return undefined;
-  const line = readFileSync(envPath, 'utf8')
-    .split('\n')
-    .find((entry) => entry.startsWith(`${ROOT_HOST_ENV_KEY}=`));
-  const value = line?.split('=').slice(1).join('=');
-  return value !== undefined && value.length > 0 ? value : undefined;
 }
 
 /**

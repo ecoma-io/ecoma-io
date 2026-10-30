@@ -30,42 +30,27 @@
 // oxlint-disable no-console -- entry CLI chạy trên Node; console là kênh
 // output DUY NHẤT của lifecycle gate (nx:run-commands gộp stdout/stderr).
 
-import { join } from 'node:path';
-
-// `tools/dx` là workspace project `type:tooling`, còn deploy unit là
-// `type:deployment`. Import **nguồn** là chủ ý: deploy unit phải dùng CHUNG một
-// định nghĩa helper lifecycle, và entry chạy thẳng `local.ts` qua tsx — không
-// có bước build `tools/dx` nào chạy trước để sinh package. Copy hàm vào deploy
-// unit sẽ tạo hai nơi định nghĩa cùng một thứ và để chúng lệch nhau.
-//
-// Specifier KHÔNG chữ `.js` (extensionless) — xem tsconfig cùng project để biết
-// vì sao `.js` lại fail lúc chạy thật.
-//
-// `@nx/enforce-module-boundaries` cấm import xuyên project bằng đường dẫn
-// tương đối theo mặc định; ở đây ngoại lệ đó được bật tường minh cho đúng các
-// dòng này thay vì nới luật ở `.oxlintrc.json` — nới ở config là mở cho MỌI
-// project, còn disable ở đúng chỗ thì giữ được ranh giới cho phần còn lại của
-// repo.
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
+// Helper lifecycle dùng chung qua workspace package `@ecoma-io/deployment`
+// (`libs/deployment`) — một nguồn sự thật cho mọi deploy unit; copy hàm vào
+// deploy unit sẽ tạo hai nơi định nghĩa cùng một thứ và để chúng lệch nhau.
+// Ranh giới là một chiều: deploy → lib; lib KHÔNG được import ngược deploy hay
+// `tools/dx` (contract test của lib chặn).
 import {
-  generateAppSecret,
-  generateEs256SigningKeyPem,
-  generatePostgresPassword,
-  readRootHostFromEnv,
-} from '../../tools/dx/src/deployment/local-platform/local-env';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
-import { exec, fullStackRef } from '../../tools/dx/src/deployment/local-platform/pulumi-context';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
-import {
+  deployProjectDir,
   ensureStackForEntry,
+  exec,
+  fullStackRef,
+  generateAppSecret,
+  generatePostgresPassword,
   pulumiDestroyForEntry,
   pulumiUpForEntry,
+  readRootHostFromEnv,
   resolveEntryFoundation,
   setStackConfig,
   type EntryFoundation,
-} from '../../tools/dx/src/deployment/local-platform/local-entry';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
-import { ROOT_DIR } from '../../tools/dx/src/utils';
+} from '@ecoma-io/deployment';
+
+import { generateEs256SigningKeyPem } from './local-generators.js';
 
 /** Đọc lại giá trị từ stack config; `undefined` khi chưa có (không phân biệt lỗi). */
 function readStackConfig(
@@ -76,7 +61,7 @@ function readStackConfig(
   const read = exec(
     'pulumi',
     ['config', 'get', configKey, '--stack', fullStackRef(project, foundation.ctx)],
-    join(ROOT_DIR, 'deploys', project),
+    deployProjectDir(project),
     foundation.env,
   );
   if (read.status === 0 && read.stdout.trim().length > 0) {
@@ -104,7 +89,7 @@ function resolveIdentityInternalSecret(foundation: EntryFoundation): string {
       '--stack',
       fullStackRef('account-deploy', foundation.ctx),
     ],
-    join(ROOT_DIR, 'deploys', 'account-deploy'),
+    deployProjectDir('account-deploy'),
     foundation.env,
   );
   if (read.status === 0 && read.stdout.trim().length > 0) {

@@ -84,32 +84,32 @@
   },
   {
     "rule": "security-sensitive-value-in-http-response",
-    "path": "tools/dx/src/deployment/local-platform/local-env.ts",
-    "start": 196,
-    "end": 196,
-    "reason": "Rehomed from local-deploy.ts:198 (#423): internal CLI helper returns the PostgreSQL password to the caller that writes stack config/.env - tools/ has no HTTP handler; naming-heuristic FP. Content unchanged from the accepted entry.",
+    "path": "deploys/platform-deploy/platform-env.ts",
+    "start": 77,
+    "end": 77,
+    "reason": "Rehomed from tools/dx local-env.ts:196 (PR #424 ownership split: platform env handling is owned by deploys/platform-deploy): internal CLI helper returns the PostgreSQL password to the caller that writes stack config/.env - deploys/ has no HTTP handler; naming-heuristic FP. Content unchanged from the accepted entry.",
     "lines": {
-      "196": "^    return \\{ state: 'found', password \\};$"
+      "77": "^    return \\{ state: 'found', password \\};$"
     }
   },
   {
     "rule": "security-sensitive-value-in-http-response",
-    "path": "tools/dx/src/deployment/local-platform/local-env.ts",
-    "start": 291,
-    "end": 291,
-    "reason": "Rehomed from local-deploy.ts:679 (#423): same internal password lookup result, no HTTP surface; naming-heuristic FP. Content unchanged from the accepted entry.",
+    "path": "deploys/platform-deploy/platform-env.ts",
+    "start": 172,
+    "end": 172,
+    "reason": "Rehomed from tools/dx local-env.ts:291 (PR #424 ownership split): same internal password lookup result, no HTTP surface; naming-heuristic FP. Content unchanged from the accepted entry.",
     "lines": {
-      "291": "^    return \\{ ok: true, password: lookup.password, generated: false \\};$"
+      "172": "^    return \\{ ok: true, password: lookup.password, generated: false \\};$"
     }
   },
   {
     "rule": "security-sensitive-value-in-http-response",
-    "path": "tools/dx/src/deployment/local-platform/local-env.ts",
-    "start": 364,
-    "end": 364,
-    "reason": "Rehomed from local-deploy.ts:752 (#423): newly generated PostgreSQL password returned to the .env writer inside the CLI tool; no HTTP surface; naming-heuristic FP. Content unchanged from the accepted entry.",
+    "path": "deploys/platform-deploy/platform-env.ts",
+    "start": 245,
+    "end": 245,
+    "reason": "Rehomed from tools/dx local-env.ts:364 (PR #424 ownership split): newly generated PostgreSQL password returned to the .env writer inside the deploy entry tooling; no HTTP surface; naming-heuristic FP. Content unchanged from the accepted entry.",
     "lines": {
-      "364": "^  return \\{ ok: true, password, generated: true \\};$"
+      "245": "^  return \\{ ok: true, password, generated: true \\};$"
     }
   }
 ]

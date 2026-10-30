@@ -634,6 +634,24 @@
       }
     },
     {
+      // `libs/deployment` là lib `runtime:native` DUY NHẤT: nó chạy trên Node
+      // runner (Pulumi CLI harness, lifecycle entry, dx CLI) và KHÔNG BAO GIỜ
+      // được bundle vào Worker edge — các consumer của nó đều là `type:deployment`
+      // hay `type:tooling` với `runtime:native`, được module-boundary chặn khỏi
+      // runtime:edge (một lib edge import được lib này là vi phạm allowlist
+      // `runtime:*` ngay ở lượt direct). Nó cần `node:child_process` (spawn
+      // pulumi/docker), `node:crypto` (sinh passphrase/secret), `node:fs`/
+      // `node:path` (state dir theo worktree) — cùng tính chất với block
+      // `apps/**/deploy/**` phía trên: tooling Node, không thuộc runtime:edge.
+      // Block này đứng SAU override `libs/**` nên exemption có hiệu lực; chỉ
+      // exemption cho đúng lib này, mọi lib khác vẫn cấm builtin như cũ.
+      "files": ["libs/deployment/src/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}"],
+      "rules": {
+        "no-restricted-imports": "off",
+        "import/no-nodejs-modules": "off"
+      }
+    },
+    {
       // Tooling deploy pipeline (apps/home/deploy/**) chạy trên Node runner
       // trong GitHub Actions, không phải trên edge runtime của app — được
       // phép console (log tiến trình job) và Node builtins (fs, path...).

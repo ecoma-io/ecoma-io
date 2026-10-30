@@ -4,12 +4,13 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { classifyOwnership, ownershipLabels } from './deploy-labels.js';
 import {
+  classifyOwnership,
   normalizeWorktreeRoot,
+  ownershipLabels,
   worktreeNamespace,
-} from './../../local-runtime/deploy-namespace.js';
-import type { ExecResult } from './pulumi-context.js';
+} from '@ecoma-io/deployment';
+import type { ExecResult } from '@ecoma-io/deployment';
 import {
   CLEANUP_KINDS,
   decideResourceAction,

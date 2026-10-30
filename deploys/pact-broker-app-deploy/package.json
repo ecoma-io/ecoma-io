@@ -2,6 +2,9 @@
   "name": "pact-broker-app-deploy",
   "private": true,
   "main": "index.ts",
+  "dependencies": {
+    "@ecoma-io/deployment": "workspace:*"
+  },
   "ecoma": {
     "deployment": {
       "status": "scaffold"
@@ -10,6 +13,7 @@
   "nx": {
     "implicitDependencies": [
       "platform-deploy",
+      "@ecoma-io/deployment",
       "@ecoma-io/pact-broker-app"
     ],
     "tags": [

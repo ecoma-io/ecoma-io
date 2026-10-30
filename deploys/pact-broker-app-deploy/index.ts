@@ -27,20 +27,18 @@ import * as docker from '@pulumi/docker';
 import * as dockerBuild from '@pulumi/docker-build';
 import * as pulumi from '@pulumi/pulumi';
 
-// `tools/dx` là workspace project `type:tooling`, còn deploy unit là
-// `type:deployment`. Import nguồn (specifier không đuôi) là chủ ý — chi tiết
-// vì sao KHÔNG dùng `.js` ghi ở `tsconfig.json` của project này; hai deploy
-// unit phải dùng CHUNG một định nghĩa namespace và contract outputs.
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem home-deploy
+// Helper/contract dùng chung qua workspace package `@ecoma-io/deployment`
+// (`libs/deployment`) — một nguồn sự thật cho mọi deploy unit; copy hàm vào
+// deploy unit sẽ tạo hai nơi định nghĩa cùng một thứ và để chúng lệch nhau.
+// Ranh giới là một chiều: deploy → lib; lib KHÔNG được import ngược deploy
+// hay `tools/dx` (contract test của lib chặn).
 import {
+  type PlatformOutputs,
   dockerResourceName,
   normalizeWorktreeRoot,
+  ownershipLabels,
   worktreeNamespace,
-} from '../../tools/dx/src/local-runtime/deploy-namespace';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import { ownershipLabels } from '../../tools/dx/src/deployment/local-platform/deploy-labels';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import type { PlatformOutputs } from '../../tools/dx/src/deployment/local-platform/platform-outputs-contract';
+} from '@ecoma-io/deployment';
 
 /** Cổng nội bộ mà Nitro preset `node-server` nghe (khớp `EXPOSE`/`ENV PORT` của image). */
 const PACT_APP_INTERNAL_PORT = 3000;

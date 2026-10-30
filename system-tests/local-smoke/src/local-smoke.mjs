@@ -26,7 +26,7 @@
  * exit code != 0 và KHÔNG in `smoke OK`. Log vừa báo FAILED vừa báo OK là log
  * nói dối đúng lúc người đọc cần tin nhất.
  *
- * Cách chạy: `node tools/dx/src/deployment/local-platform/local-smoke.mjs fbi.com:<port>` — input là giá
+ * Cách chạy: `node system-tests/local-smoke/src/local-smoke.mjs fbi.com:<port>` — input là giá
  * trị ROOT_HOST đã sinh từ Pulumi outputs, không phải port đoán trước. Cờ tùy
  * chọn: `--connect <host:port>` dial địa chỉ đó thay vì resolve DNS của
  * hostname (hook cho test — SNI/`Host` vẫn dùng hostname của positional),
@@ -82,7 +82,7 @@ class RetryableError extends Error {}
 class VerificationFailure extends Error {}
 
 const USAGE =
-  'Usage: node tools/dx/src/deployment/local-platform/local-smoke.mjs <rootHost> [--connect <host:port>] [--budget-ms <n>] [--request-timeout-ms <n>]   # vd: fbi.com:32768';
+  'Usage: node system-tests/local-smoke/src/local-smoke.mjs <rootHost> [--connect <host:port>] [--budget-ms <n>] [--request-timeout-ms <n>]   # vd: fbi.com:32768';
 
 function usageError(message) {
   console.error(message);
@@ -155,12 +155,12 @@ if (rootHostArg === undefined || rootHostArg.length === 0) {
 const { hostname, port } = parseHostPort(rootHostArg, 'rootHost');
 const connect = connectArg === undefined ? undefined : parseHostPort(connectArg, '--connect');
 
-// `import.meta.url` là …/tools/dx/src/deployment/local-platform/local-smoke.mjs
-// — năm mức `../` về repo root, rồi vào deploys/platform-deploy. Thiếu một mức
-// là path sai và smoke fail với ENOENT trước khi kịp thử HTTPS nào.
+// `import.meta.url` là …/system-tests/local-smoke/src/local-smoke.mjs — ba
+// mức `../` về repo root, rồi vào deploys/platform-deploy. Thiếu một mức là
+// path sai và smoke fail với ENOENT trước khi kịp thử HTTPS nào.
 const certPath = join(
   fileURLToPath(
-    new URL('../../../../../deploys/platform-deploy/local-certs/fbi.com.crt', import.meta.url),
+    new URL('../../../deploys/platform-deploy/local-certs/fbi.com.crt', import.meta.url),
   ),
 );
 const ca = readFileSync(certPath, 'utf8');

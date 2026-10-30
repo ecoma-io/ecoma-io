@@ -39,33 +39,22 @@
 
 import { join } from 'node:path';
 
-// Import **nguồn** `tools/dx` — cùng quy ước với `index.ts` của project này
-// (specifier extensionless, disable module-boundary từng dòng; xem comment
-// block import của `index.ts`).
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
-import {
-  readPlatformOutputs,
-  resolvePostgresPassword,
-  upsertLocalEnv,
-} from '../../tools/dx/src/deployment/local-platform/local-env';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
-import { runPlatformDown } from '../../tools/dx/src/deployment/local-platform/platform-down';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
-import {
-  ensureStackForEntry,
-  pulumiUpForEntry,
-  resolveEntryFoundation,
-  runEntrySmoke,
-  type EntryFoundation,
-} from '../../tools/dx/src/deployment/local-platform/local-entry';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
 import {
   POSTGRES_PASSWORD_ENV_KEY,
   ROOT_DOMAIN_ENV_KEY,
   ROOT_HOST_ENV_KEY,
-} from '../../tools/dx/src/deployment/local-platform/platform-outputs-contract';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
-import { ROOT_DIR } from '../../tools/dx/src/utils';
+  ensureStackForEntry,
+  exec,
+  pulumiUpForEntry,
+  readRootHostFromEnv,
+  resolveEntryFoundation,
+  type EntryFoundation,
+} from '@ecoma-io/deployment';
+import { readPlatformOutputs, resolvePostgresPassword, upsertLocalEnv } from './platform-env.js';
+import { runPlatformDown } from './platform-down.js';
+
+/** Root của workspace, suy từ vị trí file này (`deploys/platform-deploy`). */
+const WORKSPACE_ROOT = join(__dirname, '../..');
 
 async function up(foundation: EntryFoundation): Promise<number> {
   try {
@@ -95,7 +84,7 @@ async function up(foundation: EntryFoundation): Promise<number> {
     // lệch nhau là consumer đọc `.env` sẽ dùng mật khẩu khác với mật khẩu
     // Postgres thật.
     const outputs = readPlatformOutputs(
-      join(ROOT_DIR, 'deploys', 'platform-deploy'),
+      join(WORKSPACE_ROOT, 'deploys', 'platform-deploy'),
       foundation.ctx,
       foundation.env,
     );
@@ -150,9 +139,28 @@ async function main(command: string): Promise<number> {
   if (command === 'smoke') {
     const foundation = resolveEntryFoundation(false);
     // Smoke KHÔNG cần passphrase (chỉ đọc `.env` + HTTP) — worktree chưa từng
-    // deploy thì `.env` không tồn tại và smoke fail với thông điệp rõ.
-    const root = foundation?.ctx.worktreeRoot;
-    return runEntrySmoke(root ?? join(ROOT_DIR));
+    // deploy thì `.env` không tồn tại và smoke fail với thông điệp rõ. Chạy
+    // script smoke của system-tests (`@ecoma-io/local-smoke`): xác minh HTTPS
+    // là hợp đồng của suite, không phải của entry.
+    const rootHost = readRootHostFromEnv(foundation?.ctx.worktreeRoot ?? WORKSPACE_ROOT);
+    if (rootHost === undefined) {
+      console.error(
+        '[platform-deploy] smoke: missing ROOT_HOST in .env — platform up has not run?',
+      );
+      return 1;
+    }
+    const smoke = exec(
+      'node',
+      [join(WORKSPACE_ROOT, 'system-tests/local-smoke/src/local-smoke.mjs'), rootHost],
+      WORKSPACE_ROOT,
+      process.env,
+    );
+    if (smoke.status !== 0) {
+      console.error(`[platform-deploy] smoke HTTPS failed:\n${smoke.stdout}\n${smoke.stderr}`);
+      return 1;
+    }
+    console.log(`[platform-deploy] smoke OK: https://${rootHost}/`);
+    return 0;
   }
   console.error(`[platform-deploy] unknown command: ${command} (expected: up | down | smoke)`);
   return 1;

@@ -53,7 +53,7 @@
  * `MAIL_PROVIDER_ENDPOINT`/`MAIL_PROVIDER_TOKEN` khi kind=fake, nên KHÔNG có
  * provider SMTP thật nào được cấu hình; gửi thật fail ở bước provider, message
  * row trong D1 `mail` là assertion local (cùng trạng thái script e2e
- * `tools/dx/scripts/mail-worker-runtime-e2e.mjs`).
+ * script mail-worker-runtime-e2e của tools/dx).
  */
 
 import { createHmac } from 'node:crypto';
@@ -63,18 +63,14 @@ import * as docker from '@pulumi/docker';
 import * as dockerBuild from '@pulumi/docker-build';
 import * as pulumi from '@pulumi/pulumi';
 
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem backoffice-deploy
 import {
+  type PlatformOutputs,
   dockerResourceName,
   normalizeWorktreeRoot,
+  ownershipLabels,
+  shellQuote,
   worktreeNamespace,
-} from '../../tools/dx/src/local-runtime/deploy-namespace';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import { shellQuote } from '../../tools/dx/src/local-runtime/shell-quote';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import { ownershipLabels } from '../../tools/dx/src/deployment/local-platform/deploy-labels';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import type { PlatformOutputs } from '../../tools/dx/src/deployment/local-platform/platform-outputs-contract';
+} from '@ecoma-io/deployment';
 
 /**
  * Image Node pin (theo DIGEST) — chạy migrations D1 trong container ephemeral
@@ -195,6 +191,7 @@ const verifiedNamespace = pulumi.output(platformNamespace).apply((upstreamNs) =>
 const wicStateVolumeName = dockerResourceName(ns, 'mail-wic-state');
 const wicStateVolume = new docker.Volume(wicStateVolumeName, {
   name: wicStateVolumeName,
+  labels: Object.entries(labels).map(([label, value]) => ({ label, value })),
 });
 
 /**
@@ -217,6 +214,7 @@ const wicStateInit = new docker.Container(
       },
     ],
     command: ['chown', '1000:1000', '/state'],
+    labels: Object.entries(labels).map(([label, value]) => ({ label, value })),
   },
   { dependsOn: [wicStateVolume], retainOnDelete: true },
 );

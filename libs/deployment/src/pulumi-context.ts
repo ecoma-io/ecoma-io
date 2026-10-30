@@ -40,15 +40,22 @@ import {
   statSync,
   writeSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import {
-  normalizeWorktreeRoot,
-  pulumiStackName,
-  worktreeNamespace,
-} from './../../local-runtime/deploy-namespace.js';
-import { ROOT_DIR } from '../../utils.js';
+import { normalizeWorktreeRoot, pulumiStackName, worktreeNamespace } from './deploy-namespace.js';
+
+/**
+ * Root checkout mặc định khi caller không truyền `--worktree-root`.
+ *
+ * Lib không import `ROOT_DIR` của `tools/dx` (hướng phụ thuộc tooling→lib là
+ * chiều DUY NHẤT được phép; lib import ngược tooling là cycle): tự suy từ vị
+ * trí file này — `libs/deployment/src` lên BA mức là workspace root. Sai một
+ * mức là namespace lệch (`we6044…` = hash của `libs/`) và cả lane up thành
+ * một stack khác — đã đo thật trên PR #424. Cùng giá trị với `ROOT_DIR` của
+ * DX trên checkout chuẩn, mà không kéo CLI tooling vào runtime của deploy unit.
+ */
+const DEFAULT_WORKTREE_ROOT = resolve(import.meta.dirname, '../../..');
 
 /**
  * Thư mục state `file://` của một worktree — VỐN đã là contract (ngoài Git,
@@ -207,7 +214,7 @@ export interface LocalDeployContext {
 }
 
 export function resolveContext(worktreeRootInput?: string): LocalDeployContext {
-  const worktreeRoot = normalizeWorktreeRoot(worktreeRootInput ?? ROOT_DIR);
+  const worktreeRoot = normalizeWorktreeRoot(worktreeRootInput ?? DEFAULT_WORKTREE_ROOT);
   const namespace = worktreeNamespace(worktreeRoot);
   return {
     worktreeRoot,

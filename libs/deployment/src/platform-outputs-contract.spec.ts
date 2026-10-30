@@ -53,10 +53,10 @@ describe('traefik-dynamic.yml consistency', () => {
     // khóa hai bên với nhau thay vì dựa kỷ luật "sửa cùng lúc".
     //
     // Anchor từ vị trí file này (`import.meta.dirname` — ESM, thay cho
-    // `__dirname` CJS): spec nằm ở tools/dx/src/deployment/local-platform nên
-    // cần năm mức `../` về repo root. Sai một mức là ENOENT ngay khi chạy.
+    // `__dirname` CJS): spec nằm ở libs/deployment/src nên cần ba mức `../`
+    // về repo root. Sai một mức là ENOENT ngay khi chạy.
     const dynamic = readFileSync(
-      join(import.meta.dirname, '../../../../../deploys/platform-deploy/traefik-dynamic.yml'),
+      join(import.meta.dirname, '../../../deploys/platform-deploy/traefik-dynamic.yml'),
       'utf8',
     );
     expect(dynamic).toContain(`certFile: /certs/${LOCAL_ROOT_HOSTNAME}.crt`);

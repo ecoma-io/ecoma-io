@@ -19,23 +19,17 @@
 // oxlint-disable no-console -- entry CLI chạy trên Node; console là kênh
 // output DUY NHẤT của lifecycle gate (nx:run-commands gộp stdout/stderr).
 
-// Import **nguồn** `tools/dx` — cùng quy ước với `index.ts` của project này
-// (specifier extensionless, disable module-boundary từng dòng; xem comment
-// block import của `index.ts`).
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
-import {
-  generateBase64Key32,
-  generateInternalHmacSecret,
-} from '../../tools/dx/src/deployment/local-platform/local-env';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
 import {
   ensureStackForEntry,
+  generateInternalHmacSecret,
   pulumiDestroyForEntry,
   pulumiUpForEntry,
   resolveEntryFoundation,
   setStackConfig,
   type EntryFoundation,
-} from '../../tools/dx/src/deployment/local-platform/local-entry';
+} from '@ecoma-io/deployment';
+
+import { generateBase64Key32 } from './local-generators.js';
 
 async function prepare(foundation: EntryFoundation): Promise<void> {
   // Stack phải tồn tại trước khi `config set` — lần up đầu trên worktree mới,

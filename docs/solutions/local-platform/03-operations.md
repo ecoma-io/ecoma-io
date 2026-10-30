@@ -12,7 +12,7 @@
 
 ## Cách ly worktree (Pulumi CLI/backend)
 
-Mọi lệnh Pulumi của luồng này chạy với `PULUMI_BACKEND_URL=file://<worktree>/.pulumi-local-state` và `--stack organization/<project>/<stack>` tường minh (`tools/dx/src/deployment/local-platform/pulumi-context.ts`) — không `pulumi login`, nên không backend toàn cục nào bị chọn. `stack init`/`stack select` của `ensureStack` vẫn ghi stack hiện tại vào workspace file `~/.pulumi/workspaces/<project>-<sha1(Pulumi.yaml)>-workspace.json`, nhưng file đó key theo đường dẫn project (PU13) nên hai worktree không đụng file của nhau; các lệnh đọc/ghi state khác đều truyền `--stack` tường minh nên không phụ thuộc giá trị được ghi đó. `~/.pulumi` còn dùng chung cho plugin cache. Chi tiết platform đã đo: `04-platform-facts.md` §2.16 PU12–PU13.
+Mọi lệnh Pulumi của luồng này chạy với `PULUMI_BACKEND_URL=file://<worktree>/.pulumi-local-state` và `--stack organization/<project>/<stack>` tường minh (`libs/deployment/src/pulumi-context.ts` (`@ecoma-io/deployment`)) — không `pulumi login`, nên không backend toàn cục nào bị chọn. `stack init`/`stack select` của `ensureStack` vẫn ghi stack hiện tại vào workspace file `~/.pulumi/workspaces/<project>-<sha1(Pulumi.yaml)>-workspace.json`, nhưng file đó key theo đường dẫn project (PU13) nên hai worktree không đụng file của nhau; các lệnh đọc/ghi state khác đều truyền `--stack` tường minh nên không phụ thuộc giá trị được ghi đó. `~/.pulumi` còn dùng chung cho plugin cache. Chi tiết platform đã đo: `04-platform-facts.md` §2.16 PU12–PU13.
 
 ## Luồng deploy — Nx điều phối, mỗi deploy project sở hữu lifecycle của mình
 
@@ -93,7 +93,7 @@ pnpm nx run platform-deploy:local-smoke -c local
 Kiểm thử nhanh một hostname cụ thể, không cần trust certificate:
 
 ```bash
-node tools/dx/src/deployment/local-platform/local-smoke.mjs fbi.com:<port>
+node system-tests/local-smoke/src/local-smoke.mjs fbi.com:<port>
 ```
 
 Smoke xác nhận đúng hành vi ứng dụng qua Traefik, không chỉ "server còn sống": `GET /` (kèm header `Accept: text/html`) phải **302 → `/en`**, sau đó `GET /en` phải **200 HTML** chứa title của home. Retry chỉ áp dụng cho dấu hiệu "chưa sẵn sàng" (`ECONNREFUSED`, `ECONNRESET`, `EPIPE`, `ETIMEDOUT`, 404/502/503/504 — 404 là cửa sổ registration router khi container bị recreate) trong budget mặc định 90s; 4xx còn lại/500, lỗi TLS/cert, redirect sai đích hay thiếu title là fail ngay. TLS bắt buộc hợp lệ — script chỉ trust certificate local **cho đúng request này** (tham số `ca` scoped), không đụng trust store hệ điều hành, không tắt verification. Cờ tuỳ chọn cho test: `--connect <host:port>` (dial địa chỉ khác hostname), `--budget-ms`, `--request-timeout-ms`.
@@ -191,11 +191,11 @@ pnpm dx local-cleanup --dry-run             # chỉ báo cáo, không có lệnh
 pnpm dx local-cleanup --worktree-root <dir> # lọc báo cáo theo worktree (diagnostics, không nới ràng buộc)
 ```
 
-**Cleanup phát hiện và xoá những gì**: resource Docker mà luồng local deployment tạo — network platform, container Traefik, container PostgreSQL, container home/backoffice/account/pact-app, WIC containers và images của auth/pact-api/mail/push, volume PostgreSQL và các volume state WIC (`CLEANUP_KINDS` trong `tools/dx/src/deployment/local-platform/local-cleanup.ts`). Cleanup KHÔNG có teardown theo thứ tự phụ thuộc: worktree biến mất thì không resource nào còn phụ thuộc vòng sống vào nhau; Docker chấp nhận lệnh `rm` trực tiếp từng resource.
+**Cleanup phát hiện và xoá những gì**: resource Docker mà luồng local deployment tạo — network platform, container Traefik, container PostgreSQL, container home/backoffice/account/pact-app, WIC containers và images của auth/pact-api/mail/push, volume PostgreSQL và các volume state WIC (`CLEANUP_KINDS` trong `tools/dx/src/deployment/local-platform/local-cleanup.ts` (CLI adapter; classification từ `@ecoma-io/deployment`)). Cleanup KHÔNG có teardown theo thứ tự phụ thuộc: worktree biến mất thì không resource nào còn phụ thuộc vòng sống vào nhau; Docker chấp nhận lệnh `rm` trực tiếp từng resource.
 
 ### Labels ownership — bằng chứng "của ai"
 
-Mọi resource local deployment được gắn bốn label (`deploys/platform-deploy`, `deploys/home-deploy`; định nghĩa một bản duy nhất ở `tools/dx/src/deployment/local-platform/deploy-labels.ts`):
+Mọi resource local deployment được gắn bốn label (`deploys/platform-deploy`, `deploys/home-deploy`; định nghĩa một bản duy nhất ở `libs/deployment/src/deploy-labels.ts` (`@ecoma-io/deployment`)):
 
 | Label                       | Ý nghĩa                                                                                                                                                          |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |

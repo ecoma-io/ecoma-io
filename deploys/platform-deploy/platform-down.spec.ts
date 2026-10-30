@@ -4,15 +4,16 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import type { EntryFoundation } from './local-entry.js';
+import { exec, type EntryFoundation, type ExecResult } from '@ecoma-io/deployment';
 import { runPlatformDown, type PlatformDownDeps } from './platform-down.js';
-import { exec, type ExecResult } from './pulumi-context.js';
 
-vi.mock('./pulumi-context.js', () => ({
-  exec: vi.fn<typeof exec>(),
-  describeSpawnFailure: (result: { error?: Error; signal?: string }) =>
-    result.error?.message ?? result.signal ?? 'spawn failed',
-}));
+vi.mock('@ecoma-io/deployment', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@ecoma-io/deployment')>();
+  return {
+    ...actual,
+    exec: vi.fn<typeof actual.exec>(),
+  };
+});
 
 const foundation: EntryFoundation = {
   ctx: {
@@ -159,7 +160,8 @@ describe('runPlatformDown', () => {
   it('uses the shared exec channel (no direct child_process import in this module)', async () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const source = readFileSync(join(here, 'platform-down.ts'), 'utf8');
-    expect(source).toContain("from './pulumi-context.js'");
+    expect(source).toContain('exec,');
+    expect(source).toContain("from '@ecoma-io/deployment'");
     expect(exec).toBeDefined();
   });
 });

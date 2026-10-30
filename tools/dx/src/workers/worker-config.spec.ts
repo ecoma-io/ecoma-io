@@ -13,7 +13,7 @@ import { join, resolve } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { worktreeNamespace } from './../local-runtime/deploy-namespace.js';
+import { worktreeNamespace } from '@ecoma-io/deployment';
 import {
   allocateWorkerPort,
   applyLocalD1Migrations,

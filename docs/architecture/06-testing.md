@@ -45,6 +45,8 @@ consumer được nêu tên.
 **System tests.** Nằm ở repo root `system-tests/`, bốn nhóm mục đích `e2e/`, `performance/`, `resilience/`, `smoke/`. Mỗi
 suite thực thi được là **một Nx project độc lập** — project config, setup, support, fixture của riêng nó. Mặc định **không
 có** `support/` hay `fixtures/` chung ở root; chỉ tách helper dùng chung khi consumer và dependency của nó tường minh.
+`system-tests/local-smoke/` là suite smoke của local platform: script verify serving path (HTTPS + redirect apex) mà
+`platform-deploy:local-smoke` gọi sau khi lane up xong.
 
 Ví dụ layout canonical cho `backoffice`:
 

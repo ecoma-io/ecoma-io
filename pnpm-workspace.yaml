@@ -5,6 +5,7 @@ packages:
   - 'tools/*'
   - 'docs'
   - 'system-tests/e2e/*'
+  - 'system-tests/local-smoke'
 autoInstallPeers: true
 
 # pnpm >= 11 không còn đọc `only-built-dependencies` trong `.npmrc`; danh sách
