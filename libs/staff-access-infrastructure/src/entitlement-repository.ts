@@ -45,7 +45,14 @@ export async function upsertEntitlement(
     `INSERT INTO staff_access.entitlements (staff_id, product, status)
      VALUES ($1, $2, $3)
      ON CONFLICT (staff_id, product)
-     DO UPDATE SET status = EXCLUDED.status, occurred_at = now()`,
+     DO UPDATE SET status = EXCLUDED.status,
+                   occurred_at = now(),
+                   -- revision giữ nguyên giá trị cũ ở bước SET: EXCLUDED.revision
+                   -- là default 1 (INSERT không truyền revision) và trigger
+                   -- monotonic sẽ bump từ OLD — giữ NEW < OLD ở đây là làm lần
+                   -- upsert thứ hai của cùng cặp chết ở guard (bug round 3,
+                   -- 41070536326).
+                   revision = staff_access.entitlements.revision`,
     [entry.staffId, entry.product, entry.status],
   );
 }

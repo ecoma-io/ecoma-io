@@ -103,13 +103,16 @@ function createApp(): Hono<AppEnv> {
       );
       return c.json({ error: errorLabel, message: error.message }, status);
     }
+    // Nhánh khong phai domain: log CHI errorName + requestId. Raw error.message
+    // cua postgres/Hyperdrive co the mang chi tiet binding/connection (user,
+    // host, TLS) — khong dua vao log (cung nguyen tac khong log prompt/response
+    // body hay token).
     // oxlint-disable-next-line no-console
     console.error(
       JSON.stringify({
         level: 'error',
         requestId,
         errorName: error instanceof Error ? error.name : String(error),
-        errorMessage: error instanceof Error ? error.message : String(error),
       }),
     );
     return c.json({ error: 'Internal Server Error', requestId }, 500);

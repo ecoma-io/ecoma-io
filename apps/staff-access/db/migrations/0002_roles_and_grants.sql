@@ -46,7 +46,11 @@ GRANT SELECT, INSERT, UPDATE ON staff_access.staff TO ecoma_staff_access_runtime
 GRANT SELECT ON staff_access.permissions TO ecoma_staff_access_runtime;
 GRANT SELECT ON staff_access.roles TO ecoma_staff_access_runtime;
 GRANT SELECT ON staff_access.role_permissions TO ecoma_staff_access_runtime;
-GRANT SELECT, INSERT, UPDATE ON staff_access.role_assignments TO ecoma_staff_access_runtime;
+-- UPDATE chỉ ở cấp CỘT revoked_at (security-high 41070536326, pair với trigger
+-- revoke-only ở 0001): runtime không thể sửa scope/staff_id/role_id/granted_by
+-- ngay cả khi trigger bị vô hiệu hóa — defense in depth hai lớp độc lập.
+GRANT SELECT, INSERT ON staff_access.role_assignments TO ecoma_staff_access_runtime;
+GRANT UPDATE (revoked_at) ON staff_access.role_assignments TO ecoma_staff_access_runtime;
 GRANT SELECT, INSERT ON staff_access.authorization_audit TO ecoma_staff_access_runtime;
 GRANT SELECT, INSERT, UPDATE ON staff_access.entitlements TO ecoma_staff_access_runtime;
 

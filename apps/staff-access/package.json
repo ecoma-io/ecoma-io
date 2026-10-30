@@ -10,7 +10,9 @@
     "pg": "^8.23.1"
   },
   "devDependencies": {
-    "@types/pg": "^8.15.6"
+    "@testcontainers/postgresql": "12.2.1",
+    "@types/pg": "^8.15.6",
+    "testcontainers": "12.2.1"
   },
   "//": [
     "`pg` giu o dependencies cho `db/apply.mts` + `db/migrate.mts` — migration",
@@ -96,6 +98,20 @@
           "cwd": "apps/staff-access",
           "command": "npx tsc --noEmit -p tsconfig.db.json"
         }
+      },
+      "test-integration": {
+        "executor": "nx:run-commands",
+        "dependsOn": [],
+        "options": {
+          "cwd": "apps/staff-access",
+          "command": "npx vitest run -c vitest.integration.config.mts tests/integrations tests/databases"
+        },
+        "//": [
+          "KHONG `build`: suite integration import thang TS nguon — `../../db/apply.mts`,",
+          "cac lib qua export workspace. Khong spec nao doc `dist/` hay type do wrangler",
+          "sinh ra; esbuild bundle chi tieu thu o lan deploy. Go `build` khoi dependsOn",
+          "bo chi phi bundle ma khong doi ca suite chay."
+        ]
       }
     }
   }

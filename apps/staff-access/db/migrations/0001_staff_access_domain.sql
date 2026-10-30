@@ -358,6 +358,10 @@ CREATE TRIGGER role_assignment_no_self_elevation
 -- Revoke-only guard for the runtime role (pattern: backoffice 0004). Runtime
 -- UPDATE exists solely to set revoked_at; un-revoke or window extension would
 -- be privilege mutation without audit. Migrator/owner keep full power.
+-- ⚠️ Trigger KHONG khai bao OF-column list: runtime UPDATE cot khac (scope,
+-- staff_id, role_id, granted_by, updated_at) phai cung roi vao day de bi
+-- chan — chi trigger unbounded moi phu toan (revoke-only la tham soi
+-- security-high round 3, 41070536326).
 CREATE OR REPLACE FUNCTION staff_access.role_assignment_revoke_only()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -378,16 +382,24 @@ BEGIN
       'role_assignments: runtime role chi duoc revoke (SET revoked_at), khong doi cua hieu luc'
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
+  IF NEW.staff_id IS DISTINCT FROM OLD.staff_id
+     OR NEW.role_id IS DISTINCT FROM OLD.role_id
+     OR NEW.scope IS DISTINCT FROM OLD.scope
+     OR NEW.granted_by IS DISTINCT FROM OLD.granted_by THEN
+    RAISE EXCEPTION
+      'role_assignments: runtime role chi duoc revoke (SET revoked_at), khong doi identity/scope/granted_by'
+      USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
   RETURN NEW;
 END;
 $$;
 
 COMMENT ON FUNCTION staff_access.role_assignment_revoke_only() IS
-  'Runtime role may only SET revoked_at (revocation). Un-revoke or effective window changes are rejected for ecoma_staff_access_runtime; migrator/owner are exempt.';
+  'Runtime role may only SET revoked_at (revocation). Un-revoke, effective window changes, or any identity/scope/granted_by mutation are rejected for ecoma_staff_access_runtime; migrator/owner are exempt. Column-unbounded so every runtime UPDATE lands here.';
 
 DROP TRIGGER IF EXISTS role_assignment_revoke_only ON staff_access.role_assignments;
 CREATE TRIGGER role_assignment_revoke_only
-  BEFORE UPDATE OF revoked_at, effective_from, effective_until
+  BEFORE UPDATE
   ON staff_access.role_assignments
   FOR EACH ROW
   EXECUTE FUNCTION staff_access.role_assignment_revoke_only();
