@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 
+import { readRootHostPort } from './local-origin';
+
 /**
  * Fixture layer của suite — NỘI BỘ local stack, truy cập QUA Docker CLI.
  *
@@ -94,13 +96,10 @@ export function resolveStackNamespace(): string {
   if (cachedNamespace !== undefined) {
     return cachedNamespace;
   }
-  const fromEnv = process.env.ROOT_DOMAIN ?? process.env.ROOT_HOST;
-  if (fromEnv === undefined || fromEnv.trim().length === 0) {
-    throw new Error(
-      'ROOT_DOMAIN (or ROOT_HOST) is not set — cannot identify which local stack to seed. ' +
-        'Run the suite from the checkout that owns the local stack (deploy it there with `pnpm nx affected -t system-test -c local`).',
-    );
-  }
+  // Cùng một cơ chế resolve runtime config với `local-origin.ts`: ENV trước,
+  // fallback `.env` repo root TẠI THỜI ĐIỂM ĐỌC (Nx snapshot env của task suite
+  // TRƯỚC khi platform-deploy kịp ghi `.env` trong đường một-invocation).
+  const fromEnv = readRootHostPort();
   const port = fromEnv.includes(':') ? (fromEnv.split(':')[1] ?? '') : '443';
   const candidates = dockerLines(['ps', '--format', '{{.Names}}']).filter((name) =>
     /^ecoma-[a-z0-9]+-traefik$/u.test(name),

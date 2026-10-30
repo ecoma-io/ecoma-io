@@ -75,17 +75,15 @@ function withOrigin(raw: string): string {
  * lúc CLI boot, nên qua `nx run`/`npx playwright test` dưới target Nx thì
  * biến có sẵn; plugin eval config lúc dựng graph cũng thấy env đó). Chạy
  * `npx playwright test` TRỰC TIẾP ngoài Nx và không có env: trả placeholder,
- * KHÔNG parse `.env` — khác skeleton một chút có chủ đích. Lý do: stack local
- * là state của WORKTREE (namespace Docker derive từ path worktree — xem
- * `tools/dx/src/local-runtime/deploy-namespace.ts`), còn `.env` repo root
- * thuộc checkout khác; suite nằm trong worktree nhưng stack thường chạy ở
- * checkout chính, port động mỗi lần deploy. `.env` của repo root có thể là
- * port của một stack KHÁC (hoặc đã chết) — đọc nó chỉ đổi một DNS-failure
- * mơ hồ thành một connection-refused nhắm sai stack, không giúp gì thêm.
- * Gate trong `global-setup.ts` probe origin từ ENV (bắt buộc phải có) và
- * fail với remedy đúng một lệnh `pnpm nx affected -t system-test -c local` — đó là fail-closed
- * thật. Placeholder `.invalid` (RFC 2606) không resolve được: nếu ai đó bỏ
- * qua gate thì mọi test đỏ với DNS failure thay vì xanh giả.
+ * KHÔNG parse `.env` ở MỚI CONFIG (config eval lúc dựng project graph, đọc
+ * `.env` ở lớp đó là IO bỏ khi `nx affected` không đụng suite). Lớp helper
+ * runtime (`e2e/support/local-origin.ts`, `global-setup.ts`) CÓ fallback parse
+ * `.env` TẠI THỜI ĐIỂM CHẠY: orchestrator Nx snapshot env của MỌI task đã
+ * schedule trước khi `platform-deploy:local-up` kịp ghi `.env`, nên đường
+ * một-invocation (`nx affected -t system-test -c local`) cần đọc FILE lúc
+ * global-setup/test chạy để thấy giá trị platform vừa ghi. Placeholder
+ * `.invalid` (RFC 2606) không resolve được: nếu ai đó bỏ qua gate thì mọi test
+ * đỏ với DNS failure thay vì xanh giả.
  */
 function resolveStackOrigin(): string {
   const raw = process.env.ROOT_DOMAIN ?? process.env.ROOT_HOST;
