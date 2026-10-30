@@ -130,10 +130,9 @@ const platformNamespace = requirePlatformOutput('namespace');
 
 /**
  * Secret HMAC path Account↔Mail — CÙNG GIÁ TRỊ account stack đã persist làm
- * `namespace:mailInternalAuthSecret` (orchestration `local-stack-step` sinh
- * MỘT giá trị: account persist vào stack config của nó, stack này đọc lại —
- * bất biến giữ ở tầng orchestration, cùng cơ chế `identityInternalSecret` của
- * auth). Control plane giữ nó làm entry `MAIL_INTERNAL_AUTH_SECRET_SVC_ACCOUNT`
+ * `namespace:mailInternalAuthSecret` (MỘT giá trị: entry up của account persist
+ * vào stack config của nó, entry up của stack này đọc lại — cùng cơ chế
+ * `identityInternalSecret` của auth). Control plane giữ nó làm entry `MAIL_INTERNAL_AUTH_SECRET_SVC_ACCOUNT`
  * (principal `svc.account`); account ký envelope với
  * `NUXT_MAIL_INTERNAL_AUTH_SECRET` cùng giá trị. Thiếu key là fail ngay lúc
  * `pulumi up` (`conf.require`).

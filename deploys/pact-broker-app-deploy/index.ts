@@ -108,10 +108,10 @@ const networkName = requirePlatformOutput('networkName');
 const platformNamespace = requirePlatformOutput('namespace');
 const rootHostname = requirePlatformOutput('rootHostname');
 
-// Machine token mà BFF dùng gọi pact-broker-api — do orchestration sinh/set
-// qua stdin (`namespace:apiToken`, xem `localStackSecrets` trong
-// `tools/dx/src/deployment/local-platform/local-stack-step.ts`; giá trị cuối
-// do `pact-broker-api-deploy` sinh và wiring PR nối). Thiếu key là fail ngay
+// Machine token mà BFF dùng gọi pact-broker-api — entry up của stack này
+// set qua stdin (`namespace:apiToken`; giá trị do entry up của
+// `pact-broker-api-deploy` sinh và persist vào stack config của nó, entry này
+// đọc lại). Thiếu key là fail ngay
 // lúc `pulumi up` (`conf.require`) chứ không Container với secret rỗng.
 // `pulumi.secret` bọc TRƯỚC khi interpolate để giá trị redact trong diff/log.
 const apiToken = pulumi.secret(conf.require('apiToken'));
