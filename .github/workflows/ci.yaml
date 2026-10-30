@@ -192,21 +192,24 @@ jobs:
           bail: ${{ github.event_name == 'merge_group' }}
 
   # Bộ system test (Playwright + Chromium thật) chạy trên local platform stack
-  # thật: deploy 9 unit trước (`pnpm dx local-deploy` qua Nx Task Graph, trả về
-  # stack Docker + mật khẩu sinh tự động, KHÔNG secret production nào được
-  # inject), rồi chạy `nx affected -t system-test` — bốn suite đọc origin từ
-  # `ROOT_DOMAIN`/`ROOT_HOST` trong `.env` mà bước deploy ghi. Suite fail-closed
-  # khi stack không có (gate trong `global-setup.ts`), nên không deploy là đỏ:
-  # chạy thật là điều kiện của job này, không phải cải tiến.
+  # thật: invocation `nx affected -t system-test -c local` là ĐƯỜNG DUY NHẤT dẫn
+  # stack vào job — qua `dependsOn` target `system-test` của từng suite trỏ tới
+  # `local-up` của deploy project nó cần, Nx tự schedule deploy prerequisite
+  # trước suite (task `local-up` chạy `pulumi up` thật, tự sinh passphrase Pulumi
+  # + mật khẩu PostgreSQL, KHÔNG secret production nào được inject, và task
+  # platform ghi `.env` với ROOT_HOST/ROOT_DOMAIN mà các suite đọc). Suite
+  # fail-closed khi stack không có (gate trong `global-setup.ts`), nên không
+  # deploy là đỏ: chạy thật là điều kiện của job này, không phải cải tiến. Không
+  # còn bước deploy hardcoded nào đứng trước invocation — trong đó PR docs-only
+  # được "không deploy" một cách tự nhiên: affected không chọn suite nào thì
+  # task graph rỗng, không `pulumi up` nào chạy.
   #
   # Job KHÔNG có `if:` nào — và đó là điều kiện đúng đắn của nó. `ci-gate` fail với
   # mọi kết quả khác `success`, kể cả `skipped`, nên một job bị bỏ qua ở đây sẽ làm
   # đỏ cả pipeline. Trên PR chỉ chạm tài liệu, `nx affected -t system-test` không có
   # project nào bị ảnh hưởng và thoát 0 với "0 tasks" (các target `system-test` đều
-  # `cache: false`, nhưng affected = 0 task thì không tốn phút test nào). Bước
-  # deploy shell thường KHÔNG có kiến thức về affected — nó luôn chạy, gồm cả PR
-  # docs-only (~vài phút build image trần): chi phí được chấp nhận để giữ job
-  # đơn giản với một đường chạy duy nhất thay vì hai hình thái if/else.
+  # `cache: false`, nhưng affected = 0 task thì không tốn phút test — lẫn phút
+  # deploy — nào).
   system-test:
     name: system-test
     runs-on: ubuntu-26.04
@@ -214,7 +217,7 @@ jobs:
     # Docker của runner lạnh; tests bổ sung gate retry + chromium thật. 60 phút
     # là trần đo từ budget 15 phút deploy + 4 suite chạy tuần tự (mỗi suite
     # ~1 phút đo thực tế), không phải mục tiêu: job xanh điển hình kết thúc
-    # sớm hơn nhiều.
+    # sớm hơn nhiều, và PR docs-only kết thúc gần như ngay lập tức (0 task).
     timeout-minutes: 60
     steps:
       - name: Start runner resource monitoring
@@ -226,26 +229,46 @@ jobs:
           persist-credentials: false
       - name: Setup Node.js and pnpm
         uses: ./.github/actions/setup-node-pnpm
-      # Deploy thật (apply) lên Docker của runner: orchestration tự sinh passphrase
-      # Pulumi + mật khẩu PostgreSQL (randomBytes), ghi `.env` với ROOT_HOST/
-      # ROOT_DOMAIN mà các suite đọc ở step sau; không prompt, không secret inject
-      # từ GitHub. `pulumi` CLI (ghim 3.272.0 trong node_modules/.bin) và Docker
-      # daemon đều có sẵn trên runner. Timeout là trần cho lần build image lạnh
-      # đầu tiên; các lần sau tận dụng layer cache Docker của runner.
-      # Vòng retry che hai race đã gặp ở CI: (1) container init one-shot
-      # `rm: true` của provider docker v5.2.0 đôi khi bị Docker tự xoá trước khi
-      # provider kịp inspect → "No such container"; (2) khi một unit chết giữa
-      # chừng, `--nx-bail` hủy các `pulumi up` đang chạy và file backend để lại
-      # stack lock mồ côi — attempt kế của unit đó chết ngay "stack is currently
-      # locked". Trước mỗi attempt lại: xoá lock file của các stack có owner PID
+      # `@playwright/test` không có postinstall tải browser, nên runner sạch không
+      # có Chromium; `--with-deps` cài luôn các thư viện hệ thống mà Chromium cần.
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      # Deploy không còn là step riêng: nó nằm TRONG invocation bên dưới qua task
+      # graph (mỗi target `system-test` khai `dependsOn` → `local-up` của deploy
+      # project nó cần, configuration `local` chọn đúng lane), nên vòng retry
+      # trong action bao trọn LỜI GỌI invocation thay vì chỉ phần deploy. Mỗi
+      # attempt chạy lại invocation trọn vẹn; khi xanh bước thoát ngay ở attempt
+      # đầu, retries chỉ tiêu trên đường flaky. Hai race đã gặp ở CI mà vòng
+      # retry che: (1) container init one-shot `rm: true` của provider docker
+      # v5.2.0 đôi khi bị Docker tự xoá trước khi provider kịp inspect → "No such
+      # container"; (2) khi một unit chết giữa chừng, bail hủy các `pulumi up`
+      # đang chạy và file backend để lại stack lock mồ côi — attempt kế của unit
+      # đó chết ngay "stack is currently locked". Trước mỗi attempt lại
+      # (`retry-command` của action): xoá lock file của các stack có owner PID
       # không còn sống (chỉ lock mồ côi — lock của process sống giữ nguyên), để
       # lane idempotent chạy tiếp trên namespace đã tạo một phần. Lock JSON do
       # `json.Marshal` của Pulumi ghi NÉN với khóa thường `"pid":<n>` (struct
-      # `lockContent`, pkg/backend/diy/lock.go của CLI ghim 3.272.0) — không có
-      # khoảng trắng sau dấu hai chấm, không viết hoa "PID".
-      - name: Deploy local platform stack
-        run: |
-          clear_orphaned_stack_locks() {
+      # `lockContent`, pkg/backend/diy/lock.go của CLI ghim trong node_modules)
+      # — không có khoảng trắng sau dấu hai chấm, không viết hoa "PID".
+      #
+      # Retry nằm TRONG action (`retries` + `retry-command`) chứ không phải một
+      # step wrapper quanh nó: composite action không thể được gọi từ bash, và
+      # một vòng bash tự ghép lệnh `nx` ở đây sẽ nhân bản hình thái lệnh ra nơi
+      # thứ hai. Vòng cũ 5 attempts + sleep 10 được giữ nguyên nhịp.
+      # `threads: '1'`: cả 4 suite chia sẻ MỘT stack trên runner (grants, mail
+      # sink D1, OTP rate-limit, Traefik) — chạy song song tái tạo đúng xung đột
+      # chéo suite mà per-file identities đã xử lý trong phạm vi một suite, nên
+      # thực thi tuần tự theo quyết định của user.
+      - name: System tests
+        uses: ./.github/actions/run-nx-target
+        with:
+          targets: system-test
+          affected: ${{ !inputs.force }}
+          bail: ${{ github.event_name == 'merge_group' }}
+          threads: '1'
+          configuration: local
+          retries: 5
+          retry-command: |
             find .pulumi-local-state/.pulumi/locks -name '*.json' -print0 2>/dev/null |
               while IFS= read -r -d '' lockfile; do
                 lock_pid=$(sed -n 's/.*"pid":\([0-9]*\).*/\1/p' "$lockfile" | head -1)
@@ -254,32 +277,6 @@ jobs:
                   rm -f "$lockfile"
                 fi
               done
-          }
-          for attempt in 1 2 3 4 5; do
-            echo "Deploy attempt ${attempt}/5"
-            clear_orphaned_stack_locks
-            if pnpm dx local-deploy; then
-              exit 0
-            fi
-            echo "Deploy attempt ${attempt} failed; preparing retry" >&2
-            sleep 10
-          done
-          exit 1
-      # `@playwright/test` không có postinstall tải browser, nên runner sạch không
-      # có Chromium; `--with-deps` cài luôn các thư viện hệ thống mà Chromium cần.
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
-      # `threads: '1'`: cả 4 suite chia sẻ MỘT stack vừa deploy trên runner
-      # (grants, mail sink D1, OTP rate-limit, Traefik) — chạy song song tái tạo
-      # đúng xung đột chéo suite mà per-file identities đã xử lý trong phạm vi
-      # một suite, nên thực thi tuần tự theo quyết định của user.
-      - name: System tests
-        uses: ./.github/actions/run-nx-target
-        with:
-          targets: system-test
-          affected: ${{ !inputs.force }}
-          bail: ${{ github.event_name == 'merge_group' }}
-          threads: '1'
       # Chỉ khi đỏ: trace, screenshot và HTML report là bằng chứng duy nhất còn lại
       # sau khi runner bị xoá, và không có chúng thì một job đỏ ở CI là thứ người
       # khác không tái hiện được. Đường dẫn theo BỐN suite system-test
