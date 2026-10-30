@@ -12,6 +12,7 @@
     }
   },
   "dependencies": {
+    "@ecoma-io/staff-access-contracts": "workspace:*",
     "@ecoma-io/staff-access-domain": "workspace:*",
     "postgres": "^3.4.9"
   },
