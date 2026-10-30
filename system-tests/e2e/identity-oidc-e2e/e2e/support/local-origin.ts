@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 /**
  * Scoped TLS + origin + stack helpers cho các API assertion và seeding của suite.
  *
- * Đây là "phòng hỗ trợ" của CHÍNH suite này (`docs/overview/06-testing.md` §2:
+ * Đây là "phòng hỗ trợ" của CHÍNH suite này (`docs/architecture/06-testing.md` §2:
  * mỗi system-test suite tự sở hữu setup/support của nó) — không có thư viện
  * dùng chung ở root, và không cần: mọi suite hệ thống trỏ cùng một cert local
  * là **hai bản cố ý**, không phải nợ kỹ thuật.

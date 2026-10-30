@@ -405,7 +405,7 @@ const traefik = new docker.Container('traefik', {
  * mọi kết nối bằng giá trị mới nhận `password authentication failed` trong khi
  * healthcheck `pg_isready` vẫn xanh (nó không xác thực mật khẩu). Đường đổi mật
  * khẩu hợp lệ nằm ngoài luồng này (đổi trực tiếp trong database rồi cập nhật
- * config cho khớp) — xem `docs/services/local-platform/03-operations.md`
+ * config cho khớp) — xem `docs/solutions/local-platform/03-operations.md`
  * §Vòng đời dữ liệu.
  *
  * Orchestration (`tools/dx/src/deployment/local-platform/local-deploy.ts`) chỉ sinh password khi stack mới

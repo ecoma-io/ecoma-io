@@ -4,7 +4,7 @@ import { defineEventHandler, sendRedirect } from 'h3';
 /**
  * `/` — locale-resolution entry point.
  *
- * Theo `docs/overview/01-architecture.md` (A13) `/` **không serve content**:
+ * Theo `docs/architecture/01-architecture.md` (A13) `/` **không serve content**:
  * nó resolve về locale mặc định bằng một redirect **server-side** 302. Chạy
  * ở Nitro route nên redirect có mặt trong response đầu tiên — không phụ
  * thuộc client, không hydration, không layout shift, và crawler nhận được

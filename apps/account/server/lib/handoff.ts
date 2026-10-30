@@ -264,7 +264,7 @@ export async function consumeHandoff(
  * đang chạm, không quét theo mốc thời gian. Index
  * `login_handoffs_expires_at_idx (expires_at)` của `0001` được tạo cho một câu
  * `DELETE` theo TTL **chưa tồn tại** ở bất kỳ đâu trong repo — cùng hình thức
- * gap đã ghi cho `otp_challenges` (`docs/services/account/03-operations.md`
+ * gap đã ghi cho `otp_challenges` (`docs/domains/account/03-operations.md`
  * §3.3: "grant DELETE đã có, nhưng chưa có job nào dùng nó"). Follow-up prune
  * nên gộp hai bảng này vào cùng một job. growth tại đây không thiếu an toàn:
  * TTL 600s chặn cứng tuổi hàng, và một hàng chỉ sinh mỗi lần `/login?handle=`

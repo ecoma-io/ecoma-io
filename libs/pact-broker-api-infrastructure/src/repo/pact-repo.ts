@@ -7,7 +7,7 @@
  * theo content SHA toàn cục — verification của tenant B ghi được vào pact của
  * tenant A khi SHA trùng. Repo này tra theo (tenant, provider, consumer, sha)
  * và schema ghim bằng UNIQUE (tenant_id, provider_id, consumer_id,
- * content_sha) — xem docs/services/pact-broker/01-architecture.md §3.
+ * content_sha) — xem docs/domains/pact-broker/01-architecture.md §3.
  *
  * Semantics giữ nguyên:
  *  * publishPact: content đổi → UPDATE (created=false), content giống →

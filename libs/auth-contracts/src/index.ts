@@ -18,7 +18,7 @@
  * dựng một route `/internal/consent/*` trong `account` — tức hai bản cài đặt cho một
  * contract. `getConsentContext`/`submitConsent` là **lời gọi do `account` phát ra**,
  * không phải hàm `auth` gọi vào `account`. Xem bảng hướng trong
- * `docs/services/auth/01-architecture.md` §5.1.7 — cột "Hướng" đọc là
+ * `docs/domains/auth/01-architecture.md` §5.1.7 — cột "Hướng" đọc là
  * `consumer → provider`, và tên endpoint nằm trên không gian tên của provider.
  * `/internal/account/status` có TIỀN TỐ `account` nhưng thuộc về `account`
  * (contract của nó nằm ở `@ecoma-io/account-contracts`).

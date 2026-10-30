@@ -2,16 +2,16 @@
  * Ngân sách byte của notification payload và phép đo canonical serialization.
  *
  * Source of truth:
- * - `docs/services/push-notification/02-requirements.md` FR-008 (**Expiry**, **Ngân
+ * - `docs/domains/push-notification/02-requirements.md` FR-008 (**Expiry**, **Ngân
  *   sách**): ngân sách **MUST** được áp trên **serialized plaintext của `payload`**
  *   mà delivery worker sẽ gửi, **MUST** ≤ **3993 octets** để body mã hoá luôn ≤ 4096.
- * - `docs/services/push-notification/02-requirements.md` FR-013 (canonical
+ * - `docs/domains/push-notification/02-requirements.md` FR-013 (canonical
  *   serialization của `payload` là **nguồn duy nhất** để tính ngân sách byte;
- *   `body ≤ plaintext + 103 octets` — `docs/overview/04-platform-facts.md` §2.15).
+ *   `body ≤ plaintext + 103 octets` — `docs/architecture/04-platform-facts.md` §2.15).
  *
  * ⚠️ **Phân chia trách nhiệm với `@ecoma-io/push-notification-contracts`.** Domain
  * **không** import contracts (dependency rule: `<bc>-domain` không phụ thuộc Nx
- * project khác — `docs/overview/05-code-architecture.md` §3). Vì vậy ranh giới là:
+ * project khác — `docs/architecture/05-code-architecture.md` §3). Vì vậy ranh giới là:
  * - **contracts** sở hữu **wire schema** của `payload`: đúng bốn khoá, kiểu từng
  *   field, chính sách unknown-field, tính tương thích JSON của `data`, và việc chặn
  *   khoá bị cấm (`validateNotificationPayload`, `FORBIDDEN_DELIVERY_COMMAND_FIELDS`

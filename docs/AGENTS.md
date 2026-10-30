@@ -15,10 +15,11 @@
 - If a document regularly exceeds about **200 lines**, consider splitting the scope. Do not aggressively compress a file to the point of losing information, unless you can rephrase more concisely while preserving the information.
 - Do not record implementation details that are already evident in source code, configuration, or machine-readable contracts.
 - Documentation describes **why / what / boundary / invariant**; source code and configuration describe **how**.
+- Documentation describes **target architecture**, not current implementation status. Deltas between target and current reality belong in PR descriptions, not in docs.
 
 ## 3. Document Scope
 
-### `overview/`
+### `architecture/`
 
 - `01-architecture.md`: system boundaries, ownership, deploy units, dependencies, architectural decisions and invariants.
 - `02-delivery.md`: Git, Nx, CI/CD, contracts delivery, migrations, environments, release and rollout.
@@ -26,52 +27,56 @@
 - `04-platform-facts.md`: verified external platform facts only.
 - `05-code-architecture.md`: Nx project structure, Bounded Context, DDD layers, dependency rules, contracts.
 - `06-testing.md`: canonical testing architecture — taxonomy, ownership/layout, Nx target contracts, test environment.
-- `07-domains.md`: canonical domain map — shared domain language (glossary), bounded context catalog, context map, and genuinely undecided business boundaries.
+- `roadmap.md`: implementation roadmap for upcoming phases — task IDs, dependencies, contract freeze points. It is a plan, not committed architecture policy; decisions it references must live in ADRs or `01-architecture.md`.
+- `README.md`: index of the architecture axis (three axes explained).
 
-`overview/` describes services only at boundary level. Design details, API, storage, procedures and runbooks belong in service documents.
+### `domains/`
 
-### `07-domains.md` rules
+- `README.md`: canonical domain map — shared domain language (glossary), bounded context catalog, context map, and genuinely undecided business boundaries.
+- `domains/<context>/`: specification of one bounded context — boundary, domain model, contracts, authorization boundary, data ownership. One context may own several deploy units; a deploy unit does not create a context. `llm` and `payment` have no folder yet; their design lives in [`architecture/01-architecture.md`](./architecture/01-architecture.md) §2/§4 and the catalog in [`domains/README.md`](./domains/README.md) §3.
+
+### `solutions/`
+
+- `solutions/<name>/`: specification of one composition, deploy unit or job — design, requirements, runbook. Deploy units that are not bounded contexts (mailer-job, push-notification-job, auth-nonce-prune-job, local-platform) live here. `solutions/backoffice/` is the composition/UI + BFF; `solutions/remote-cache/` is the Remote Cache service spec (Nx-first, multi-tenant SaaS target).
+
+### `domains/README.md` rules
 
 - The domain map describes the **target architecture**. A bounded context stays in the catalog because the architecture docs define it — missing runtime, database or provisioning never removes one. Never mark catalog entries or context-map relations as implemented/unimplemented.
 - Distinguish "not yet implemented but architected" (stays in the catalog) from "decision not yet made" (goes to its open-boundaries section only).
 - Only genuinely undecided items belong in the open-boundaries section. A decision already settled by an ADR or an overview decision must not be re-listed as open; only the explicitly unresolved part of it may be.
-- A deploy-unit doc (or a new app/job) does not create a bounded context. A new context enters the catalog only when the architecture docs define new business responsibility and data ownership.
-- Shared infrastructure (`local-platform`, `cache`, `janitor`, `deploys/*`, provisioning projects) is never a bounded context.
-- Do not copy the catalog or the context map into other documents; reference `07-domains.md` instead.
+- A deploy-unit spec (or a new app/job) does not create a bounded context. A new context enters the catalog only when the architecture docs define new business responsibility and data ownership.
+- Shared infrastructure (`local-platform`, `remote-cache` while disposable build state, `janitor`, `deploys/*`, provisioning projects) is never a bounded context.
+- Do not copy the catalog or the context map into other documents; reference [`domains/README.md`](./domains/README.md) instead.
 
-### `services/<service>/`
-
-`service` in the path is a **bounded context**. A context and its deploy units are different axes (`overview/07` §1.1): one context may own several deploy units, and a deploy unit does not create a context. Service boundary, contract and data ownership still live in `overview/01`, and the catalog of contexts lives in `overview/07`.
-
-**The one exception — `services/local-platform/`**: shared local Docker infrastructure for every deploy unit (network, Traefik, PostgreSQL), owned by no bounded context. It sits under `services/` because it serves **all** services, not because it is one — see the bounding table in [`README.md`](./README.md).
+### `solutions/<name>/`
 
 - `README.md`: navigation and service summary, kept very short.
 - `01-architecture.md`: service design, boundary, runtime, data and dependencies.
 - `02-requirements.md`: functional/non-functional requirements and non-goals.
 - `03-operations.md`: deployment, configuration, monitoring, failure handling, recovery and runbook.
 
-Service documents describe **only that service**.
+Service/composition documents describe **only that service/composition**.
 
 ## 4. Canonical Source
 
 Each fact or decision has exactly **one canonical location**:
 
-| Content                                               | Canonical location                 |
-| ----------------------------------------------------- | ---------------------------------- |
-| System architecture/policy                            | `overview/`                        |
-| Code architecture                                     | `overview/05-code-architecture.md` |
-| Testing architecture                                  | `overview/06-testing.md`           |
-| Domain language, bounded context catalog, context map | `overview/07-domains.md`           |
-| Service design/behaviour/operations                   | `services/<service>/`              |
-| External platform fact                                | `overview/04-platform-facts.md`    |
-| Exact API/schema/contract                             | Machine-readable contract          |
+| Content                                               | Canonical location                          |
+| ----------------------------------------------------- | ------------------------------------------- |
+| System architecture/policy                            | `architecture/`                             |
+| Code architecture                                     | `architecture/05-code-architecture.md`      |
+| Testing architecture                                  | `architecture/06-testing.md`                |
+| Domain language, bounded context catalog, context map | `domains/README.md`                         |
+| Service/composition design/behaviour/operations       | `solutions/<name>/` or `domains/<context>/` |
+| External platform fact                                | `architecture/04-platform-facts.md`         |
+| Exact API/schema/contract                             | Machine-readable contract                   |
 
 Do not duplicate the same decision across multiple documents.
 
 ## 5. README Index
 
 - `docs/README.md` must reflect the current documentation structure.
-- Each `services/<service>/README.md` must reflect the actual documents of that service.
+- Each `solutions/<name>/README.md` and `domains/<context>/README.md` must reflect the actual documents of that service/context.
 - When **adding, deleting or renaming a document/directory**, update the related README/index files in the same change.
 - Do not leave READMEs pointing to documents that do not exist, or missing documents that fall within the README's scope.
 
@@ -84,7 +89,7 @@ Do not duplicate the same decision across multiple documents.
 
 ## 7. Service Documentation
 
-Do not create `services/<name>/` if the service has no implementation or written specification.
+Do not create `solutions/<name>/` or `domains/<context>/` if the service/context has no implementation or written specification.
 
 Do not create empty scaffold documents just to preserve the structure.
 
@@ -92,7 +97,7 @@ Do not add `database.md`, `api.md`, `testing.md` or similar documents merely bec
 
 ## 8. Platform Facts
 
-`overview/04-platform-facts.md` contains only verified facts.
+`architecture/04-platform-facts.md` contains only verified facts.
 
 Each fact needs an appropriate source, date/snapshot and confidence.
 

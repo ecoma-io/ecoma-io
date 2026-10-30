@@ -13,7 +13,7 @@
  * Mục "Xác thực hai yếu tố" dưới đây là placeholder **Sắp có**, không tương
  * tác. Giai đoạn 2 sẽ thay nó bằng trạng thái thật của enrolment TOTP và — khi
  * bật gate cứng — một checkpoint chặn ở đây (xem
- * `docs/services/backoffice/03-onboarding.md` §Two-factor).
+ * `docs/domains/staff-access/03-onboarding.md` §Two-factor).
  *
  * ## Vì sao URL profile là cấu hình, không phải hằng
  *
@@ -105,7 +105,7 @@ const dismissed = ref(false);
         <!--
           Chỗ gắn gate 2FA (giai đoạn 2): trạng thái enrolment thật thay mục
           placeholder này, và khi gate cứng bật thì nút "tiếp tục" bị thay bằng
-          checkpoint bắt buộc. Xem docs/services/backoffice/03-onboarding.md §Two-factor.
+          checkpoint bắt buộc. Xem docs/domains/staff-access/03-onboarding.md §Two-factor.
         -->
         <div
           class="mt-6 rounded-md border border-dashed border-border p-4"

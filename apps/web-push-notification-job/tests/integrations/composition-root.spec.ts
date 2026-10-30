@@ -219,7 +219,7 @@ describe('worker entrypoint contract', () => {
     expect('scheduled' in defaultWorker).toBe(false);
   });
 
-  // Invariant 12 (`docs/overview/01-architecture.md`): không correctness write nào được
+  // Invariant 12 (`docs/architecture/01-architecture.md`): không correctness write nào được
   // đẩy qua `ctx.waitUntil()`. Nửa cấu trúc của pin: `handleQueueBatch` nhận đúng hai tham
   // số bắt buộc (env, batch) — không có tham số thứ ba thì handler không có đường nào gọi
   // `waitUntil`. Nửa hành vi (adapter `queue.fetch` bỏ ctx) được ghim ở suite

@@ -1,7 +1,7 @@
 /**
  * Digest và phân loại lý do quarantine cho một Queue command bị reject.
  *
- * Nguồn canonical: `docs/services/transactional-mailer-job/03-operations.md` §3.1
+ * Nguồn canonical: `docs/solutions/transactional-mailer-job/03-operations.md` §3.1
  * (bản ghi quarantine đã sanitize) và `01-architecture.md` §13 (security boundary).
  *
  * ## Vì sao `quarantine_id` là HMAC chứ không phải hash trần

@@ -8,7 +8,7 @@
  * thật với một D1 thật đã đếm lệnh, rồi khẳng định **số lệnh bằng 0**.
  *
  * ⚠️ **Số lệnh bằng 0 là khẳng định mạnh hơn `401` đúng.** Vì Cloudflare không phân biệt
- * Service Binding với Internet (`docs/overview/04-platform-facts.md`), route `/internal/**`
+ * Service Binding với Internet (`docs/architecture/04-platform-facts.md`), route `/internal/**`
  * reachable từ Internet; nếu route đọc D1 trước khi xác thực thì thời gian trả lời phụ thuộc
  * `delivery_id` có tồn tại hay không — đó là oracle đo một định danh có thật, và §8.1 cấm.
  *

@@ -1,7 +1,7 @@
 /**
  * Adapter provider thật: Cloudflare Email Sending (binding `send_email`), đứng sau
  * {@link MailProviderPort} — seam duy nhất mà worker core dùng để giao một delivery
- * ra provider (`docs/services/transactional-mailer-job/01-architecture.md` §11.1).
+ * ra provider (`docs/solutions/transactional-mailer-job/01-architecture.md` §11.1).
  *
  * Đây là **chỗ duy nhất** chứa chi tiết vendor của Cloudflare: shape `send()`, bộ mã
  * lỗi `E_*` và semantics của binding không rò lên trên port, và port không biết
@@ -78,7 +78,7 @@ export interface SendEmailBindingLike {
  * đối chiếu field như `ResendProviderConfig`).
  *
  * Không có endpoint/token: binding là kênh in-process của cùng Cloudflare account
- * (không qua internet, không credential trong worker — overview `01` §5.4). `sender`
+ * (không qua internet, không credential trong worker — architecture `01` §6). `sender`
  * là địa chỉ sender cố định từ trusted config; binding còn bị chặn thêm bởi
  * `allowed_sender_addresses` ở wrangler.jsonc — hai lớp chặn độc lập.
  */

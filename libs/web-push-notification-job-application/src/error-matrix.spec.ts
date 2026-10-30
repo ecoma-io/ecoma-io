@@ -1,4 +1,4 @@
-// Error matrix canonical của delivery plane (`docs/services/push-notification/03-operations.md`
+// Error matrix canonical của delivery plane (`docs/domains/push-notification/03-operations.md`
 // §5, dùng chung cả hai plane) và phép chiếu của nó sang job state.
 //
 // ⚠️ Suite này khẳng định **ánh xạ**, không khẳng định adapter: mỗi `failureClass` phải dẫn

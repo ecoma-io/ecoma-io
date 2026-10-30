@@ -55,7 +55,7 @@ export interface InternalNonceStore {
    *
    * Trả về **số hàng đã xoá**. Số này lấy từ `RETURNING` chứ không từ `meta.changes`: local
    * wrangler không điền `meta.changes` cho file-based runs
-   * (`docs/overview/04-platform-facts.md` DB3), nên đọc nó sẽ cho `0` giả và prune im lặng
+   * (`docs/architecture/04-platform-facts.md` DB3), nên đọc nó sẽ cho `0` giả và prune im lặng
    * không dọn gì.
    */
   deleteExpiredNonces(input: DeleteExpiredMailNoncesInput): Promise<number>;

@@ -1,7 +1,7 @@
 -- 0009_mail_templates_seed.sql — seed catalog template cho `transactional-mail`.
 --
--- Nguồn: issue #132; docs/services/transactional-mail/02-requirements.md FR-003;
---        docs/services/transactional-mail/01-architecture.md §4.1 (service chạy với template seed).
+-- Nguồn: issue #132; docs/domains/transactional-mail/02-requirements.md FR-003;
+--        docs/domains/transactional-mail/01-architecture.md §4.1 (service chạy với template seed).
 --
 -- ⚠️ Seed tối thiểu cho đường Account → Mail: template logic `account.login-otp`
 -- (apps/account/server/lib/mail.ts, `OTP_LOGIN_TEMPLATE`), locale `en` (sender mặc định

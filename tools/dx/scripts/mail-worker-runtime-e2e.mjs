@@ -3,7 +3,7 @@
  * E2E local Worker runtime của bounded context transactional-mail — lặp lại
  * được, trong repo, KHÔNG dùng Cloudflare thật và KHÔNG gửi email thật.
  *
- * Nguồn quy trình: docs/services/local-platform/05-worker-runtime-e2e.md
+ * Nguồn quy trình: docs/solutions/local-platform/05-worker-runtime-e2e.md
  * (bằng chứng PR5 bằng script dùng-một-lần ngoài repo; script này là phiên
  * bản in-repo của cùng luồng, cộng lifecycle-event path của PR2).
  *

@@ -1,7 +1,7 @@
 -- 0005_mail_rate_limits.sql — counter rate limit bền trong D1 `mail`.
 --
--- Nguồn: docs/services/transactional-mail/02-requirements.md FR-006;
---        docs/services/transactional-mail/01-architecture.md §8 (invariant 9: không state
+-- Nguồn: docs/domains/transactional-mail/02-requirements.md FR-006;
+--        docs/domains/transactional-mail/01-architecture.md §8 (invariant 9: không state
 --        node-local).
 --
 -- ⚠️ Enforcement PHẢI durable. Một Worker có nhiều isolate; bộ đếm nằm trong memory của isolate

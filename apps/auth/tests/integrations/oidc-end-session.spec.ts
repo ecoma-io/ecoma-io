@@ -1,5 +1,5 @@
 /**
- * ACCEPTANCE — RP-initiated logout (`end_session`, §6.7 docs/services/auth)
+ * ACCEPTANCE — RP-initiated logout (`end_session`, §6.7 docs/domains/auth)
  * trên Node THẬT: oidc-provider thật, adapter Postgres thật (bảng
  * `auth.oidc_state`), PostgreSQL thật, khoá ES256 thật, session thật.
  *

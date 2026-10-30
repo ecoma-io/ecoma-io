@@ -32,7 +32,7 @@ rules:
       through Queue or service bindings; those are not policed by this rule.
       If this app genuinely owns a new database, add its path to the exclude
       list at the same time as the ownership row in
-      docs/overview/01-architecture.md.
+      docs/architecture/01-architecture.md.
     metadata:
       category: security
       confidence: HIGH

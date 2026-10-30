@@ -12,8 +12,8 @@
  * Interface này **cấu trúc** (structural), nên binding D1 thật của Workers khớp với nó
  * mà không cần adapter; test harness (D1 thật qua `wrangler getPlatformProxy`) cũng khớp.
  *
- * Nguồn canonical cho hành vi: `docs/services/transactional-mailer-job/01-architecture.md`
- * §9.2.1 (conditional UPDATE là nguồn duy nhất), `docs/overview/04-platform-facts.md` DB3
+ * Nguồn canonical cho hành vi: `docs/solutions/transactional-mailer-job/01-architecture.md`
+ * §9.2.1 (conditional UPDATE là nguồn duy nhất), `docs/architecture/04-platform-facts.md` DB3
  * (`meta.changes` = số hàng **thực sự** thay đổi).
  */
 

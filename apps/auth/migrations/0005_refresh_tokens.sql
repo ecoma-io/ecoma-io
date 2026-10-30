@@ -1,8 +1,8 @@
 -- 0005_refresh_tokens.sql — refresh token rotation và reuse detection.
 --
 -- Phạm vi: `refresh_token_families`, `refresh_tokens`.
--- Thiết kế → docs/services/auth/01-architecture.md §3.2, §6.6
---          → docs/services/auth/02-requirements.md FR-018, FR-018a, FR-019.
+-- Thiết kế → docs/domains/auth/01-architecture.md §3.2, §6.6
+--          → docs/domains/auth/02-requirements.md FR-018, FR-018a, FR-019.
 --
 -- ⚠️ Mô hình: ROTATION + REUSE DETECTION.
 --    Mỗi lần dùng refresh token sinh token mới và đánh dấu token cũ đã dùng.

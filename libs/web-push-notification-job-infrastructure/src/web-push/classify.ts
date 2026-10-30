@@ -1,7 +1,7 @@
 /**
  * Phân loại HTTP response của push service thành `WebPushSendResult`.
  *
- * ⚠️ Đây là **error matrix canonical** (`docs/services/push-notification/03-operations.md`
+ * ⚠️ Đây là **error matrix canonical** (`docs/domains/push-notification/03-operations.md`
  * §5), và adapter là nơi duy nhất được phép quyết HTTP nào là permanent. Nguyên tắc dẫn
  * đường cho mọi dòng dưới đây:
  *

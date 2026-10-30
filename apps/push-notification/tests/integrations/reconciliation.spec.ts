@@ -1,6 +1,6 @@
 /**
  * Bảng quyết định **a1–a6** của reconciliation (c) chạy trên D1 thật (`§4.2` của
- * `docs/services/push-notification/03-operations.md`).
+ * `docs/domains/push-notification/03-operations.md`).
  *
  * ⚠️ **Vì sao file này gọi `d1-harness.ts` và không dựng vào `d1-repositories.spec.ts`.** Bảng
  * a1–a6 là **policy** của use case — nó quyết định *làm gì* với một delivery kẹt, và mỗi

@@ -14,7 +14,7 @@
 // hiện cảnh báo B5004 khi thấy `nitro.config.ts` — chỉ dev mode, không ảnh hưởng
 // build.
 //
-// Trang này là deploy unit Workers: docs/overview/02-delivery.md §1 xếp `apps`
+// Trang này là deploy unit Workers: docs/architecture/02-delivery.md §1 xếp `apps`
 // vào làn Workers, deploy bằng Wrangler. Không có preset này thì Nuxt build cho
 // Node server và không emit ra `.output/server/index.mjs` mà `wrangler.jsonc`
 // trỏ tới.

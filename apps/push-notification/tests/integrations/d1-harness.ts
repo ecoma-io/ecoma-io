@@ -8,7 +8,7 @@
  *    không khớp. Đây là cơ chế duy nhất quyết định thắng/thua của claim, của release/outcome
  *    và của outbox claim — `meta.changes` là điểm quyết định, không có read-then-write ở đâu.
  * 2. **`db.batch()` là transaction duy nhất** (không `BEGIN`/`COMMIT`, không row locking —
- *    `docs/overview/04-platform-facts.md` DB2/DB11). Một fake sẽ cho ta một transaction giả
+ *    `docs/architecture/04-platform-facts.md` DB2/DB11). Một fake sẽ cho ta một transaction giả
  *    và che mất việc một lệnh trong batch đang vi sai.
  * 3. **Partial UNIQUE index** (`push_outbox_one_open_intent`, `push_app_provider_mappings_one_primary`)
  *    là guard chống dồn intent và chống hai primary. Một fake không có index nên không thể
@@ -218,7 +218,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   }
 
   // ⚠️ `batch` — **không** `exec` từng statement: `db.batch()` là transaction duy nhất của
-  // D1 (`docs/overview/04-platform-facts.md` DB2), và áp toàn bộ schema trong **một** batch
+  // D1 (`docs/architecture/04-platform-facts.md` DB2), và áp toàn bộ schema trong **một** batch
   // nghĩa là database của test hoặc có đủ schema hoặc không có gì. Lỗi schema ném ở đây và
   // làm **mọi** test đỏ bằng một thông điệp schema, thay vì mỗi test đỏ bằng một assertion
   // không liên quan — đó là hành vi ta muốn.

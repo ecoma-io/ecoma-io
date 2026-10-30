@@ -2,7 +2,7 @@
  * Orchestration của **một** Queue command `mail.send`: parse → validate → resolve authority →
  * claim → gọi provider → persist kết quả → báo outcome.
  *
- * Nguồn canonical: `docs/services/transactional-mailer-job/01-architecture.md` §9.2.1 (lease
+ * Nguồn canonical: `docs/solutions/transactional-mailer-job/01-architecture.md` §9.2.1 (lease
  * protocol), §9.2.2 (ma trận transition), §9.4 (blocked/redrive), §9.5 (vòng đời báo outcome),
  * `03-operations.md` §3.1 (bảng xử lý theo nhóm).
  *

@@ -5,7 +5,7 @@
 -- AuthorizationCode, AccessToken, RefreshToken, ReplayDetection.
 --
 -- ⚠️ TÁCH BIỆT VỚI `authorization_transactions` / `authorization_codes` (0002/0004).
--- Hai cấu trúc đó là source of truth NGHIỆP VỤ theo docs/services/auth/01-architecture.md
+-- Hai cấu trúc đó là source of truth NGHIỆP VỤ theo docs/domains/auth/01-architecture.md
 -- §5.1 (browser_confirmed gate, CAS, idempotency event_id). Bảng này là state CƠ CHẾ
 -- GIAO THỨC của provider: provider tự sinh jti, tự quản TTL, tự tiêu thụ. Một dòng
 -- `oidc_state` không bao giờ được đọc để ra quyết định nghiệp vụ của `auth`; và ngược

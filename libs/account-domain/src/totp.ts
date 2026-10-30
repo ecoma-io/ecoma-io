@@ -4,9 +4,9 @@
  *
  * ## Điều kiện docs đã chốt
  *
- * - FR-005 (`docs/services/account/02-requirements.md` §1.2): `authenticators` gộp
+ * - FR-005 (`docs/domains/account/02-requirements.md` §1.2): `authenticators` gộp
  *   passkey và TOTP bằng discriminator; "TOTP secret mã hoá ở tầng ứng dụng".
- * - Model assurance (`docs/services/account/01-architecture.md`, mục assurance cùng
+ * - Model assurance (`docs/domains/account/01-architecture.md`, mục assurance cùng
  *   JSDoc của `./acr`): email-OTP là phương thức đăng nhập duy nhất; **MFA tuỳ chọn**
  *   gồm TOTP và Passkey/WebAuthn; "passkey trước TOTP" còn mở nhưng thứ tự đó chỉ là
  *   thứ tự ra mắt, không đổi thuật toán của phương thức thứ hai.
@@ -15,7 +15,7 @@
  *
  * ⚠️ **File này KHÔNG lưu secret vào đâu cả** — nó là thư viện thuần: nhận secret đã
  * có, trả kết quả verify. Vòng đời lưu trữ (mã hoá tầng ứng dụng bằng primitive nào,
- * key đặt đâu) là quyết định **chưa chốt** tại `docs/services/account/01-architecture.md`
+ * key đặt đâu) là quyết định **chưa chốt** tại `docs/domains/account/01-architecture.md`
  * §10 "Primitive mã hoá TOTP secret tầng ứng dụng, và nơi giữ key — Trước khi lưu TOTP
  * secret". Bởi vậy không có migration, không có bảng, không có route trong phạm vi này.
  *

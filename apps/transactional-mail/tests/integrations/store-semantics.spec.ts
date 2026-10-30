@@ -20,8 +20,8 @@
  *
  * Mỗi describe tự chứa seed của mình; helper dựng state nằm ngay trong suite (06 §9:
  * support của suite nằm trong thư mục suite). Nguồn canonical:
- * `docs/services/transactional-mail/01-architecture.md` §6.2, §6.3, §6.2.2, §7.4;
- * `docs/overview/04-platform-facts.md` DB2, DB11.
+ * `docs/domains/transactional-mail/01-architecture.md` §6.2, §6.3, §6.2.2, §7.4;
+ * `docs/architecture/04-platform-facts.md` DB2, DB11.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

@@ -1,8 +1,8 @@
 /**
  * Kiểm chứng signed internal delivery client của `transactional-mailer-job`.
  *
- * Nguồn canonical: `docs/services/transactional-mail/01-architecture.md` §7.4 (receiver
- * contract) và `docs/services/auth/01-architecture.md` §5.1.8 (envelope). Mọi assert về chữ
+ * Nguồn canonical: `docs/domains/transactional-mail/01-architecture.md` §7.4 (receiver
+ * contract) và `docs/domains/auth/01-architecture.md` §5.1.8 (envelope). Mọi assert về chữ
  * ký đi qua `verifyRequest` của lib contract — **không** có verifier viết riêng cho test ở
  * đây: một verifier riêng chỉ chứng minh client thống nhất với chính nó, chứ không chứng
  * minh client nói đúng ngôn ngữ với phía nhận.

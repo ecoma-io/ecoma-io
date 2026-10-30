@@ -1,6 +1,6 @@
 -- 0008_mail_rate_limits_key_scope.sql — thêm hình thức rate limit theo idempotency key.
 --
--- Nguồn: docs/services/transactional-mail/02-requirements.md FR-002 ("Probe `409` trên cùng
+-- Nguồn: docs/domains/transactional-mail/02-requirements.md FR-002 ("Probe `409` trên cùng
 --        `(principal_id, idempotency_key)` bị rate limit theo **key** (không chỉ theo
 --        principal) → `429` khi vượt ngưỡng + security alert"); FR-006 (enforcement durable).
 --

@@ -16,7 +16,7 @@ migration là file SQL thuần.
 `db-account` là **greenfield provisioning**, không phải data migration. Trên `main`
 không có schema, không có migration history, không có Hyperdrive binding. Không có
 gì để chuyển từ đâu cả — thứ tự provisioning ở
-[`03-operations.md` §3.2](../../../docs/services/account/03-operations.md) bắt đầu từ
+[`03-operations.md` §3.2](../../../docs/domains/account/03-operations.md) bắt đầu từ
 database rỗng.
 
 Migration history **độc lập với `db-auth`**: hai deploy unit rollout độc lập, dùng
@@ -37,7 +37,7 @@ unit sinh ra để tránh.
 ## Chạy migration
 
 ⚠️ **Chạy từ CI runner, không chạy từ trong Worker.** Hyperdrive không hỗ trợ advisory
-lock ([`04-platform-facts.md`](../../../docs/overview/04-platform-facts.md) HD6), nên
+lock ([`04-platform-facts.md`](../../../docs/architecture/04-platform-facts.md) HD6), nên
 không thể giữ `pg_advisory_lock` qua đường đi của Worker. Worker chỉ dùng
 `_runtime_` role, và `_runtime_` role không có quyền DDL.
 
@@ -81,7 +81,7 @@ Lock là session-scoped nên tự nhả khi kết nối đóng, không để l�
 kill giữa chừng.
 
 Không có down-migration. Sai thì **forward-fix**
-([`01-architecture.md`](../../../docs/services/account/01-architecture.md) invariant 10).
+([`01-architecture.md`](../../../docs/domains/account/01-architecture.md) invariant 10).
 
 ## Provisioning step 1 — những gì migration **không** làm được
 

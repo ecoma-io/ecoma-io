@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 /**
  * Scoped TLS + origin + POST cho các API assertion của suite.
  *
- * Đây là "phòng hỗ trợ" của CHÍNH suite này (`docs/overview/06-testing.md` §2:
+ * Đây là "phòng hỗ trợ" của CHÍNH suite này (`docs/architecture/06-testing.md` §2:
  * mỗi system-test suite tự sở hữu setup/support của nó) — hai bản cố ý với
  * `home-public-e2e`, không phải nợ kỹ thuật. Suite này thêm hai năng lực mà
  * suite public home không cần: POST (form-urlencoded cho token endpoint giả

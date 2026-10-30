@@ -5,7 +5,7 @@
  * ## Vì sao test này tồn tại
  *
  * Contract này là control point fail-closed lúc `auth` phát hành token
- * (`docs/services/auth/01-architecture.md` §6.0), và nó từng **không bao giờ chạy được**:
+ * (`docs/domains/auth/01-architecture.md` §6.0), và nó từng **không bao giờ chạy được**:
  * consumer gửi `?account_id=`, route đọc `query.sub` rồi `isSubject` nó, nên một request
  * ký hoàn hảo nhận `400`. Không có gì đỏ ở đâu: `400` là một nhánh fail-closed hợp lệ, nên
  * triệu chứng duy nhất là "không phát hành được token", đọc ra như một sự cố hạ tầng.

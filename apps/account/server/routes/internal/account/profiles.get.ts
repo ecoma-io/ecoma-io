@@ -1,7 +1,7 @@
 /**
  * `GET /internal/account/profiles?subs=<sub1,sub2,...>` — contract mà `account`
  * **phục vụ**, `backoffice` là consumer (issue #325, giai đoạn 1;
- * `docs/services/account/01-architecture.md` §5).
+ * `docs/domains/account/01-architecture.md` §5).
  *
  * ## Đây là INTERNAL endpoint, không phải BFF
  *

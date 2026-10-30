@@ -1,6 +1,6 @@
 -- 0002_rejected_command_quarantine.sql — bản ghi quarantine đã sanitize cho command bị reject.
 --
--- Nguồn: docs/services/transactional-mailer-job/03-operations.md §3.1.
+-- Nguồn: docs/solutions/transactional-mailer-job/03-operations.md §3.1.
 --
 -- Bảng chỉ lưu bản ghi đã sanitize: `quarantine_id` (HMAC của raw body, khoá Worker Secret),
 -- `queue_message_id`, `reason`, **tên** key vi phạm (không phải value), `attempts`, timestamps.

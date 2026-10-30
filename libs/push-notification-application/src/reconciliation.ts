@@ -3,7 +3,7 @@
  * (c) logical delivery reconciliation (`03-operations.md` §4.2).
  *
  * ⚠️ **Ba cơ chế phải tách, và file này chỉ chứa hai.** (b) job reconciliation thuộc
- * delivery worker (`docs/services/web-push-notification-job/02-requirements.md` FR-022) và
+ * delivery worker (`docs/solutions/web-push-notification-job/02-requirements.md` FR-022) và
  * `MUST NOT` ghi state của control plane. Nguyên tắc của §4.2 là **không dùng chung một job và
  * không ghi chéo state của nhau**: (a) không ghi `push-job`; (c) không ghi state của worker và
  * không ghi trạng thái outbox ngoài việc tạo intent mà §4.2 quy định.

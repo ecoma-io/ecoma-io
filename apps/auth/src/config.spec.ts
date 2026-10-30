@@ -428,7 +428,7 @@ describe('resolveInternalSecret — the resolver of the internal envelope', () =
 
   /**
    * Pha **nạp trước** của runbook xoay secret — bước 2 trong
-   * `docs/services/auth/03-operations.md` §3.3.
+   * `docs/domains/auth/03-operations.md` §3.3.
    *
    * ⚠️ Ở pha này slot `previous` chứa khoá **MỚI** (chưa dùng để ký), và entry
    * `current` — vốn **chính là** secret đang ký — vẫn là khoá cũ. Test này khóa đúng

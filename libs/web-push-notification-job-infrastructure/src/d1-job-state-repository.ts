@@ -5,7 +5,7 @@
  * `false` khi `(delivery_id, attempt)` đã tồn tại, và caller **không** được bỏ qua kết quả đó —
  * đó là điều kiện đủ để Queue redelivery (W1, W4) và hai worker cùng consume cùng một message
  * không sinh state mâu thuẫn. Cơ chế là `INSERT OR IGNORE` + `meta.changes`: một write vô
- * hiệu vì vi phạm UNIQUE **không** phải read-then-write, đúng `docs/overview/04-platform-facts.md`
+ * hiệu vì vi phạm UNIQUE **không** phải read-then-write, đúng `docs/architecture/04-platform-facts.md`
  * DB3.
  *
  * ⚠️ **Envelope được ghi đúng một lần** (lần consume đầu). `beginAttempt` chỉ `INSERT` vào

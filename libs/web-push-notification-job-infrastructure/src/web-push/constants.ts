@@ -1,8 +1,8 @@
 /**
  * Hằng số và hằng số giới hạn của adapter Web Push — **không** phụ thuộc runtime nào.
  *
- * Nguồn: `docs/overview/04-platform-facts.md` §2.15 (WP1–WP6) và
- * `docs/services/web-push-notification-job/01-architecture.md` §15/§16/§18.
+ * Nguồn: `docs/architecture/04-platform-facts.md` §2.15 (WP1–WP6) và
+ * `docs/solutions/web-push-notification-job/01-architecture.md` §15/§16/§18.
  */
 
 /**

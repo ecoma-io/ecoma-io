@@ -11,7 +11,7 @@
  * lệnh — clobber backend selection toàn cục và race giữa các worktree.
  *
  * Cơ chế thay thế (đã KIỂM THỰC NGHIỆM trên CLI v3.267/3.270, ghi ở
- * `docs/overview/04-platform-facts.md` §2.16 PU12–PU13):
+ * `docs/architecture/04-platform-facts.md` §2.16 PU12–PU13):
  *
  * 1. `PULUMI_BACKEND_URL=file://<worktree>/.pulumi-local-state` — trỏ backend
  *    trực tiếp, KHÔNG cần `pulumi login` và KHÔNG đụng credentials.json.

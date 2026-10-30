@@ -6,7 +6,7 @@
  * ## Ranh giới với `@ecoma-io/push-notification-contracts`
  *
  * Dependency rule của repo: `<bc>-domain` **không** phụ thuộc Nx project nào khác
- * (`docs/overview/05-code-architecture.md` §3), nên lib này không import contracts —
+ * (`docs/architecture/05-code-architecture.md` §3), nên lib này không import contracts —
  * và vì vậy nó **khai báo lại** các vocabulary mà nó cần. Ranh giới trách nhiệm là:
  *
  * - **contracts** sở hữu **wire**: schema và validator cho envelope/claim/payload,
@@ -19,7 +19,7 @@
  *   byte của payload.
  *
  * ⚠️ **Rủi ro trôi dạt có thật:** hai lib mirror cùng vocabulary (`Transport`,
- * `ProviderType`, subscription status, delivery status) và `docs/services/push-notification/`
+ * `ProviderType`, subscription status, delivery status) và `docs/domains/push-notification/`
  * là nguồn canonical cho cả hai. Khi tài liệu đổi vocabulary, **cả hai** lib phải đổi
  * trong cùng một thay đổi — không có cơ chế compile-time nào bắt được lệch giữa chúng
  * vì chúng không được phép import lẫn nhau.

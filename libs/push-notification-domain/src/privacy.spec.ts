@@ -28,7 +28,7 @@ import {
 /**
  * Bất biến privacy: mọi `detail` trong `DomainRejection` là **hằng số** của domain.
  *
- * Nguồn: `docs/services/push-notification/02-requirements.md` FR-013 ("error không
+ * Nguồn: `docs/domains/push-notification/02-requirements.md` FR-013 ("error không
  * leak payload/secret") và tiêu chí chấp nhận của issue #238 ("không leak
  * payload/secret trong error"). Payload, endpoint, key id và các identifier do caller
  * gửi vào là dữ liệu nhạy cảm — chúng có mặt trong rejection reason theo hợp đồng,

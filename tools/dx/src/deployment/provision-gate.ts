@@ -16,7 +16,7 @@
  * này là cổng hiển thị kế hoạch, không phải gate cấm scaffold chạy provision.
  *
  * Việc provision thật là `pulumi up` do operator chạy có chủ đích, ngoài đường
- * release của application — xem `docs/overview/02-delivery.md` §7.4.1.
+ * release của application — xem `docs/architecture/02-delivery.md` §7.4.1.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';

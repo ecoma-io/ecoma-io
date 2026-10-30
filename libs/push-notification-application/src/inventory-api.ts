@@ -1,7 +1,7 @@
 /**
  * Application API — vòng đời `Device` và `Push Subscription` (FR-002, FR-003, FR-004, FR-006).
  *
- * Canonical: `docs/services/push-notification/02-requirements.md` FR-002 (device dưới một
+ * Canonical: `docs/domains/push-notification/02-requirements.md` FR-002 (device dưới một
  * `User`), FR-003 (đăng ký subscription + endpoint validation chống SSRF + tránh trùng),
  * FR-004 (lifecycle `active`/`disabled`/`expired`), FR-006 (`vapid_key_id` của subscription),
  * FR-019 (authorization scope theo `App`), §4.1 (danh sách endpoint) ·

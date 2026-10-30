@@ -1,6 +1,6 @@
 /**
  * Shim worker `ecoma-account-bridge` — mặt trước service-binding của container
- * account trên local platform (`docs/services/local-platform/02-account-auth.md`
+ * account trên local platform (`docs/solutions/local-platform/02-account-auth.md`
  * §Service bindings).
  *
  * ## Vì sao shim tồn tại

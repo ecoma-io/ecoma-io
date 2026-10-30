@@ -273,7 +273,7 @@ export function validateAccountConfig(config: AccountRuntimeConfig): void {
       );
     }
     // ⚠️ **Không được trùng secret của path Account↔Auth.** Envelope internal **không
-    // mang principal** (`docs/services/transactional-mail/01-architecture.md` §7.4):
+    // mang principal** (`docs/domains/transactional-mail/01-architecture.md` §7.4):
     // phía nhận suy ra principal từ credential đã khớp. Một secret dùng cho cả hai
     // path là cấu hình mơ hồ — nó không làm hỏng gì ở phía gửi, nhưng nó phá đúng
     // ranh giới cách ly mà registry của receiver thiết lập (một principal riêng

@@ -15,7 +15,7 @@
  *
  * Chỉ sửa bản đồ này khi ownership thay đổi thật; arch-check sẽ bắt mọi lệch
  * giữa bản đồ, marker và project graph. Xem `validateDeploymentMap` trong
- * `deployment-map-check.ts` và `docs/overview/05-code-architecture.md` §2.1.
+ * `deployment-map-check.ts` và `docs/architecture/05-code-architecture.md` §2.1.
  *
  * Quy tắc cấu trúc: `apps/` chỉ chứa project có đường triển khai production —
  * bây giờ hoặc theo kế hoạch (status `implemented`/`scaffold` ở trên, tức có

@@ -1,7 +1,7 @@
 -- 0001_identity_core.sql — schema lõi của `db-account`.
 --
 -- Phạm vi: những bảng mà invariant 2, 3, 4, 7, 8 của
--- `docs/services/account/01-architecture.md` §9 đòi hỏi phải có **trước khi**
+-- `docs/domains/account/01-architecture.md` §9 đòi hỏi phải có **trước khi**
 -- bất kỳ luồng đăng nhập nào chạy. Các bảng của nhóm password/MFA chưa được
 -- tạo ở đây vì `01-architecture.md` §10 còn để mở "password auth có bật hay
 -- không" — tạo sẵn sẽ đóng trước quyết định đó (AGENTS.md: không implement

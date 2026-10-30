@@ -2,12 +2,12 @@
  * Push Delivery: state machine, lease/fencing, claim decision, và các transition vận hành.
  *
  * Source of truth:
- * - `docs/services/push-notification/02-requirements.md` FR-015 (state đóng; transition
+ * - `docs/domains/push-notification/02-requirements.md` FR-015 (state đóng; transition
  *   hợp lệ; terminal state; administrative recovery `failed → queued`; expiry từ mọi
  *   non-terminal; `cancelled` khai báo nhưng **không có actor** trong v1),
  *   FR-014 (`delivery_id` là logical identity, **không** phải exactly-once external
  *   side effect).
- * - `docs/services/push-notification/01-architecture.md` §5.6 (nghĩa canonical của
+ * - `docs/domains/push-notification/01-architecture.md` §5.6 (nghĩa canonical của
  *   từng state; lease + `dispatch_generation`; guarded conditional write; claim
  *   predicate; ai set `expired`; giới hạn của fencing), §5.6.1 (administrative retry),
  *   §5.6.3 (re-publish), §6.2 (actor duy nhất của `pending → queued`), §8.1

@@ -2,7 +2,7 @@
  * `@ecoma-io/backoffice-domain` — value object, invariant vòng đời và constraint
  * thuần của bounded context `backoffice` (staff directory, permission catalog,
  * role, assignment, authorization audit) — A21
- * (`docs/overview/01-architecture.md` §8).
+ * (`docs/architecture/01-architecture.md` §8).
  *
  * Thư viện này **không** import Nx project khác, **không** SQL, **không** Node
  * builtin và **không** I/O. Mọi tham số thời gian do caller truyền vào; domain
@@ -11,7 +11,7 @@
  * ## Ràng buộc chưa chốt — không âm thầm chốt trong lib này
  *
  * Thiết kế của `backoffice` để mở **cố ý** các quyết định tại
- * `docs/services/backoffice/01-architecture.md` §10 (bootstrap first-admin,
+ * `docs/domains/staff-access/01-architecture.md` §10 (bootstrap first-admin,
  * revocation latency, custom role administration, step-up, internal contract,
  * retention audit). Domain lib này không có API nào chốt chúng:
  *

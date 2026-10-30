@@ -2,7 +2,7 @@
  * Private delivery interface — `transactional-mailer-job` → `transactional-mail`
  * (internal, gọi qua Service Binding + internal-auth).
  *
- * Nguồn: `docs/services/transactional-mail/01-architecture.md` §7.2.
+ * Nguồn: `docs/domains/transactional-mail/01-architecture.md` §7.2.
  * - `GET /internal/deliveries/:delivery_id`: trả về envelope `{message, dispatch_generation}`
  * - `POST /internal/deliveries/:delivery_id/outcome`: nhận `{outcome, error_class?, dispatch_generation}`
  *   và trả `{result: 'applied'|'duplicate'|'stale', status}` — thêm `current_dispatch_generation`
@@ -101,7 +101,7 @@ export const REQUIRED_POST_DELIVERY_OUTCOME_REQUEST_FIELDS = [
 
 /**
  * Field được phép trong response `POST .../outcome` khi `result ∈ {applied, duplicate}`
- * — nguồn: `docs/services/transactional-mail/01-architecture.md` §6.2.2 (canonical wire shape).
+ * — nguồn: `docs/domains/transactional-mail/01-architecture.md` §6.2.2 (canonical wire shape).
  */
 export const POST_DELIVERY_OUTCOME_RESPONSE_FIELDS = ['result', 'status'] as const;
 

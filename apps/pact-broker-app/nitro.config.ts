@@ -8,7 +8,7 @@
 // File riêng này tránh được cả hai. (Giải thích đầy đủ nằm ở
 // `apps/backoffice/nitro.config.ts` — cùng một thiết kế.)
 //
-// Trang này là deploy unit Workers: docs/overview/02-delivery.md §1 xếp `apps`
+// Trang này là deploy unit Workers: docs/architecture/02-delivery.md §1 xếp `apps`
 // vào làn Workers, deploy bằng Wrangler. Không có preset này thì Nuxt build cho
 // Node server và không emit ra `.output/server/index.mjs` mà `wrangler.jsonc`
 // trỏ tới.

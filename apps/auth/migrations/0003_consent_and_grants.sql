@@ -1,8 +1,8 @@
 -- 0003_consent_and_grants.sql — bằng chứng consent và quyền hiện hành.
 --
 -- Phạm vi: `oauth_consent_decisions`, `oauth_grants`, `client_grant_scopes`.
--- Thiết kế → docs/services/auth/01-architecture.md §3.2, §3.4
---          → docs/services/auth/02-requirements.md FR-014..FR-014b, FR-022.
+-- Thiết kế → docs/domains/auth/01-architecture.md §3.2, §3.4
+--          → docs/domains/auth/02-requirements.md FR-014..FR-014b, FR-022.
 --
 -- ⚠️ Cặp này là nơi dễ nhầm nhất của OAuth, và nhầm nó sinh bug ngay ở ngữ nghĩa thu hồi:
 --

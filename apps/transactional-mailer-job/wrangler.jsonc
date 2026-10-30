@@ -4,15 +4,15 @@
   // `TRANSACTIONAL_MAIL_SERVICE` trỏ về control plane, ghi job state vào D1
   // `mail-job`. KHÔNG có hostname, KHÔNG expose HTTP API.
   //
-  // Reference: docs/services/transactional-mailer-job/01-architecture.md,
-  // docs/overview/03-operations.md §11.4 (mô hình job của notification và mail).
+  // Reference: docs/solutions/transactional-mailer-job/01-architecture.md,
+  // docs/architecture/03-operations.md §11.4 (mô hình job của notification và mail).
   //
   // KHÔNG bật `nodejs_compat`: project mang tag `runtime:edge` và
   // .oxlintrc.json chặn import Node.js builtin trong mọi project `runtime:edge`.
   //
   // `triggers.crons` đi cùng `scheduled()` của `src/main.ts` — handler đã export
   // (report sweep + stale-lease sweep + blocked backlog sweep, 01-architecture.md §7;
-  // docs/overview/03-operations.md §10). Nhịp `*/5 * * * *` là giá trị khởi điểm khớp
+  // docs/architecture/03-operations.md §10). Nhịp `*/5 * * * *` là giá trị khởi điểm khớp
   // nhịp cron của control plane: report-lease và execution lease đều tính bằng chục
   // giây, nên một khoảng 5 phút giữa hai lần quét là đủ cho alert vận hành mà không
   // tạo retry storm. Giá trị chốt ở deploy (03-operations.md §1.2), không phải con số
@@ -39,10 +39,10 @@
   // control plane data resolve qua TRANSACTIONAL_MAIL_SERVICE.
   //
   // `database_id` cố ý KHÔNG khai báo ở đây: chưa provisioning. Resource D1 do
-  // provisioning hạ tầng tạo và cung cấp `database_id` (docs/overview/02-delivery.md
+  // provisioning hạ tầng tạo và cung cấp `database_id` (docs/architecture/02-delivery.md
   // §9.1) — **không** tự tạo D1 bằng `wrangler d1 create`. Wrangler chỉ được chạy
   // migration (`wrangler d1 migrations apply`).
-  // Binding + vòng đời D1 của service: xem docs/services/transactional-mailer-job/03-operations.md §2.
+  // Binding + vòng đời D1 của service: xem docs/solutions/transactional-mailer-job/03-operations.md §2.
   "d1_databases": [
     {
       "binding": "mail-job",
@@ -77,9 +77,9 @@
   },
 
   // Service Binding private (cùng Cloudflare account → không qua internet,
-  // không cần token — overview `01` §5.4). Tên binding suy từ tiền lệ
+  // không cần token — architecture `01` §6). Tên binding suy từ tiền lệ
   // `PUSH_NOTIFICATION_SERVICE` của web-push-notification-job
-  // (docs/services/web-push-notification-job/03-operations.md §3).
+  // (docs/solutions/web-push-notification-job/03-operations.md §3).
   "services": [
     {
       "binding": "TRANSACTIONAL_MAIL_SERVICE",
@@ -93,8 +93,8 @@
   // phải nói cùng một sự thật. CHƯA provision: sender domain `ecoma.io` cần được
   // onboard Email Service trước khi binding hoạt động thật; `wrangler dev` mô phỏng
   // binding cục bộ (log console, không gửi thư) nên local/dev không cần provision.
-  // Reference: docs/services/transactional-mailer-job/01-architecture.md §11,
-  // docs/services/transactional-mailer-job/03-operations.md (trạng thái provision).
+  // Reference: docs/solutions/transactional-mailer-job/01-architecture.md §11,
+  // docs/solutions/transactional-mailer-job/03-operations.md (trạng thái provision).
   "send_email": [
     {
       "name": "SEND_EMAIL",

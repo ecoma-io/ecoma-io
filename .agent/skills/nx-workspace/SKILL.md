@@ -134,7 +134,7 @@ App-owned suites live in a project's `tests/integrations/` (component
 interaction on real dependencies) and `tests/databases/` (migration,
 constraint, data-integrity behavior); `test-integration` runs both via the
 project's own `vitest.integration.config.mts`. `system-test` is the
-canonical third target name defined in `docs/overview/06-testing.md` but no
+canonical third target name defined in `docs/architecture/06-testing.md` but no
 project implements it today — do not invoke it.
 
 Projects may also define their own targets (for example `deploy`,
@@ -228,10 +228,10 @@ A plugin only infers targets for projects it matches. Check the `include` /
   them; do not restate or re-derive their full definitions here.
 - For architecture — bounded contexts, DDD layers, dependency direction — consult
   the canonical sources: the root `AGENTS.md` and
-  `docs/overview/05-code-architecture.md`; for testing architecture — test
+  `docs/architecture/05-code-architecture.md`; for testing architecture — test
   placement, categories, Nx test targets — consult
-  `docs/overview/06-testing.md`. Do not treat this skill as an
-  architecture reference, and do not read `docs/overview/*.md` as a description
+  `docs/architecture/06-testing.md`. Do not treat this skill as an
+  architecture reference, and do not read `docs/architecture/*.md` as a description
   of the current implementation.
 - Everything here is read-only exploration. Do not run generators, migrations,
   `nx reset`, or `nx sync` as part of exploration.

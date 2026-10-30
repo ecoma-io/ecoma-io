@@ -23,7 +23,7 @@ const SELECT_BY_DELIVERY_ID = `SELECT ${MAIL_OUTBOX_COLUMNS} FROM mail_outbox WH
  * tường minh chứng minh mỗi row vẫn đủ điều kiện tại thời điểm UPDATE đọc nó. Hai khối cùng
  * bind cùng giá trị nên không thể lệch nhau.
  *
- * D1 không có row lock hay mức isolation được tài liệu (`docs/overview/04-platform-facts.md`
+ * D1 không có row lock hay mức isolation được tài liệu (`docs/architecture/04-platform-facts.md`
  * DB11); mỗi DB chạy đơn luồng, nên **một** statement có guard là đơn vị bảo vệ duy nhất —
  * hai publisher cùng claim sẽ nhận hai tập row rời nhau.
  */

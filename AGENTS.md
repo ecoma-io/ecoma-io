@@ -3,8 +3,8 @@
 ## Source of truth
 
 - Current code/config defines current behavior; inspect it before changing anything.
-- `docs/overview/*.md` describes the target design, not necessarily the current implementation. Do not implement planned state merely because it is documented.
-- `docs/overview/04-platform-facts.md` contains time-sensitive platform facts; verify current official provider documentation before relying on a platform limit or capability.
+- `docs/architecture/*.md` describes the target design, not necessarily the current implementation. Do not implement planned state merely because it is documented.
+- `docs/architecture/04-platform-facts.md` contains time-sensitive platform facts; verify current official provider documentation before relying on a platform limit or capability.
 
 ## Language
 
@@ -58,7 +58,7 @@ The English rule applies to developer-authored content. The following are exempt
 - Secrets never enter Git, PR builds, or Preview runtime from production environments.
 - One Cloudflare account owns every environment; secrets use native Worker Secrets and deployment environment mechanisms.
 - Database changes use expand → compatible rollout → contract; prefer forward-fix over data rollback.
-- Test placement, test category semantics and Nx test targets follow `docs/overview/06-testing.md`; `test`, `test-integration` and `system-test` are the canonical target names.
+- Test placement, test category semantics and Nx test targets follow `docs/architecture/06-testing.md`; `test`, `test-integration` and `system-test` are the canonical target names.
 - Do not introduce node-local application state that breaks recovery or topology changes.
 - Observability must not become a serving-path dependency; never log prompt/response bodies.
 
@@ -93,7 +93,7 @@ The English rule applies to developer-authored content. The following are exempt
 
 ## Local Development Preview
 
-- Before operating the local stack, read `docs/services/local-platform/03-operations.md`.
+- Before operating the local stack, read `docs/solutions/local-platform/03-operations.md`.
 - Deploy or refresh the preview with `pnpm dx local-deploy`.
 - Wait for the command to finish successfully; do not claim the stack is ready merely because the deployment command started or a container exists.
 - Use the actual URL printed by the successful deployment command; never guess the dynamic port or construct a URL from assumptions.

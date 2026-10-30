@@ -3,7 +3,7 @@
   // OAuth 2.0/OIDC. KHÔNG có UI — không Nuxt, không Vue, không trang login hay
   // consent. Phần UI và BFF (kể cả login và consent UI) thuộc deploy unit
   // `account` (`apps/account`, Worker `ecoma-account`).
-  // Reference: docs/overview/01-architecture.md §2.
+  // Reference: docs/architecture/01-architecture.md §2.
   //
   // `nodejs_compat` được khai báo TƯỜNG MINH, không phải vì `auth` nới lỏng
   // ranh giới `runtime:edge`: `compatibility_date` 2026-10-05 đã tự bật Node
@@ -19,9 +19,9 @@
   // trong `apps/auth`.
   //
   // Worker identity lâu dài — PR không tạo Worker mới, Preview chạy dưới
-  // identity này. Reference: docs/overview/02-delivery.md §5.
+  // identity này. Reference: docs/architecture/02-delivery.md §5.
   //
-  // `db-auth` là database của `auth` (xem docs/services/auth/01-architecture.md
+  // `db-auth` là database của `auth` (xem docs/domains/auth/01-architecture.md
   // §2 và §3). `id` dưới đây là chuỗi rỗng CỐ Ý (khác pattern toàn số 0 của
   // `account`): provisioning chưa có Hyperdrive config thật, và local runtime
   // (`tools/dx`) chặn mọi `id` non-empty trong `hyperdrive` của app đã opt-in
@@ -41,7 +41,7 @@
   // khi service được implement; custom domain khai báo cùng staging/production
   // như `home` (apps/home/wrangler.jsonc), chưa provision trong PR này.
   // Hyperdrive binding tới `db-auth` — CHỈ tên binding, không host/port/user
-  // (invariant 4, docs/overview/01-architecture.md): application code đọc
+  // (invariant 4, docs/architecture/01-architecture.md): application code đọc
   // `env.HYPERDRIVE.connectionString` lúc runtime, không chứa thông tin kết nối.
   "hyperdrive": [
     {

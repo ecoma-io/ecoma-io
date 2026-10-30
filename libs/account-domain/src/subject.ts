@@ -2,7 +2,7 @@
  * Value object `Subject` — định danh ổn định của một người dùng trong hệ thống.
  *
  * ⚠️ **`sub` không tái sử dụng, không tái phát hành** (invariant 7 của
- * `docs/services/account/01-architecture.md`). Xoá account KHÔNG giải phóng `sub`:
+ * `docs/domains/account/01-architecture.md`). Xoá account KHÔNG giải phóng `sub`:
  * tombstone giữ `sub` để token cũ không resolve nhầm sang người khác. Vì vậy
  * entropy sinh ở đây phải đủ lớn để việc đoán là không thực tế, và caller phải
  * truyền vào entropy do CSPRNG sinh — thư viện này không tự sinh (xem

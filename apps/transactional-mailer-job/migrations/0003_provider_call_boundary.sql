@@ -1,6 +1,6 @@
 -- 0003_provider_call_boundary.sql — marker ranh giới gọi provider (cửa sổ an toàn idempotency).
 --
--- Nguồn: GitHub issue #37; docs/services/transactional-mailer-job/01-architecture.md §9.3
+-- Nguồn: GitHub issue #37; docs/solutions/transactional-mailer-job/01-architecture.md §9.3
 -- (hazard của Idempotency-Key giữ kết quả ~24 giờ) và §9.2.2 hàng 9 (crash giữa lúc provider
 -- accept và lúc persist kết quả không có exactly-once).
 --

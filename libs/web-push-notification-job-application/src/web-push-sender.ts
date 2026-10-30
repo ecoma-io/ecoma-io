@@ -8,7 +8,7 @@
  * interface mà typecheck hai bên vẫn có thể xanh vì import chéo qua barrel.
  *
  * Phân loại kết quả trả về bám **error matrix canonical**
- * (`docs/services/push-notification/03-operations.md` §5) — bảng dùng thống nhất cho
+ * (`docs/domains/push-notification/03-operations.md` §5) — bảng dùng thống nhất cho
  * control plane và delivery plane:
  *
  * | HTTP        | Kết quả port                          | Caller (pipeline) làm gì                      |

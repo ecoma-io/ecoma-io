@@ -13,7 +13,7 @@ body:
     attributes:
       label: Tài liệu liên quan
       description: Đường dẫn file (giữ nguyên, không dịch).
-      placeholder: 'Ví dụ: docs/overview/02-delivery.md'
+      placeholder: 'Ví dụ: docs/architecture/02-delivery.md'
     validations:
       required: true
 

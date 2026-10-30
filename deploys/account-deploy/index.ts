@@ -13,7 +13,7 @@
  * trust auth trong container — platform không publish host port nên host không
  * kết nối được container bằng TCP).
  *
- * SQL provisioning theo `docs/services/account/03-operations.md` §3.1/§3.2 và
+ * SQL provisioning theo `docs/domains/account/03-operations.md` §3.1/§3.2 và
  * `apps/account/db/README.md` §"Chặn chéo": mỗi DB 4 role, `REVOKE CONNECT`
  * chéo **kể cả PUBLIC** (chỉ revoke per-role là no-op — PostgreSQL cấp CONNECT
  * cho PUBLIC theo mặc định), và revoke trên database đích phải được điều kiện

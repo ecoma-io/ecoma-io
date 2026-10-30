@@ -1,6 +1,6 @@
 /**
  * Contract `GET /internal/account/status?sub=` — provider `account`, consumer `auth`
- * (`docs/services/account/01-architecture.md` §5).
+ * (`docs/domains/account/01-architecture.md` §5).
  *
  * ⚠️ **Đây là contract nhạy cảm nhất của cả hệ thống** vì nó cho phép service hỏi trạng
  * thái của bất kỳ `sub` nào. Rủi ro không chỉ là đọc hồ sơ: nếu contract này trả về

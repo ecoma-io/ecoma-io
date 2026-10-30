@@ -66,7 +66,7 @@ tsconfig.tsbuildinfo
 .env*
 
 # Pulumi: state backend, stack config và passphrase KHÔNG BAO GIỜ vào Git
-# (`docs/overview/02-delivery.md` §7.4.1, `docs/overview/03-operations.md` §3.1).
+# (`docs/architecture/02-delivery.md` §7.4.1, `docs/architecture/03-operations.md` §3.1).
 # - `.pulumi/` là thư mục state cục bộ mà `pulumi login --local`/file backend
 #   tự sinh.
 # - `Pulumi.*.yaml` là stack config cục bộ — chứa `encryptionsalt` và (với

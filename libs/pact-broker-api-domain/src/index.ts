@@ -2,7 +2,7 @@
  * `@ecoma-io/pact-broker-api-domain` — HAL vocabulary, matrix semantics
  * (tri-state can-i-deploy) và input schemas của bounded context
  * `pact-broker` (deploy unit `pact-broker-api`, xem
- * `docs/services/pact-broker/01-architecture.md`).
+ * `docs/domains/pact-broker/01-architecture.md`).
  *
  * Thư viện này **không** import Nx project khác, **không** SQL, **không**
  * Node builtin và **không** I/O. WebCrypto (`crypto.subtle`) được phép vì là

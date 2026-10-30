@@ -7,8 +7,11 @@
  * - `fetch`  — trả `404` cho mọi thứ, **trừ** `POST /internal/reconcile/jobs` (xem dưới).
  *
  * ⚠️ **Không có `scheduled()`.** Trigger của job reconciliation là một quyết định **chưa
- * chốt** (`docs/services/web-push-notification-job/03-operations.md` §9 — lịch sweep là
- * operational gate chưa quyết định), và Lead đã quyết định cấm bịa một cron trigger. Vì vậy
+ * chốt** (lịch sweep là operational gate chưa quyết định — chưa có section canonical trong
+ * `docs/solutions/web-push-notification-job/03-operations.md`; ngưỡng liên quan
+ * `delivery_reconciliation_age` thuộc control plane, canonical →
+ * `docs/domains/push-notification/03-operations.md` §4.2/§11), và Lead đã quyết định cấm
+ * bịa một cron trigger. Vì vậy
  * sweep tồn tại như một hàm thuần (`runJobReconciliation`) được expose tại một endpoint có
  * xác thực; khi trigger chốt, chỉ cần gọi hàm đó. Xem `main.ts` của composition root này.
  *
@@ -68,9 +71,10 @@ export interface JobWorkerEnv extends JobStateEnv {
 /**
  * Ngưỡng "kẹt" và trần sweep — **giá trị test/placeholder, CHƯA phải quyết định vận hành**.
  *
- * ⚠️ `docs/services/web-push-notification-job/03-operations.md` §9 liệt kê
- * `delivery_reconciliation_age` là **operational gate chưa chốt**, và §4 liệt kê batch size /
- * batch timeout của consumer là tham số phải kiểm soát nhưng **chưa có giá trị**. Agent này
+ * ⚠️ `delivery_reconciliation_age` là **operational gate chưa chốt** (canonical →
+ * `docs/domains/push-notification/03-operations.md` §4.2/§11; §4 của docs
+ * web-push-notification-job liệt kê batch size / batch timeout của consumer là tham số
+ * phải kiểm soát nhưng **chưa có giá trị**). Agent này
  * không có quyền chốt hai thứ đó, nên chúng là hằng số **đặt tên rõ** ở đây: một test khẳng
  * định ngưỡng bằng cách truyền `stuckAfterMs` riêng, và khi operator chốt chỉ có **hai** hằng
  * này phải sửa. `wrangler.jsonc` cũng chưa đặt `max_batch_timeout`/`max_batch_size` cho

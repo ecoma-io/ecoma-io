@@ -2,15 +2,15 @@
  * Push Provider: vocabulary, scope và mức độ đủ điều kiện nhận routing mới.
  *
  * Source of truth:
- * - `docs/services/push-notification/02-requirements.md` FR-005 (mỗi `App` +
+ * - `docs/domains/push-notification/02-requirements.md` FR-005 (mỗi `App` +
  *   `Transport` chỉ có **đúng một** active primary provider; nhiều provider mà
  *   không xác định được primary → routing **fail safe**, **MUST NOT** chọn random
  *   hay theo thứ tự database; `disabled` chỉ dừng **routing delivery mới**, delivery
  *   đã materialize tiếp tục xử lý; chỉ **emergency hold/revoke** mới làm delivery
  *   không eligible), FR-007 (scope theo `App`; không ambiguity trong v1).
- * - `docs/services/push-notification/01-architecture.md` §4.2 (`ProviderType` là
+ * - `docs/domains/push-notification/01-architecture.md` §4.2 (`ProviderType` là
  *   khái niệm **khác** `Transport`), §8.1 (claim reason `ineligible_provider_hold`).
- * - `docs/services/push-notification/03-operations.md` §6.3, §6.5 (hold là emergency
+ * - `docs/domains/push-notification/03-operations.md` §6.3, §6.5 (hold là emergency
  *   control, độc lập với `status`; release không tự chuyển subscription).
  *
  * Quyết định domain suy ra:

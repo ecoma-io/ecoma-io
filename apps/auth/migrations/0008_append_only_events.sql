@@ -1,8 +1,8 @@
 -- 0008_append_only_events.sql — audit và outbox. Cả hai **append-only**.
 --
 -- Phạm vi: `authorization_audit_events`, `outbox_events`.
--- Thiết kế → docs/services/auth/01-architecture.md §3.2, §7.1, §8 invariant 20
---          → docs/services/auth/02-requirements.md SR-002, SR-010, AC-026.
+-- Thiết kế → docs/domains/auth/01-architecture.md §3.2, §7.1, §8 invariant 20
+--          → docs/domains/auth/02-requirements.md SR-002, SR-010, AC-026.
 --
 -- ⚠️ **Không có `pgcrypto`, không extension.** `gen_random_uuid()` là builtin PostgreSQL 13+;
 --    `pgcrypto` chỉ cần cho `digest()`/`hmac()` ở tầng ứng dụng, và cài extension vào

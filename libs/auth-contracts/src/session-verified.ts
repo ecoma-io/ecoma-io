@@ -1,6 +1,6 @@
 /**
  * Contract `POST /internal/session/verified` — consumer `account`, provider `auth`
- * (`docs/services/account/01-architecture.md` §5.1.1).
+ * (`docs/domains/auth/01-architecture.md` §5.1.1).
  *
  * ⚠️ **Đây là contract substitution của cả hệ thống.** `account` đẩy kết quả xác thực
  * của chính nó sang `auth`; nếu payload mang thêm tham số của authorization transaction

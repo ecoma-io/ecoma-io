@@ -1,8 +1,8 @@
 -- 0004_authorization_codes.sql — code đã phát hành, chỉ đổi lấy token **một lần**.
 --
 -- Phạm vi: `authorization_codes`.
--- Thiết kế → docs/services/auth/01-architecture.md §3.2, §3.3
---          → docs/services/auth/02-requirements.md FR-006, FR-006a, T-01, T-02.
+-- Thiết kế → docs/domains/auth/01-architecture.md §3.2, §3.3
+--          → docs/domains/auth/02-requirements.md FR-006, FR-006a, T-01, T-02.
 --
 -- ⚠️ Đây là bảng single-use thứ hai, và là nơi rủi ro replay cao nhất: code chảy qua
 --    `redirect_uri` nên có thể lọt vào access log, `Referer` và history của trình duyệt.

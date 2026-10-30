@@ -4,7 +4,7 @@
  *
  * ## Vì sao phiên nằm ở PostgreSQL, không ở KV/Worker memory
  *
- * Invariant 26 (`docs/overview/01-architecture.md` §9): ephemeral protocol
+ * Invariant 26 (`docs/architecture/01-architecture.md` §9): ephemeral protocol
  * state — gồm cả state/PKCE challenge — nằm ở database của bounded context
  * sở hữu nó, single-use, có TTL; **không** ở KV, Queue hay Worker memory.
  * Phiên BFF của `backoffice` là đúng loại state đó: nó mang token set (dữ

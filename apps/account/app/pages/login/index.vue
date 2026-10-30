@@ -78,7 +78,7 @@ const resendSent = ref(false);
 
 /**
  * Handle continuation do `auth` cấp trong `continue_url`
- * (`docs/services/auth/01-architecture.md` §5.1.1).
+ * (`docs/domains/auth/01-architecture.md` §5.1.1).
  *
  * Đọc bằng `route.query.handle` và giữ nguyên **chuỗi** — không parse, không kiểm
  * tra định dạng, không so với bất kỳ danh sách nào. Handle là giá trị opaque; mọi

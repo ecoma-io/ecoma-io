@@ -18,7 +18,7 @@ import { Pool } from 'pg';
  *
  * Khớp `apps/backoffice/wrangler.jsonc`. Code chỉ chứa **tên** binding — không
  * host, không port, không user, không password (invariant 4 của
- * `docs/services/backoffice/01-architecture.md`): connection string thật lấy ở
+ * `docs/domains/staff-access/01-architecture.md`): connection string thật lấy ở
  * runtime qua `binding.connectionString`, do Cloudflare Hyperdrive cấp cho
  * config đã provision. Credential của runtime role không bao giờ xuất hiện ở
  * đây — nó thuộc `wrangler secret` / tầng deploy riêng.
@@ -65,7 +65,7 @@ export function backofficeHyperdrive(env: unknown): HyperdriveBinding | null {
 /**
  * Cấu hình `pg` theo Hyperdrive.
  *
- * Con số bám giới hạn nền tảng (đối chiếu `docs/overview/04-platform-facts.md`,
+ * Con số bám giới hạn nền tảng (đối chiếu `docs/architecture/04-platform-facts.md`,
  * HD9/HD10) — cùng mốc mà `account` đã chọn:
  * - `max: 4` — HD9: ~20 origin connection mỗi config (Free) là **soft limit**;
  *   nhiều isolate có thể cùng giữ pool, nên `max` nhỏ để tổng nằm dưới trần.

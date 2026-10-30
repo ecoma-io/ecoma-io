@@ -27,7 +27,7 @@
  *    `ecoma.deployment.status` (xem `validateDeploymentMap`).
  *
  * 5. **Layout test-target** — ràng buộc layout test của
- *    `docs/overview/06-testing.md` lên đĩa trong project root app/lib: thư mục
+ *    `docs/architecture/06-testing.md` lên đĩa trong project root app/lib: thư mục
  *    mục đích ⇔ target `test-integration`, unit config không include suite
  *    app-owned, tier unit không boot dependency thật, `passWithNoTests: false`
  *    trong mọi config integration (xem `validateTestTargets`).

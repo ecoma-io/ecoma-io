@@ -6,9 +6,9 @@
  * package root.
  *
  * Tài liệu tham chiếu:
- * - `docs/services/transactional-mail/01-architecture.md` §5, §7.2
- * - `docs/services/transactional-mail/02-requirements.md` FR-001–FR-005
- * - `docs/services/transactional-mailer-job/02-requirements.md`, `03-operations.md`
+ * - `docs/domains/transactional-mail/01-architecture.md` §5, §7.2
+ * - `docs/domains/transactional-mail/02-requirements.md` FR-001–FR-005
+ * - `docs/solutions/transactional-mailer-job/02-requirements.md`, `03-operations.md`
  */
 
 export {

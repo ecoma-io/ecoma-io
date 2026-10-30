@@ -20,7 +20,7 @@ export const PROTOCOL_ID = 'ecoma-internal-v1';
  * nên nó thuộc tầng nền `scope:platform`, không thuộc `scope:account` hay
  * `scope:auth`. Đặt nhầm chỗ
  * biến một platform service thành consumer của contracts BC khác — đúng hướng phụ thuộc
- * ngược mà `docs/overview/05-code-architecture.md` cấm.
+ * ngược mà `docs/architecture/05-code-architecture.md` cấm.
  *
  * ## Vì sao chỉ có một bản cài đặt
  *
@@ -493,7 +493,7 @@ export const INTERNAL_BODY_LIMIT_BYTES = 64 * 1024;
  *
  * Hệ quả cần biết khi hai phía lệch phiên bản: envelope cũ và envelope mới đều ra
  * `bad_signature` như nhau, không phân biệt được với secret sai. Đó là lý do docs
- * (`docs/services/auth/03-operations.md`) ghi rõ xoay secret phải deploy đồng thời.
+ * (`docs/domains/auth/03-operations.md`) ghi rõ xoay secret phải deploy đồng thời.
  */
 const SIGNATURE_PREFIX = 'v1=';
 

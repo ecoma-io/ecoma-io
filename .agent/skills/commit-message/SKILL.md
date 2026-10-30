@@ -28,7 +28,7 @@ boundaries — without performing Git operations the task did not authorize.
   presets it extends (machine-enforced commit rules), `lefthook.yml` (Git
   hooks), `tools/dx/src/pull-request/pr-check.ts` (PR-level checks),
   `AGENTS.md` (signing, language, workflow), and
-  `docs/overview/02-delivery.md` (delivery policy). Re-read them when
+  `docs/architecture/02-delivery.md` (delivery policy). Re-read them when
   observed behavior differs from this skill; this skill summarizes, it does
   not override.
 
@@ -82,7 +82,7 @@ breaking change to a safer-looking type (see Breaking Changes).
   `pnpm nx show projects --json` (strip the `@ecoma-io/` prefix), by
   reading the `scope-enum` list from a commitlint error, or by reading
   `commitlint.config.mjs`.
-- Repository guidance (`AGENTS.md`, `docs/overview/02-delivery.md`) expects
+- Repository guidance (`AGENTS.md`, `docs/architecture/02-delivery.md`) expects
   a scope on `feat` and `fix` commits, but the validator accepts a missing
   scope — a documented-vs-enforced gap. Include a valid scope when one
   applies, and never assume a missing scope will fail validation.

@@ -92,7 +92,7 @@ function installRules(repo: string): void {
 beforeAll(() => {
   // Probe Docker một lần trước cả suite: lỗi nhanh, rõ ràng, và pre-pull sẵn
   // image semgrep cho các test engine phía dưới. Theo policy fail-loud của
-  // `docs/overview/06-testing.md` §6, vắng Docker phải làm toàn bộ lần chạy đỏ
+  // `docs/architecture/06-testing.md` §6, vắng Docker phải làm toàn bộ lần chạy đỏ
   // (ném lỗi ở đây) — KHÔNG được skip, vì skip với exit 0 che mất việc một phần
   // suite bắt buộc chưa hề chạy. Tiền lệ: suite PG của app auth (d96c40de).
   const probe = join(process.env.SEMGREP_TEST_TMP ?? '/tmp', `semgrep-docker-probe-${process.pid}`);
@@ -111,7 +111,7 @@ beforeAll(() => {
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `Docker is a mandatory development dependency for this repository (policy: docs/overview/06-testing.md §6); probe failed: ${reason}`,
+      `Docker is a mandatory development dependency for this repository (policy: docs/architecture/06-testing.md §6); probe failed: ${reason}`,
       { cause: error },
     );
   } finally {
@@ -150,7 +150,7 @@ describe('semgrep scan scope', () => {
       'apps/foo/src/a.mjs',
       'apps/foo/package.json',
       'apps/foo/wrangler.toml',
-      'docs/overview/01-architecture.md',
+      'docs/architecture/01-architecture.md',
     ]) {
       expect(isScannablePath(path)).toBe(false);
     }

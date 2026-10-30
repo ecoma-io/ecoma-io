@@ -21,7 +21,7 @@
           "command": "npx playwright test"
         },
         "//": [
-          "Target canonical `system-test` của system-test suite (docs/overview/06-testing.md §4) —",
+          "Target canonical `system-test` của system-test suite (docs/architecture/06-testing.md §4) —",
           "suite tự định nghĩa cách thực thi của mình. `cache: false` là CONTRACT chứ không phải",
           "tối ưu (cùng rationale với entry `local-up` của `nx.json`): target không mutate gì trong",
           "repo, nhưng stack local phía sau là external state sống ngoài inputs của Nx — một cache",

@@ -1,7 +1,7 @@
 -- 0004_mail_internal_nonces.sql — kho nonce bền cho replay guard của chính `transactional-mail`.
 --
--- Nguồn: docs/services/transactional-mail/01-architecture.md §7.4;
---        docs/services/auth/01-architecture.md §5.1.8;
+-- Nguồn: docs/domains/transactional-mail/01-architecture.md §7.4;
+--        docs/domains/auth/01-architecture.md §5.1.8;
 --        libs/internal-auth-contracts/src/internal-auth.ts (`claimNonce`, `assertNonceExpirySeconds`).
 --
 -- ⚠️ Đây là bản D1 của `auth.internal_nonces`

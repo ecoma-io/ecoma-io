@@ -3,7 +3,7 @@
  *
  * ## Vì sao loader nằm ở module khởi động chứ không ở chỗ dùng
  *
- * ⚠️ **Thiếu cấu hình là LỖI, không phải lý do đoán.** `docs/services/transactional-mail/
+ * ⚠️ **Thiếu cấu hình là LỖI, không phải lý do đoán.** `docs/domains/transactional-mail/
  * 03-operations.md` §3 chốt mọi giá trị vận hành là Worker Secret/var bắt buộc và
  * **không** có giá trị mặc địn nào. Mỗi `require*` ở đây ném
  * {@link TransactionalMailConfigError} lúc boot, để lỗi cấu hình lộ ra lúc deploy
@@ -24,9 +24,9 @@
  * error log của Worker. Đây là F-07, không phải chi tiết hiển thị.
  *
  * Tài liệu tham chiếu:
- * - `docs/services/transactional-mail/01-architecture.md` §7.4 (credential registry)
- * - `docs/services/transactional-mail/03-operations.md` §1, §3
- * - `docs/services/transactional-mail/02-requirements.md` FR-002 (keyring fingerprint)
+ * - `docs/domains/transactional-mail/01-architecture.md` §7.4 (credential registry)
+ * - `docs/domains/transactional-mail/03-operations.md` §1, §3
+ * - `docs/domains/transactional-mail/02-requirements.md` FR-002 (keyring fingerprint)
  */
 
 import {

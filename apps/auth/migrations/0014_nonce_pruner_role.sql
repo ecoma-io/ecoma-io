@@ -4,7 +4,7 @@
 -- `.github/workflows/identity-nonce-prune.yaml` (job chạy bằng credential
 -- `ecoma_auth_migrator`) được thay bằng cron Worker `apps/auth-nonce-prune-job`.
 -- Worker KHÔNG ĐƯỢC cầm migrator: credential `_migrator_` (quyền DDL) không bao
--- giờ là Worker secret (docs/overview/02-delivery.md §6; SR-008 bên account), nên
+-- giờ là Worker secret (docs/architecture/02-delivery.md §6; SR-008 bên account), nên
 -- prune cần một principal trung gian — một role chỉ có DML tối thiểu trên đúng
 -- một bảng, đủ để job chạy và KHÔNG đủ để làm gì khác nếu credential rò.
 --
@@ -24,7 +24,7 @@
 -- sống trong Hyperdrive config của Cloudflare account, không vào Git; nên không
 -- có phần "kiểm sslmode trên DSN" như script cũ — ranh giới đó chuyển thành
 -- trách nhiệm của Hyperdrive binding, được mô tả ở
--- docs/services/auth-nonce-prune-job/01-architecture.md §6.
+-- docs/solutions/auth-nonce-prune-job/01-architecture.md §6.
 
 BEGIN;
 

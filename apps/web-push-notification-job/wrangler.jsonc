@@ -4,8 +4,8 @@
   // `PUSH_NOTIFICATION_SERVICE` trỏ về control plane, ghi job state vào D1
   // `push-job`. KHÔNG có hostname, KHÔNG expose HTTP API, KHÔNG routing.
   //
-  // Reference: docs/services/web-push-notification-job/01-architecture.md,
-  // docs/services/web-push-notification-job/03-operations.md §1–§4.
+  // Reference: docs/solutions/web-push-notification-job/01-architecture.md,
+  // docs/solutions/web-push-notification-job/03-operations.md §1–§4.
   //
   // KHÔNG bật `nodejs_compat`: project mang tag `runtime:edge` và
   // .oxlintrc.json chặn import Node.js builtin trong mọi project `runtime:edge`.
@@ -26,10 +26,10 @@
   // của control plane; control plane data resolve qua PUSH_NOTIFICATION_SERVICE.
   //
   // `database_id` cố ý KHÔNG khai báo ở đây: chưa provisioning. Resource D1 do
-  // provisioning hạ tầng tạo và cung cấp `database_id` (docs/overview/02-delivery.md
+  // provisioning hạ tầng tạo và cung cấp `database_id` (docs/architecture/02-delivery.md
   // §9.1) — **không** tự tạo D1 bằng `wrangler d1 create`. Wrangler chỉ được chạy
   // migration (`wrangler d1 migrations apply`).
-  // Binding + vòng đời D1 của service: xem docs/services/web-push-notification-job/03-operations.md §2.
+  // Binding + vòng đời D1 của service: xem docs/solutions/web-push-notification-job/03-operations.md §2.
   "d1_databases": [
     {
       "binding": "push-job",
@@ -76,8 +76,8 @@
   },
 
   // Service Binding private tới control plane (cùng Cloudflare account → không
-  // qua internet, không cần token — overview `01` §5.4). Tên binding theo
-  // docs/services/web-push-notification-job/03-operations.md §3.
+  // qua internet, không cần token — architecture `01` §6). Tên binding theo
+  // docs/solutions/web-push-notification-job/03-operations.md §3.
   "services": [
     {
       "binding": "PUSH_NOTIFICATION_SERVICE",

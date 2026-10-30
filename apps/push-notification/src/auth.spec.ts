@@ -3,7 +3,7 @@
  *
  * ⚠️ **Vì sao "trước lookup" là phần khó nhất của yêu cầu này.** Cloudflare **không** phân
  * biệt một lời gọi qua Service Binding với một lời gọi từ Internet, nên route `/internal/**`
- * reachable từ Internet và phải tự xác thực (`docs/overview/04-platform-facts.md`). Khi đó:
+ * reachable từ Internet và phải tự xác thực (`docs/architecture/04-platform-facts.md`). Khi đó:
  * `401` cho "không có quyền" và `404` cho "không tồn tại" tạo thành một oracle đo một
  * `delivery_id` có thật hay không — và `§8.1` cấm đúng điều đó.
  *

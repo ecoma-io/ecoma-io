@@ -1,10 +1,10 @@
 -- 0001_backoffice_domain.sql — schema lõi của RBAC domain `db-backoffice`.
 --
 -- Source of truth đã đọc trước khi viết:
--- - `docs/services/backoffice/01-architecture.md` §3–§5, §9 invariant 1–12,
---   §10 (chưa chốt).
--- - `docs/services/backoffice/02-requirements.md` SR-010..SR-015 + T-05 + AC-011.
--- - `docs/overview/01-architecture.md` invariant 34/35: không dịch vụ khác ghi
+-- - `docs/domains/staff-access/01-architecture.md` §3–§5, §9 invariant 1–12,
+--   §10 (đã chốt qua ADR — quyết định này là ADR-0001).
+-- - `docs/domains/staff-access/02-requirements.md` SR-010..SR-015 + T-05 + AC-011.
+-- - `docs/architecture/01-architecture.md` invariant 34/35: không dịch vụ khác ghi
 --   staff/role/permission của `backoffice`; mọi thao tác đổi quyền có audit.
 --
 -- ⚠️ Tài liệu thiết kế §4 khai báo rõ "schema không được chốt ở đây, storage là

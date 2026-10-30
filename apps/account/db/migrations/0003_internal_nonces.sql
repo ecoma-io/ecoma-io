@@ -63,7 +63,7 @@ COMMENT ON COLUMN account.internal_nonces.expires_at IS
 -- `ecoma_account_migrator`; workflow đã bị thay và xoá (issue #82). Trạng thái là **đã cấu
 -- hình, chưa xác minh runtime**: cần Hyperdrive config của `db-account` (binding
 -- `DB_ACCOUNT` trong `apps/auth-nonce-prune-job/wrangler.jsonc` vẫn mang id placeholder) —
--- chưa được provision. Runbook chính của prune nằm ở `docs/services/auth-nonce-prune-job/`
+-- chưa được provision. Runbook chính của prune nằm ở `docs/solutions/auth-nonce-prune-job/`
 -- (tài liệu của job là chỗ duy nhất mô tả cơ chế cron của cả hai kho). Hệ quả phình bảng là
 -- vấn đề vận hành, KHÔNG làm yếu replay guard.
 CREATE INDEX IF NOT EXISTS internal_nonces_expires_at_idx

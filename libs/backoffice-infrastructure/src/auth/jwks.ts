@@ -4,7 +4,7 @@
  *
  * ## Vì sao cache ở isolate memory mà không vi phạm invariant 12
  *
- * Invariant 12 (`docs/overview/01-architecture.md` §9) cấm **correctness**
+ * Invariant 12 (`docs/architecture/01-architecture.md` §9) cấm **correctness**
  * phụ thuộc isolate-global state: một isolate chết phải không làm mất dữ liệu
  * có nghĩa. Cache JWKS thỏa điều kiện đó theo cả hai hướng:
  * - Cache **đủ** thì không đổi kết quả — key public, verify bằng cache hay

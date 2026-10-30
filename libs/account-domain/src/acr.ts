@@ -20,7 +20,7 @@
  * Kiểm tra "session có đủ assurance cho hành động X" trở thành: tập ACR của
  * session **chứa** ACR yêu cầu. Không suy diễn ngược, không suy diễn xuôi.
  *
- * ⚠️ Phần quyết định này nằm ở `docs/services/account/01-architecture.md` (mục
+ * ⚠️ Phần quyết định này nằm ở `docs/domains/account/01-architecture.md` (mục
  * assurance); file này chỉ giữ hằng số và phép kiểm tập hợp — không giữ policy
  * "hành động nào đòi ACR nào".
  */

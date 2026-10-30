@@ -11,7 +11,7 @@
  *   hai thứ đó như nhau — người dùng chưa đặt tên.
  * - Gate **không** đọc trạng thái nào khác: không staff status, không role, không
  *   2FA. Giai đoạn 2 sẽ thêm nhánh 2FA vào cùng hàm này (chỗ gắn đã ghi ở
- *   `docs/services/backoffice/03-onboarding.md`).
+ *   `docs/domains/staff-access/03-onboarding.md`).
  * - Gate **không** cứng (không chặn route khác): kết quả chỉ điều hướng UI tới
  *   màn onboarding. `GET /api/staff` và mọi `/api/**` khác không đọc hàm này.
  */

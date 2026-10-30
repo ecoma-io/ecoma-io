@@ -3,15 +3,15 @@
   // (template, message metadata, delivery intent, domain config) trong D1 `mail`,
   // và publish Mail Command sang Queue qua transactional outbox.
   //
-  // Reference: docs/services/transactional-mail/01-architecture.md,
-  // docs/overview/01-architecture.md (service map `transactional-mail`),
-  // docs/overview/03-operations.md §11.4.
+  // Reference: docs/domains/transactional-mail/01-architecture.md,
+  // docs/architecture/01-architecture.md (service map `transactional-mail`),
+  // docs/architecture/03-operations.md §11.4.
   //
   // KHÔNG bật `nodejs_compat`: project mang tag `runtime:edge` và
   // .oxlintrc.json chặn import Node.js builtin trong mọi project `runtime:edge`.
   //
   // KHÔNG có `routes`/`hostname` public — service chỉ có internal API,
-  // gọi qua Service Binding từ Worker cùng account (overview `01` §5.4).
+  // gọi qua Service Binding từ Worker cùng account (architecture `01` §6).
   //
   // CHƯA khai `env.staging`/`env.production`: chưa có Worker identity cho làn
   // nào của hai làn deploy (thiết kế `02-delivery.md` §7.2, chưa hiện thực),
@@ -29,13 +29,13 @@
 
   // D1 `mail` — authoritative storage của control plane (invariant: mỗi service
   // một D1, không service nào khác đọc database này). Binding `mail` khớp
-  // track D1 ở docs/overview/02-delivery.md §3.
+  // track D1 ở docs/architecture/02-delivery.md §3.
   //
   // `database_id` cố ý KHÔNG khai báo ở đây: chưa provisioning. Resource D1 do
-  // provisioning hạ tầng tạo và cung cấp `database_id` (docs/overview/02-delivery.md
+  // provisioning hạ tầng tạo và cung cấp `database_id` (docs/architecture/02-delivery.md
   // §9.1) — **không** tự tạo D1 bằng `wrangler d1 create`. Wrangler chỉ được chạy
   // migration (`wrangler d1 migrations apply`).
-  // Binding + vòng đời D1 của service: xem docs/services/transactional-mail/03-operations.md §2.
+  // Binding + vòng đời D1 của service: xem docs/domains/transactional-mail/03-operations.md §2.
   "d1_databases": [
     {
       "binding": "mail",
@@ -49,7 +49,7 @@
   //
   // `triggers.crons` đi cùng `scheduled()` của `src/main.ts` — handler đã export
   // (publish loop → reconciler → nonce prune → retention, 01-architecture.md §6.3;
-  // docs/overview/03-operations.md §10). Giá trị nhịp là **giá trị chốt ở deploy**
+  // docs/architecture/03-operations.md §10). Giá trị nhịp là **giá trị chốt ở deploy**
   // (03-operations.md §3): `*/5 * * * *` ở đây là giá trị khởi điểm hợp lý cho publish
   // + reconciler (delay tối đa một chu kỳ cho cả hai), KHÔNG phải con số đã được load-test;
   // đổi nhịp là đổi config deploy, không phải sửa code. Prune nonce và retention chia
@@ -60,7 +60,7 @@
   // `outbox.publish` còn là implementation gate (01-architecture.md §10) — chưa
   // có caller hợp lệ được định nghĩa (§7.5). Không được đọc vế này như một
   // đường backup đã sẵn sàng.
-  // Trạng thái bốn tầng và điều kiện wiring: docs/services/transactional-mail/
+  // Trạng thái bốn tầng và điều kiện wiring: docs/domains/transactional-mail/
   // 03-operations.md §1.1.
   "triggers": {
     "crons": ["*/5 * * * *"],

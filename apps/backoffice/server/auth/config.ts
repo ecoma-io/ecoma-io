@@ -43,7 +43,7 @@ import { readWorkerEnv } from '../db';
  * Tên biến `env` của Worker — **không** có giá trị mặc định nào trong code.
  *
  * ⚠️ Giá trị thật do deploy layer cấp (`wrangler secret`); code chỉ chứa tên,
- * không chứa giá trị (invariant 4 của `docs/overview/01-architecture.md` §9).
+ * không chứa giá trị (invariant 4 của `docs/architecture/01-architecture.md` §9).
  */
 export const BACKOFFICE_AUTH_ISSUER_ENV = 'BACKOFFICE_AUTH_ISSUER';
 export const BACKOFFICE_AUTH_AUDIENCE_ENV = 'BACKOFFICE_AUTH_AUDIENCE';

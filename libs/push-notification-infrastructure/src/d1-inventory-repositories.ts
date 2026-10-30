@@ -3,7 +3,7 @@
  * (FR-002..FR-007).
  *
  * ⚠️ **Nguyên tắc chung của cả file: win/lose quyết định bằng `meta.changes`, không bằng đọc
- * trước rồi ghi.** `docs/overview/04-platform-facts.md` DB3: D1 không tài liệu hoá row locking
+ * trước rồi ghi.** `docs/architecture/04-platform-facts.md` DB3: D1 không tài liệu hoá row locking
  * hay isolation level, nên "đọc rồi quyết định" là một khoảng thời gian mà một writer khác có
  * thể chen vào. Mọi guarded write ở đây là `UPDATE … WHERE <predicate> RETURNING` (hoặc
  * `changes === 1`), và **không** method nào có đường đọc → so sánh → ghi.

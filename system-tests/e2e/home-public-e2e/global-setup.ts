@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
  *
  * Hợp đồng: suite system E2E verify **cả hệ thống đang chạy thật**, nên stack
  * không có là KẾT QUẢ ĐỎ, không bao giờ là skip (cùng triết lý fail-closed với
- * `ECOMA_REQUIRE_DOCKER` của `docs/overview/06-testing.md` §6). Một suite xanh
+ * `ECOMA_REQUIRE_DOCKER` của `docs/architecture/06-testing.md` §6). Một suite xanh
  * mà thật ra không chạy — vì mỗi test lặng lẽ bỏ qua — là kết quả nói dối đúng
  * lúc người đọc cần tin nhất; gate fail ở đây thì mọi test dừng với MỘT lý do
  * rõ ràng thay vì hàng chục timeout mơ hồ.

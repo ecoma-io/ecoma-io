@@ -97,7 +97,7 @@ export class PushConfigError extends Error {
     super(
       `Thiếu hoặc sai cấu hình bắt buộc của push-notification: ${problems.join('; ')}. ` +
         'Giá trị của tham số SLA là quyết định của service owner (launch gate — ' +
-        'docs/overview/03-operations.md §10), nên service fail closed thay vì tự chọn default.',
+        'docs/architecture/03-operations.md §10), nên service fail closed thay vì tự chọn default.',
     );
     this.name = 'PushConfigError';
     this.problems = problems;

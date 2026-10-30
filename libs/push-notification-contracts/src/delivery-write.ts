@@ -1,7 +1,7 @@
 /**
  * Hai operation ghi kèm fencing token của private delivery runtime API:
  * `POST /internal/deliveries/:delivery_id/release` và `.../outcome`
- * (`docs/services/push-notification/01-architecture.md` §8.1).
+ * (`docs/domains/push-notification/01-architecture.md` §8.1).
  *
  * Hai operation được đặt cùng file vì chúng **chia sẻ** một vocabulary từ chối và một luật
  * `state`, và tách ra sẽ tạo hai bản sao trôi khỏi nhau:

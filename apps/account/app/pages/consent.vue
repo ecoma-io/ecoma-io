@@ -5,7 +5,7 @@
  * ⚠️ **Không có một quyết định protocol nào trong trang này.** Không dựng
  * `redirect_uri`, không đặt `code`, không đổi `state`, không gửi `client_id` hay
  * `scope` đi đâu. `auth` sở hữu authorization transaction và là bên duy nhất tạo
- * redirect cuối (`docs/services/auth/01-architecture.md` §5.1.1, FR-006o,
+ * redirect cuối (`docs/domains/auth/01-architecture.md` §5.1.1, FR-006o,
  * FR-010). Đây là lý do `ConsentContext` cố ý **không có** trường `redirectUri`:
  * không có nó trong kiểu thì không có chỗ nào để dựng URL sai.
  *

@@ -2,7 +2,7 @@
 -- của catalog seed.
 --
 -- Source of truth đã đọc trước khi viết:
---   * `docs/services/backoffice/adr/0010-permission-naming-and-read-catalog.md`
+--   * `docs/domains/staff-access/adr/0010-permission-naming-and-read-catalog.md`
 --     (ADR-0010) — `id` của một permission = đúng chuỗi `<domain>.<action>`.
 --   * `apps/backoffice/db/migrations/0001_backoffice_domain.sql` — schema
 --     `backoffice.permissions` (PK `id`, UNIQUE (domain, action), status CHECK).

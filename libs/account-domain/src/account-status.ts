@@ -3,7 +3,7 @@
  *
  * ⚠️ **`deleted` là tombstone, trạng thái KẾT THÚC.** Khi account bị xoá, `sub` được
  * giữ lại và **không bao giờ được giải phóng** (invariant 7,
- * `docs/services/account/01-architecture.md` §9). Giữ tombstone là để token cũ đã
+ * `docs/domains/account/01-architecture.md` §9). Giữ tombstone là để token cũ đã
  * cấp không resolve nhầm sang một người khác — nếu `sub` biến mất hẳn, một
  * identifier đã lỡ cấp sẽ rơi về "không tồn tại" và có thể được tái gán.
  *

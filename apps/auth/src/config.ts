@@ -46,7 +46,7 @@ export interface AuthEnv {
    * ⚠️ **Đây là slot "verify-only", không phải slot "khoá cũ".** Khi xoay secret, nó
    * chứa khoá **mới** trong pha nạp trước, rồi khoá **cũ** trong pha overlap — cùng một
    * cặp biến, hai ý nghĩa khác nhau theo giai đoạn. Xem runbook ở
-   * `docs/services/auth/03-operations.md` §3.3.
+   * `docs/domains/auth/03-operations.md` §3.3.
    */
   AUTH_INTERNAL_PREVIOUS_SECRET?: string;
   /** `kid` của `AUTH_INTERNAL_PREVIOUS_SECRET` — bắt buộc khi previous secret được đặt. */

@@ -18,7 +18,7 @@
  *     harness gốc: suite phải đo ranh quyền và lease bằng chính driver của chủ thể.
  *
  * ⚠️ Docker là phụ thuộc cứng: vắng Docker, suite phải ĐỎ fail-loud, không được skip
- * với exit 0 (docs/overview/06-testing.md §6). Mọi thứ Docker ở đây nằm sau dynamic
+ * với exit 0 (docs/architecture/06-testing.md §6). Mọi thứ Docker ở đây nằm sau dynamic
  * import, và {@link probeDocker} ném lỗi thay vì skip khi probe thất bại.
  *
  * Provisioning theo runbook operator (`apps/auth/migrations/README.md` §"Vai trò của

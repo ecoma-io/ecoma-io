@@ -7,7 +7,7 @@
 -- `.github/workflows/identity-nonce-prune.yaml` (job chạy bằng credential
 -- `ecoma_account_migrator`) được thay bằng cron Worker `apps/auth-nonce-prune-job`.
 -- Worker KHÔNG ĐƯỢC cầm migrator: credential `_migrator_` (quyền DDL) không bao
--- giờ là Worker secret (docs/overview/02-delivery.md §6; SR-008 của workstream
+-- giờ là Worker secret (docs/architecture/02-delivery.md §6; SR-008 của workstream
 -- account), nên prune cần một principal trung gian — một role chỉ có DML tối
 -- thiểu trên đúng một bảng, đủ để job chạy và KHÔNG đủ để làm gì khác nếu
 -- credential rò.

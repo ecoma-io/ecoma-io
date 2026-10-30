@@ -16,7 +16,7 @@
  * lỗi chứa giá trị thì test đỏ — đó là cách chứng minh "không log giá trị" thay vì tin vào
  * lời bình luận.
  *
- * Nguồn: `docs/services/push-notification/03-operations.md` §11 (launch gate);
+ * Nguồn: `docs/domains/push-notification/03-operations.md` §11 (launch gate);
  * `02-requirements.md` FR-008.
  */
 

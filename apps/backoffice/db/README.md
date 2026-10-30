@@ -26,8 +26,8 @@ chép mù.
 ## Vì sao issue này tạo schema cho staff/RBAC
 
 Tài liệu thiết kế
-[`docs/services/backoffice/01-architecture.md`](../../../docs/services/backoffice/01-architecture.md)
-§10 để "storage/schema cho staff/RBAC" ở bảng _Chưa chốt_, với điều kiện kích
+[`docs/domains/staff-access/01-architecture.md`](../../../docs/domains/staff-access/01-architecture.md)
+§10 để "storage/schema cho staff/RBAC" ở bảng _Đã chốt qua ADR_ (ADR-0001), với điều kiện kích
 hoạt "trước khi implement persistence đầu tiên cho staff/RBAC". Workstream này
 **là** persistence đầu tiên đó, nên nó chốt: engine PostgreSQL (business data,
 bounded context rule), tên database `db-backoffice`, schema `backoffice`.
@@ -95,7 +95,7 @@ chỉ runtime bị chặn bởi trigger — cùng cách `role_assignments.create
 ## Chạy migration
 
 ⚠️ **Chạy từ CI runner, không chạy từ trong Worker.** Hyperdrive không hỗ trợ
-advisory lock ([`04-platform-facts.md`](../../../docs/overview/04-platform-facts.md)
+advisory lock ([`04-platform-facts.md`](../../../docs/architecture/04-platform-facts.md)
 HD6), nên không thể giữ `pg_advisory_lock` qua đường đi của Worker. Worker chỉ
 dùng `_runtime_` role, và `_runtime_` role không có quyền DDL.
 

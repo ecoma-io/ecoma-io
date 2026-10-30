@@ -20,9 +20,9 @@
  * `PruneJobConfigError`) rồi re-export để call-site cũ giữ nguyên đường import.
  *
  * Nguồn các tài liệu:
- * - `docs/services/auth-nonce-prune-job/01-architecture.md` §6 (config, caps, outcomes)
- * - `docs/services/auth/03-operations.md` §3.3 (cơ chế cũ mà job này thay thế)
- * - `docs/overview/04-platform-facts.md` HD1–HD16 (đường Hyperdrive), WK4 (trần cron)
+ * - `docs/solutions/auth-nonce-prune-job/01-architecture.md` §6 (config, caps, outcomes)
+ * - `docs/domains/auth/03-operations.md` §3.3 (cơ chế cũ mà job này thay thế)
+ * - `docs/architecture/04-platform-facts.md` HD1–HD16 (đường Hyperdrive), WK4 (trần cron)
  */
 
 import {

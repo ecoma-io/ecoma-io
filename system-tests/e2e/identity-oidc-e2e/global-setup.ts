@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
  *
  * Hợp đồng: suite system E2E verify **cả hệ thống đang chạy thật**, nên stack
  * không có là KẾT QUẢ ĐỎ, không bao giờ là skip (cùng triết lý fail-closed với
- * `ECOMA_REQUIRE_DOCKER` của `docs/overview/06-testing.md` §6).
+ * `ECOMA_REQUIRE_DOCKER` của `docs/architecture/06-testing.md` §6).
  *
  * Probe kiểm đúng hợp đồng của service `auth` qua chuỗi DNS/TLS/Traefik/upstream:
  * `GET /.well-known/openid-configuration` phải 200 JSON với `issuer` BẰNG ĐÚNG

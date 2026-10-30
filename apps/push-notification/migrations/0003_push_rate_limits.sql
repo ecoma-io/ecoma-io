@@ -1,8 +1,8 @@
 -- 0003_push_rate_limits.sql — counter rate limit của `POST /v1/notifications`.
 --
--- Nguồn: docs/services/push-notification/02-requirements.md FR-021 (rate limit theo `app`,
+-- Nguồn: docs/domains/push-notification/02-requirements.md FR-021 (rate limit theo `app`,
 --        vượt ngân sách → từ chối rõ ràng chứ không drop âm thầm), FR-008 (fan-out limit);
---        docs/services/push-notification/03-operations.md §7.4 (infrastructure secret),
+--        docs/domains/push-notification/03-operations.md §7.4 (infrastructure secret),
 --        §13 (retention/cleanup).
 --
 -- ⚠️ **Bảng này là một quyết định đã được document, và inventory D1 của

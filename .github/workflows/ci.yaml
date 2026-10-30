@@ -59,7 +59,7 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     # Target `test` chạy spec colocated với subject trong project sở hữu
-    # (contract `docs/overview/06-testing.md` §4); suite app-owned dưới `tests/`
+    # (contract `docs/architecture/06-testing.md` §4); suite app-owned dưới `tests/`
     # chạy qua target `test-integration` ở job `integration-test` bên dưới.
     # Lưu ý: một số project vẫn giữ spec phụ thuộc dependency thật colocated
     # trong `src/`, nên chúng đang chạy dưới `test` ngay ở job này; dời về tầng

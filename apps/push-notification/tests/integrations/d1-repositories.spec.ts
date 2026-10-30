@@ -7,7 +7,7 @@
  * cần kiểm:
  *
  * 1. **Guarded conditional write** — `UPDATE … RETURNING` trả **zero rows** khi predicate
- *    không khớp (`docs/overview/04-platform-facts.md` DB3). Đây là cơ chế **duy nhất** quyết
+ *    không khớp (`docs/architecture/04-platform-facts.md` DB3). Đây là cơ chế **duy nhất** quyết
  *    định thắng/thua; một fake có thể trả về "đã update" một cách vô điều kiện.
  * 2. **Partial UNIQUE index** — `push_outbox_one_open_intent` và
  *    `push_app_provider_mappings_one_primary`. Một fake không có index nên không thể chứng

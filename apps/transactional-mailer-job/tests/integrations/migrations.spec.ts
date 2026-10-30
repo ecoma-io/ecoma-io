@@ -2,7 +2,7 @@
 // Repo chưa có pattern test D1; wrangler đã cài sẵn ở root (devDependency) nên test chỉ spawn
 // `wrangler d1 ... --local --persist-to <tmp>` qua node, không thêm dependency mới và không
 // tạo migration runner riêng (vẫn là `wrangler d1 migrations apply`).
-// Nguồn canonical: docs/services/transactional-mailer-job/01-architecture.md §7, §9.2.1, §9.2.2, §9.5
+// Nguồn canonical: docs/solutions/transactional-mailer-job/01-architecture.md §7, §9.2.1, §9.2.2, §9.5
 // và 03-operations.md §3.1. Các câu lệnh "canonical statement" bên dưới chỉ là SQL test sao chép
 // từ tài liệu để chứng minh schema chấp nhận; không phải implementation của worker.
 
