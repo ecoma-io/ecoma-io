@@ -44,7 +44,7 @@ The English rule applies to developer-authored content. The following are exempt
 
 ## Communication
 
-- Read and apply `.agent/skills/clarity/SKILL.md` whenever you write, materially revise, or review human-facing content: issue and PR bodies, review findings, reports, documentation, and technical explanations. `.agent/skills/` is the source of truth; `.claude/skills/` is generated from it.
+- Read and apply `.agents/skills/clarity/SKILL.md` whenever you write, materially revise, or review human-facing content: issue and PR bodies, review findings, reports, documentation, and technical explanations. `.agents/skills/` is the source of truth; `.claude/skills/` is generated from it.
 - Make that content easier to understand without changing its meaning: keep evidence, uncertainty, conditions, exceptions, limitations and exact identifiers intact, and never present an assumption as a verified fact.
 - The skill overrides nothing: it sits below user instructions, these instructions, artifact templates and the language rules above. It is never a reason to pad content, add sections the task does not need, exceed the level of detail the task asks for, or force one structure onto every artifact.
 

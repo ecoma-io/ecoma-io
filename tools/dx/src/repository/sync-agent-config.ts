@@ -10,11 +10,11 @@ import { gitEnv, ROOT_DIR } from '../utils.js';
 const execFileAsync = promisify(execFile);
 
 /**
- * Cây skills: `.agent/skills` là source of truth, `.claude/skills` là output sinh.
+ * Cây skills: `.agents/skills` là source of truth, `.claude/skills` là output sinh.
  *
  * Hai nhãn này chỉ dùng để in thông báo; đường dẫn thật được ghép từ `dir`.
  */
-const SKILLS_SOURCE_LABEL = '.agent/skills';
+const SKILLS_SOURCE_LABEL = '.agents/skills';
 const SKILLS_DEST_LABEL = '.claude/skills';
 
 /** Thư mục gốc git đã resolve, nhớ theo `dir` để khỏi spawn `rev-parse` lặp lại. */
@@ -392,13 +392,13 @@ async function mirror(
 }
 
 /**
- * Đồng bộ `.agent/skills` sang `.claude/skills`.
+ * Đồng bộ `.agents/skills` sang `.claude/skills`.
  *
  * Nguồn thiếu thì bỏ qua kèm thông báo và để nguyên đích — không tạo, không xoá.
  * Nguồn tồn tại (kể cả rỗng) thì đích được đồng bộ thành bản sao đúng của nguồn.
  */
 async function syncSkills(dir: string, repoRoot: string): Promise<void> {
-  const source = await assertNoSymlinkPath(dir, ['.agent', 'skills']);
+  const source = await assertNoSymlinkPath(dir, ['.agents', 'skills']);
 
   const sourceStat = await statOrNull(source);
 
@@ -431,7 +431,7 @@ async function syncSkills(dir: string, repoRoot: string): Promise<void> {
  * Đồng bộ cấu hình agent cho repository.
  *
  * Hai việc: sinh `CLAUDE.md` cạnh mỗi `AGENTS.md` còn thiếu, và đồng bộ
- * `.agent/skills` sang `.claude/skills`. Idempotent: chạy lại không sinh thêm
+ * `.agents/skills` sang `.claude/skills`. Idempotent: chạy lại không sinh thêm
  * thay đổi nào.
  */
 export async function syncAgentConfig(dir: string = ROOT_DIR): Promise<void> {

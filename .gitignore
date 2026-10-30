@@ -108,3 +108,5 @@ __pycache__/
 # rác review và phình repo. `open: 'never'` trên CI không đổi chuyện ghi file.
 test-results/
 playwright-report/
+# Output của Playwright CLI (có thể chứa credentials)
+.playwright-cli/

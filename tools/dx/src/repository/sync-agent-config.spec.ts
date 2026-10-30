@@ -239,10 +239,10 @@ describe('syncAgentConfig - skills synchronization', () => {
 
   it('copies nested skills and their supporting resources, not only SKILL.md', async () => {
     const root = await makeRepo({
-      '.agent/skills/demo/SKILL.md': '# demo\n',
-      '.agent/skills/demo/references/notes.md': 'notes\n',
-      '.agent/skills/demo/assets/logo.txt': 'logo\n',
-      '.agent/skills/other/SKILL.md': '# other\n',
+      '.agents/skills/demo/SKILL.md': '# demo\n',
+      '.agents/skills/demo/references/notes.md': 'notes\n',
+      '.agents/skills/demo/assets/logo.txt': 'logo\n',
+      '.agents/skills/other/SKILL.md': '# other\n',
     });
 
     await syncAgentConfig(root);
@@ -263,8 +263,8 @@ describe('syncAgentConfig - skills synchronization', () => {
 
   it('mirrors content exactly', async () => {
     const root = await makeRepo({
-      '.agent/skills/demo/SKILL.md': '# demo\n',
-      '.agent/skills/demo/references/notes.md': 'notes\n',
+      '.agents/skills/demo/SKILL.md': '# demo\n',
+      '.agents/skills/demo/references/notes.md': 'notes\n',
     });
 
     await syncAgentConfig(root);
@@ -279,7 +279,7 @@ describe('syncAgentConfig - skills synchronization', () => {
     // nó bị bỏ qua không được chặn ghi.
     const root = await makeRepo({
       '.gitignore': '.claude/skills/\n',
-      '.agent/skills/demo/SKILL.md': '# demo\n',
+      '.agents/skills/demo/SKILL.md': '# demo\n',
     });
 
     await syncAgentConfig(root);
@@ -289,15 +289,15 @@ describe('syncAgentConfig - skills synchronization', () => {
 
   it('updates changed files and removes stale destination files and directories', async () => {
     const root = await makeRepo({
-      '.agent/skills/demo/SKILL.md': 'v1\n',
-      '.agent/skills/demo/references/notes.md': 'notes\n',
+      '.agents/skills/demo/SKILL.md': 'v1\n',
+      '.agents/skills/demo/references/notes.md': 'notes\n',
     });
 
     await syncAgentConfig(root);
 
     // Đổi nội dung nguồn, bỏ một cây con, rồi bồi thêm entry thừa vào đích.
-    await writeFile(join(root, '.agent/skills/demo/SKILL.md'), 'v2\n', 'utf8');
-    await rm(join(root, '.agent/skills/demo/references'), { recursive: true, force: true });
+    await writeFile(join(root, '.agents/skills/demo/SKILL.md'), 'v2\n', 'utf8');
+    await rm(join(root, '.agents/skills/demo/references'), { recursive: true, force: true });
     await makeDir(join(root, '.claude/skills/demo/stale-dir'));
     await writeFile(join(root, '.claude/skills/demo/stale-dir/x.md'), 'x\n', 'utf8');
     await writeFile(join(root, '.claude/skills/demo/stale.md'), 'x\n', 'utf8');
@@ -313,7 +313,7 @@ describe('syncAgentConfig - skills synchronization', () => {
   });
 
   it('replaces a destination file that collides with a source directory', async () => {
-    const root = await makeRepo({ '.agent/skills/demo/SKILL.md': '# demo\n' });
+    const root = await makeRepo({ '.agents/skills/demo/SKILL.md': '# demo\n' });
 
     await makeDir(join(root, '.claude/skills'));
     await writeFile(join(root, '.claude/skills/demo'), 'a file where a dir belongs\n', 'utf8');
@@ -326,7 +326,7 @@ describe('syncAgentConfig - skills synchronization', () => {
     expect(existsSync(join(root, '.claude/skills/demo/SKILL.md'))).toBe(true);
   });
 
-  it('preserves the existing destination when .agent/skills is absent', async () => {
+  it('preserves the existing destination when .agents/skills is absent', async () => {
     const root = await makeRepo({ 'svc/AGENTS.md': 'rules\n' });
 
     await makeDir(join(root, '.claude/skills/demo'));
@@ -335,12 +335,12 @@ describe('syncAgentConfig - skills synchronization', () => {
     await syncAgentConfig(root);
 
     expect(await readFile(join(root, '.claude/skills/demo/SKILL.md'), 'utf8')).toBe('keep me\n');
-    expect(logs.some((line) => line.includes('.agent/skills') && /skip/iu.test(line))).toBe(true);
+    expect(logs.some((line) => line.includes('.agents/skills') && /skip/iu.test(line))).toBe(true);
   });
 
   it('empties the destination for an existing but empty source directory', async () => {
     const root = await makeRepo({
-      '.agent/skills/': '',
+      '.agents/skills/': '',
       '.claude/skills/demo/SKILL.md': 'stale\n',
     });
 
@@ -350,7 +350,7 @@ describe('syncAgentConfig - skills synchronization', () => {
   });
 
   it('creates an empty destination for an existing but empty source directory', async () => {
-    const root = await makeRepo({ '.agent/skills/': '' });
+    const root = await makeRepo({ '.agents/skills/': '' });
 
     await syncAgentConfig(root);
 
@@ -360,10 +360,10 @@ describe('syncAgentConfig - skills synchronization', () => {
 
   it('skips gitignored source files and directories', async () => {
     const root = await makeRepo({
-      '.gitignore': 'ignored-dir/\n.agent/skills/demo/secret.md\n',
-      '.agent/skills/demo/SKILL.md': '# demo\n',
-      '.agent/skills/demo/secret.md': 'shh\n',
-      '.agent/skills/ignored-dir/a.md': 'a\n',
+      '.gitignore': 'ignored-dir/\n.agents/skills/demo/secret.md\n',
+      '.agents/skills/demo/SKILL.md': '# demo\n',
+      '.agents/skills/demo/secret.md': 'shh\n',
+      '.agents/skills/ignored-dir/a.md': 'a\n',
     });
 
     await syncAgentConfig(root);
@@ -376,10 +376,10 @@ describe('syncAgentConfig - skills synchronization', () => {
   });
 
   it('does not follow a file symlink that escapes the source tree', async () => {
-    const root = await makeRepo({ '.agent/skills/demo/SKILL.md': '# demo\n' });
+    const root = await makeRepo({ '.agents/skills/demo/SKILL.md': '# demo\n' });
     const outside = await makeTempDir();
     await writeFile(join(outside, 'secret.md'), 'secret\n', 'utf8');
-    await symlink(join(outside, 'secret.md'), join(root, '.agent/skills/demo/link.md'));
+    await symlink(join(outside, 'secret.md'), join(root, '.agents/skills/demo/link.md'));
 
     await syncAgentConfig(root);
 
@@ -388,11 +388,11 @@ describe('syncAgentConfig - skills synchronization', () => {
   });
 
   it('does not follow a directory symlink', async () => {
-    const root = await makeRepo({ '.agent/skills/demo/SKILL.md': '# demo\n' });
+    const root = await makeRepo({ '.agents/skills/demo/SKILL.md': '# demo\n' });
     const outside = await makeTempDir();
     await makeDir(join(outside, 'hidden'));
     await writeFile(join(outside, 'hidden/x.md'), 'x\n', 'utf8');
-    await symlink(join(outside, 'hidden'), join(root, '.agent/skills/demo/linked'));
+    await symlink(join(outside, 'hidden'), join(root, '.agents/skills/demo/linked'));
 
     await syncAgentConfig(root);
 
@@ -400,7 +400,7 @@ describe('syncAgentConfig - skills synchronization', () => {
   });
 
   it('refuses a symlinked .claude instead of writing and deleting outside the repository', async () => {
-    const root = await makeRepo({ '.agent/skills/demo/SKILL.md': '# demo\n' });
+    const root = await makeRepo({ '.agents/skills/demo/SKILL.md': '# demo\n' });
     const outside = await makeTempDir();
     await makeDir(join(outside, 'skills/important-skill'));
     await writeFile(join(outside, 'skills/important-skill/data.md'), 'keep\n', 'utf8');
@@ -414,13 +414,13 @@ describe('syncAgentConfig - skills synchronization', () => {
     expect(existsSync(join(outside, 'skills/demo'))).toBe(false);
   });
 
-  it('refuses a symlinked .agent/skills source root instead of following it', async () => {
+  it('refuses a symlinked .agents/skills source root instead of following it', async () => {
     const root = await makeRepo({});
     const outside = await makeTempDir();
     await makeDir(join(outside, 'demo'));
     await writeFile(join(outside, 'demo/SKILL.md'), '# demo\n', 'utf8');
-    await makeDir(join(root, '.agent'));
-    await symlink(outside, join(root, '.agent', 'skills'));
+    await makeDir(join(root, '.agents'));
+    await symlink(outside, join(root, '.agents', 'skills'));
 
     await expect(syncAgentConfig(root)).rejects.toThrow(/symbolic link/u);
 
@@ -432,7 +432,7 @@ describe('syncAgentConfig - skills synchronization', () => {
     // tra dùng `startsWith('..')` thì entry này bị từ chối lúc dọn, và vì
     // `repo-prepare` chạy trong `pnpm prepare` nên cả bước chuẩn bị sẽ hỏng.
     const root = await makeRepo({
-      '.agent/skills/..data/x.md': 'x\n',
+      '.agents/skills/..data/x.md': 'x\n',
       '.claude/skills/..stale/y.md': 'y\n',
     });
 
@@ -445,8 +445,8 @@ describe('syncAgentConfig - skills synchronization', () => {
   it('runs repeatedly without rewriting or removing anything on the second run', async () => {
     const root = await makeRepo({
       'svc/AGENTS.md': 'rules\n',
-      '.agent/skills/demo/SKILL.md': '# demo\n',
-      '.agent/skills/demo/references/notes.md': 'notes\n',
+      '.agents/skills/demo/SKILL.md': '# demo\n',
+      '.agents/skills/demo/references/notes.md': 'notes\n',
     });
 
     await syncAgentConfig(root);
@@ -501,7 +501,7 @@ describe('syncAgentConfig - failure handling', () => {
   });
 
   it('surfaces a git invocation failure instead of treating it as "not ignored"', async () => {
-    const root = await makeRepo({ '.agent/skills/demo/SKILL.md': '# demo\n' });
+    const root = await makeRepo({ '.agents/skills/demo/SKILL.md': '# demo\n' });
 
     // Lần chạy đầu resolve và nhớ repo root; phá `.git` rồi chạy lại khiến
     // `git check-ignore` trả exit code khác 0 và 1 — đó phải là lỗi thật, chứ
@@ -516,7 +516,7 @@ describe('syncAgentConfig - failure handling', () => {
   it.skipIf(typeof process.getuid === 'function' && process.getuid() === 0)(
     'surfaces a permission error instead of swallowing it',
     async () => {
-      const root = await makeRepo({ '.agent/skills/demo/SKILL.md': '# demo\n' });
+      const root = await makeRepo({ '.agents/skills/demo/SKILL.md': '# demo\n' });
       const dest = await makeDir(join(root, '.claude/skills'));
 
       await chmod(dest, 0o500);
@@ -534,13 +534,13 @@ describe('syncAgentConfig - failure handling', () => {
 
     await syncAgentConfig(root);
 
-    // Chỉ CLAUDE.md mới được sinh; không có `.agent/skills` thì đích không đụng tới.
+    // Chỉ CLAUDE.md mới được sinh; không có `.agents/skills` thì đích không đụng tới.
     expect(await listTree(root)).toEqual({ 'svc/CLAUDE.md': true, ...before });
     expect(existsSync(join(root, '.claude/skills'))).toBe(false);
   });
 
   it('keeps ROOT_DIR out of the removal path', async () => {
-    // Không có `.agent/skills` trong repo tạm: bản sao dọn dẹp phải không bao
+    // Không có `.agents/skills` trong repo tạm: bản sao dọn dẹp phải không bao
     // giờ chạm tới gì ngoài `.claude/skills` của repo đang xử lý.
     const root = await makeRepo({ 'svc/AGENTS.md': 'rules\n' });
 
