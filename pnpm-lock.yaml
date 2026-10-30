@@ -172,8 +172,8 @@ importers:
   .:
     dependencies:
       jose:
-        specifier: 6.2.13
-        version: 6.2.13
+        specifier: 6.2.14
+        version: 6.2.14
       postgres:
         specifier: 3.4.9
         version: 3.4.9
@@ -260,8 +260,8 @@ importers:
         specifier: ^5.2.0
         version: 5.2.0(supports-color@10.2.2)(typescript@6.0.3)
       '@pulumi/docker-build':
-        specifier: 0.0.22
-        version: 0.0.22(supports-color@10.2.2)(typescript@6.0.3)
+        specifier: 0.0.23
+        version: 0.0.23(supports-color@10.2.2)(typescript@6.0.3)
       '@pulumi/pulumi':
         specifier: 3.273.0
         version: 3.273.0(supports-color@10.2.2)(typescript@6.0.3)
@@ -450,8 +450,8 @@ importers:
         specifier: ^6.2.12
         version: 6.2.13
       oidc-provider:
-        specifier: 9.13.2
-        version: 9.13.2(supports-color@10.2.2)
+        specifier: 9.13.3
+        version: 9.13.3(supports-color@10.2.2)
       pg:
         specifier: ^8.23.1
         version: 8.23.1
@@ -506,8 +506,8 @@ importers:
         specifier: workspace:*
         version: link:../../libs/ui-ecoma-logo
       jose:
-        specifier: 6.2.13
-        version: 6.2.13
+        specifier: 6.2.14
+        version: 6.2.14
     devDependencies:
       '@nuxtjs/i18n':
         specifier: 10.6.0
@@ -785,8 +785,8 @@ importers:
         specifier: workspace:*
         version: link:../backoffice-domain
       jose:
-        specifier: 6.2.13
-        version: 6.2.13
+        specifier: 6.2.14
+        version: 6.2.14
       pg:
         specifier: ^8.23.1
         version: 8.23.1
@@ -4681,8 +4681,8 @@ packages:
   '@pulumi/command@1.2.1':
     resolution: {integrity: sha512-mutNDIUYP67yCBYOVIidQyxuTwZDY9v/sx9EGbgIv4PXfyfolOKGgGLeoHEbI1lxRwaw2wbTZ3VNIynDnA5VKA==}
 
-  '@pulumi/docker-build@0.0.22':
-    resolution: {integrity: sha512-DcnwoDv7kBM6MBhuEfkiATDwKDqGCNPICxUt7gbYSdpb/UuT+6K7pNMQu7mCNZV7feqZh9EJ3P20UXCq1R+YQg==}
+  '@pulumi/docker-build@0.0.23':
+    resolution: {integrity: sha512-ggnIlbBvDst1LSTfsAvg7ZoJrZphm9pxCW2+L5c2qCSLg7ZcYcAP4iHaUfFonHhXp3dK2yNHDwFCCw8x+/xy6Q==}
 
   '@pulumi/docker@5.2.0':
     resolution: {integrity: sha512-1H0UGH6TN16jzq8tjwxCLwytXvnTXmxLW27EiGuaP+aueXk+AgswTBCKFERMhhJYkc4EQxTyzJo37tLDIxf0wA==}
@@ -8084,6 +8084,9 @@ packages:
   jose@6.2.13:
     resolution: {integrity: sha512-7TIg10ZE1x82YediN+lcrPNvGMKge9yFHQD+Qho/b8y2adfugU3AsvvHfxV0fzyFllT6l9xCjf4RWY9g/Z9PJQ==}
 
+  jose@6.2.14:
+    resolution: {integrity: sha512-3JasLuki1NRLQvY4wCoC37KZk4qxoBx2k2aFqLxT84IezqW0bkJKnNtxnZj/Fu1xsQivoc/lytxaRHJoGLjJ1A==}
+
   js-beautify@2.0.3:
     resolution: {integrity: sha512-cyFbh3tkPhknnTD/0bLf0T0yy2ZIbqL05mttzbt4y1Zfr7NxqXQZ62dkBLKs3oHH/lpjmDRAnciJiSUyOy8XwQ==}
     engines: {node: '>=14'}
@@ -9048,8 +9051,8 @@ packages:
   ohash@2.0.12:
     resolution: {integrity: sha512-65S/5gk9YSsaRjcyf7Nfa6h/d3E8/1gslpXfI4W7Dxn/oap8IKRuNT5VXkLQ1YFKIEg4apRY4Pj6aiwFzrDdmw==}
 
-  oidc-provider@9.13.2:
-    resolution: {integrity: sha512-f/uHQK1YOx6J2vpHlzBKDq84HwbkJIsuMPNCDVzfGT4JFIvsitQPBBejMFUSTjxm3IbF1eT4PoB09PP1qSkLDQ==}
+  oidc-provider@9.13.3:
+    resolution: {integrity: sha512-WmNDX9dLeItBmIqGqspmX5u6Cc7VVMrKUw2InX2T16+bwUJ8m/N5rJ3Ed+YKxE5aZqLp4YqwEi6kMJx4Ui5ffw==}
 
   on-change@6.0.2:
     resolution: {integrity: sha512-08+12qcOVEA0fS9g/VxKS27HaT94nRutUT77J2dr8zv/unzXopvhBuF8tNLWsoLQ5IgrQ6eptGeGqUYat82U1w==}
@@ -15565,7 +15568,7 @@ snapshots:
       - ts-node
       - typescript
 
-  '@pulumi/docker-build@0.0.22(supports-color@10.2.2)(typescript@6.0.3)':
+  '@pulumi/docker-build@0.0.23(supports-color@10.2.2)(typescript@6.0.3)':
     dependencies:
       '@pulumi/pulumi': 3.273.0(supports-color@10.2.2)(typescript@6.0.3)
     transitivePeerDependencies:
@@ -19450,6 +19453,8 @@ snapshots:
 
   jose@6.2.13: {}
 
+  jose@6.2.14: {}
+
   js-beautify@2.0.3:
     dependencies:
       config-chain: 1.1.13
@@ -21056,7 +21061,7 @@ snapshots:
 
   ohash@2.0.12: {}
 
-  oidc-provider@9.13.2(supports-color@10.2.2):
+  oidc-provider@9.13.3(supports-color@10.2.2):
     dependencies:
       debug: 4.4.3(supports-color@10.2.2)
       jose: 6.2.13

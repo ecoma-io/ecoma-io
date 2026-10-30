@@ -15,7 +15,7 @@
     "@ecoma-io/account-contracts": "workspace:*",
     "@ecoma-io/backoffice-application": "workspace:*",
     "@ecoma-io/backoffice-domain": "workspace:*",
-    "jose": "6.2.13",
+    "jose": "6.2.14",
     "pg": "^8.23.1"
   },
   "devDependencies": {
