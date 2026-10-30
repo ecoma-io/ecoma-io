@@ -137,6 +137,20 @@ Phân biệt ba khái niệm Nx hay bị lẫn:
   project cần nó — mỗi project tự dựng harness của mình (PostgreSQL qua testcontainers, D1 qua wrangler `getPlatformProxy`).
   **Không** có shared test-support library: import chéo deploy unit bị cấm bởi module-boundary rules (`05` §7), nên hai
   harness giống hệt nhau ở hai deploy unit là **có chủ đích**, không phải nợ kỹ thuật.
+- **Readiness là ranh giới riêng, không phải cạnh graph:** `dependsOn` chỉ bảo chứng thứ tự thực thi task — không bảo chứng
+  service đang healthy hay config đã sẵn sàng. Suite system-test chống lại stack thật bằng hai gate có budget, không thay thế
+  nhau và không thay thế được readiness của unit deploy: (1) **per-unit container health gate** thuộc deploy entry
+  (`waitForOwnContainerHealthy` sau `pulumi up` của từng unit, healthcheck Docker do unit tự định nghĩa); (2) **suite
+  readiness gate** (`globalSetup` probe đúng contract serving của unit mà suite nhắm tới — status code/mắt xích redirect
+  thực tế, không phải TCP connect) với retry có budget chỉ áp cho nhóm dấu hiệu "chưa sẵn sàng" thật sự; TLS sai, status
+  bất ngờ là fail ngay. Smoke không phải health check: smoke chứng minh serving path qua Traefik cho một luồng cụ thể,
+  không chứng minh unit đủ điều kiện nhận test.
+- **Runtime config đọc tại thời điểm dùng, không tin env snapshot:** Nx snapshot môi trường của từng task trước khi
+  `platform-deploy:local-up` ghi `.env`, nên trong một invocation duy nhất env của tiến trình suite không chứa `ROOT_DOMAIN`
+  (giá trị sinh lúc deploy). Mọi điểm resolve runtime config của suite (config resolver, `globalSetup`, helper trong tiến
+  trình test) phải theo cùng một contract: env trước, fallback parse `.env` repo-root **tại thời điểm gọi**; fail-loud kèm
+  hướng dẫn chạy `nx affected -t system-test -c local` khi cả hai nguồn đều vắng. Riêng layer `playwright.config.ts` (được
+  eval khi build project graph — trước deploy) không đọc `.env`, dùng placeholder-host để không đỏ oan job CI khác.
 
 ## 7. Minimum requirements by responsibility and risk
 
