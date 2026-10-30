@@ -107,6 +107,11 @@ function unitUpArgs(ctx: LocalDeployContext): string[] {
  * `ps`; giá trị secret không đi qua argv. `--plaintext` BẮT BUỘC trên CLI
  * 3.270 (CLI tự chặn giá trị "trông như secret" khi thiếu cờ), `--raw` giữ
  * nguyên giá trị không trim newline.
+ *
+ * Quy ước local-dev có chủ đích: stack config lưu plaintext, ranh giới bảo
+ * mật là file state được mã hóa bởi passphrase của worktree. Các caller cần
+ * mã hóa secret ở cấp Pulumi phải dùng đường dẫn riêng (chưa có) thay vì
+ * gọi helper này — helper này LUÔN plaintext.
  */
 export function setStackConfig(
   project: string,

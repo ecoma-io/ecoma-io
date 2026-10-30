@@ -451,6 +451,25 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
       }
 
       if (decision.action === 'remove') {
+        // TOCTOU guard: presence đã được cache ở `presenceOnce` khi decide;
+        // re-check trực tiếp ngay trước lệnh rm để tránh xoá nhầm khi worktree
+        // được tạo lại trong cửa sổ giữa inspect và rm (đặc biệt volume).
+        if (ownership.state === 'owned') {
+          const freshPresence = presenceFn(ownership.worktreePath);
+          if (freshPresence !== 'absent') {
+            entries.push({
+              kind,
+              name,
+              worktreePath: ownership.worktreePath,
+              action: 'kept',
+              reason:
+                freshPresence === 'present'
+                  ? `worktree re-appeared between inspect and remove (${ownership.worktreePath}) — kept`
+                  : `cannot confirm worktree absence right before remove (${ownership.worktreePath}) — kept`,
+            });
+            continue;
+          }
+        }
         if (filter.dryRun) {
           entries.push({
             kind,

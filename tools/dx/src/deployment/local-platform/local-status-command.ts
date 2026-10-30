@@ -40,11 +40,14 @@ export default defineCommand({
       // lệnh; bọc thêm lớp nào là log nói dối hai lớp. `--worktree-root` được
       // validate ở đây (`requireDirectoryRoot`) rồi truyền tiếp qua argv —
       // entry platform nhận cùng giá trị mà người dùng đã gõ.
-      const result = spawnSync(
-        'npx',
-        ['tsx', 'platform-status.ts', '--worktree-root', worktreeRoot ?? ''],
-        { cwd: join(ROOT_DIR, 'deploys', 'platform-deploy'), stdio: 'inherit' },
-      );
+      const platformArgs = ['tsx', 'platform-status.ts'];
+      if (worktreeRoot !== undefined) {
+        platformArgs.push('--worktree-root', worktreeRoot);
+      }
+      const result = spawnSync('npx', platformArgs, {
+        cwd: join(ROOT_DIR, 'deploys', 'platform-deploy'),
+        stdio: 'inherit',
+      });
       return result.status ?? 1;
     });
   },

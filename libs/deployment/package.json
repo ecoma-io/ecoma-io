@@ -19,6 +19,12 @@
       "type:tooling",
       "scope:shared",
       "runtime:native"
-    ]
+    ],
+    "namedInputs": {
+      "default": [
+        "{projectRoot}/**/*",
+        "{workspaceRoot}/deploys/backoffice-deploy/index.ts"
+      ]
+    }
   }
 }
