@@ -65,7 +65,9 @@ describe('local lane colocated entry contract', () => {
 
   it('every local-up runs the colocated entry, not a DX command', () => {
     // Entry colocated là biên duy nhất — `npx tsx local.ts up` từ cwd project.
-    // Trỏ về lệnh DX (`pnpm nx affected -t system-test -c local` (which provisions the required `local-up` prerequisites first)...) là hồi quy kiến trúc.
+    // Trỏ về lệnh DX đã xoá (`pnpm dx local-deploy`) hoặc bất kỳ command DX
+    // nào khác là hồi quy kiến trúc; đường E2E hợp lệ là `nx affected -t
+    // system-test -c local` (CI tự kéo `local-up` qua `dependsOn` của suite).
     const commands = LANE_PROJECTS.map((project) => {
       const target = nxTargets(project)['local-up'] as {
         options?: { command?: string; cwd?: string };
@@ -105,8 +107,14 @@ describe('local lane colocated entry contract', () => {
       if (target.options?.cwd !== `deploys/${project}`) {
         violations.push(`${project}: local-down must run from the project directory`);
       }
-      if ((target.dependsOn ?? []).some((d) => d.target === 'local-down')) {
-        violations.push(`${project}: local-down must not depend on other local-down targets`);
+      if ((target.dependsOn ?? []).length !== 0) {
+        violations.push(
+          `${project}: local-down must declare no dependsOn (teardown needs no global ordering; found ${(
+            target.dependsOn ?? []
+          )
+            .map((d) => d.target ?? '?')
+            .join(', ')})`,
+        );
       }
     }
     expect(violations, 'local-down contract').toEqual([]);

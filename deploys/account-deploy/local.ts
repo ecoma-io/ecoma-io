@@ -1,7 +1,8 @@
 /**
  * Entry lifecycle local của `account-deploy` — `up`/`down` trên stack Pulumi
  * của CHÍNH project này; thứ tự toàn cục do Nx suy từ `dependsOn` của
- * package.json (account chạy sau backoffice, trước auth và mail).
+ * package.json (account phụ thuộc duy nhất platform — chạy song song với các
+ * unit độc lập khác; auth và mail đọc secret của account nên phụ thuộc nó).
  *
  * Chạy qua target Nx: `nx run account-deploy:local-up -c local` → `npx tsx
  * local.ts up`. Entry KHÔNG lấy khóa lane: lifecycle không còn khóa toàn cục (xem quyết định kiến trúc PR #424).

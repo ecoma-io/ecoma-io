@@ -1,8 +1,8 @@
 /**
  * Entry lifecycle local của `home-deploy` — `up`/`down` trên stack Pulumi của
  * CHÍNH project này; thứ tự toàn cục do Nx suy từ `dependsOn` của package.json
- * (home chạy ngay sau platform — node đầu tiên đọc outputs platform qua
- * StackReference).
+ * (home phụ thuộc duy nhất platform — đọc outputs platform qua StackReference,
+ * chung slot song song với các unit độc lập khác).
  *
  * Chạy qua target Nx: `nx run home-deploy:local-up -c local` → `npx tsx
  * local.ts up`. Entry KHÔNG lấy khóa lane: lifecycle không còn khóa toàn cục (xem quyết định kiến trúc PR #424).

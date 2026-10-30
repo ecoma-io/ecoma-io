@@ -20,7 +20,7 @@ Mọi lệnh Pulumi của luồng này chạy với `PULUMI_BACKEND_URL=file://<
 
 ```bash
 pnpm nx run-many -t local-up -c local             # up cả 9 lane project theo đúng thứ tự phụ thuộc
-pnpm nx run platform-deploy:local-smoke -c local  # smoke HTTPS qua Traefik — bước hoàn tất lane
+pnpm nx run platform-deploy:local-smoke -c local  # smoke HTTPS của home qua Traefik (tự up home trước)
 pnpm nx run-many -t local-down -c local           # down từng project, KHÔNG có thứ tự teardown toàn cục
 pnpm dx local-status                              # namespace, stack, resource names, trạng thái platform
 ```
@@ -83,7 +83,7 @@ Read-only. Phân biệt năm trạng thái, mỗi trạng thái một dòng:
 
 ## URL và smoke
 
-Port thật nằm trong `.env` (`ROOT_HOST=fbi.com:<port>`) và trong output `traefikHostPort` của platform stack. Kiểm tra lane đầy đủ qua target smoke (đọc `ROOT_HOST` từ `.env`, chỉ chạy HTTPS):
+Port thật nằm trong `.env` (`ROOT_HOST=fbi.com:<port>`) và trong output `traefikHostPort` của platform stack. Xác minh end-to-end bằng target smoke (đọc `ROOT_HOST` từ `.env`, chỉ chạy HTTPS): smoke phụ thuộc `home-deploy:local-up` nên Nx tự up platform + home trước, rồi kiểm chuỗi redirect `/` → `/en` qua Traefik — bằng chứng serving path ngoài internet hoạt động; smoke không đo unit nào khác.
 
 ```bash
 pnpm nx run platform-deploy:local-smoke -c local

@@ -1,8 +1,8 @@
 /**
  * Entry lifecycle local của `auth-deploy` — `up`/`down` trên stack Pulumi của
  * CHÍNH project này; thứ tự toàn cục do Nx suy từ `dependsOn` của package.json
- * (auth chạy sau account: owner password role + WIC phụ thuộc container
- * account).
+ * (auth phụ thuộc account vì đọc secret cross-stack `internalHmacSecret` —
+ * runtime còn có WIC phụ thuộc container account).
  *
  * Chạy qua target Nx: `nx run auth-deploy:local-up -c local` → `npx tsx
  * local.ts up`. Entry KHÔNG lấy khóa lane: lifecycle không còn khóa toàn cục (xem quyết định kiến trúc PR #424).
