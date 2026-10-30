@@ -7,7 +7,7 @@
  * Contract: xoá volume PostgreSQL là hành vi MẶC ĐỊNH và VÔ ĐIỀU KIỆN của
  * down — KHÔNG có tuỳ chọn nào để giữ lại dữ liệu local (cờ `--remove-data`
  * cũ đã bị xoá hoàn toàn, không thay bằng cờ/config tương đương). Hai bước
- * chạy tuần tự trong cùng một khóa lane (caller giữ qua `withLaneLock`):
+ * chạy tuần tự (down trực tiếp, không khóa lane toàn cục):
  *
  * 1. `pulumi destroy --yes` — lỗi được BẮT và báo rõ, KHÔNG chặn bước 2:
  *    lời hứa của down là XOÁ DỮ LIỆU, nên volume vẫn phải bị xoá kể cả khi

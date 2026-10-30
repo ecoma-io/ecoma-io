@@ -12,11 +12,11 @@ import { runLocalCommand, worktreeRootArg } from './../../local-runtime/local-co
  * (thiếu label, worktree còn sống là KHÔNG xoá), không ở hành vi "giữ".
  * `--dry-run` không phát lệnh destructive nào — chỉ báo cáo.
  *
- * KHÔNG lấy khóa lane (#363): quyết định xoá của cleanup dựa trên presence
- * của worktree + labels ownership (bắt buộc đủ bốn label) — không dựa trên
- * pha của apply; race còn lại chỉ là nhiễu báo cáo (inspect lỗi giữa chừng
- * → `skipped`, behavior fail-safe đã tài liệu hoá). Tầng bảo vệ thật là các
- * check đó, không phải khóa.
+ * KHÔNG lấy khóa nào (lifecycle cũng không có khóa lane toàn cục — PR #424):
+ * quyết định xoá của cleanup dựa trên presence của worktree + labels ownership
+ * (bắt buộc đủ bốn label) — không dựa trên pha của lane; race còn lại chỉ là
+ * nhiễu báo cáo (inspect lỗi giữa chừng → `skipped`, behavior fail-safe đã
+ * tài liệu hoá). Tầng bảo vệ thật là các check đó.
  */
 export default defineCommand({
   meta: {

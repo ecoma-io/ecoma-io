@@ -5,8 +5,8 @@
  * account).
  *
  * Chạy qua target Nx: `nx run transactional-mail-deploy:local-up -c local` →
- * `npx tsx local.ts up`. Entry tự lấy khóa lane quanh phần mutate (xem
- * `withLaneLock`).
+ * `npx tsx local.ts up`. Entry KHÔNG lấy khóa lane nào: lifecycle không có
+ * khóa toàn cục (quyết định kiến trúc PR #424).
  *
  * Secret bảng của mail:
  * - `mailInternalAuthSecret`: ĐỌC LẠI từ stack config của account (account đã
@@ -42,7 +42,6 @@ import {
   resolveEntryFoundation,
   setStackConfig,
   waitForOwnContainerHealthy,
-  withLaneLock,
   type EntryFoundation,
 } from '../../tools/dx/src/deployment/local-platform/local-entry';
 import { join } from 'node:path';
@@ -105,26 +104,24 @@ async function prepare(foundation: EntryFoundation): Promise<void> {
   }
 }
 
-async function main(command: string, stealLock: boolean): Promise<number> {
+async function main(command: string): Promise<number> {
   if (command === 'up') {
     const foundation = resolveEntryFoundation(true);
     if (foundation === undefined) {
       return 1;
     }
-    return withLaneLock(foundation.ctx.worktreeRoot, stealLock, async () => {
-      try {
-        await prepare(foundation);
-        pulumiUpForEntry('transactional-mail-deploy', foundation);
-      } catch (error) {
-        console.error(
-          `[transactional-mail-deploy] up failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        return 1;
-      }
-      // Health gate container CỦA CHÍNH unit — WIC mail (startPeriod 120s,
-      // budget 90s của health gate là đủ sau khi Pulumi đã chờ container).
-      return waitForOwnContainerHealthy(foundation.ctx, 'mail-wic');
-    });
+    try {
+      await prepare(foundation);
+      pulumiUpForEntry('transactional-mail-deploy', foundation);
+    } catch (error) {
+      console.error(
+        `[transactional-mail-deploy] up failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 1;
+    }
+    // Health gate container CỦA CHÍNH unit — WIC mail (startPeriod 120s,
+    // budget 90s của health gate là đủ sau khi Pulumi đã chờ container).
+    return waitForOwnContainerHealthy(foundation.ctx, 'mail-wic');
   }
   if (command === 'down') {
     const foundation = resolveEntryFoundation(false);
@@ -134,17 +131,15 @@ async function main(command: string, stealLock: boolean): Promise<number> {
       );
       return 0;
     }
-    return withLaneLock(foundation.ctx.worktreeRoot, stealLock, async () => {
-      try {
-        pulumiDestroyForEntry('transactional-mail-deploy', foundation);
-        return 0;
-      } catch (error) {
-        console.error(
-          `[transactional-mail-deploy] down failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        return 1;
-      }
-    });
+    try {
+      pulumiDestroyForEntry('transactional-mail-deploy', foundation);
+      return 0;
+    } catch (error) {
+      console.error(
+        `[transactional-mail-deploy] down failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 1;
+    }
   }
   console.error(`[transactional-mail-deploy] unknown command: ${command} (expected: up | down)`);
   return 1;
@@ -152,7 +147,6 @@ async function main(command: string, stealLock: boolean): Promise<number> {
 
 const args = process.argv.slice(2);
 const command = args[0] ?? '';
-const stealLock = args.includes('--steal-lock');
-void main(command, stealLock).then((code) => {
+void main(command).then((code) => {
   process.exit(code);
 });

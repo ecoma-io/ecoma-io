@@ -4,7 +4,7 @@
  * package.json (backoffice chạy sau home).
  *
  * Chạy qua target Nx: `nx run backoffice-deploy:local-up -c local` → `npx tsx
- * local.ts up`. Entry tự lấy khóa lane quanh phần mutate (xem `withLaneLock`).
+ * local.ts up`. Entry KHÔNG lấy khóa lane: lifecycle không còn khóa toàn cục (xem quyết định kiến trúc PR #424).
  *
  * Secret bảng của backoffice: mật khẩu 2 role PostgreSQL (runtime/migrator)
  * — sinh ngẫu nhiên bằng API mật mã an toàn, xoay mỗi lần up là vô hại vì role
@@ -28,7 +28,6 @@ import {
   resolveEntryFoundation,
   setStackConfig,
   waitForOwnContainerHealthy,
-  withLaneLock,
   type EntryFoundation,
 } from '../../tools/dx/src/deployment/local-platform/local-entry';
 
@@ -45,25 +44,23 @@ async function prepare(foundation: EntryFoundation): Promise<void> {
   }
 }
 
-async function main(command: string, stealLock: boolean): Promise<number> {
+async function main(command: string): Promise<number> {
   if (command === 'up') {
     const foundation = resolveEntryFoundation(true);
     if (foundation === undefined) {
       return 1;
     }
-    return withLaneLock(foundation.ctx.worktreeRoot, stealLock, async () => {
-      try {
-        await prepare(foundation);
-        pulumiUpForEntry('backoffice-deploy', foundation);
-      } catch (error) {
-        console.error(
-          `[backoffice-deploy] up failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        return 1;
-      }
-      // Health gate container CỦA CHÍNH unit — backoffice (server container).
-      return waitForOwnContainerHealthy(foundation.ctx, 'backoffice');
-    });
+    try {
+      await prepare(foundation);
+      pulumiUpForEntry('backoffice-deploy', foundation);
+    } catch (error) {
+      console.error(
+        `[backoffice-deploy] up failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 1;
+    }
+    // Health gate container CỦA CHÍNH unit — backoffice (server container).
+    return waitForOwnContainerHealthy(foundation.ctx, 'backoffice');
   }
   if (command === 'down') {
     const foundation = resolveEntryFoundation(false);
@@ -73,17 +70,15 @@ async function main(command: string, stealLock: boolean): Promise<number> {
       );
       return 0;
     }
-    return withLaneLock(foundation.ctx.worktreeRoot, stealLock, async () => {
-      try {
-        pulumiDestroyForEntry('backoffice-deploy', foundation);
-        return 0;
-      } catch (error) {
-        console.error(
-          `[backoffice-deploy] down failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        return 1;
-      }
-    });
+    try {
+      pulumiDestroyForEntry('backoffice-deploy', foundation);
+      return 0;
+    } catch (error) {
+      console.error(
+        `[backoffice-deploy] down failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 1;
+    }
   }
   console.error(`[backoffice-deploy] unknown command: ${command} (expected: up | down)`);
   return 1;
@@ -91,7 +86,6 @@ async function main(command: string, stealLock: boolean): Promise<number> {
 
 const args = process.argv.slice(2);
 const command = args[0] ?? '';
-const stealLock = args.includes('--steal-lock');
-void main(command, stealLock).then((code) => {
+void main(command).then((code) => {
   process.exit(code);
 });

@@ -27,7 +27,7 @@
         }
       },
       "local-up": {
-        "//": "Local lane — duy nhất một lane (`-c local`). Entry colocated (`local.ts up`) tự lấy khóa lane `.ecoma-lane.lock` quanh phần mutate: chuẩn bị bảng secret của riêng project (config set qua stdin), `pulumi up` stack của chính nó, rồi health gate container CỦA CHÍNH unit (`ecoma-<ns>-account` healthy theo healthcheck Docker của unit). Thứ tự toàn cục do `dependsOn` dưới đây quyết định (Nx Task Graph); entry KHÔNG gọi lệnh DX nào. Cache bị tắt ở targetDefaults `nx.json` (CONTRACT: mutate Docker/state thật).",
+        "//": "Local lane — duy nhất một lane (`-c local`). Entry colocated (`local.ts up`) KHÔNG lấy khóa lane nào (PR #424: serialization thật của cùng một stack là state lock của Pulumi): chuẩn bị bảng secret của riêng project (config set qua stdin), `pulumi up` stack của chính nó, rồi health gate container CỦA CHÍNH unit (`ecoma-<ns>-account` healthy theo healthcheck Docker của unit). Thứ tự toàn cục do `dependsOn` dưới đây quyết định (Nx Task Graph); entry KHÔNG gọi lệnh DX nào. Cache bị tắt ở targetDefaults `nx.json` (CONTRACT: mutate Docker/state thật).",
         "executor": "nx:run-commands",
         "options": {
           "cwd": "deploys/account-deploy",
@@ -39,14 +39,14 @@
         "dependsOn": [
           {
             "projects": [
-              "backoffice-deploy"
+              "platform-deploy"
             ],
             "target": "local-up"
           }
         ]
       },
       "local-down": {
-        "//": "Teardown của RIÊNG project này (`local.ts down` = `pulumi destroy --yes`; platform tự xoá volume PostgreSQL mọi lần down). Thứ tự teardown là NGHỊCH của thứ tự deploy: provider down SAU dependent, nên target này khai `dependsOn` trỏ `local-down` của CÁC DIRECT DEPENDENT trỏ vào nó (auth, transactional-mail) — Nx schedule cả hai trước khi entry này chạy. transactional-mail phụ thuộc account ở tầng DEPLOY (không chỉ build), nên edge teardown là đúng; dependents tính từ inverse của graph `local-up`, neo contract ở nx.json targetDefaults `local-down`. Idempotent: worktree chưa từng deploy là no-op exit 0; lỗi destroy thật thì exit 1. Cache bị tắt ở targetDefaults `nx.json` (cùng một-lane policy với local-up).",
+        "//": "Teardown của RIÊNG project này (`local.ts down` = `pulumi destroy --yes`; platform tự xoá volume PostgreSQL mọi lần down). KHÔNG có `dependsOn`: teardown không yêu cầu thứ tự ngược toàn cục — mỗi project tự xoá resource của mình trong namespace của worktree, `pulumi destroy` tự serialize trên stack state, và Docker chấp nhận rm trực tiếp từng resource. Idempotent: worktree chưa từng deploy là no-op exit 0; lỗi destroy thật thì exit 1. Cache bị tắt ở targetDefaults `nx.json`.",
         "executor": "nx:run-commands",
         "options": {
           "cwd": "deploys/account-deploy",
@@ -54,16 +54,7 @@
         },
         "configurations": {
           "local": {}
-        },
-        "dependsOn": [
-          {
-            "projects": [
-              "auth-deploy",
-              "transactional-mail-deploy"
-            ],
-            "target": "local-down"
-          }
-        ]
+        }
       }
     }
   }

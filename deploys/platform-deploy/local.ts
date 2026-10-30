@@ -1,14 +1,14 @@
 /**
  * Entry lifecycle local của `platform-deploy` — `up`/`down`/`smoke` trên stack
- * Pulumi của CHÍNH project này. Platform là node ĐẦU của chuỗi lane local
- * (không `dependsOn` local-up nào) và node CUỐI qua target `local-smoke`
- * (dependsOn cả bốn lá).
+ * Pulumi của CHÍNH project này. Platform là node ĐẦU của lane local
+ * (không `dependsOn` local-up nào); `local-smoke` của platform là node LÁ
+ * (dependsOn duy nhất `home-deploy:local-up`).
  *
  * Chạy qua target Nx: `nx run platform-deploy:local-up -c local` → `npx tsx
- * local.ts up` (tương tự `down`/`smoke`). Entry tự lấy khóa lane quanh phần
- * mutate (xem `withLaneLock`).
+ * local.ts up` (tương tự `down`/`smoke`). Entry KHÔNG lấy khóa lane nào:
+ * lifecycle không có khóa toàn cục (quyết định kiến trúc PR #424).
  *
- * `up` gồm ba giai đoạn trong một khóa lane:
+ * `up` gồm ba giai đoạn:
  * 1. `resolvePostgresPassword` — đọc lại mật khẩu PostgreSQL từ stack config
  *    (canonical), chỉ sinh mới khi stack mới VÀ chưa có volume; fail có
  *    hướng dẫn khi config mất mà volume còn (không bao giờ sinh mật khẩu
@@ -20,9 +20,10 @@
  *    file giữ nguyên byte-for-byte. `.env` là artifact — nguồn sự thật là
  *    stack config/outputs; mọi unit kế tiếp đọc ROOT_HOST từ file này.
  *
- * `smoke` chạy SAU khi toàn bộ chuỗi unit xanh (dependsOn của target): smoke
- * HTTPS qua Traefik với certificate local (script `.mjs` cùng bản với
- * orchestration cũ).
+ * `smoke` có đúng một prerequisite (`home-deploy:local-up`): smoke kiểm chuỗi
+ * redirect `/` → `/en` của home qua Traefik với certificate local (script
+ * `.mjs` cùng bản với orchestration cũ) — không đo unit nào khác nên không
+ * kéo chúng vào.
  *
  * `down` xoá volume PostgreSQL VÔ ĐIỀU KIỆN sau khi destroy — không có tuỳ
  * chọn nào để giữ lại dữ liệu local (cờ opt-in giữ dữ liệu cũ đã bị xoá hoàn
@@ -56,7 +57,6 @@ import {
   resolveEntryFoundation,
   runEntrySmoke,
   waitForOwnContainerHealthy,
-  withLaneLock,
   type EntryFoundation,
 } from '../../tools/dx/src/deployment/local-platform/local-entry';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
@@ -123,17 +123,17 @@ async function up(foundation: EntryFoundation): Promise<number> {
 async function down(foundation: EntryFoundation): Promise<number> {
   // Toàn bộ sequence destroy + xoá volume (vô điều kiện) sống trong
   // `runPlatformDown` — tách module để spec bấm được ma trận lỗi thật qua
-  // injection. Caller giữ khóa lane (`withLaneLock`) quanh cả sequence.
+  // injection. Sequence không nằm trong khóa nào — lifecycle không có khóa toàn cục.
   return runPlatformDown(foundation);
 }
 
-async function main(command: string, flags: { stealLock: boolean }): Promise<number> {
+async function main(command: string): Promise<number> {
   if (command === 'up') {
     const foundation = resolveEntryFoundation(true);
     if (foundation === undefined) {
       return 1;
     }
-    return withLaneLock(foundation.ctx.worktreeRoot, flags.stealLock, () => up(foundation));
+    return up(foundation);
   }
   if (command === 'down') {
     const foundation = resolveEntryFoundation(false);
@@ -143,7 +143,7 @@ async function main(command: string, flags: { stealLock: boolean }): Promise<num
       );
       return 0;
     }
-    return withLaneLock(foundation.ctx.worktreeRoot, flags.stealLock, () => down(foundation));
+    return down(foundation);
   }
   if (command === 'smoke') {
     const foundation = resolveEntryFoundation(false);
@@ -158,9 +158,6 @@ async function main(command: string, flags: { stealLock: boolean }): Promise<num
 
 const args = process.argv.slice(2);
 const command = args[0] ?? '';
-const flags = {
-  stealLock: args.includes('--steal-lock'),
-};
-void main(command, flags).then((code) => {
+void main(command).then((code) => {
   process.exit(code);
 });

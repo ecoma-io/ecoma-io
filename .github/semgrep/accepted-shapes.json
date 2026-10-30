@@ -84,21 +84,6 @@
   },
   {
     "rule": "security-sensitive-value-in-http-response",
-    "path": "tools/dx/src/local-runtime/local-lock.ts",
-    "start": 109,
-    "end": 114,
-    "reason": "parseLockContent cua file lock tra ve {pid, token, startedAt, cmdline} - token la lock acquisition token (randomBytes hex), bat ky process cung user co the doc file lock truc tiep -> khong la secret-lookup heuristics can bao ve. Day la lock file lock trong worktree, KHONG phai HTTP response; rule taint match 'token' naming heuristic FP. Line pin re-anchored +33 khi them redactCmdline (OCR round #417: loc argv nhay cam truoc khi ghi cmdline vao lock file) - noi dung dong khong doi. Re-pinned 115->109 when the orchestrator-only lease machinery was removed (#423); lines unchanged.",
-    "lines": {
-      "109": "^  return \\{$",
-      "110": "^    pid,$",
-      "111": "^    token,$",
-      "112": "^    startedAt,$",
-      "113": "^    cmdline: cmdline as string\\[\\],$",
-      "114": "^  \\};$"
-    }
-  },
-  {
-    "rule": "security-sensitive-value-in-http-response",
     "path": "tools/dx/src/deployment/local-platform/local-env.ts",
     "start": 196,
     "end": 196,
@@ -125,16 +110,6 @@
     "reason": "Rehomed from local-deploy.ts:752 (#423): newly generated PostgreSQL password returned to the .env writer inside the CLI tool; no HTTP surface; naming-heuristic FP. Content unchanged from the accepted entry.",
     "lines": {
       "364": "^  return \\{ ok: true, password, generated: true \\};$"
-    }
-  },
-  {
-    "rule": "security-sensitive-value-in-http-response",
-    "path": "tools/dx/src/local-runtime/local-lock.ts",
-    "start": 279,
-    "end": 279,
-    "reason": "Re-pinned from 285 (#423): acquire returns {release, token} to the per-project entry that now holds the lane lock itself (no orchestrator lease left); token never leaves the process over HTTP; naming-heuristic FP.",
-    "lines": {
-      "279": "^  return \\{ release, token \\};$"
     }
   }
 ]

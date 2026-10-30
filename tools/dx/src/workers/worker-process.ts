@@ -8,7 +8,7 @@
  * nào chết đột ngột, và phải dọn được process mồ côi sau crash mà KHÔNG giết
  * nhầm process của worktree khác hay process không liên quan.
  *
- * Nguyên tắc sao chép từ `local-lock.ts` (cùng chuẩn PID liveness):
+ * Nguyên tắc PID liveness fail-closed (EPERM → coi như còn sống):
  *
  * 1. **Metadata survive qua crash** — file JSON `<stateDir>/<name>.json` ghi PID,
  *    argv (argv array, KHÔNG shell-string), startedAt. Process chết đột ngột
@@ -30,8 +30,8 @@
  * Cấp phục hồi (recovery): `scanWorkerProcesses` đọc toàn bộ metadata trong
  * stateDir của worktree, phân loại `alive`/`stale`/`unspawned`/`invalid` bằng
  * PID liveness + identity, và `terminateStaleWorker` (số ít) kill CHỈ khi metadata
- * hợp lệ + argv identity khớp + PID đã chết được chứng minh — cùng chuẩn
- * fail-closed với `local-lock.ts`. Không có khái niệm duplicate trong code;
+ * hợp lệ + argv identity khớp + PID đã chết được chứng minh — chuẩn fail-closed.
+ * Không có khái niệm duplicate trong code;
  * entry cùng `name` bị từ chối spawn đè (xem `startWorkerProcess`).
  */
 
@@ -51,7 +51,6 @@ import {
 } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import type { Readable } from 'node:stream';
-import { safeUnlinkIfSame } from './../local-runtime/local-lock.js';
 
 /** Phiên bản shape của file metadata — đổi shape phải đổi số này, loader cũ từ chối đọc. */
 const METADATA_VERSION = 1;
@@ -90,7 +89,7 @@ export interface WorkerProcessHandle {
   /** Stream stdout/stderr của process — caller drain hoặc pipe vào log file. */
   stdout: Readable | null;
   stderr: Readable | null;
-  /** True khi PID còn sống — poll `kill(pid, 0)`, cùng chuẩn `local-lock.ts`. */
+  /** True khi PID còn sống — poll `kill(pid, 0)`, chuẩn fail-closed. */
   alive(): boolean;
   /** Promise resolve đúng một lần khi process exit (không resolve khi spawn fail). */
   onExit: Promise<void>;
@@ -169,7 +168,7 @@ export function readMetadata(path: string): WorkerProcessMetadata | null {
   }
 }
 
-/** PID liveness — cùng chuẩn với `local-lock.ts` (EPERM → coi như còn sống). */
+/** PID liveness (EPERM → coi như còn sống, fail-closed). */
 export function isPidAlive(pid: number): boolean {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
@@ -183,6 +182,23 @@ export function isPidAlive(pid: number): boolean {
   }
 }
 
+/**
+ * Xoá file chỉ khi nội dung vẫn đúng với snapshot đã inspect — bảo vệ race
+ * stale-recovery: giữa inspect và unlink, process khác có thể ghi/xoá file.
+ * Worker runtime là user duy nhất của hàm này sau khi khóa lane toàn cục bị
+ * xoá (PR #424).
+ */
+export function safeUnlinkIfSame(path: string, expected: string): boolean {
+  try {
+    const current = readFileSync(path, 'utf8');
+    if (current !== expected) return false;
+    unlinkSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function writeMetadata(path: string, metadata: WorkerProcessMetadata): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(metadata, null, 2), 'utf8');
@@ -191,8 +207,8 @@ function writeMetadata(path: string, metadata: WorkerProcessMetadata): void {
 /**
  * Khóa entry-level (per metadata file) để bọc check→write→spawn thành atomic:
  * hai caller spawn cùng `name` không thể cùng vượt qua guard và cùng ghi metadata.
- * Dùng `openSync('wx')` + stale-recovery qua PID (process.pid của acquirer) — cùng
- * chuẩn fail-closed với `local-lock.ts`. Lock mồ côi (process chết) được xoá tự
+ * Dùng `openSync('wx')` + stale-recovery qua PID (process.pid của acquirer),
+ * chuẩn fail-closed. Lock mồ côi (process chết) được xoá tự
  * động qua PID liveness; lock còn sống KHÔNG bị steal.
  */
 const ENTRY_LOCK_MAX_ATTEMPTS = 50;
@@ -233,7 +249,7 @@ function acquireWorkerEntryLock(metadataPath: string, name: string): () => void 
         continue;
       }
       // Owner chết hoặc content malformed → stale recovery, chỉ xoá nếu nội dung
-      // không đổi (race protection) — tái sử dụng safeUnlinkIfSame từ local-lock.
+      // không đổi (race protection) — qua `safeUnlinkIfSame` cùng module.
       safeUnlinkIfSame(lockPath, content);
       continue;
     }
@@ -773,7 +789,7 @@ export function deleteStaleWorkerMetadata(stateDir: string): StaleRemovalReport 
       continue;
     }
     // state 'stale' hoặc 'unspawned' → xoá file nếu nội dung không đổi giữa
-    // scan và unlink (safe-unlink pattern từ local-lock.ts): re-read trước khi
+    // scan và unlink (safe-unlink pattern): re-read trước khi
     // xoá, chỉ unlink khi snapshot khớp — một metadata bị ghi đè giữa chừng
     // (spawn mới cùng name) không bị xoá nhầm.
     const snapshot = entry.rawContent;

@@ -242,7 +242,7 @@ describe('system-tests/e2e/* prerequisite contract', () => {
   });
 
   it('system-test dependsOn pulls neither local-smoke nor local-down', () => {
-    // local-smoke kéo theo closure toàn lane (dependsOn đuôi spine + các lá);
+    // local-smoke dependsOn `home-deploy` (smoke kiểm chuỗi redirect của home);
     // local-down là teardown — cả hai trong prerequisite của suite đều sai.
     const violations: string[] = [];
     for (const root of suiteRoots) {

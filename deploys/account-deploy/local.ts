@@ -4,7 +4,7 @@
  * package.json (account chạy sau backoffice, trước auth và mail).
  *
  * Chạy qua target Nx: `nx run account-deploy:local-up -c local` → `npx tsx
- * local.ts up`. Entry tự lấy khóa lane quanh phần mutate (xem `withLaneLock`).
+ * local.ts up`. Entry KHÔNG lấy khóa lane: lifecycle không còn khóa toàn cục (xem quyết định kiến trúc PR #424).
  *
  * Account là PERSISTOR của hai secret dùng chung — sinh MỘT giá trị khi up và
  * persist vào stack config của chính nó; unit chạy sau đọc lại:
@@ -41,7 +41,6 @@ import {
   resolveEntryFoundation,
   setStackConfig,
   waitForOwnContainerHealthy,
-  withLaneLock,
   type EntryFoundation,
 } from '../../tools/dx/src/deployment/local-platform/local-entry';
 
@@ -63,26 +62,24 @@ async function prepare(foundation: EntryFoundation): Promise<void> {
   }
 }
 
-async function main(command: string, stealLock: boolean): Promise<number> {
+async function main(command: string): Promise<number> {
   if (command === 'up') {
     const foundation = resolveEntryFoundation(true);
     if (foundation === undefined) {
       return 1;
     }
-    return withLaneLock(foundation.ctx.worktreeRoot, stealLock, async () => {
-      try {
-        await prepare(foundation);
-        pulumiUpForEntry('account-deploy', foundation);
-      } catch (error) {
-        console.error(
-          `[account-deploy] up failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        return 1;
-      }
-      // Health gate container CỦA CHÍNH unit (app account + provision/migrate
-      // đã chạy trong chương trình Pulumi trước khi container chính lên).
-      return waitForOwnContainerHealthy(foundation.ctx, 'account');
-    });
+    try {
+      await prepare(foundation);
+      pulumiUpForEntry('account-deploy', foundation);
+    } catch (error) {
+      console.error(
+        `[account-deploy] up failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 1;
+    }
+    // Health gate container CỦA CHÍNH unit (app account + provision/migrate
+    // đã chạy trong chương trình Pulumi trước khi container chính lên).
+    return waitForOwnContainerHealthy(foundation.ctx, 'account');
   }
   if (command === 'down') {
     const foundation = resolveEntryFoundation(false);
@@ -92,17 +89,15 @@ async function main(command: string, stealLock: boolean): Promise<number> {
       );
       return 0;
     }
-    return withLaneLock(foundation.ctx.worktreeRoot, stealLock, async () => {
-      try {
-        pulumiDestroyForEntry('account-deploy', foundation);
-        return 0;
-      } catch (error) {
-        console.error(
-          `[account-deploy] down failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        return 1;
-      }
-    });
+    try {
+      pulumiDestroyForEntry('account-deploy', foundation);
+      return 0;
+    } catch (error) {
+      console.error(
+        `[account-deploy] down failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 1;
+    }
   }
   console.error(`[account-deploy] unknown command: ${command} (expected: up | down)`);
   return 1;
@@ -110,7 +105,6 @@ async function main(command: string, stealLock: boolean): Promise<number> {
 
 const args = process.argv.slice(2);
 const command = args[0] ?? '';
-const stealLock = args.includes('--steal-lock');
-void main(command, stealLock).then((code) => {
+void main(command).then((code) => {
   process.exit(code);
 });

@@ -5,7 +5,7 @@
  * account).
  *
  * Chạy qua target Nx: `nx run auth-deploy:local-up -c local` → `npx tsx
- * local.ts up`. Entry tự lấy khóa lane quanh phần mutate (xem `withLaneLock`).
+ * local.ts up`. Entry KHÔNG lấy khóa lane: lifecycle không còn khóa toàn cục (xem quyết định kiến trúc PR #424).
  *
  * Secret bảng của auth (sinh khi up, giữ trong stack config qua stdin):
  * - Mật khẩu 3 role PostgreSQL (runtime/migrator/pruner) — sinh ngẫu nhiên
@@ -63,7 +63,6 @@ import {
   resolveEntryFoundation,
   setStackConfig,
   waitForOwnContainerHealthy,
-  withLaneLock,
   type EntryFoundation,
 } from '../../tools/dx/src/deployment/local-platform/local-entry';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
@@ -169,7 +168,7 @@ async function prepare(foundation: EntryFoundation): Promise<void> {
   }
 }
 
-async function main(command: string, stealLock: boolean): Promise<number> {
+async function main(command: string): Promise<number> {
   if (command === 'up') {
     const foundation = resolveEntryFoundation(true);
     if (foundation === undefined) {
@@ -177,26 +176,24 @@ async function main(command: string, stealLock: boolean): Promise<number> {
       // guard type thuần để narrowed.
       return 1;
     }
-    return withLaneLock(foundation.ctx.worktreeRoot, stealLock, async () => {
-      try {
-        await prepare(foundation);
-      } catch (error) {
-        console.error(
-          `[auth-deploy] up prepare failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        return 1;
-      }
-      try {
-        pulumiUpForEntry('auth-deploy', foundation);
-      } catch (error) {
-        console.error(
-          `[auth-deploy] up failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        return 1;
-      }
-      // Health gate container CỦA CHÍNH unit — WIC auth.
-      return waitForOwnContainerHealthy(foundation.ctx, 'auth-wic');
-    });
+    try {
+      await prepare(foundation);
+    } catch (error) {
+      console.error(
+        `[auth-deploy] up prepare failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 1;
+    }
+    try {
+      pulumiUpForEntry('auth-deploy', foundation);
+    } catch (error) {
+      console.error(
+        `[auth-deploy] up failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 1;
+    }
+    // Health gate container CỦA CHÍNH unit — WIC auth.
+    return waitForOwnContainerHealthy(foundation.ctx, 'auth-wic');
   }
   if (command === 'down') {
     const foundation = resolveEntryFoundation(false);
@@ -206,17 +203,15 @@ async function main(command: string, stealLock: boolean): Promise<number> {
       );
       return 0;
     }
-    return withLaneLock(foundation.ctx.worktreeRoot, stealLock, async () => {
-      try {
-        pulumiDestroyForEntry('auth-deploy', foundation);
-        return 0;
-      } catch (error) {
-        console.error(
-          `[auth-deploy] down failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        return 1;
-      }
-    });
+    try {
+      pulumiDestroyForEntry('auth-deploy', foundation);
+      return 0;
+    } catch (error) {
+      console.error(
+        `[auth-deploy] down failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 1;
+    }
   }
   console.error(`[auth-deploy] unknown command: ${command} (expected: up | down)`);
   return 1;
@@ -224,7 +219,6 @@ async function main(command: string, stealLock: boolean): Promise<number> {
 
 const args = process.argv.slice(2);
 const command = args[0] ?? '';
-const stealLock = args.includes('--steal-lock');
-main(command, stealLock).then((code) => {
+main(command).then((code) => {
   process.exit(code);
 });

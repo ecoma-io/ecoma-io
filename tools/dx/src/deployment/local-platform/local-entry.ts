@@ -2,19 +2,18 @@
  * Nền tảng dùng chung cho entry lifecycle colocated (`deploys/<p>/local.ts`).
  *
  * Sau khi DX bỏ orchestration (Issue #423), MỖI deploy project tự chạy
- * `up`/`down` trên stack Pulumi của chính nó qua entry colocated; Nx (dependsOn
- * giữa các target `local-up`/`local-down`) suy thứ tự toàn cục. Entry TỰ lấy
- * khóa lane (`.ecoma-lane.lock` quanh phần mutate của chính nó) — không còn
- * lease env, không orchestrator giữ khóa thay: một `pulumi config set` mutate
- * stack config NGOÀI danh sách resource mà state lock của Pulumi giữ, nên
- * mutation ngoài `pulumi up` vẫn cần khóa lane do chính entry nắm.
+ * `up`/`down` trên stack Pulumi của chính nó qua entry colocated; thứ tự up
+ * toàn cục do Nx suy từ `dependsOn` giữa các target `local-up`. KHÔNG có khóa
+ * lane toàn cục (quyết định kiến trúc PR #424): serialization thật của cùng
+ * một stack là state lock của Pulumi (`pulumi up`/`destroy` trên cùng stack
+ * tự chặn nhau), còn hai stack khác nhau thì độc lập — `pulumi config set`
+ * mutate stack config của chính project trong namespace của mình.
  *
  * Module này giữ phần có tái sử dụng của entry (resolve context + passphrase,
- * khóa lane với escape hatch `--steal-lock`, `pulumi up`/`destroy` với config
- * chuẩn lane, `config set` qua stdin, health gate container CỦA CHÍNH project,
- * smoke HTTPS). Phần khác nhau theo project (bảng secret, container kind của
- * health gate) sống trong từng entry — module này không liệt kê tên deploy
- * project nào.
+ * `pulumi up`/`destroy` với config chuẩn lane, `config set` qua stdin, health
+ * gate container CỦA CHÍNH project, smoke HTTPS). Phần khác nhau theo project
+ * (bảng secret, container kind của health gate) sống trong từng entry — module
+ * này không liệt kê tên deploy project nào.
  */
 
 import { existsSync } from 'node:fs';
@@ -24,7 +23,6 @@ import {
   dockerResourceName,
   type DeployResourceKind,
 } from './../../local-runtime/deploy-namespace.js';
-import { acquireLaneLock, stealLaneLock } from './../../local-runtime/local-lock.js';
 import {
   ensureStack,
   exec,
@@ -42,42 +40,6 @@ import { ROOT_DIR } from '../../utils.js';
 /** Thư mục của một deploy project (tuyệt đối, không phụ thuộc cwd của caller). */
 export function deployProjectDir(project: string): string {
   return join(ROOT_DIR, 'deploys', project);
-}
-
-/**
- * Chạy `body` trong khi giữ khóa lane của worktree — hình mẫu của mọi entry.
- *
- * `stealLock` là cờ người (`--steal-lock` của entry): `true` → chiếm khóa đang
- * giữ bởi holder CÒN SỐNG, in holder identity một dòng trước khi mutate. Bị
- * chặn mà không dùng cờ: `acquireLaneLock` chờ vô hạn với progress line định
- * kỳ (~30s, chỉ là UX) — chủ treo-vẫn-sống xử bằng `--steal-lock`
- * (human-in-the-loop), không bằng đồng hồ.
- *
- * Khóa bao đúng phần mutate: `body` chạy sau khi khóa đã nắm; release chạy
- * trong `finally` kể cả khi `body` throw hay trả exit khác 0.
- */
-export async function withLaneLock(
-  worktreeRoot: string,
-  stealLock: boolean,
-  body: () => Promise<number>,
-): Promise<number> {
-  if (stealLock) {
-    const holder = stealLaneLock(worktreeRoot);
-    if (holder !== null) {
-      console.log(
-        `[local-entry] --steal-lock: removed the lane lock held by pid=${holder.pid} ` +
-          `cmdline=${JSON.stringify(holder.cmdline)} startedAt=${new Date(holder.startedAt).toISOString()}`,
-      );
-    } else {
-      console.log('[local-entry] --steal-lock: no lane lock to steal.');
-    }
-  }
-  const lane = acquireLaneLock(worktreeRoot);
-  try {
-    return await body();
-  } finally {
-    lane.release();
-  }
 }
 
 /** Nền tảng đã resolve cho MỘT lần chạy entry `up`/`down`. */
@@ -187,9 +149,8 @@ export function ensureStackForEntry(project: string, foundation: EntryFoundation
 }
 
 /**
- * Chạy `pulumi up` của entry sau khi đã resolve nền tảng — KHÔNG lấy khóa
- * (caller giữ khóa qua `withLaneLock`), KHÔNG set secret (entry tự làm trong
- * `prepare`).
+ * Chạy `pulumi up` của entry sau khi đã resolve nền tảng — KHÔNG set secret
+ * (entry tự làm trong `prepare`).
  *
  * `stream: true` — `up` là bước dài (build image có thể mất vài phút), progress
  * phải ra terminal ngay. Lỗi → throw với stderr gốc; caller in và exit 1.

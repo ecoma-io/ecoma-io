@@ -144,7 +144,7 @@
         },
         "cache": false,
         "metadata": {
-          "//": "Local deployment lane targets. Thứ tự là CONTRACT nhưng NẰM TRONG từng deploy project (target `local-up` khai `dependsOn` riêng của nó trong `deploys/*/package.json`) — `nx.json` chỉ đặt chính sách chung: `cache: false` là CONTRACT chứ không phải tối ưu, target mutate Docker resource và Pulumi state thật của máy developer, cache hit là bỏ một side effect. Lệnh thực thi là entry colocated `deploys/<p>/local.ts up` (tự lấy khóa lane, không gọi lệnh DX nào). Một unit test chặn target local-* quay lại cacheable hoặc sinh configuration (lane) mới — lane local phải là lane DUY NHẤT của các target này."
+          "//": "Local deployment lane targets. Thứ tự up là CONTRACT nhưng NẰM TRONG từng deploy project (target `local-up` khai `dependsOn` riêng của nó trong `deploys/*/package.json` — chỉ các prerequisite THẬT: platform + StackReference/secret cross-stack, không có cạnh chỉ-tạo-thứ-tự) — `nx.json` chỉ đặt chính sách chung: `cache: false` là CONTRACT chứ không phải tối ưu, target mutate Docker resource và Pulumi state thật của máy developer, cache hit là bỏ một side effect. Lệnh thực thi là entry colocated `deploys/<p>/local.ts up` (KHÔNG khóa lane toàn cục, không gọi lệnh DX nào; serialization thật của cùng một stack là state lock của Pulumi). Một unit test chặn target local-* quay lại cacheable hoặc sinh configuration (lane) mới — lane local phải là lane DUY NHẤT của các target này."
         }
       }
     ],
@@ -155,7 +155,7 @@
         },
         "cache": false,
         "metadata": {
-          "//": "Xem entry `local-up`: cùng một-lane policy (không bao giờ cacheable). Thứ tự teardown là CONTRACT và NẰM TRONG từng deploy project — NGHỊCH của graph `local-up`: provider down SAU dependent (consumer trước, platform-deploy cuối cùng), khai bằng `dependsOn` dạng `{projects, target}` trên PROVIDER trỏ target local-down của CÁC DIRECT DEPENDENT trỏ vào nó. CHIỀU là bẫy kinh điển của teardown: mặc định caret (phụ thuộc project-graph) lên lịch PROVIDER trước — đúng cho deploy nhưng NGƯỢC chiều teardown; chỉ dạng projects tường minh trên provider là đảm bảo thứ tự ở tầng task graph. `nx.json` cố ý KHÔNG đặt dependsOn toàn cục ở đây: một default caret sẽ áp chiều deploy cho mọi project, còn danh sách dependents của từng provider là dữ liệu riêng của graph `local-up` — unit test tools-dx (teardown-order.spec.ts) đối chiếu inverse chính xác, ghim acyclic + platform là sink duy nhất + các nhánh độc lập không có cạnh ràng buộc, đo trên RESOLVED task graph của chính invocation `nx run-many -t local-down -c local`; đổi graph `local-up` mà không đổi edge `local-down` tương ứng là đỏ. Independent branches (nhánh pact, nhánh home, lá wave-2) không có edge nào giữa nhau nên Nx chạy song song an toàn."
+          "//": "Xem entry `local-up`: cùng một-lane policy (không bao giờ cacheable). Teardown KHÔNG yêu cầu thứ tự ngược toàn cục: mỗi deploy project tự xoá resource của mình trong namespace Docker của worktree — `pulumi destroy` tự serialize trên stack state của chính nó, hai stack khác nhau độc lập nhau, và resource chéo stack duy nhất (Docker network của platform) là namespace-scoped: destroy platform khi container unit còn gắn sẽ fail-loud với 'active endpoints' và xanh lại khi chạy lại sau khi unit đã down, nên an toàn mà KHÔNG cần cạnh teardown. Target này cố ý KHÔNG có `dependsOn`: các project down song song, chạy lại local-down sau khi các unit đã down là idempotent."
         }
       }
     ],
@@ -166,7 +166,7 @@
         },
         "cache": false,
         "metadata": {
-          "//": "Xem entry `local-up`: lane local duy nhất, không bao giờ cacheable, thứ tự từ `dependsOn` của project."
+          "//": "Xem entry `local-up`: lane local duy nhất, không bao giờ cacheable. `dependsOn` chỉ gồm `home-deploy:local-up` — smoke HTTPS kiểm chuỗi redirect `/` → `/en` của home qua Traefik, nên home là prerequisite THẬT của giá trị smoke; KHÔNG kéo các unit khác vì smoke không đo chúng (cạnh đó sẽ chỉ tạo thứ tự). Là node lá của lane."
         }
       }
     ]

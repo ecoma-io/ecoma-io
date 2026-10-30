@@ -5,7 +5,7 @@
  * StackReference).
  *
  * Chạy qua target Nx: `nx run home-deploy:local-up -c local` → `npx tsx
- * local.ts up`. Entry tự lấy khóa lane quanh phần mutate (xem `withLaneLock`).
+ * local.ts up`. Entry KHÔNG lấy khóa lane: lifecycle không còn khóa toàn cục (xem quyết định kiến trúc PR #424).
  *
  * Home KHÔNG có bảng secret riêng: image build từ repo (Dockerfile COPY
  * `apps/home/`), container đọc `namespace:platformStackRef` từ config do
@@ -23,27 +23,24 @@ import {
   pulumiUpForEntry,
   resolveEntryFoundation,
   waitForOwnContainerHealthy,
-  withLaneLock,
 } from '../../tools/dx/src/deployment/local-platform/local-entry';
 
-async function main(command: string, stealLock: boolean): Promise<number> {
+async function main(command: string): Promise<number> {
   if (command === 'up') {
     const foundation = resolveEntryFoundation(true);
     if (foundation === undefined) {
       return 1;
     }
-    return withLaneLock(foundation.ctx.worktreeRoot, stealLock, async () => {
-      try {
-        pulumiUpForEntry('home-deploy', foundation);
-      } catch (error) {
-        console.error(
-          `[home-deploy] up failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        return 1;
-      }
-      // Health gate container CỦA CHÍNH unit — home (server container).
-      return waitForOwnContainerHealthy(foundation.ctx, 'home');
-    });
+    try {
+      pulumiUpForEntry('home-deploy', foundation);
+    } catch (error) {
+      console.error(
+        `[home-deploy] up failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 1;
+    }
+    // Health gate container CỦA CHÍNH unit — home (server container).
+    return waitForOwnContainerHealthy(foundation.ctx, 'home');
   }
   if (command === 'down') {
     const foundation = resolveEntryFoundation(false);
@@ -53,17 +50,15 @@ async function main(command: string, stealLock: boolean): Promise<number> {
       );
       return 0;
     }
-    return withLaneLock(foundation.ctx.worktreeRoot, stealLock, async () => {
-      try {
-        pulumiDestroyForEntry('home-deploy', foundation);
-        return 0;
-      } catch (error) {
-        console.error(
-          `[home-deploy] down failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        return 1;
-      }
-    });
+    try {
+      pulumiDestroyForEntry('home-deploy', foundation);
+      return 0;
+    } catch (error) {
+      console.error(
+        `[home-deploy] down failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 1;
+    }
   }
   console.error(`[home-deploy] unknown command: ${command} (expected: up | down)`);
   return 1;
@@ -71,7 +66,6 @@ async function main(command: string, stealLock: boolean): Promise<number> {
 
 const args = process.argv.slice(2);
 const command = args[0] ?? '';
-const stealLock = args.includes('--steal-lock');
-void main(command, stealLock).then((code) => {
+void main(command).then((code) => {
   process.exit(code);
 });

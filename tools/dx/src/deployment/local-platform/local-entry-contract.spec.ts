@@ -88,27 +88,28 @@ describe('local lane colocated entry contract', () => {
     );
   });
 
-  it('every local-down runs the colocated entry (the dependsOn contract itself lives in the teardown-order spec)', () => {
-    const downs = LANE_PROJECTS.map((project) => {
+  it('every local-down runs the colocated entry with no dependsOn (teardown needs no global ordering)', () => {
+    // Hợp đồng down: entry colocated + KHÔNG `dependsOn` — mỗi project tự xoá
+    // resource của mình trong namespace của worktree, không có teardown
+    // orchestrator và không có cạnh chỉ-tạo-thứ-tự giữa các project.
+    const violations: string[] = [];
+    for (const project of LANE_PROJECTS) {
       const target = nxTargets(project)['local-down'] as {
         options?: { command?: string; cwd?: string };
         configurations?: Record<string, unknown>;
+        dependsOn?: { target?: string }[];
       };
-      return {
-        project,
-        command: target.options?.command,
-        cwd: target.options?.cwd,
-        configurations: target.configurations,
-      };
-    });
-    expect(downs).toEqual(
-      LANE_PROJECTS.map((project) => ({
-        project,
-        command: 'npx tsx local.ts down',
-        cwd: `deploys/${project}`,
-        configurations: expect.objectContaining({ local: {} }),
-      })),
-    );
+      if (target.options?.command !== 'npx tsx local.ts down') {
+        violations.push(`${project}: local-down must run the colocated down entry`);
+      }
+      if (target.options?.cwd !== `deploys/${project}`) {
+        violations.push(`${project}: local-down must run from the project directory`);
+      }
+      if ((target.dependsOn ?? []).some((d) => d.target === 'local-down')) {
+        violations.push(`${project}: local-down must not depend on other local-down targets`);
+      }
+    }
+    expect(violations, 'local-down contract').toEqual([]);
   });
 
   it('entries never call DX commands — grep the colocated local.ts sources', () => {
@@ -147,13 +148,31 @@ describe('local lane colocated entry contract', () => {
 });
 
 describe('shared entry infrastructure', () => {
-  it('exposes the lane lock wrapper that prints the holder identity on steal', () => {
-    const source = readFileSync(
-      join(ROOT_DIR, 'tools/dx/src/deployment/local-platform/local-entry.ts'),
-      'utf8',
-    );
-    expect(source).toContain('acquireLaneLock');
-    expect(source).toContain('stealLaneLock');
+  it('no lifecycle entry or shared module acquires the global lane lock (PR #424 decision)', () => {
+    // Khóa lane `.ecoma-lane.lock` đã bị XOÁ hoàn toàn khỏi lifecycle (PR #424):
+    // serialization thật của cùng một stack Pulumi là state lock của chính
+    // Pulumi, hai stack khác nhau độc lập — khóa toàn cục chỉ còn là serialization
+    // giả giữa các project độc lập. Fail-closed: tái xuất hiện API khóa lane ở
+    // bất kỳ đâu trong lifecycle là đỏ (worker runtime giữ `safeUnlinkIfSame`
+    // riêng trong worker-process.ts — không phải API khóa lane).
+    const forbidden = /acquireLaneLock|stealLaneLock|withLaneLock|LANE_LOCK_FILE_NAME/u;
+    const offenders: string[] = [];
+    const scan = (dir: string): void => {
+      for (const name of readdirSync(dir)) {
+        const path = join(dir, name);
+        const stat = statSync(path);
+        if (stat.isDirectory()) {
+          scan(path);
+          continue;
+        }
+        if (!name.endsWith('.ts') || name.endsWith('.spec.ts') || name.endsWith('.d.ts')) continue;
+        const source = readFileSync(path, 'utf8');
+        if (forbidden.test(source)) offenders.push(path);
+      }
+    };
+    scan(join(ROOT_DIR, 'tools', 'dx', 'src'));
+    scan(join(ROOT_DIR, 'deploys'));
+    expect(offenders).toEqual([]);
   });
 
   it('deletes the platform PostgreSQL volume unconditionally on down (no opt-out flag)', () => {

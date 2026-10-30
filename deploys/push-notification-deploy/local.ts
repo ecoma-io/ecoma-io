@@ -4,8 +4,8 @@
  * của package.json (push phụ thuộc platform cho network/DB platform).
  *
  * Chạy qua target Nx: `nx run push-notification-deploy:local-up -c local` →
- * `npx tsx local.ts up`. Entry tự lấy khóa lane quanh phần mutate (xem
- * `withLaneLock`).
+ * `npx tsx local.ts up`. Entry KHÔNG lấy khóa lane nào: lifecycle không có
+ * khóa toàn cục (quyết định kiến trúc PR #424).
  *
  * Cả BỐN secret là CỦA RIÊNG cặp push local (không stack nào khác đọc): hai
  * process của cặp sống trong MỘT container WIC nên entry cấp ĐỒNG BỘ giá trị
@@ -35,7 +35,6 @@ import {
   resolveEntryFoundation,
   setStackConfig,
   waitForOwnContainerHealthy,
-  withLaneLock,
   type EntryFoundation,
 } from '../../tools/dx/src/deployment/local-platform/local-entry';
 
@@ -54,25 +53,23 @@ async function prepare(foundation: EntryFoundation): Promise<void> {
   }
 }
 
-async function main(command: string, stealLock: boolean): Promise<number> {
+async function main(command: string): Promise<number> {
   if (command === 'up') {
     const foundation = resolveEntryFoundation(true);
     if (foundation === undefined) {
       return 1;
     }
-    return withLaneLock(foundation.ctx.worktreeRoot, stealLock, async () => {
-      try {
-        await prepare(foundation);
-        pulumiUpForEntry('push-notification-deploy', foundation);
-      } catch (error) {
-        console.error(
-          `[push-notification-deploy] up failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        return 1;
-      }
-      // Health gate container CỦA CHÍNH unit — WIC push.
-      return waitForOwnContainerHealthy(foundation.ctx, 'push-wic');
-    });
+    try {
+      await prepare(foundation);
+      pulumiUpForEntry('push-notification-deploy', foundation);
+    } catch (error) {
+      console.error(
+        `[push-notification-deploy] up failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 1;
+    }
+    // Health gate container CỦA CHÍNH unit — WIC push.
+    return waitForOwnContainerHealthy(foundation.ctx, 'push-wic');
   }
   if (command === 'down') {
     const foundation = resolveEntryFoundation(false);
@@ -82,17 +79,15 @@ async function main(command: string, stealLock: boolean): Promise<number> {
       );
       return 0;
     }
-    return withLaneLock(foundation.ctx.worktreeRoot, stealLock, async () => {
-      try {
-        pulumiDestroyForEntry('push-notification-deploy', foundation);
-        return 0;
-      } catch (error) {
-        console.error(
-          `[push-notification-deploy] down failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        return 1;
-      }
-    });
+    try {
+      pulumiDestroyForEntry('push-notification-deploy', foundation);
+      return 0;
+    } catch (error) {
+      console.error(
+        `[push-notification-deploy] down failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 1;
+    }
   }
   console.error(`[push-notification-deploy] unknown command: ${command} (expected: up | down)`);
   return 1;
@@ -100,7 +95,6 @@ async function main(command: string, stealLock: boolean): Promise<number> {
 
 const args = process.argv.slice(2);
 const command = args[0] ?? '';
-const stealLock = args.includes('--steal-lock');
-void main(command, stealLock).then((code) => {
+void main(command).then((code) => {
   process.exit(code);
 });

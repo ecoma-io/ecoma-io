@@ -27,14 +27,15 @@ pnpm dx local-status                              # namespace, stack, resource n
 
 Lane gồm **9 project**: platform, home, backoffice, account, auth, pact-broker-api, pact-broker-app, transactional-mail, push-notification. Hai project job-deploy (`transactional-mailer-job-deploy`, `web-push-notification-job-deploy`) không có target local — cặp worker mail đã chạy trong MỘT WIC container của `transactional-mail-deploy`, và worker web-push chạy trong WIC của `push-notification-deploy`.
 
-Hình dạng graph `local-up` (nguồn sự thật là `dependsOn` trong `package.json` của từng project, không phải mục này): `platform-deploy:local-up` là node gốc duy nhất của spine (network, Traefik, PostgreSQL) — mọi lane project đọc outputs platform qua StackReference; chuỗi spine `home → backoffice → account → auth`; cặp `pact-broker-api → pact-broker-app`; `transactional-mail` và `push-notification` phụ thuộc `account-deploy` + `platform-deploy`. Build image/app của từng unit là task dependency của `local-up` unit đó. `platform-deploy:local-smoke` phụ thuộc ĐUÔI spine (auth) và CÁC LÁ (pact-app, mail, push) — smoke chỉ có nghĩa khi toàn bộ chuỗi đã xanh.
+Hình dạng graph `local-up` (nguồn sự thật là `dependsOn` trong `package.json` của từng project, không phải mục này): `platform-deploy:local-up` là node gốc duy nhất (network, Traefik, PostgreSQL) — mọi lane project đọc outputs platform qua StackReference; `auth` và `transactional-mail` phụ thuộc thêm `account-deploy` (secret cross-stack, xem bất biến dưới đây); `pact-broker-app` phụ thuộc thêm `pact-broker-api-deploy` (machine token); `home`, `backoffice`, `account`, `pact-broker-api`, `push-notification` phụ thuộc duy nhất `platform-deploy`. Build image/app của từng unit là task dependency của `local-up` unit đó. `platform-deploy:local-smoke` phụ thuộc duy nhất `home-deploy:local-up` — smoke kiểm chuỗi redirect `/` → `/en` của home qua Traefik, nên home là prerequisite thật; các unit khác không được kéo vào vì smoke không đo chúng.
 
-Mỗi entry `local.ts up` làm bốn việc, tự chứa trong project của mình:
+Mỗi entry `local.ts up` làm ba việc, tự chứa trong project của mình:
 
-1. Tự lấy khóa lane của worktree (xem mục khóa lane dưới đây).
-2. Chuẩn bị bảng secret của project mình (`pulumi config set`, giá trị qua stdin).
-3. `pulumi up` stack của chính nó.
-4. Health gate container CỦA CHÍNH unit: chờ container của unit này `running` + `Health.Status=healthy` (healthcheck Docker do deploy unit định nghĩa; budget 90s, poll 3s; container biến mất hoặc không `running` là fail ngay).
+1. Chuẩn bị bảng secret của project mình (`pulumi config set`, giá trị qua stdin).
+2. `pulumi up` stack của chính nó.
+3. Health gate container CỦA CHÍNH unit: chờ container của unit này `running` + `Health.Status=healthy` (healthcheck Docker do deploy unit định nghĩa; budget 90s, poll 3s; container biến mất hoặc không `running` là fail ngay).
+
+Lifecycle KHÔNG có khóa lane toàn cục: serialization thật của cùng một stack là state lock của chính Pulumi (`pulumi up`/`destroy` trên cùng stack tự chặn nhau), hai stack khác nhau thì độc lập trong namespace Docker riêng của worktree.
 
 Task `local-up` của platform tự ghi `.env` của worktree (đúng ba key sở hữu `ROOT_HOST`/`ROOT_DOMAIN`/`POSTGRES_PASSWORD`, giữ nguyên byte các dòng khác) ngay sau khi `pulumi up` xanh — mọi unit kế tiếp đọc `ROOT_HOST` từ file đó và fail rõ ràng kèm hướng dẫn khi file/key chưa có.
 
@@ -48,13 +49,12 @@ Volume PostgreSQL sống độc lập với vòng đời stack (`retainOnDelete`
 pnpm nx run platform-deploy:local-down -c local   # down riêng platform — xoá cả volume PostgreSQL
 ```
 
-### Khóa lane per worktree
+### `local-down` không yêu cầu thứ tự ngược
 
-Các mutation CÙNG worktree (up/down của các entry) được mutual exclusion bởi một khóa per worktree (`tools/dx/src/local-runtime/local-lock.ts`):
+Target `local-down` KHÔNG có `dependsOn` — các project down song song, mỗi project tự xoá resource của mình trong namespace của worktree. Bảo vệ xung đột không nằm ở cạnh task graph:
 
-- File khóa là `<worktreeRoot>/.ecoma-lane.lock` (ngoài Git, `.gitignore`), nội dung JSON `{ pid, token, startedAt, cmdline }` của holder. MỖI entry tự lấy khóa quanh toàn bộ thao tác mutate của mình — hai lane cùng worktree serialize với nhau qua cùng một file khóa; hai worktree không bao giờ chặn nhau (namespace Docker và backend `file://` theo worktree đã cô lập toàn bộ tài nguyên chéo worktree).
-- Không có ngân sách chờ: lane sau đợi VÔ HẠN cho lane kia buông khóa, in progress line ~30 giây một lần với holder identity (pid/cmdline/startedAt/elapsed). Không hằng số thời gian nào tham gia correctness — khoảng in chỉ là UX.
-- Holder còn sống nhưng treo là trạng thái không máy nào tự đo được: gỡ bằng `--steal-lock` trên target đang kẹt, ví dụ `pnpm nx run platform-deploy:local-up -c local -- --steal-lock` (opt-in tường minh, in holder identity trước khi chiếm).
+- `pulumi destroy` tự serialize trên stack state của chính nó; hai stack khác nhau không chia resource nào trừ network Docker namespace-scoped của platform.
+- Destroy platform khi container unit còn gắn vào network là fail-loud ("has active endpoints") — chạy lại `platform-deploy:local-down` sau khi các unit đã down là xanh; idempotent theo thiết kế, không cần thứ tự ngược toàn cục.
 
 Các bất biến cross-stack thể hiện trực tiếp trong graph qua `dependsOn` và cơ chế persist/read-lại stack config (một giá trị chia hai stack; bên ghi là entry up của producer, bên đọc là entry up của consumer):
 
@@ -213,16 +213,12 @@ Resource thiếu bất kỳ label trong bốn, `worktree-id` sai pattern namespa
 - **Docker daemon không phản hồi** (`docker info` fail): cleanup trả lỗi ở stderr với chi tiết, exit 1, **không quét và không xoá gì**.
 - **Lỗi `ls` per-kind** (daemon lỗi giữa chừng): kind đó được bỏ với lỗi trong output; các kind khác vẫn xử lý — lệnh exit 1 khi có bất kỳ lỗi nào, không `return 0` nói dối.
 - **Worktree filter** (`--worktree-root`) chỉ dành cho diagnostics — nó lọc báo cáo, không thay check ownership/liveness; resource ngoài filter vẫn phải qua đủ check như thường.
-- **Phối hợp với lane đang chạy**: cleanup KHÔNG lấy khóa lane. Khóa lane
-  (`tools/dx/src/local-runtime/local-lock.ts`) bảo vệ mutual exclusion giữa các
-  mutation CÙNG worktree — các entry up/down tự lấy khóa quanh phần mutate của
-  mình. Cleanup không thuộc mô hình đó: quyết định xoá của nó dựa trên presence
+- **Phối hợp với lane đang chạy**: lifecycle không có khóa lane toàn cục và
+  cleanup cũng không lấy khóa nào. Quyết định xoá của cleanup dựa trên presence
   của worktree trên đĩa + labels ownership bắt buộc đủ (mục Labels ownership ở
   trên) — không dựa trên pha của lane, nên chạy cạnh lane đang chạy chỉ tốn chi
   phí nhiễu báo cáo (inspect lỗi giữa chừng → `skipped`, behavior fail-safe ở
-  trên), không bao giờ xoá resource một lane đang tạo lại. Worktree đã bị xoá
-  thì file khóa nằm trong worktree cũng biến mất theo — không còn khóa chặn
-  cleanup.
+  trên), không bao giờ xoá resource một lane đang tạo lại.
 - Cleanup chạy không đòi checkout cũ hay thao tác Pulumi nào: nó chỉ nói chuyện Docker + filesystem của worktree path được ghi trong label.
 
 ## Giới hạn đã biết

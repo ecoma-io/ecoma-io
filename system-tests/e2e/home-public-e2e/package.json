@@ -54,7 +54,8 @@
           "`dependsOn` kéo prerequisite deploy: `local-up` của đúng hai deploy project mà suite phụ",
           "thuộc (trên cùng project graph ở cấp `nx` root) — Nx schedule chúng TRƯỚC playwright test,",
           "dùng lại task đã chạy thay vì deploy lại. Chỉ `local-up`, KHÔNG `local-smoke`: smoke",
-          "dependsOn đuôi spine + các lá wave-2 nên sẽ ép deploy cả 9 unit cho một suite chỉ cần 2.",
+          "dependsOn `home-deploy` (nó kiểm chuỗi redirect của home) nên sẽ ép deploy home —",
+          "chính suite này đã khai `home-deploy` rồi, nhưng vẫn giữ nguyên tắc: suite chỉ kéo",
           "`configurations.local` cùng tên configuration mà target `local-up` khai — `-c local` trên",
           "lệnh Nx lan configuration vào task prerequisite (task id `...:local-up:local`)."
         ]

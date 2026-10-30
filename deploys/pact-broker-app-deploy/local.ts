@@ -5,8 +5,8 @@
  * api).
  *
  * Chạy qua target Nx: `nx run pact-broker-app-deploy:local-up -c local` →
- * `npx tsx local.ts up`. Entry tự lấy khóa lane quanh phần mutate (xem
- * `withLaneLock`).
+ * `npx tsx local.ts up`. Entry KHÔNG lấy khóa lane nào: lifecycle không có
+ * khóa toàn cục (quyết định kiến trúc PR #424).
  *
  * Secret bảng của app (BFF dashboard): `apiToken` là ĐỌC LẠI từ stack config
  * của `pact-broker-api-deploy` (`machineToken` — api đã persist khi up trước
@@ -30,7 +30,6 @@ import {
   resolveEntryFoundation,
   setStackConfig,
   waitForOwnContainerHealthy,
-  withLaneLock,
   type EntryFoundation,
 } from '../../tools/dx/src/deployment/local-platform/local-entry';
 import { join } from 'node:path';
@@ -85,25 +84,23 @@ async function prepare(foundation: EntryFoundation): Promise<void> {
   setStackConfig('pact-broker-app-deploy', 'namespace:apiToken', apiToken, foundation);
 }
 
-async function main(command: string, stealLock: boolean): Promise<number> {
+async function main(command: string): Promise<number> {
   if (command === 'up') {
     const foundation = resolveEntryFoundation(true);
     if (foundation === undefined) {
       return 1;
     }
-    return withLaneLock(foundation.ctx.worktreeRoot, stealLock, async () => {
-      try {
-        await prepare(foundation);
-        pulumiUpForEntry('pact-broker-app-deploy', foundation);
-      } catch (error) {
-        console.error(
-          `[pact-broker-app-deploy] up failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        return 1;
-      }
-      // Health gate container CỦA CHÍNH unit — pact-app (server container).
-      return waitForOwnContainerHealthy(foundation.ctx, 'pact-app');
-    });
+    try {
+      await prepare(foundation);
+      pulumiUpForEntry('pact-broker-app-deploy', foundation);
+    } catch (error) {
+      console.error(
+        `[pact-broker-app-deploy] up failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 1;
+    }
+    // Health gate container CỦA CHÍNH unit — pact-app (server container).
+    return waitForOwnContainerHealthy(foundation.ctx, 'pact-app');
   }
   if (command === 'down') {
     const foundation = resolveEntryFoundation(false);
@@ -113,17 +110,15 @@ async function main(command: string, stealLock: boolean): Promise<number> {
       );
       return 0;
     }
-    return withLaneLock(foundation.ctx.worktreeRoot, stealLock, async () => {
-      try {
-        pulumiDestroyForEntry('pact-broker-app-deploy', foundation);
-        return 0;
-      } catch (error) {
-        console.error(
-          `[pact-broker-app-deploy] down failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        return 1;
-      }
-    });
+    try {
+      pulumiDestroyForEntry('pact-broker-app-deploy', foundation);
+      return 0;
+    } catch (error) {
+      console.error(
+        `[pact-broker-app-deploy] down failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 1;
+    }
   }
   console.error(`[pact-broker-app-deploy] unknown command: ${command} (expected: up | down)`);
   return 1;
@@ -131,7 +126,6 @@ async function main(command: string, stealLock: boolean): Promise<number> {
 
 const args = process.argv.slice(2);
 const command = args[0] ?? '';
-const stealLock = args.includes('--steal-lock');
-void main(command, stealLock).then((code) => {
+void main(command).then((code) => {
   process.exit(code);
 });
