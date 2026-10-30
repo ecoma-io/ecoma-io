@@ -131,7 +131,17 @@ export type DeployResourceKind =
   /** Volume state wrangler của WIC push (persist D1 push/push-job + dev registry). */
   | 'push-wic-state'
   /** Container init một-shot chown volume state WIC push cho uid node. */
-  | 'push-wic-state-init';
+  | 'push-wic-state-init'
+  /** WIC container của staff-access-deploy (P1.4 #428, không shim). */
+  | 'staff-access-wic'
+  /** Image của WIC staff-access container. */
+  | 'staff-access-wic-image'
+  /** Volume state wrangler của WIC staff-access (persist dev registry). */
+  | 'staff-access-wic-state'
+  /** Container init một-shot chown volume state WIC staff-access cho uid node. */
+  | 'staff-access-wic-state-init'
+  /** Provision/migrate ephemeral của staff-access-deploy (db-staff-access, P1.4 #428). */
+  | 'staff-access';
 
 /**
  * Tên Docker resource hợp lệ và nhất quán cho một namespace.

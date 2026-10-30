@@ -41,6 +41,9 @@
     },
     {
       "path": "./deploys/home-deploy"
+    },
+    {
+      "path": "./deploys/staff-access-deploy"
     }
   ]
 }

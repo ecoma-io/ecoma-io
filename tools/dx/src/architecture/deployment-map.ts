@@ -79,6 +79,7 @@ export const DEPLOYMENT_MAP: Readonly<Record<string, DeploymentMapEntry>> = {
   'pact-broker-api': { kind: 'app', owner: 'pact-broker-api-deploy', status: 'scaffold' },
   'pact-broker-app': { kind: 'app', owner: 'pact-broker-app-deploy', status: 'scaffold' },
   'push-notification': { kind: 'app', owner: 'push-notification-deploy', status: 'scaffold' },
+  'staff-access': { kind: 'app', owner: 'staff-access-deploy', status: 'scaffold' },
   'transactional-mail': { kind: 'app', owner: 'transactional-mail-deploy', status: 'scaffold' },
   'transactional-mailer-job': {
     kind: 'app',

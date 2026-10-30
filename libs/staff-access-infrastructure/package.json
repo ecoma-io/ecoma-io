@@ -1,0 +1,25 @@
+{
+  "name": "@ecoma-io/staff-access-infrastructure",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": {
+      "@ecoma-io/source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@ecoma-io/staff-access-domain": "workspace:*",
+    "postgres": "^3.4.9"
+  },
+  "nx": {
+    "tags": [
+      "type:infrastructure",
+      "scope:staff-access",
+      "runtime:edge"
+    ]
+  }
+}

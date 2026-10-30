@@ -1,0 +1,118 @@
+{
+  "name": "@ecoma-io/staff-access",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@ecoma-io/staff-access-contracts": "workspace:*",
+    "@ecoma-io/staff-access-domain": "workspace:*",
+    "@ecoma-io/staff-access-infrastructure": "workspace:*",
+    "hono": "^4.13.13",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "12.2.1",
+    "@types/pg": "^8.15.6",
+    "testcontainers": "12.2.1"
+  },
+  "//": [
+    "`pg` giu o dependencies cho `db/apply.mts` + `db/migrate.mts` — migration",
+    "runner chay o CI runner (Node), khong thuoc bundle Worker. Nguon `pg`",
+    "runtime cua app la `@ecoma-io/staff-access-infrastructure` (postgres.js",
+    "qua Hyperdrive).",
+    "`hono` la runtime HTTP cua Worker; routes/service API thuoc Milestone B"
+  ],
+  "nx": {
+    "tags": [
+      "type:composition",
+      "scope:staff-access",
+      "runtime:edge"
+    ],
+    "targets": {
+      "build": {
+        "executor": "@nx/esbuild:esbuild",
+        "outputs": [
+          "{options.outputPath}"
+        ],
+        "defaultConfiguration": "production",
+        "options": {
+          "platform": "neutral",
+          "outputPath": "apps/staff-access/dist",
+          "format": [
+            "esm"
+          ],
+          "bundle": true,
+          "main": "apps/staff-access/src/main.ts",
+          "tsConfig": "apps/staff-access/tsconfig.app.json",
+          "esbuildOptions": {
+            "sourcemap": true,
+            "outExtension": {
+              ".js": ".js"
+            },
+            "conditions": [
+              "workerd",
+              "worker",
+              "browser"
+            ],
+            "external": [
+              "node:buffer",
+              "node:events",
+              "node:stream"
+            ]
+          },
+          "skipTypeCheck": true,
+          "declaration": false
+        },
+        "configurations": {
+          "development": {},
+          "production": {
+            "esbuildOptions": {
+              "sourcemap": false,
+              "outExtension": {
+                ".js": ".js"
+              },
+              "conditions": [
+                "workerd",
+                "worker",
+                "browser"
+              ],
+              "external": [
+                "node:buffer",
+                "node:events",
+                "node:stream"
+              ]
+            }
+          }
+        }
+      },
+      "db:migrate": {
+        "executor": "nx:run-commands",
+        "cache": false,
+        "options": {
+          "cwd": "apps/staff-access",
+          "command": "npx tsx --tsconfig tsconfig.db.json db/apply.mts"
+        }
+      },
+      "typecheck-db": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "apps/staff-access",
+          "command": "npx tsc --noEmit -p tsconfig.db.json"
+        }
+      },
+      "test-integration": {
+        "executor": "nx:run-commands",
+        "dependsOn": [],
+        "options": {
+          "cwd": "apps/staff-access",
+          "command": "npx vitest run -c vitest.integration.config.mts tests/integrations tests/databases"
+        },
+        "//": [
+          "KHONG `build`: suite integration import thang TS nguon — `../../db/apply.mts`,",
+          "cac lib qua export workspace. Khong spec nao doc `dist/` hay type do wrangler",
+          "sinh ra; esbuild bundle chi tieu thu o lan deploy. Go `build` khoi dependsOn",
+          "bo chi phi bundle ma khong doi ca suite chay."
+        ]
+      }
+    }
+  }
+}
