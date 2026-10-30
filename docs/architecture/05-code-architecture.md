@@ -273,8 +273,9 @@ contract test — không phải bằng tag mới.
 (`account`, `auth`, `backoffice`, `llm`, `payment`) nhưng không đồng nhất: `messaging` (transactional-mail) và `notifications`
 (push-notification) là bounded context nghiệp vụ mang scope chia sẻ theo chức năng; `local`, `public`, `shared`,
 `platform` là scope hạ tầng/chia sẻ, không phải bounded context; `pact-broker` là bounded context mang scope `pact`; và
-`backoffice` là scope của một composition/UI + BFF — bounded context ngày nay theo A21, nhưng target chỉ còn composition
-sau khi `staff-access` tiếp quản (roadmap Phase 1; catalog → [`domains/README.md`](../domains/README.md) §3/§6).
+`backoffice` là scope của một composition/UI + BFF — bounded context ngày nay theo A21, nhưng việc `staff-access` tiếp quản
+đã được chốt ([ADR-0013](../domains/staff-access/adr/0013-staff-access-ownership-transfer.md)); sau khi deploy unit của
+`staff-access` được dựng (roadmap Phase 1, P1.4), `backoffice` chỉ còn composition (catalog → [`domains/README.md`](../domains/README.md) §3/§6).
 Danh sách scope trong mục này mô tả cấu trúc code — **không** phải một bản catalog thứ hai của bounded context.
 
 **Scope của deployment project là ranh giới provisioning, không phải bounded context.** Một `deploys/<unit>-deploy` mang

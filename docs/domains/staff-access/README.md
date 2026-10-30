@@ -34,11 +34,11 @@ Enforcement chia đôi: **catalog govern ở Staff Access; backend enforce ở r
 
 Quyền staff/RBAC ban đầu được ghi vào `backoffice` (A21–A24, ADR-0001…0012) — quyết định đó vẫn đúng về trách nhiệm nghiệp vụ, nhưng **vị trí sở hữu** sẽ chuyển sang `staff-access` khi deploy unit riêng được xây (roadmap Phase 1 → [`docs/architecture/roadmap.md`](../../architecture/roadmap.md)). Cụ thể:
 
-- **Đã chốt và giữ nguyên:** domain model (staff/role/permission/assignment/audit), 12 ADR, các invariant 31–36, nguyên tắc revocation latency theo risk class.
-- **Chuyển sở hữu sang `staff-access`:** database staff/RBAC/audit hiện của `apps/backoffice` (`db-backoffice`) và mọi API quản trị nhân sự/quyền.
+- **Đã chốt và giữ nguyên:** domain model (staff/role/permission/assignment/audit), ADR-0002…0012, các invariant 31–36, nguyên tắc revocation latency theo risk class.
+- **Chuyển sở hữu sang `staff-access` (đã chốt — ADR-0013):** database staff/RBAC/audit — `db-staff-access` theo ownership mới; ngày nay `apps/backoffice` còn sở hữu `db-backoffice` với migrations `0001–0006` — và mọi API quản trị nhân sự/quyền.
 - **`backoffice` còn lại:** composition/UI + BFF — không sở hữu nghiệp vụ Staff Access (chi tiết → [`docs/solutions/backoffice/README.md`](../../solutions/backoffice/README.md)).
 
-Việc chuyển này **không** âm thầm sửa quyết định cũ: khi implement, cần một ADR mới ghi rõ việc `staff-access` tiếp quản trách nhiệm đã được A21 gán cho `backoffice` và supersede phạm vi tương ứng.
+Việc chuyển này **không** âm thầm sửa quyết định cũ: [ADR-0013](./adr/0013-staff-access-ownership-transfer.md) ghi rõ việc `staff-access` tiếp quản trách nhiệm đã được A21 gán cho `backoffice`, supersede phạm vi tương ứng của A21 và phần tên database/schema của ADR-0001; implement còn chờ P1.4 dựng deploy unit.
 
 ## 5. Tài liệu
 
@@ -47,4 +47,4 @@ Việc chuyển này **không** âm thầm sửa quyết định cũ: khi implem
 | [`01-architecture.md`](./01-architecture.md) | Ranh giới, domain model khái niệm, authorization model và nơi enforce, invariants   |
 | [`02-requirements.md`](./02-requirements.md) | Yêu cầu bảo mật, threat model, acceptance matrix, non-goals, tham chiếu             |
 | [`03-onboarding.md`](./03-onboarding.md)     | Onboarding staff: gate displayName, fail-closed vs degrade, cache, chỗ gắn gate 2FA |
-| [`adr/`](./adr/README.md)                    | Architectural decision record — mười hai quyết định đã chốt (ADR-0001…0012)         |
+| [`adr/`](./adr/README.md)                    | Architectural decision record — mười ba quyết định đã chốt (ADR-0001…0013)          |
