@@ -1,6 +1,6 @@
 # Backoffice — Requirements
 
-> 📌 Thư mục này là bounded context **Staff Access** (đích — Phase 1, xem [`README.md`](./README.md) §4): yêu cầu dưới đây theo sau nghiệp vụ staff/RBAC khi được tách khỏi `backoffice` (A21–A24). Ngày nay nghiệp vụ staff/RBAC vẫn nằm trong `backoffice` (migrations `0001–0006`, binding `DB_BACKOFFICE`, authn middleware + authorization check); `staff-access` là deploy unit đích của Phase 1.
+> 📌 Thư mục này là bounded context **Staff Access** (đích — Phase 1, xem [`README.md`](./README.md) §4): việc `staff-access` tiếp quản nghiệp vụ staff/RBAC từ `backoffice` đã được chốt bằng [ADR-0013](./adr/0013-staff-access-ownership-transfer.md) (supersede phạm vi tương ứng của A21–A24). Ngày nay nghiệp vụ staff/RBAC vẫn nằm trong `backoffice` (migrations `0001–0006`, binding `DB_BACKOFFICE`, authn middleware + authorization check) chờ P1.4 dựng deploy unit `staff-access`.
 
 > Phạm vi: yêu cầu bảo mật, threat model, acceptance matrix, non-goals và tham chiếu của `backoffice`.
 > Thiết kế → [`01-architecture.md`](./01-architecture.md) · system boundary → [`../../architecture/01-architecture.md`](../../architecture/01-architecture.md) §2.2 · §8 A21–A24 · §9 · §10 · format tham chiếu → [`../account/02-requirements.md`](../account/02-requirements.md) · [`../auth/02-requirements.md`](../auth/02-requirements.md).

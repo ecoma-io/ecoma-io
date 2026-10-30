@@ -10,7 +10,7 @@ Roadmap triển khai các phase sau Phase 0. Phase 0 chỉ audit + tài liệu; 
 - **P1.2** Chốt API/event contracts: management API cho staff/role/permission/assignment, entitlement read model cho sản phẩm, audit query.
 - **P1.3** Chốt entitlement model khác với authorization: entitlement = product availability; authorization = per-resource/per-operation.
 - **P1.4** Implement Staff Access service + unit/integration tests.
-- **P1.5** ADR mới supersede phạm vi A21: Staff Access tiếp quản trách nhiệm đã gán cho `backoffice`.
+- **P1.5** ADR mới supersede phạm vi A21: Staff Access tiếp quản trách nhiệm đã gán cho `backoffice` (ADR-0013).
 - **Deliverables:** service spec finalized, OpenAPI/contract, migration, tests.
 - **Acceptance:** staff CRUD, role/permission catalog, assignment, entitlement read, audit append-only; không sync call per request.
 - **Depends on:** Phase 0 docs.
