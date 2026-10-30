@@ -36,6 +36,7 @@ export { shellQuote, sqlQuote } from './shell-quote.js';
 
 export {
   LABEL_MANAGED_BY,
+  LABEL_MANAGED_BY_LEGACY_VALUES,
   LABEL_MANAGED_BY_VALUE,
   LABEL_PREFIX,
   OWNERSHIP_LABELS,

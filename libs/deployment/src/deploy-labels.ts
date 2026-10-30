@@ -25,11 +25,25 @@ import { namespaceFromCanonicalPath } from './deploy-namespace.js';
 
 export const LABEL_PREFIX = 'io.ecoma';
 
-/** Label đánh dấu resource bị DX local tooling quản lý. Giá trị: `dx`. */
+/** Label đánh dấu resource thuộc hệ thống local deployment của Ecoma. Giá trị: `ecoma`. */
 export const LABEL_MANAGED_BY = `${LABEL_PREFIX}.managed-by`;
 
-/** Giá trị của {@link LABEL_MANAGED_BY} — tooling sở hữu resource là `dx`. */
-export const LABEL_MANAGED_BY_VALUE = 'dx';
+/**
+ * Giá trị canonical của {@link LABEL_MANAGED_BY} — resource do hệ thống local
+ * deployment của Ecoma sở hữu. Producer (`ownershipLabels`) chỉ ghi giá trị này.
+ */
+export const LABEL_MANAGED_BY_VALUE = 'ecoma';
+
+/**
+ * Giá trị `managed-by` của các resource được tạo bởi các phiên bản tooling cũ
+ * (trước khi đổi ownership value). Cleanup vẫn phải nhận diện và xử lý các
+ * resource này để không để lại mồ côi — xem `classifyOwnership`.
+ *
+ * Đây là compatibility có giới hạn (bounded): chỉ chấp nhận các giá trị từng
+ * được producer chính thức ghi. Không migrate/recreate resource; resource giữ
+ * nguyên label cũ và được cleanup khi worktree của nó đã mất.
+ */
+export const LABEL_MANAGED_BY_LEGACY_VALUES = ['dx'] as const;
 
 /** Label lưu worktree root đã normalize (canonical theo `normalizeWorktreeRoot`). */
 export const LABEL_WORKTREE_PATH = `${LABEL_PREFIX}.worktree-path`;
@@ -91,31 +105,44 @@ export type OwnershipCheck =
  * Duyệt labels thô của một resource Docker có đủ metadata ownership hợp lệ.
  *
  * Logic fail-closed:
- * - `managed-by != dx` → `missing`: resource KHÔNG thuộc quản lý DX (nó có
- *   thể thuộc Docker Desktop, compose, người dùng...) — cleanup bỏ qua.
- * - Thiếu bất kỳ label nào trong 4 → `malformed`: resource do DX quản lý
- *   nhưng metadata không trọn vẹn, KHÔNG được xoá.
- * - `worktree-id` rỗng hoặc không khớp pattern namespace → `malformed`:
- *   pattern xấu có thể là label hỏng của phiên bản cũ.
- * - `managed-by = dx` nhưng giá trị khác → `malformed` — biến thành
- *   "managed-by có nhưng sai giá trị" của một phiên bản khác của tool.
+ * - `managed-by` rỗng/thiếu → `missing`: resource KHÔNG thuộc hệ thống local
+ *   deployment của Ecoma (nó có thể thuộc Docker Desktop, compose, người
+ *   dùng...) — cleanup bỏ qua.
+ * - `managed-by` có giá trị nhưng không phải giá trị owned (canonical
+ *   `ecoma` hoặc legacy `dx`) → `malformed`: resource tự nhận là được tool
+ *   quản lý nhưng sai giá trị — cleanup bỏ qua.
+ * - Thiếu bất kỳ label nào trong 4 → `malformed`: metadata không trọn vẹn,
+ *   KHÔNG được xoá.
+ * - `worktree-id` rỗng hoặc không khớp pattern namespace → `malformed`.
+ * - `managed-by` legacy (`dx`) vẫn được nhận diện là owned để cleanup không
+ *   bỏ sót mồ côi từ phiên bản cũ (bounded compatibility). Producer chỉ ghi
+ *   giá trị canonical.
  */
 export function classifyOwnership(labels: Record<string, string>): OwnershipCheck {
   const managed = labels[LABEL_MANAGED_BY];
   if (managed === undefined || managed.length === 0) {
-    // Không có label managed-by (hoặc rỗng) — resource không thuộc quản lý DX,
-    // có thể thuộc Docker/compose/người dùng. Phân biệt với malformed: missing
-    // nghĩa là "không phải của chúng tôi", malformed nghĩa là "của chúng tôi
-    // nhưng metadata hỏng".
+    // Không có label managed-by (hoặc rỗng) — resource không thuộc hệ thống
+    // local deployment của Ecoma, có thể thuộc Docker/compose/người dùng.
+    // Phân biệt với malformed: missing nghĩa là "không phải của chúng tôi",
+    // malformed nghĩa là "của chúng tôi nhưng metadata hỏng".
     return { state: 'missing' };
   }
-  if (managed !== LABEL_MANAGED_BY_VALUE) {
-    // `managed-by` có giá trị nhưng không phải `dx` — metadata mâu thuẫn hoặc
-    // phiên bản tool khác. Coi là malformed (không phải missing) vì resource
-    // tự nhận là được tool quản lý nhưng sai giá trị.
+
+  // Compatibility có giới hạn: resource mang giá trị managed-by của phiên bản
+  // tooling cũ (`dx`) vẫn được nhận diện là owned để cleanup không bỏ sót mồ
+  // côi. Producer chỉ ghi giá trị canonical (LABEL_MANAGED_BY_VALUE); giá trị
+  // legacy chỉ được chấp nhận ở consumer, không được producer viết mới.
+  const isOwnedManagedValue =
+    managed === LABEL_MANAGED_BY_VALUE ||
+    (LABEL_MANAGED_BY_LEGACY_VALUES as readonly string[]).includes(managed);
+  if (!isOwnedManagedValue) {
+    // `managed-by` có giá trị nhưng không phải giá trị owned (canonical hay
+    // legacy) — metadata mâu thuẫn hoặc phiên bản tool khác. Coi là malformed
+    // (không phải missing) vì resource tự nhận là được tool quản lý nhưng sai
+    // giá trị.
     return {
       state: 'malformed',
-      detail: `managed-by "${managed}" is not "${LABEL_MANAGED_BY_VALUE}"`,
+      detail: `managed-by "${managed}" is not "${LABEL_MANAGED_BY_VALUE}" (legacy: ${LABEL_MANAGED_BY_LEGACY_VALUES.join(', ')})`,
     };
   }
 

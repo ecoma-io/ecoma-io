@@ -185,6 +185,22 @@ describe('classifyOwnership', () => {
     expect(check.state).toBe('owned');
   });
 
+  it('accepts legacy managed-by=dx resources as owned (bounded compatibility)', () => {
+    const path = tempWorktreeDir();
+    const labels = ownershipLabels(path, worktreeNamespace(path));
+    labels['io.ecoma.managed-by'] = 'dx';
+    const check = classifyOwnership(labels);
+    expect(check.state).toBe('owned');
+  });
+
+  it('rejects unknown managed-by value as malformed', () => {
+    const path = tempWorktreeDir();
+    const labels = ownershipLabels(path, worktreeNamespace(path));
+    labels['io.ecoma.managed-by'] = 'some-other-tool';
+    const check = classifyOwnership(labels);
+    expect(check.state).toBe('malformed');
+  });
+
   it('missing labels means not-managed-by DX', () => {
     expect(classifyOwnership({}).state).toBe('missing');
     expect(classifyOwnership({ 'traefik.enable': 'true' }).state).toBe('missing');
