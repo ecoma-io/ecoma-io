@@ -97,7 +97,11 @@ function readSuiteContract(root: string): SuiteContract {
   const name = root.split('/').at(-1) as string;
   const nx = nxSection(root);
   const target = nx.targets?.['system-test'] as Record<string, unknown> | undefined;
-  const dependsOn = (target?.['dependsOn'] ?? []) as { projects?: string[]; target?: string }[];
+  // Nx cho phép `dependsOn` ở dạng chuỗi (`'^build'`, `'project:target'`) hoặc
+  // object — chuẩn hoá: entry chuỗi không phải local-up target object, bỏ qua.
+  const dependsOn = ((target?.['dependsOn'] ?? []) as unknown[]).flatMap((d) =>
+    typeof d === 'object' && d !== null ? [d as { projects?: string[]; target?: string }] : [],
+  );
   const configurations = target?.['configurations'] as Record<string, unknown> | undefined;
   return {
     name,

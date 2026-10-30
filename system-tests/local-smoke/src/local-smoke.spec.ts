@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -23,7 +24,7 @@ import https from 'node:https';
 import net from 'node:net';
 
 // Root của workspace, suy từ vị trí file này (`system-tests/local-smoke/src`).
-const ROOT_DIR = join(__dirname, '../../..');
+const ROOT_DIR = join(fileURLToPath(new URL('.', import.meta.url)), '../../..');
 
 const script = join(ROOT_DIR, 'system-tests/local-smoke/src/local-smoke.mjs');
 const certPath = join(ROOT_DIR, 'deploys/platform-deploy/local-certs/fbi.com.crt');
