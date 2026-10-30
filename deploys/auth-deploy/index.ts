@@ -540,6 +540,13 @@ const wic = new docker.Container(
     name: dockerResourceName(ns, 'auth-wic'),
     image: pulumi.interpolate`${wicImageTag}@${wicImage.digest}`,
     restart: 'unless-stopped',
+    // Readiness resource-owned (`wait: true` — cùng ngữ nghĩa với platform):
+    // backoffice + E2E OIDC chỉ chạy sau khi healthcheck `/ready` (DB probe +
+    // fetch binding) của WIC chuyển `healthy`. Trần chờ = startPeriod 120s +
+    // 30 retries × 10s = 420s (cửa sổ boot wrangler — bundle check, registry
+    // connect); waitTimeout 450s dư.
+    wait: true,
+    waitTimeout: 450,
     // `stop_timeout` 30s khớp bounded-wait 20s của entrypoint: SIGTERM → hai
     // workerd được thời gian thoát sạch (flush D1/KV state + registry) trước
     // khi Docker SIGKILL.

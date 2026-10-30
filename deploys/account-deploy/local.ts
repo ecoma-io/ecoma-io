@@ -41,7 +41,6 @@ import {
   pulumiUpForEntry,
   resolveEntryFoundation,
   setStackConfig,
-  waitForOwnContainerHealthy,
   type EntryFoundation,
 } from '../../tools/dx/src/deployment/local-platform/local-entry';
 
@@ -78,9 +77,10 @@ async function main(command: string): Promise<number> {
       );
       return 1;
     }
-    // Health gate container CỦA CHÍNH unit (app account + provision/migrate
-    // đã chạy trong chương trình Pulumi trước khi container chính lên).
-    return waitForOwnContainerHealthy(foundation.ctx, 'account');
+    // Readiness đã thuộc container resource (`wait: true` trong index.ts):
+    // `pulumi up` xanh đồng nghĩa healthcheck Docker của unit đã `healthy` —
+    // DX không biết Docker health tồn tại.
+    return 0;
   }
   if (command === 'down') {
     const foundation = resolveEntryFoundation(false);

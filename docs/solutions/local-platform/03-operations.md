@@ -29,11 +29,12 @@ Lane gồm **9 project**: platform, home, backoffice, account, auth, pact-broker
 
 Hình dạng graph `local-up` (nguồn sự thật là `dependsOn` trong `package.json` của từng project, không phải mục này): `platform-deploy:local-up` là node gốc duy nhất (network, Traefik, PostgreSQL) — mọi lane project đọc outputs platform qua StackReference; `auth` và `transactional-mail` phụ thuộc thêm `account-deploy` (secret cross-stack, xem bất biến dưới đây); `pact-broker-app` phụ thuộc thêm `pact-broker-api-deploy` (machine token); `home`, `backoffice`, `account`, `pact-broker-api`, `push-notification` phụ thuộc duy nhất `platform-deploy`. Build image/app của từng unit là task dependency của `local-up` unit đó. `platform-deploy:local-smoke` phụ thuộc duy nhất `home-deploy:local-up` — smoke kiểm chuỗi redirect `/` → `/en` của home qua Traefik, nên home là prerequisite thật; các unit khác không được kéo vào vì smoke không đo chúng.
 
-Mỗi entry `local.ts up` làm ba việc, tự chứa trong project của mình:
+Mỗi entry `local.ts up` làm hai việc, tự chứa trong project của mình:
 
 1. Chuẩn bị bảng secret của project mình (`pulumi config set`, giá trị qua stdin).
 2. `pulumi up` stack của chính nó.
-3. Health gate container CỦA CHÍNH unit: chờ container của unit này `running` + `Health.Status=healthy` (healthcheck Docker do deploy unit định nghĩa; budget 90s, poll 3s; container biến mất hoặc không `running` là fail ngay).
+
+Readiness thuộc container resource, không thuộc DX: mỗi container long-running khai `wait: true` + `waitTimeout` cùng healthcheck Docker do deploy unit định nghĩa (`traefik healthcheck`, `pg_isready`, `/ready`, `/health`, HTTP probe...), nên provider Pulumi chỉ báo container thành công khi healthcheck đã chuyển `healthy` — `pulumi up` xanh là bằng chứng serving, và mọi resource phụ thuộc (outputs, unit kế tiếp qua StackReference) chỉ bắt đầu sau đó. Container một-shot init (`rm: true`, `mustRun: false`) không khai healthcheck lẫn `wait` — Pulumi chỉ chờ chúng thoát. DX không biết Docker health tồn tại: không có health polling hay `docker inspect` health nào trong lifecycle.
 
 Lifecycle KHÔNG có khóa lane toàn cục: serialization thật của cùng một stack là state lock của chính Pulumi (`pulumi up`/`destroy` trên cùng stack tự chặn nhau), hai stack khác nhau thì độc lập trong namespace Docker riêng của worktree.
 

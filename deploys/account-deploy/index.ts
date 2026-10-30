@@ -322,6 +322,13 @@ const account = new docker.Container(
     name: dockerResourceName(ns, 'account'),
     image: pulumi.interpolate`${imageTag}@${image.digest}`,
     restart: 'unless-stopped',
+    // Readiness resource-owned (`wait: true` — cùng ngữ nghĩa với platform):
+    // auth + transactional-mail đọc secret cross-stack qua StackReference, và
+    // StackReference resolve sau khi stack up thành công — `wait` bắt `up`
+    // thành công CHỈ khi healthcheck `/ready` (DB probe thật) đã `healthy`.
+    // Trần chờ = startPeriod 30s + 12 retries × 10s = 150s; waitTimeout 180s dư.
+    wait: true,
+    waitTimeout: 180,
     networksAdvanced: [{ name: networkName, aliases: ['ecoma-account'] }],
     envs: [
       `PORT=${ACCOUNT_INTERNAL_PORT}`,

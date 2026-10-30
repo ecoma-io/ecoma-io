@@ -407,6 +407,12 @@ const wic = new docker.Container(
     name: dockerResourceName(ns, 'pact-api-wic'),
     image: pulumi.interpolate`${wicImageTag}@${wicImage.digest}`,
     restart: 'unless-stopped',
+    // Readiness resource-owned (`wait: true` — cùng ngữ nghĩa với platform):
+    // pact-broker-app phụ thuộc unit này qua StackReference (machine token),
+    // nên `up` thành công phải đồng nghĩa healthcheck `/health` đã `healthy`.
+    // Trần chờ = startPeriod 120s + 30 retries × 10s = 420s; waitTimeout 450s dư.
+    wait: true,
+    waitTimeout: 450,
     // `stop_timeout` 30s khớp bounded-wait 20s của entrypoint: SIGTERM →
     // workerd được thời gian thoát sạch (flush state + registry + pool
     // PostgreSQL) trước khi Docker SIGKILL.

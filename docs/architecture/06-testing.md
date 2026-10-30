@@ -138,13 +138,13 @@ Phân biệt ba khái niệm Nx hay bị lẫn:
   **Không** có shared test-support library: import chéo deploy unit bị cấm bởi module-boundary rules (`05` §7), nên hai
   harness giống hệt nhau ở hai deploy unit là **có chủ đích**, không phải nợ kỹ thuật.
 - **Readiness là ranh giới riêng, không phải cạnh graph:** `dependsOn` chỉ bảo chứng thứ tự thực thi task — không bảo chứng
-  service đang healthy hay config đã sẵn sàng. Suite system-test chống lại stack thật bằng hai gate có budget, không thay thế
-  nhau và không thay thế được readiness của unit deploy: (1) **per-unit container health gate** thuộc deploy entry
-  (`waitForOwnContainerHealthy` sau `pulumi up` của từng unit, healthcheck Docker do unit tự định nghĩa); (2) **suite
-  readiness gate** (`globalSetup` probe đúng contract serving của unit mà suite nhắm tới — status code/mắt xích redirect
-  thực tế, không phải TCP connect) với retry có budget chỉ áp cho nhóm dấu hiệu "chưa sẵn sàng" thật sự; TLS sai, status
-  bất ngờ là fail ngay. Smoke không phải health check: smoke chứng minh serving path qua Traefik cho một luồng cụ thể,
-  không chứng minh unit đủ điều kiện nhận test.
+  service đang healthy hay config đã sẵn sàng. Readiness của unit deploy thuộc container resource: mỗi container long-running
+  khai `wait: true` + healthcheck Docker của chính nó trong chương trình Pulumi, nên `pulumi up` xanh đã là bằng chứng
+  container phục vụ thật (trừ những gì healthcheck không nhìn thấy — config nghẽn, OIDC thiếu biến trả 503 fail-closed).
+  Suite system-test chống lại đúng phần đó bằng một gate có budget: **suite readiness gate** (`globalSetup` probe đúng
+  contract serving của unit mà suite nhắm tới — status code/mắt xích redirect thực tế, không phải TCP connect) với retry có
+  budget chỉ áp cho nhóm dấu hiệu "chưa sẵn sàng" thật sự; TLS sai, status bất ngờ là fail ngay. Smoke không phải health
+  check: smoke chứng minh serving path qua Traefik cho một luồng cụ thể, không chứng minh unit đủ điều kiện nhận test.
 - **Runtime config đọc tại thời điểm dùng, không tin env snapshot:** Nx snapshot môi trường của từng task trước khi
   `platform-deploy:local-up` ghi `.env`, nên trong một invocation duy nhất env của tiến trình suite không chứa `ROOT_DOMAIN`
   (giá trị sinh lúc deploy). Mọi điểm resolve runtime config của suite (config resolver, `globalSetup`, helper trong tiến

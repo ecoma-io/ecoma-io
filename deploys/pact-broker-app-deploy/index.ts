@@ -161,6 +161,11 @@ const pactApp = new docker.Container(dockerResourceName(ns, 'pact-app'), {
   // `restart: unless-stopped` để DOCKER tự start lại container sau
   // reboot/restart daemon — cùng lý do với traefik/postgres ở `platform-deploy`.
   restart: 'unless-stopped',
+  // Readiness resource-owned (`wait: true` — cùng ngữ nghĩa với platform):
+  // Nuxt SSR cold start có thể vượt 30s; Trần chờ = startPeriod 30s +
+  // 12 retries × 10s = 150s; waitTimeout 180s dư.
+  wait: true,
+  waitTimeout: 180,
   networksAdvanced: [{ name: networkName, aliases: ['ecoma-pact-app'] }],
   // `envs` (không phải `environment`): cặp `KEY=VALUE` dạng mảng chuỗi — shape
   // của `docker run -e`.

@@ -193,16 +193,38 @@ describe('shared entry infrastructure', () => {
     expect(source).not.toContain('removeData');
   });
 
-  it('platform up health-gates both traefik and postgres (routing entrypoint included)', () => {
-    // Gate chỉ postgres là thiếu: Traefik là entrypoint routing mà mọi consumer
-    // (smoke, E2E, lane unit) đi qua — một Traefik unhealthy khi postgres healthy
-    // phải đỏ platform up ngay, không để unit kế tiếp tự phát hiện. Ghim theo
-    // nguồn: entry platform phải gọi `waitForOwnContainerHealthy` cho CẢ HAI kind.
-    const source = readEntry('platform-deploy');
-    const gatedKinds = [
-      ...source.matchAll(/waitForOwnContainerHealthy\([^,]+,\s*'([a-z-]+)'/gu),
-    ].map((match) => match[1]);
-    expect(gatedKinds).toEqual(expect.arrayContaining(['postgres', 'traefik']));
+  it('every long-running container owns its readiness via wait:true (DX never polls Docker health)', () => {
+    // Readiness thuộc resource Pulumi, không thuộc DX: provider chờ healthcheck
+    // Docker chuyển `healthy` trước khi Container báo thành công, nên `pulumi up`
+    // xanh là bằng chứng serving. Ghim theo nguồn: MỌI `new docker.Container`
+    // long-running trong `deploys/*/index.ts` phải khai `wait: true` kèm
+    // `waitTimeout` — container init/one-shot (`rm: true`, `mustRun: false`)
+    // được miễn vì chúng không có healthcheck và Pulumi chỉ chờ chúng thoát.
+    // Tái xuất hiện health polling trong DX (`docker inspect`health, budget/poll
+    // loop) là đỏ — entry không còn biết Docker health tồn tại.
+    const offenders: string[] = [];
+    for (const project of LANE_PROJECTS) {
+      const source = readFileSync(join(ROOT_DIR, 'deploys', project, 'index.ts'), 'utf8');
+      for (const block of source.split('new docker.Container(').slice(1)) {
+        const isOneShot = /rm:\s*true/u.test(block);
+        const hasWait = /wait:\s*true/u.test(block);
+        const hasWaitTimeout = /waitTimeout:\s*\d+/u.test(block);
+        if (isOneShot) {
+          // One-shot init: `wait` là lỗi provider (không healthcheck) — cấm cả hai.
+          if (hasWait || hasWaitTimeout) offenders.push(`${project}: one-shot container sets wait`);
+          continue;
+        }
+        if (!hasWait) offenders.push(`${project}: long-running container misses wait:true`);
+        if (!hasWaitTimeout)
+          offenders.push(`${project}: long-running container misses waitTimeout`);
+      }
+    }
+    expect(offenders).toEqual([]);
+    const entrySources = LANE_PROJECTS.map((project) => readEntry(project));
+    expect(
+      entrySources.some((source) => /docker\s+inspect|Health\.Status|health gate/u.test(source)),
+      'lane entries must not inspect Docker health themselves',
+    ).toBe(false);
   });
 
   it('every E2E suite gate retries the shared cold-start status window (404/502/503/504)', () => {

@@ -152,6 +152,12 @@ const backoffice = new docker.Container(
     name: dockerResourceName(ns, 'backoffice'),
     image: pulumi.interpolate`${imageTag}@${image.digest}`,
     restart: 'unless-stopped',
+    // Readiness resource-owned (`wait: true` — cùng ngữ nghĩa với platform):
+    // unit kế tiếp (auth đọc secret account; E2E qua globalSetup) chỉ chạy
+    // sau khi healthcheck `/health` của container chuyển `healthy`. Trần chờ
+    // = startPeriod 30s + 12 retries × 10s = 150s; waitTimeout 180s dư.
+    wait: true,
+    waitTimeout: 180,
     networksAdvanced: [{ name: networkName, aliases: ['ecoma-backoffice'] }],
     envs: [
       `PORT=${BACKOFFICE_INTERNAL_PORT}`,

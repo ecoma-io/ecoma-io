@@ -278,6 +278,12 @@ const wic = new docker.Container(
     name: dockerResourceName(ns, 'push-wic'),
     image: pulumi.interpolate`${wicImageTag}@${wicImage.digest}`,
     restart: 'unless-stopped',
+    // Readiness resource-owned (`wait: true` — cùng ngữ nghĩa với platform):
+    // healthcheck là HEAD `/__wic_probe` (404 ổn định của `notFound`) —
+    // chứng minh workerd boot và serve HTTP. Trần chờ = startPeriod 120s +
+    // 30 retries × 10s = 420s; waitTimeout 450s dư.
+    wait: true,
+    waitTimeout: 450,
     // `stop_timeout` 30s khớp bounded-wait 20s của entrypoint (SIGTERM → hai
     // workerd thoát sạch trước khi Docker SIGKILL) — cùng luật mail/auth.
     stopTimeout: 30,

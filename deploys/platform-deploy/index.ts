@@ -287,6 +287,15 @@ const traefik = new docker.Container('traefik', {
   // lại là cơ chế restart policy của Docker, không phải của Pulumi. Chỉ `docker
   // stop` tường minh là được giữ ở trạng thái dừng (policy tôn trọng nó).
   restart: 'unless-stopped',
+  // Readiness thuộc resource này, không thuộc DX: `wait: true` bắt provider
+  // chờ Docker healthcheck chuyển `healthy` trước khi Container báo thành
+  // công — mọi resource phụ thuộc (outputs, unit kế tiếp qua StackReference)
+  // chỉ resolve sau khi Traefik phục vụ thật. Traefik đọc socket Docker lúc
+  // boot nên healthcheck `traefik healthcheck` có thể đỏ vài giây đầu
+  // (startPeriod 5s + 5 retries × interval 5s = trần ~30s); waitTimeout 90s
+  // là trần dư cho host chậm.
+  wait: true,
+  waitTimeout: 90,
   labels: Object.entries(labels).map(([label, value]) => ({ label, value })),
   command: [
     TRAEFIK_ENTRYPOINT_ADDRESS,
@@ -456,6 +465,12 @@ const postgres = new docker.Container('postgres', {
   // container sau reboot/restart daemon — `pulumi up` không làm được điều đó
   // vì input khai và input trong state đều là `unless-stopped`, không có diff.
   restart: 'unless-stopped',
+  // Readiness resource-owned (cùng ngữ nghĩa với traefik ở trên): `pg_isready`
+  // không xác thực mật khẩu nên cửa sổ chờ chỉ phụ thuộc initdb + boot —
+  // startPeriod 10s + 10 retries × 5s = trần ~60s; waitTimeout 120s dư cho
+  // lần đầu init volume (initdb chậm trên disk lạnh).
+  wait: true,
+  waitTimeout: 120,
   labels: Object.entries(labels).map(([label, value]) => ({ label, value })),
   // `envs` là mảng `KEY=VALUE` của provider này (không phải map `env`).
   // `pulumi.secret(...)` đánh dấu value để Pulumi redact trong diff/log/output

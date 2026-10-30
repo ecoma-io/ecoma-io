@@ -208,6 +208,12 @@ const home = new docker.Container(dockerResourceName(ns, 'home'), {
   // — `pulumi up` không làm được điều đó vì input khai và input trong state
   // đều như nhau, không có diff.
   restart: 'unless-stopped',
+  // Readiness resource-owned (`wait: true` — cùng ngữ nghĩa với platform):
+  // `local-smoke` và unit/E2E kế tiếp chỉ chạy sau khi healthcheck HTTP `/`
+  // của chính container này chuyển `healthy`. Trần chờ = startPeriod 30s +
+  // 12 retries × 10s = 150s; waitTimeout 180s dư cho host chậm.
+  wait: true,
+  waitTimeout: 180,
   networksAdvanced: [{ name: networkName, aliases: ['ecoma-home'] }],
   // `envs` (không phải `environment`): `@pulumi/docker` nhận cặp `KEY=VALUE` dạng
   // mảng chuỗi — shape của `docker run -e`, không phải map như Compose.

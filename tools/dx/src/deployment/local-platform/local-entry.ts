@@ -10,19 +10,20 @@
  * mutate stack config của chính project trong namespace của mình.
  *
  * Module này giữ phần có tái sử dụng của entry (resolve context + passphrase,
- * `pulumi up`/`destroy` với config chuẩn lane, `config set` qua stdin, health
- * gate container CỦA CHÍNH project, smoke HTTPS). Phần khác nhau theo project
- * (bảng secret, container kind của health gate) sống trong từng entry — module
- * này không liệt kê tên deploy project nào.
+ * `pulumi up`/`destroy` với config chuẩn lane, `config set` qua stdin, smoke
+ * HTTPS). Phần khác nhau theo project (bảng secret) sống trong từng entry —
+ * module này không liệt kê tên deploy project nào.
+ *
+ * Readiness KHÔNG nằm ở đây: mỗi container long-running trong chương trình
+ * Pulumi của từng deploy project khai `wait: true` + healthcheck Docker của
+ * chính nó — provider Pulumi chờ `healthy` TRƯỚC khi resource Container báo
+ * thành công, nên `pulumi up` xanh đã là bằng chứng serving. DX không biết
+ * Docker health tồn tại.
  */
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import {
-  dockerResourceName,
-  type DeployResourceKind,
-} from './../../local-runtime/deploy-namespace.js';
 import {
   ensureStack,
   exec,
@@ -196,103 +197,6 @@ export function pulumiDestroyForEntry(project: string, foundation: EntryFoundati
     foundation.env,
     { prepareStack: false },
   );
-}
-
-/**
- * Chờ container CỦA CHÍNH project healthy — health gate của entry `up`.
- *
- * Mọi deploy program khai healthcheck Docker cho container chính của nó
- * (probe do chính unit định nghĩa — `/health` của app, `pg_isready`,
- * `traefik healthcheck`...), nên bằng chứng "unit sống" là container `running`
- * với `Health.Status=healthy`. Inspect qua `docker inspect --format` với tên
- * theo namespace (`ecoma-<ns>-<kind>`) — KHÔNG đụng namespace worktree khác;
- * KHÔNG có giá trị env/secret nào đi vào output.
- *
- * Retry bounded: container vừa lên có thể còn trong `startPeriod` của
- * healthcheck (mail/push khai 120s, pact-api 60s) — `starting` được thử lại
- * trong budget 90s trước khi chốt fail; container KHÔNG TỒN TẠI hoặc không
- * `running` là fail NGAY (stack up đã báo xanh thì container phải tồn tại —
- * mất là lỗi thật).
- *
- * `budgetMs`/`pollMs` là test seam — production bỏ qua (dùng mặc định).
- */
-export function waitForOwnContainerHealthy(
-  ctx: LocalDeployContext,
-  kind: DeployResourceKind,
-  options: { budgetMs?: number; pollMs?: number } = {},
-): number {
-  const budgetMs = options.budgetMs ?? 90_000;
-  const pollMs = options.pollMs ?? 3_000;
-  const containerName = dockerResourceName(ctx.namespace, kind);
-  const startedAt = Date.now();
-  for (;;) {
-    const health = inspectContainerHealth(containerName);
-    if (health.state === 'healthy') {
-      console.log(`[local-entry] ${containerName} healthy after ${Date.now() - startedAt}ms`);
-      return 0;
-    }
-    if (health.state === 'missing' || health.state === 'not-running') {
-      // Trạng thái CUỐI: retry không hồi sinh container không tồn tại — fail
-      // ngay với trạng thái đã quan sát.
-      console.error(
-        `[local-entry] health gate FAILED: ${containerName} ` +
-          (health.state === 'missing'
-            ? 'does not exist — the stack reported up but the container is gone'
-            : `is not running (state: ${health.status})`),
-      );
-      return 1;
-    }
-    const remainingMs = budgetMs - (Date.now() - startedAt);
-    if (remainingMs <= 0) {
-      console.error(
-        `[local-entry] health gate FAILED after ${String(budgetMs)}ms budget: ` +
-          `${containerName}: ${health.health}`,
-      );
-      return 1;
-    }
-    const sleepMs = Math.min(pollMs, remainingMs);
-    console.error(
-      `[local-entry] health gate waiting: ${containerName}: ${health.health} — ` +
-        `retrying in ${String(Math.ceil(sleepMs / 1000))}s`,
-    );
-    const sleep = exec('sleep', [String(Math.ceil(sleepMs / 1000))], ROOT_DIR, process.env);
-    if (sleep.status !== 0) {
-      console.error('[local-entry] health gate: sleep between polls failed');
-      return 1;
-    }
-  }
-}
-
-type ContainerHealth =
-  | { state: 'healthy' }
-  | { state: 'starting'; health: string }
-  | { state: 'unhealthy'; health: string }
-  | { state: 'not-running'; status: string }
-  | { state: 'missing' };
-
-function inspectContainerHealth(containerName: string): ContainerHealth {
-  // `docker inspect` per-container: format in `status|health` — health rỗng
-  // với container không khai healthcheck (mọi container của lane đều khai,
-  // nhưng parse vẫn đối xử tường minh). KHÔNG in stderr gốc vào console
-  // (giữ một nguồn lỗi đã chuẩn hoá; output không chứa secret nhưng nhất quán
-  // với `verifyLaneHealth` cũ).
-  const result = exec(
-    'docker',
-    [
-      'inspect',
-      '--format',
-      '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}',
-      containerName,
-    ],
-    ROOT_DIR,
-    process.env,
-  );
-  if (result.status !== 0) return { state: 'missing' };
-  const [status = '', health = ''] = result.stdout.trim().split('|');
-  if (status !== 'running') return { state: 'not-running', status };
-  if (health === 'healthy') return { state: 'healthy' };
-  if (health === 'starting') return { state: 'starting', health };
-  return { state: 'unhealthy', health: health || 'none' };
 }
 
 /**

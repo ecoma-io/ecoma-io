@@ -56,7 +56,6 @@ import {
   pulumiUpForEntry,
   resolveEntryFoundation,
   runEntrySmoke,
-  waitForOwnContainerHealthy,
   type EntryFoundation,
 } from '../../tools/dx/src/deployment/local-platform/local-entry';
 // oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
@@ -109,17 +108,12 @@ async function up(foundation: EntryFoundation): Promise<number> {
       `${ROOT_HOST_ENV_KEY}=${outputs.rootHost}, ${ROOT_DOMAIN_ENV_KEY}=${outputs.rootHost} and ` +
         `${POSTGRES_PASSWORD_ENV_KEY} written to ${envPath}`,
     );
-    // Health gate container CỦA CHÍNH unit: cả hai container platform có
-    // healthcheck Docker riêng (traefik `healthcheck` subcommand, postgres
-    // `pg_isready`). Gate postgres trước — container cuối cùng lên và probe
-    // chậm nhất (Traefik lên trước nó); gate traefik sau — routing entrypoint
-    // mà mọi consumer (smoke, E2E, các lane unit khác) đi qua, nên một Traefik
-    // unhealthy phải đỏ platform up chứ không để unit kế tiếp tự phát hiện.
-    const postgresGate = waitForOwnContainerHealthy(foundation.ctx, 'postgres');
-    if (postgresGate !== 0) {
-      return postgresGate;
-    }
-    return waitForOwnContainerHealthy(foundation.ctx, 'traefik');
+    // Readiness đã thuộc container resource (`wait: true` trong index.ts cho
+    // cả traefik lẫn postgres): `pulumi up` xanh đồng nghĩa healthcheck
+    // `pg_isready` và `traefik healthcheck` đã chuyển `healthy` — routing
+    // entrypoint mà mọi consumer đi qua đã phục vụ thật trước khi unit kế
+    // tiếp (qua StackReference) bắt đầu.
+    return 0;
   } catch (error) {
     console.error(
       `[platform-deploy] up failed: ${error instanceof Error ? error.message : String(error)}`,
