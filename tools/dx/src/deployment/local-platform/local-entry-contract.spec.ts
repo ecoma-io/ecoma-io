@@ -88,19 +88,17 @@ describe('local lane colocated entry contract', () => {
     );
   });
 
-  it('every local-down runs the colocated entry with no dependsOn (no global teardown order)', () => {
+  it('every local-down runs the colocated entry (the dependsOn contract itself lives in the teardown-order spec)', () => {
     const downs = LANE_PROJECTS.map((project) => {
       const target = nxTargets(project)['local-down'] as {
         options?: { command?: string; cwd?: string };
         configurations?: Record<string, unknown>;
-        dependsOn?: unknown;
       };
       return {
         project,
         command: target.options?.command,
         cwd: target.options?.cwd,
         configurations: target.configurations,
-        dependsOn: target.dependsOn,
       };
     });
     expect(downs).toEqual(
@@ -109,7 +107,6 @@ describe('local lane colocated entry contract', () => {
         command: 'npx tsx local.ts down',
         cwd: `deploys/${project}`,
         configurations: expect.objectContaining({ local: {} }),
-        dependsOn: undefined,
       })),
     );
   });

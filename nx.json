@@ -155,7 +155,7 @@
         },
         "cache": false,
         "metadata": {
-          "//": "Xem entry `local-up`: cùng một-lane policy (không bao giờ cacheable). Target teardown của RIÊNG mỗi deploy project — KHÔNG có `dependsOn` toàn cục: không thứ tự teardown toàn cục, mỗi entry tự xoá resource của mình trong namespace của worktree."
+          "//": "Xem entry `local-up`: cùng một-lane policy (không bao giờ cacheable). Thứ tự teardown là CONTRACT và NẰM TRONG từng deploy project — NGHỊCH của graph `local-up`: provider down SAU dependent (consumer trước, platform-deploy cuối cùng), khai bằng `dependsOn` dạng `{projects, target}` trên PROVIDER trỏ target local-down của CÁC DIRECT DEPENDENT trỏ vào nó. CHIỀU là bẫy kinh điển của teardown: mặc định caret (phụ thuộc project-graph) lên lịch PROVIDER trước — đúng cho deploy nhưng NGƯỢC chiều teardown; chỉ dạng projects tường minh trên provider là đảm bảo thứ tự ở tầng task graph. `nx.json` cố ý KHÔNG đặt dependsOn toàn cục ở đây: một default caret sẽ áp chiều deploy cho mọi project, còn danh sách dependents của từng provider là dữ liệu riêng của graph `local-up` — unit test tools-dx (teardown-order.spec.ts) đối chiếu inverse chính xác, ghim acyclic + platform là sink duy nhất + các nhánh độc lập không có cạnh ràng buộc, đo trên RESOLVED task graph của chính invocation `nx run-many -t local-down -c local`; đổi graph `local-up` mà không đổi edge `local-down` tương ứng là đỏ. Independent branches (nhánh pact, nhánh home, lá wave-2) không có edge nào giữa nhau nên Nx chạy song song an toàn."
         }
       }
     ],

@@ -71,7 +71,7 @@
         ]
       },
       "local-down": {
-        "//": "Teardown của RIÊNG project này (`local.ts down` = `pulumi destroy --yes`; platform tự xoá volume PostgreSQL mọi lần down). KHÔNG có `dependsOn` — không thứ tự teardown toàn cục: mỗi project tự xoá resource của mình trong namespace của worktree, và `pulumi destroy` tự serialize trên stack state. Idempotent: worktree chưa từng deploy là no-op exit 0; lỗi destroy thật thì exit 1. Cache bị tắt ở targetDefaults `nx.json` (cùng một-lane policy với local-up).",
+        "//": "Teardown của RIÊNG project này (`local.ts down` = `pulumi destroy --yes` rồi xoá volume PostgreSQL — mọi lần down, mất dữ liệu local). Thứ tự teardown là NGHỊCH của thứ tự deploy: platform là NÚT GỐC của graph deploy nên down CUỐI CÙNG — target này khai `dependsOn` trỏ `local-down` của BA DIRECT DEPENDENT trỏ vào nó (home, pact-broker-api, push-notification); transactional-mail không trỏ trực tiếp vào platform (nó lên sau account) nhưng được phủ transitively qua spine (mail → account → backoffice → home → platform). Nx schedule cả nhánh consumer xuống xong mới chạy entry này; xoá volume ở bước cuối là đúng vì mọi database của consumer nằm trên volume này. Neo contract ở nx.json targetDefaults `local-down` (danh sách edge phải bằng inverse chính xác của graph local-up). Idempotent: worktree chưa từng deploy là no-op exit 0; lỗi destroy thật thì exit 1. Cache bị tắt ở targetDefaults `nx.json` (cùng một-lane policy với local-up).",
         "executor": "nx:run-commands",
         "options": {
           "cwd": "deploys/platform-deploy",
@@ -79,7 +79,17 @@
         },
         "configurations": {
           "local": {}
-        }
+        },
+        "dependsOn": [
+          {
+            "projects": [
+              "home-deploy",
+              "pact-broker-api-deploy",
+              "push-notification-deploy"
+            ],
+            "target": "local-down"
+          }
+        ]
       }
     }
   }
