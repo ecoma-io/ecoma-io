@@ -106,6 +106,7 @@ export const KNOWN_SCOPES: readonly string[] = [
   'account',
   'auth',
   'backoffice',
+  'staff-access',
   'llm',
   'pact',
   'payment',

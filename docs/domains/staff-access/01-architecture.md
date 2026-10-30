@@ -1,6 +1,6 @@
 # Backoffice — Architecture
 
-> 📌 Thư mục này là bounded context **Staff Access** (đích — Phase 1, xem [`README.md`](./README.md) §4): nghiệp vụ staff/RBAC/entitlement sẽ được tách khỏi `backoffice` theo A21–A24. Nội dung dưới đây vẫn mô tả trạng thái hiện tại, nơi `backoffice` còn sở hữu staff/RBAC.
+> 📌 Thư mục này là bounded context **Staff Access** (đích — Phase 1, xem [`README.md`](./README.md) §4): nghiệp vụ staff/RBAC/entitlement sẽ được tách khỏi `backoffice` theo A21–A24. Nội dung dưới đây vẫn mô tả trạng thái hiện tại, nơi `backoffice` còn sở hữu staff/RBAC. Hợp đồng machine-readable (wire types + validators) của bounded context nằm ở thư viện `libs/staff-access-contracts` (`@ecoma-io/staff-access-contracts`) — tài liệu này giữ ý nghĩa và ràng buộc, không nhân bản shape.
 
 > Phạm vi: thiết kế `backoffice` — ranh giới, domain model khái niệm, authorization model và nơi enforce, token validity vs privilege currency, data/service trust, invariants và các quyết định đã chốt qua ADR.
 > Yêu cầu → [`02-requirements.md`](./02-requirements.md) · system boundary → [`../../architecture/01-architecture.md`](../../architecture/01-architecture.md) §2.2 · §4 · §8 A21–A24 · §9 · §10 · `account` → [`../account/01-architecture.md`](../account/01-architecture.md) · [`../account/03-operations.md`](../account/03-operations.md) · `auth` → [`../auth/01-architecture.md`](../auth/01-architecture.md) §6.
