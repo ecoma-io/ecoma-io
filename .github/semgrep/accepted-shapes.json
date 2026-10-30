@@ -99,16 +99,6 @@
   },
   {
     "rule": "security-sensitive-value-in-http-response",
-    "path": "tools/dx/src/local-runtime/local-lock.ts",
-    "start": 279,
-    "end": 285,
-    "reason": "tryAcquire cua lock lane tra {release, token} cho orchestrator - token la lock acquisition token (randomBytes hex), khong roi khoi process qua HTTP. KHONG phai HTTP response; rule taint match 'token' naming heuristic FP. Entry moi khi doi sang lock lane per-worktree (#363): signature acquire doi tu release-only sang {release, token} de truyen lease xuong task con qua ECOMA_LANE_LEASE. Re-anchored 252->285 khi them redactCmdline (OCR round #417) - noi dung dong khong doi. Re-pinned 285->279 when the lease-token handoff was removed (#423); lines unchanged.",
-    "lines": {
-      "285": "^  return \\{ release, token \\};$"
-    }
-  },
-  {
-    "rule": "security-sensitive-value-in-http-response",
     "path": "tools/dx/src/deployment/local-platform/local-env.ts",
     "start": 196,
     "end": 196,

@@ -201,7 +201,7 @@ function requestStep(pathname) {
         servername: hostname,
         headers: {
           // `Host` ĐẶT TƯỜNG MINH ở CẢ HAI nhánh và cùng một dạng
-          // `hostname:port` — khớp đúng `ROOT_HOST` mà `local-deploy` ghi `.env`
+          // `hostname:port` — khớp đúng `ROOT_HOST` mà entry up của platform ghi `.env`
           // và đúng rule `Host(\`fbi.com\`)` của Traefik. Nhánh không `--connect`
           // để Node tự sinh thì Host cũng là `hostname:port`, nhưng ghi tường
           // minh giữ đường test (fixture) và đường thật giống hệt nhau — spec

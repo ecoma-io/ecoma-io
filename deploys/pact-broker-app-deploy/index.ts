@@ -96,7 +96,7 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
       throw new Error(
         `platformStackRef does not export "${key}". Most common cause: the ` +
           `platform stack never completed \`up\` (empty outputs) or was ` +
-          `destroyed — run \`pnpm dx local-deploy\` (apply platform) first. ` +
+          `destroyed — run \`pnpm nx run platform-deploy:local-up -c local\` (apply platform) first. ` +
           `Refusing to deploy pact-broker-app with an empty configuration.`,
       );
     }

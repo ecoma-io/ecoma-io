@@ -80,11 +80,11 @@ const ns = worktreeNamespace(worktreeRoot);
 const labels = ownershipLabels(normalizeWorktreeRoot(worktreeRoot), ns);
 
 // Stack reference **đầy đủ** tới stack platform của chính worktree này, do
-// orchestration (`tools/dx/src/deployment/local-platform/local-deploy.ts`) ghép và truyền qua
-// `--config`. Đọc từ config thay vì tự dựng `file://<dir>/local-<ns>`: backend
-// `file://` và cách Pulumi resolve stack reference là chi tiết của
-// orchestration; tự ghép chuỗi ở đây tạo ra một đường suy đoán thứ hai cho
-// cùng một stack và chỗ nào lệch là deploy sai worktree.
+// entry `local-up` của platform (`deploys/platform-deploy/local.ts`) ghép và
+// truyền qua `--config`. Đọc từ config thay vì tự dựng `file://<dir>/local-<ns>`:
+// backend `file://` và cách Pulumi resolve stack reference là chi tiết của entry;
+// tự ghép chuỗi ở đây tạo ra một đường suy đoán thứ hai cho cùng một stack và
+// chỗ nào lệch là deploy sai worktree.
 const platform = new pulumi.StackReference(conf.require('platformStackRef'));
 
 /**
@@ -104,7 +104,7 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
       throw new Error(
         `platformStackRef does not export "${key}". Most common cause: ` +
           `the platform stack has never \`up\`ed successfully (empty outputs) or was ` +
-          `destroyed — run \`pnpm dx local-deploy\` (apply platform) first. Only if ` +
+          `destroyed — run \`pnpm nx run platform-deploy:local-up -c local\` (apply platform) first. Only if ` +
           `the PlatformOutputs contract actually renamed/removed the output should you ` +
           `change both producer/consumer sides. Do not deploy home with an empty configuration.`,
       );
@@ -117,7 +117,7 @@ const networkName = requirePlatformOutput('networkName');
 // `traefikHostPort` CỐ Ý KHÔNG đọc vào container: `apps/home` không publish cổng
 // nào (mọi request đi qua Traefik), và healthcheck của container dùng cổng nội
 // bộ từ hằng số dùng chung với image — không cần port đã publish ra host. Output
-// vẫn thuộc contract và được `local-deploy` đọc để dựng `ROOT_HOST` cho `.env`.
+// vẫn thuộc contract và được entry platform đọc để dựng `ROOT_HOST` cho `.env`.
 const platformNamespace = requirePlatformOutput('namespace');
 // Hostname router đọc từ output của producer — KHÔNG dùng hằng
 // `LOCAL_ROOT_HOSTNAME`: producer đổi hostname thì router theo output, và lệch

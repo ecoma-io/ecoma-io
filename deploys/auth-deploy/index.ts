@@ -127,7 +127,7 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
   return pulumi.output(platform.getOutput(key)).apply((raw) => {
     if (raw === undefined || raw === null) {
       throw new Error(
-        `platformStackRef does not export "${key}". Run \`pnpm dx local-deploy\` (apply platform) first.`,
+        `platformStackRef does not export "${key}". Run \`pnpm nx run platform-deploy:local-up -c local\` (apply platform) first.`,
       );
     }
     return raw as PlatformOutputs[K];
@@ -147,12 +147,12 @@ const migratorPassword = conf.require('migratorPassword');
 const prunerPassword = conf.require('prunerPassword');
 
 // Secrets Worker của auth (PR Worker runtime #183) — cùng kênh `--config`
-// (stdin) như mật khẩu role; orchestration (`local-deploy`) sinh và set, stack
+// (stdin) như mật khẩu role; entry up của chính stack này sinh và set, stack
 // này đọc. Thiếu key là fail ngay lúc `pulumi up` (`conf.require`) chứ không
 // container với secret rỗng. `internalSecret` PHẢI bằng giá trị mà account
 // stack nhận làm `NUXT_INTERNAL_HMAC_SECRET` (cùng envelope HMAC
-// `ecoma-internal-v1` hai chiều) — orchestration là nơi giữ bất biến đó, sinh
-// MỘT giá trị rồi set cho CẢ HAI stack.
+// `ecoma-internal-v1` hai chiều) — bất biến hai-stack được giữ ở tầng entry:
+// sinh MỘT giá trị rồi set cho CẢ HAI stack.
 const signingKeyPem = conf.require('signingKeyPem');
 const signingKeyId = conf.require('signingKeyId');
 const handleKey = conf.require('handleKey');
@@ -471,8 +471,7 @@ function sha256DistTree(rootDir: string, relDir: string): string {
   const files: string[] = [];
   const walk = (dir: string): void => {
     // Sort theo tên file để thứ tự duyệt không đổi kết quả hash. Target es2020
-    // chưa có `toSorted` — sort trên mảng do chính hàm tạo (cùng quy ước
-    // `local-deploy-graph.ts`: copy rồi sort tại chỗ).
+    // chưa có `toSorted` — sort trên mảng do chính hàm tạo (copy rồi sort tại chỗ).
     const entries = [...readdirSync(dir, { withFileTypes: true })];
     entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const entry of entries) {

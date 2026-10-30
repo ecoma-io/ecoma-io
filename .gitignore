@@ -82,7 +82,7 @@ tsconfig.tsbuildinfo
 # nhưng entry tường minh giữ Contracts: đổi tên thư mục state không âm thầm
 # đưa state vào Git.
 .pulumi-local-state/
-# Passphrase do `pnpm dx local-deploy` sinh cho local stack của worktree
+# Passphrase do entry `local-up` (tools/dx local-entry helper) sinh cho local stack của worktree
 # (xem `resolveLocalPassphrase` trong
 # `tools/dx/src/deployment/local-platform/pulumi-context.ts`).
 # Entry tường minh: đổi tên file không được âm thầm đưa passphrase vào Git.

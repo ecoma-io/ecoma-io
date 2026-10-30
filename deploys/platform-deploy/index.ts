@@ -9,7 +9,7 @@
  * nguồn sự thật của resource (`tools/dx/src/local-runtime/deploy-namespace.ts`).
  *
  * Chương trình này KHÔNG đọc `.env`: nó nhận `namespace:worktreeRoot` qua Pulumi
- * config do `tools/dx local-deploy` truyền vào. `.env` là artifact tiện dụng sinh
+ * config do entry `local-up` của chính project (`local.ts`) truyền vào. `.env` là artifact tiện dụng sinh
  * ra TỪ outputs của stack này, không phải input — đọc vòng lại sẽ thành vòng phụ
  * thuộc.
  */
@@ -239,7 +239,7 @@ const TRAEFIK_PING_FLAGS = ['--ping=true', '--ping.entrypoint=websecure'] as con
 const config = new pulumi.Config('namespace');
 
 /**
- * Worktree root do `tools/dx local-deploy` truyền vào.
+ * Worktree root do entry `local-up` (`local.ts`) truyền vào.
  *
  * `require` chứ không phải `get`: thiếu config thì namespace sẽ được hash từ
  * chuỗi rỗng và mọi tên resource trở nên không nhất quán giữa hai lần chạy — đúng
@@ -281,7 +281,7 @@ const traefik = new docker.Container('traefik', {
   name: dockerResourceName(ns, 'traefik'),
   image: TRAEFIK_IMAGE,
   // Container bị dừng do reboot máy hay restart daemon được DOCKER tự start
-  // lại nhờ `restart: unless-stopped` — không cần chạy lại `local-deploy`, và
+  // lại nhờ `restart: unless-stopped` — không cần chạy lại `local-up`, và
   // cũng không thể qua `pulumi up`: Pulumi so input khai với input đã lưu trong
   // state, hai bên đều là `unless-stopped` nên không có diff nào cả; việc start
   // lại là cơ chế restart policy của Docker, không phải của Pulumi. Chỉ `docker
@@ -387,8 +387,8 @@ const traefik = new docker.Container('traefik', {
 /**
  * Password PostgreSQL đến từ Pulumi config dạng plaintext (local-dev only).
  *
- * Dùng `require` (không `requireSecret`): giá trị được sinh một lần bởi
- * `tools/dx local-deploy` và lưu dạng plaintext trong stack config local (file
+ * Dùng `require` (không `requireSecret`): giá trị được sinh một lần bởi entry
+ * up (`local.ts`) và lưu dạng plaintext trong stack config local (file
  * bị `.gitignore` — `Pulumi.*.yaml`). Passphrase local (`.pulumi-local-passphrase`)
  * mã hoá state Pulumi, KHÔNG mã hoá giá trị config này — nên `postgres:password`
  * vẫn plaintext theo chủ đích cho môi trường phát triển, KHÔNG áp dụng cho
@@ -408,7 +408,7 @@ const traefik = new docker.Container('traefik', {
  * config cho khớp) — xem `docs/solutions/local-platform/03-operations.md`
  * §Vòng đời dữ liệu.
  *
- * Orchestration (`tools/dx/src/deployment/local-platform/local-deploy.ts`) chỉ sinh password khi stack mới
+ * Entry up (`local.ts`) chỉ sinh password khi stack mới
  * VÀ volume chưa tồn tại; nếu volume đã có mà canonical password thiếu thì fail
  * thay vì sinh password mới không khớp.
  */

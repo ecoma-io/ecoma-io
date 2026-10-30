@@ -114,7 +114,7 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
   return pulumi.output(platform.getOutput(key)).apply((raw) => {
     if (raw === undefined || raw === null) {
       throw new Error(
-        `platformStackRef does not export "${key}". Run \`pnpm dx local-deploy\` (apply platform) first.`,
+        `platformStackRef does not export "${key}". Run \`pnpm nx run platform-deploy:local-up -c local\` (apply platform) first.`,
       );
     }
     return raw as PlatformOutputs[K];
@@ -132,8 +132,8 @@ const runtimePassword = conf.require('runtimePassword');
 const migratorPassword = conf.require('migratorPassword');
 const prunerPassword = conf.require('prunerPassword');
 
-// Secret HMAC của app — cùng kênh `--config` (stdin) như mật khẩu role; orchestration
-// (`local-deploy`) sinh và set, stack này đọc. Thiếu key là fail ngay lúc `pulumi up`
+// Secret HMAC của app — cùng kênh `--config` (stdin) như mật khẩu role; entry up
+// của chính stack này sinh và set, stack đọc lại. Thiếu key là fail ngay lúc `pulumi up`
 // (`conf.require`) chứ không Container với secret rỗng.
 const internalHmacSecret = conf.require('internalHmacSecret');
 const otpHmacSecret = conf.require('otpHmacSecret');
