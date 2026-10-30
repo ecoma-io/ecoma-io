@@ -14,7 +14,7 @@ Operationalize the `Workflow` and `Language` sections of the root
 `AGENTS.md` for the Issue step: decide whether an Issue should exist, find
 existing work, and write the title and body. This skill introduces no
 competing process. Writing quality is governed by
-`.agent/skills/clarity/SKILL.md` — apply it to every Issue body. The three
+`.agents/skills/clarity/SKILL.md` — apply it to every Issue body. The three
 Issue forms in `.github/ISSUE_TEMPLATE/` remain the target structures for
 the types they cover.
 
@@ -144,7 +144,7 @@ titles.
 
 ## Write the Vietnamese body
 
-Apply `.agent/skills/clarity/SKILL.md` to the whole body: purpose,
+Apply `.agents/skills/clarity/SKILL.md` to the whole body: purpose,
 problem, outcome and completion criteria in short Vietnamese sentences,
 one main idea per sentence. Identifiers, paths, commands and error codes
 stay in English.
@@ -268,6 +268,6 @@ Answer these before creating; revise substantiated defects:
   or workflows as part of writing an Issue. Propose such changes as their
   own work unit.
 - The canonical sources outrank this file: `AGENTS.md` (workflow,
-  language), `.agent/skills/clarity/SKILL.md` (writing quality), and the
+  language), `.agents/skills/clarity/SKILL.md` (writing quality), and the
   forms in `.github/ISSUE_TEMPLATE/`. When they conflict with this file,
   they win and this file should be corrected.
