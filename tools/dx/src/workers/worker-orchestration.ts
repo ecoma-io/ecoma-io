@@ -22,7 +22,7 @@
  *   KHÔNG truyền thêm `--port` (hai nguồn port là một chỗ lệch tiềm năng).
  * - Migrations/seeds chỉ chạy `--local` (worker-config.ts fail-closed remote).
  * - Mỗi process có record metadata trong stateDir của worktree; kill chỉ khi
- *   identity khớp — cùng chuẩn fail-closed với `local-lock.ts`.
+ *   identity khớp — chuẩn fail-closed chung.
  * - Readiness là trách nhiệm của orchestration (JSDoc của `startWorkerProcess`
  *   tuyên bố rõ): control plane poll `GET /health`, consumer probe boot banner
  *   trên stdout/stderr.
@@ -34,8 +34,7 @@ import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 
-import { normalizeWorktreeRoot, worktreeNamespace } from './../local-runtime/deploy-namespace.js';
-import { safeUnlinkIfSame } from './../local-runtime/local-lock.js';
+import { normalizeWorktreeRoot, worktreeNamespace } from '@ecoma-io/deployment';
 import { discoverWorkerEntries, type DiscoveredWorkerEntry } from './worker-discovery.js';
 import {
   allocateWorkerPort,
@@ -54,6 +53,7 @@ import {
   killWorkerProcessByMetadata,
   metadataPathOf,
   readMetadata,
+  safeUnlinkIfSame,
   scanWorkerProcesses,
   startWorkerProcess,
   workerProcessStateDir,
@@ -831,7 +831,7 @@ const STOP_TIMEOUT_MS = 10_000;
  * - `alive`: yêu cầu metadata hợp lệ + identity argv khớp + cmdline khớp —
  *   BẤT KỲ điều kiện nào fail là KHÔNG kill, row `kept-evidence`.
  * - `stale`/`unspawned`: dọn FILE metadata per-entry theo safe-unlink pattern
- *   của `local-lock.ts` (so snapshot lúc scan với nội dung trước khi xoá) —
+ *   safe-unlink (so snapshot lúc scan với nội dung trước khi xoá) —
  *   PID đã chết, không có process để kill, chỉ dọn bằng chứng mồ côi.
  * - `invalid`: GIỮ file làm bằng chứng — row `kept-evidence`.
  *
@@ -893,7 +893,7 @@ export async function stopWorkerRuntime(options: {
         }
       } else if (scanEntry.state === 'stale' || scanEntry.state === 'unspawned') {
         // Dọn CHÍNH entry này, xoá chỉ khi nội dung không đổi giữa scan và
-        // unlink (safe-unlink pattern của `local-lock.ts`: so snapshot với
+        // unlink (safe-unlink pattern: so snapshot với
         // content trước khi xoá — metadata bị ghi đè giữa chừng không bị dọn
         // nhầm). Gọi hàm bulk `deleteStaleWorkerMetadata` ở đây là SAI: nó
         // quét lại toàn bộ stateDir mỗi vòng lặp, các entry xử lý trước đã

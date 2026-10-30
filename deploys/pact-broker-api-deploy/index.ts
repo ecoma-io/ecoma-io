@@ -50,18 +50,15 @@ import * as docker from '@pulumi/docker';
 import * as dockerBuild from '@pulumi/docker-build';
 import * as pulumi from '@pulumi/pulumi';
 
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem auth-deploy
 import {
+  type PlatformOutputs,
   dockerResourceName,
   normalizeWorktreeRoot,
+  ownershipLabels,
+  shellQuote,
+  sqlQuote,
   worktreeNamespace,
-} from '../../tools/dx/src/local-runtime/deploy-namespace';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import { shellQuote, sqlQuote } from '../../tools/dx/src/local-runtime/shell-quote';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import { ownershipLabels } from '../../tools/dx/src/deployment/local-platform/deploy-labels';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import type { PlatformOutputs } from '../../tools/dx/src/deployment/local-platform/platform-outputs-contract';
+} from '@ecoma-io/deployment';
 
 /**
  * Image Node pin (theo DIGEST) để chạy migration + seed trong container gắn
@@ -127,7 +124,7 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
   return pulumi.output(platform.getOutput(key)).apply((raw) => {
     if (raw === undefined || raw === null) {
       throw new Error(
-        `platformStackRef does not export "${key}". Run \`pnpm dx local-deploy\` (apply platform) first.`,
+        `platformStackRef does not export "${key}". Run \`pnpm nx run platform-deploy:local-up -c local\` (apply platform) first.`,
       );
     }
     return raw as PlatformOutputs[K];
@@ -407,6 +404,12 @@ const wic = new docker.Container(
     name: dockerResourceName(ns, 'pact-api-wic'),
     image: pulumi.interpolate`${wicImageTag}@${wicImage.digest}`,
     restart: 'unless-stopped',
+    // Readiness resource-owned (`wait: true` — cùng ngữ nghĩa với platform):
+    // pact-broker-app phụ thuộc unit này qua StackReference (machine token),
+    // nên `up` thành công phải đồng nghĩa healthcheck `/health` đã `healthy`.
+    // Trần chờ = startPeriod 120s + 30 retries × 10s = 420s; waitTimeout 450s dư.
+    wait: true,
+    waitTimeout: 450,
     // `stop_timeout` 30s khớp bounded-wait 20s của entrypoint: SIGTERM →
     // workerd được thời gian thoát sạch (flush state + registry + pool
     // PostgreSQL) trước khi Docker SIGKILL.
@@ -471,7 +474,10 @@ const wic = new docker.Container(
       // budget auth nhưng retries thấp hơn vì worker duy nhất, không probe
       // mở pool PostgreSQL như `/ready` của auth.
       retries: 30,
-      startPeriod: '120s',
+      // Chuỗi đúng dạng Go duration Docker chuẩn hoá khi đọc ngược (`2m0s`,
+      // không phải `120s`) — lệch dạng không đổi giá trị nhưng biến mỗi cặp
+      // refresh + up thành diff ảo trên healthcheck.
+      startPeriod: '2m0s',
     },
   },
   { dependsOn: [seed, wicImage, wicStateVolume, wicStateInit] },

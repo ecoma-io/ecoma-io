@@ -1,0 +1,30 @@
+{
+  "name": "@ecoma-io/deployment",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": {
+      "@ecoma-io/source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@node-rs/xxhash": "1.7.8"
+  },
+  "nx": {
+    "tags": [
+      "type:tooling",
+      "scope:shared",
+      "runtime:native"
+    ],
+    "namedInputs": {
+      "default": [
+        "{projectRoot}/**/*",
+        "{workspaceRoot}/deploys/backoffice-deploy/index.ts"
+      ]
+    }
+  }
+}

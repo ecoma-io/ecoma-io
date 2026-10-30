@@ -54,23 +54,17 @@ import * as docker from '@pulumi/docker';
 import * as dockerBuild from '@pulumi/docker-build';
 import * as pulumi from '@pulumi/pulumi';
 
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem backoffice-deploy
-import {
-  dockerResourceName,
-  normalizeWorktreeRoot,
-  worktreeNamespace,
-} from '../../tools/dx/src/local-runtime/deploy-namespace';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import { shellQuote, sqlQuote } from '../../tools/dx/src/local-runtime/shell-quote';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
 import {
   LABEL_PREFIX,
+  LOCAL_BACKOFFICE_CLIENT_ID,
+  type PlatformOutputs,
+  dockerResourceName,
+  normalizeWorktreeRoot,
   ownershipLabels,
-} from '../../tools/dx/src/deployment/local-platform/deploy-labels';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import type { PlatformOutputs } from '../../tools/dx/src/deployment/local-platform/platform-outputs-contract';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import { LOCAL_BACKOFFICE_CLIENT_ID } from '../../tools/dx/src/deployment/local-platform/local-auth-contract';
+  shellQuote,
+  sqlQuote,
+  worktreeNamespace,
+} from '@ecoma-io/deployment';
 
 /**
  * Image Node pin (theo DIGEST) để chạy migration runner trong container gắn
@@ -127,7 +121,7 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
   return pulumi.output(platform.getOutput(key)).apply((raw) => {
     if (raw === undefined || raw === null) {
       throw new Error(
-        `platformStackRef does not export "${key}". Run \`pnpm dx local-deploy\` (apply platform) first.`,
+        `platformStackRef does not export "${key}". Run \`pnpm nx run platform-deploy:local-up -c local\` (apply platform) first.`,
       );
     }
     return raw as PlatformOutputs[K];
@@ -147,12 +141,12 @@ const migratorPassword = conf.require('migratorPassword');
 const prunerPassword = conf.require('prunerPassword');
 
 // Secrets Worker của auth (PR Worker runtime #183) — cùng kênh `--config`
-// (stdin) như mật khẩu role; orchestration (`local-deploy`) sinh và set, stack
+// (stdin) như mật khẩu role; entry up của chính stack này sinh và set, stack
 // này đọc. Thiếu key là fail ngay lúc `pulumi up` (`conf.require`) chứ không
 // container với secret rỗng. `internalSecret` PHẢI bằng giá trị mà account
 // stack nhận làm `NUXT_INTERNAL_HMAC_SECRET` (cùng envelope HMAC
-// `ecoma-internal-v1` hai chiều) — orchestration là nơi giữ bất biến đó, sinh
-// MỘT giá trị rồi set cho CẢ HAI stack.
+// `ecoma-internal-v1` hai chiều) — bất biến hai-stack được giữ ở tầng entry:
+// sinh MỘT giá trị rồi set cho CẢ HAI stack.
 const signingKeyPem = conf.require('signingKeyPem');
 const signingKeyId = conf.require('signingKeyId');
 const handleKey = conf.require('handleKey');
@@ -282,8 +276,8 @@ const redirectUriLocal = pulumi.interpolate`https://office.${rootHostname}:${tra
  *   CTE của `pact-broker-api-deploy`.
  * - Redirect URI: `ON CONFLICT DO NOTHING` (PK `(client_id, redirect_uri)`)
  *   — thêm URI mới khi port đổi; URI của port cũ vẫn còn trong bảng (vô hại,
- *   origin cũ không còn router nào trỏ về) và `local-destroy --remove-data`
- *   là đường dọn sạch chính thức.
+ *   origin cũ không còn router nào trỏ về) và down platform xoá volume là
+ *   đường dọn sạch chính thức.
  *
  * Chạy bằng role **migrator** qua `docker exec` trust auth trong container
  * PostgreSQL (cùng đường với provision script phía trên — platform không
@@ -392,6 +386,7 @@ const audienceLocal = pulumi.interpolate`https://api.${rootHostname}:${traefikHo
 const wicStateVolumeName = dockerResourceName(ns, 'auth-wic-state');
 const wicStateVolume = new docker.Volume(wicStateVolumeName, {
   name: wicStateVolumeName,
+  labels: Object.entries(labels).map(([label, value]) => ({ label, value })),
 });
 
 /**
@@ -423,6 +418,7 @@ const wicStateInit = new docker.Container(
       },
     ],
     command: ['chown', '1000:1000', '/state'],
+    labels: Object.entries(labels).map(([label, value]) => ({ label, value })),
   },
   { dependsOn: [wicStateVolume], retainOnDelete: true },
 );
@@ -471,8 +467,7 @@ function sha256DistTree(rootDir: string, relDir: string): string {
   const files: string[] = [];
   const walk = (dir: string): void => {
     // Sort theo tên file để thứ tự duyệt không đổi kết quả hash. Target es2020
-    // chưa có `toSorted` — sort trên mảng do chính hàm tạo (cùng quy ước
-    // `local-deploy-graph.ts`: copy rồi sort tại chỗ).
+    // chưa có `toSorted` — sort trên mảng do chính hàm tạo (copy rồi sort tại chỗ).
     const entries = [...readdirSync(dir, { withFileTypes: true })];
     entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const entry of entries) {
@@ -541,6 +536,13 @@ const wic = new docker.Container(
     name: dockerResourceName(ns, 'auth-wic'),
     image: pulumi.interpolate`${wicImageTag}@${wicImage.digest}`,
     restart: 'unless-stopped',
+    // Readiness resource-owned (`wait: true` — cùng ngữ nghĩa với platform):
+    // backoffice + E2E OIDC chỉ chạy sau khi healthcheck `/ready` (DB probe +
+    // fetch binding) của WIC chuyển `healthy`. Trần chờ = startPeriod 120s +
+    // 30 retries × 10s = 420s (cửa sổ boot wrangler — bundle check, registry
+    // connect); waitTimeout 450s dư.
+    wait: true,
+    waitTimeout: 450,
     // `stop_timeout` 30s khớp bounded-wait 20s của entrypoint: SIGTERM → hai
     // workerd được thời gian thoát sạch (flush D1/KV state + registry) trước
     // khi Docker SIGKILL.
@@ -660,7 +662,10 @@ const wic = new docker.Container(
       // là trần thoải mái, retries cao để cửa sổ boot wrangler (bundle check,
       // registry connect) không bị coi là chết.
       retries: 30,
-      startPeriod: '120s',
+      // Chuỗi đúng dạng Go duration Docker chuẩn hoá khi đọc ngược (`2m0s`,
+      // không phải `120s`) — lệch dạng không đổi giá trị nhưng biến mỗi cặp
+      // refresh + up thành diff ảo trên healthcheck.
+      startPeriod: '2m0s',
     },
   },
   { dependsOn: [seed, wicImage, wicStateVolume, wicStateInit] },

@@ -53,7 +53,7 @@
  * `MAIL_PROVIDER_ENDPOINT`/`MAIL_PROVIDER_TOKEN` khi kind=fake, nên KHÔNG có
  * provider SMTP thật nào được cấu hình; gửi thật fail ở bước provider, message
  * row trong D1 `mail` là assertion local (cùng trạng thái script e2e
- * `tools/dx/scripts/mail-worker-runtime-e2e.mjs`).
+ * script mail-worker-runtime-e2e của tools/dx).
  */
 
 import { createHmac } from 'node:crypto';
@@ -63,18 +63,14 @@ import * as docker from '@pulumi/docker';
 import * as dockerBuild from '@pulumi/docker-build';
 import * as pulumi from '@pulumi/pulumi';
 
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem backoffice-deploy
 import {
+  type PlatformOutputs,
   dockerResourceName,
   normalizeWorktreeRoot,
+  ownershipLabels,
+  shellQuote,
   worktreeNamespace,
-} from '../../tools/dx/src/local-runtime/deploy-namespace';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import { shellQuote } from '../../tools/dx/src/local-runtime/shell-quote';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import { ownershipLabels } from '../../tools/dx/src/deployment/local-platform/deploy-labels';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import type { PlatformOutputs } from '../../tools/dx/src/deployment/local-platform/platform-outputs-contract';
+} from '@ecoma-io/deployment';
 
 /**
  * Image Node pin (theo DIGEST) — chạy migrations D1 trong container ephemeral
@@ -118,7 +114,7 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
   return pulumi.output(platform.getOutput(key)).apply((raw) => {
     if (raw === undefined || raw === null) {
       throw new Error(
-        `platformStackRef does not export "${key}". Run \`pnpm dx local-deploy\` (apply platform) first.`,
+        `platformStackRef does not export "${key}". Run \`pnpm nx run platform-deploy:local-up -c local\` (apply platform) first.`,
       );
     }
     return raw as PlatformOutputs[K];
@@ -130,10 +126,9 @@ const platformNamespace = requirePlatformOutput('namespace');
 
 /**
  * Secret HMAC path Account↔Mail — CÙNG GIÁ TRỊ account stack đã persist làm
- * `namespace:mailInternalAuthSecret` (orchestration `local-stack-step` sinh
- * MỘT giá trị: account persist vào stack config của nó, stack này đọc lại —
- * bất biến giữ ở tầng orchestration, cùng cơ chế `identityInternalSecret` của
- * auth). Control plane giữ nó làm entry `MAIL_INTERNAL_AUTH_SECRET_SVC_ACCOUNT`
+ * `namespace:mailInternalAuthSecret` (MỘT giá trị: entry up của account persist
+ * vào stack config của nó, entry up của stack này đọc lại — cùng cơ chế
+ * `identityInternalSecret` của auth). Control plane giữ nó làm entry `MAIL_INTERNAL_AUTH_SECRET_SVC_ACCOUNT`
  * (principal `svc.account`); account ký envelope với
  * `NUXT_MAIL_INTERNAL_AUTH_SECRET` cùng giá trị. Thiếu key là fail ngay lúc
  * `pulumi up` (`conf.require`).
@@ -196,6 +191,7 @@ const verifiedNamespace = pulumi.output(platformNamespace).apply((upstreamNs) =>
 const wicStateVolumeName = dockerResourceName(ns, 'mail-wic-state');
 const wicStateVolume = new docker.Volume(wicStateVolumeName, {
   name: wicStateVolumeName,
+  labels: Object.entries(labels).map(([label, value]) => ({ label, value })),
 });
 
 /**
@@ -218,6 +214,7 @@ const wicStateInit = new docker.Container(
       },
     ],
     command: ['chown', '1000:1000', '/state'],
+    labels: Object.entries(labels).map(([label, value]) => ({ label, value })),
   },
   { dependsOn: [wicStateVolume], retainOnDelete: true },
 );
@@ -303,6 +300,12 @@ const wic = new docker.Container(
     name: dockerResourceName(ns, 'mail-wic'),
     image: pulumi.interpolate`${wicImageTag}@${wicImage.digest}`,
     restart: 'unless-stopped',
+    // Readiness resource-owned (`wait: true` — cùng ngữ nghĩa với platform):
+    // identity-login-e2e (nhận OTP qua mail sink) chỉ chạy sau khi healthcheck
+    // `/health` của WIC chuyển `healthy`. Trần chờ = startPeriod 120s +
+    // 30 retries × 10s = 420s; waitTimeout 450s dư.
+    wait: true,
+    waitTimeout: 450,
     // `stop_timeout` 30s khớp bounded-wait 20s của entrypoint (SIGTERM → hai
     // workerd thoát sạch trước khi Docker SIGKILL) — cùng luật auth.
     stopTimeout: 30,
@@ -393,7 +396,10 @@ const wic = new docker.Container(
       interval: '10s',
       timeout: '5s',
       retries: 30,
-      startPeriod: '120s',
+      // Chuỗi đúng dạng Go duration Docker chuẩn hoá khi đọc ngược (`2m0s`,
+      // không phải `120s`) — lệch dạng không đổi giá trị nhưng biến mỗi cặp
+      // refresh + up thành diff ảo trên healthcheck.
+      startPeriod: '2m0s',
     },
   },
   { dependsOn: [d1Migrate, wicImage, wicStateVolume, wicStateInit] },

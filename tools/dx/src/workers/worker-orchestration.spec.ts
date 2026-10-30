@@ -17,6 +17,7 @@ import { createServer } from 'node:net';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { normalizeWorktreeRoot, worktreeNamespace } from '@ecoma-io/deployment';
 import { loadReadinessDeclaration, loadWorkerMarkerDeclaration } from './worker-discovery.js';
 import {
   devVarsArgv,
@@ -1406,8 +1407,6 @@ describe('startWorkerRuntime', () => {
     // Compute the desired port the same way orchestration does (namespace +
     // entryName hash) so we can hold exactly that port with a real server.
     const { allocateWorkerPort } = await import('./worker-config.js');
-    const { normalizeWorktreeRoot, worktreeNamespace } =
-      await import('./../local-runtime/deploy-namespace.js');
     const normalized = normalizeWorktreeRoot(root);
     const namespace = worktreeNamespace(normalized);
     const desired = allocateWorkerPort(namespace, 'transactional-mail');

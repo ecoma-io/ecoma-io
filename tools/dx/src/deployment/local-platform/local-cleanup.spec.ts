@@ -4,12 +4,13 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { classifyOwnership, ownershipLabels } from './deploy-labels.js';
 import {
+  classifyOwnership,
   normalizeWorktreeRoot,
+  ownershipLabels,
   worktreeNamespace,
-} from './../../local-runtime/deploy-namespace.js';
-import type { ExecResult } from './pulumi-context.js';
+} from '@ecoma-io/deployment';
+import type { ExecResult } from '@ecoma-io/deployment';
 import {
   CLEANUP_KINDS,
   decideResourceAction,
@@ -96,8 +97,14 @@ function ownedLabels(worktreePath: string): Record<string, string> {
   return ownershipLabels(worktreePath, ns);
 }
 
+function legacyOwnedLabels(worktreePath: string): Record<string, string> {
+  const labels = ownedLabels(worktreePath);
+  labels['io.ecoma.managed-by'] = 'dx';
+  return labels;
+}
+
 describe('decideResourceAction', () => {
-  it('skips (neverremoves) resource without managed-by dx', () => {
+  it('skips (never removes) resource without managed-by ownership label', () => {
     const decision = decideResourceAction(
       'home',
       { state: 'missing' },
@@ -142,13 +149,13 @@ describe('decideResourceAction', () => {
     expect(decision.action).toBe('remove');
   });
 
-  it('keeps orphan postgres volume by default (persistent data)', () => {
+  it('selects orphan postgres volume for removal like any other kind', () => {
     const decision = decideResourceAction(
       'postgres-volume',
       { state: 'owned', worktreePath: '/some/dead/wt', worktreeId: 'wabc' },
       { worktreePresence: () => 'absent' },
     );
-    expect(decision.action).toBe('kept');
+    expect(decision.action).toBe('remove');
   });
 });
 
@@ -184,9 +191,30 @@ describe('classifyOwnership', () => {
     expect(check.state).toBe('owned');
   });
 
+  it('accepts legacy managed-by=dx resources as owned (bounded compatibility)', () => {
+    const path = tempWorktreeDir();
+    const labels = ownershipLabels(path, worktreeNamespace(path));
+    labels['io.ecoma.managed-by'] = 'dx';
+    const check = classifyOwnership(labels);
+    expect(check.state).toBe('owned');
+  });
+
+  it('rejects unknown managed-by value as malformed', () => {
+    const path = tempWorktreeDir();
+    const labels = ownershipLabels(path, worktreeNamespace(path));
+    labels['io.ecoma.managed-by'] = 'some-other-tool';
+    const check = classifyOwnership(labels);
+    expect(check.state).toBe('malformed');
+  });
+
   it('missing labels means not-managed-by DX', () => {
     expect(classifyOwnership({}).state).toBe('missing');
     expect(classifyOwnership({ 'traefik.enable': 'true' }).state).toBe('missing');
+  });
+
+  it('empty managed-by string is treated as missing (fail-closed)', () => {
+    const labels = { 'io.ecoma.managed-by': '' };
+    expect(classifyOwnership(labels).state).toBe('missing');
   });
 
   it('malformed when managed-by ok but other labels missing', () => {
@@ -272,17 +300,71 @@ describe('runLocalCleanup', () => {
       execDocker: fakeDockerExec(docker),
       worktreePresence: () => 'absent',
     });
-    // network, traefik, postgres, home removed; postgres volume kept
+    // network, traefik, postgres, home and the postgres volume all removed
     expect(docker.removed).toEqual(
       expect.arrayContaining([
         `network/ecoma-${ns}-network`,
         `container/ecoma-${ns}-home`,
         `container/ecoma-${ns}-traefik`,
         `container/ecoma-${ns}-postgres`,
+        `volume/ecoma-${ns}-postgres-volume`,
       ]),
     );
     const volumeEntry = report.entries.find((e) => e.kind === 'postgres-volume');
-    expect(volumeEntry?.action).toBe('kept');
+    expect(volumeEntry?.action).toBe('removed');
+  });
+
+  it('legacy managed-by=dx orphan resources are still removed (bounded compatibility)', () => {
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const docker: FakeDocker = {
+      names: new Map([
+        ['container', [`ecoma-${ns}-home`]],
+        ['network', [`ecoma-${ns}-network`]],
+        ['volume', [`ecoma-${ns}-postgres-volume`]],
+      ]),
+      labels: new Map([
+        [`container/ecoma-${ns}-home`, legacyOwnedLabels(wt)],
+        [`network/ecoma-${ns}-network`, legacyOwnedLabels(wt)],
+        [`volume/ecoma-${ns}-postgres-volume`, legacyOwnedLabels(wt)],
+      ]),
+      removed: [],
+    };
+    const report = runLocalCleanup({
+      dryRun: false,
+      env: {},
+      execDocker: fakeDockerExec(docker),
+      worktreePresence: () => 'absent',
+    });
+    expect(docker.removed).toEqual(
+      expect.arrayContaining([
+        `container/ecoma-${ns}-home`,
+        `network/ecoma-${ns}-network`,
+        `volume/ecoma-${ns}-postgres-volume`,
+      ]),
+    );
+    expect(report.errors).toEqual([]);
+  });
+
+  it('non-owned managed-by value is never removed by cleanup', () => {
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const labels = ownedLabels(wt);
+    labels['io.ecoma.managed-by'] = 'some-other-tool';
+    const docker: FakeDocker = {
+      names: new Map([['container', [`ecoma-${ns}-home`]]]),
+      labels: new Map([['container/ecoma-' + ns + '-home', labels]]),
+      removed: [],
+    };
+    const report = runLocalCleanup({
+      dryRun: false,
+      env: {},
+      execDocker: fakeDockerExec(docker),
+      worktreePresence: () => 'absent',
+    });
+    expect(docker.removed).toHaveLength(0);
+    const entry = report.entries.find((e) => e.kind === 'home');
+    expect(entry?.action).toBe('skipped');
   });
 
   it('pact WIC orphan resources (container, image, state volume) are identified and removed', () => {
@@ -495,11 +577,11 @@ describe('runLocalCleanup', () => {
     // Set thay cho sort: cùng đẳng thức tập hợp — `.sort` bị linter cấm,
     // `.toSorted` cần lib es2023 mà dx không dùng (cùng cách index.spec.ts).
     expect(new Set(wouldRemove.map((e) => e.name))).toEqual(
-      new Set([`ecoma-${ns}-home`, `ecoma-${ns}-network`]),
+      new Set([`ecoma-${ns}-home`, `ecoma-${ns}-network`, `ecoma-${ns}-postgres-volume`]),
     );
   });
 
-  it('persistent postgres volume preserved by default', () => {
+  it('orphan postgres volume is removed in execute mode (data policy matches platform down)', () => {
     const wt = tempWorktree();
     const ns = worktreeNamespace(wt);
     const docker: FakeDocker = {
@@ -517,8 +599,8 @@ describe('runLocalCleanup', () => {
       execDocker: fakeDockerExec(docker),
       worktreePresence: () => 'absent',
     });
-    expect(report.entries[0]?.action).toBe('kept');
-    expect(docker.removed).toHaveLength(0);
+    expect(report.entries[0]?.action).toBe('removed');
+    expect(docker.removed).toEqual([`volume/ecoma-${ns}-postgres-volume`]);
   });
 
   it('docker ls failure reported accurately without pretending success', () => {
@@ -590,7 +672,7 @@ describe('dockerInspectLabels', () => {
 });
 
 describe('local-cleanup entry', () => {
-  it('uses shared lock so cleanup cannot race with local-deploy', async () => {
+  it('uses shared lock so cleanup cannot race with a lane up or down', async () => {
     // Contract asserted at type level + code review; here we verify the command
     // module exists and exposes run/args (dispatch contract).
     const mod = await import('./local-cleanup-command.js');
@@ -871,5 +953,130 @@ describe('runLocalCleanup — additional safety', () => {
     expect(docker.removed).toHaveLength(0);
     const entry = report.entries.find((e) => e.name === imageName);
     expect(entry?.action).toBe('would-remove');
+  });
+
+  it('dry-run never issues a destructive command for any eligible resource kind', () => {
+    // Toàn bộ các kind đủ điều kiện xoá (container + network + image + volume
+    // state WIC) trong MỘT lần chạy dry-run: báo cáo đầy đủ `would-remove`,
+    // và lệnh rm nào cũng KHÔNG được phát — trong đó volume state WIC có hình
+    // lệnh khác container (không --force), nên phải khẳng định riêng thay vì
+    // tin vào seam chung.
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const homeName = `ecoma-${ns}-home`;
+    const networkName = `ecoma-${ns}-network`;
+    const stateName = `ecoma-${ns}-auth-wic-state`;
+    const imageName = `ecoma-${ns}-auth-wic:local`;
+    const docker: FakeDocker = {
+      names: new Map([
+        ['container', [homeName]],
+        ['network', [networkName]],
+        ['image', [imageName]],
+        ['volume', [stateName]],
+      ]),
+      labels: new Map([
+        [`container/${homeName}`, ownedLabels(wt)],
+        [`network/${networkName}`, ownedLabels(wt)],
+        [`image/${imageName}`, ownedLabels(wt)],
+        [`volume/${stateName}`, ownedLabels(wt)],
+      ]),
+      removed: [],
+    };
+    const report = runLocalCleanup({
+      dryRun: true,
+      env: {},
+      execDocker: fakeDockerExec(docker),
+      worktreePresence: () => 'absent',
+    });
+    expect(docker.removed).toHaveLength(0);
+    expect(
+      new Set(report.entries.filter((e) => e.action === 'would-remove').map((e) => e.name)),
+    ).toEqual(new Set([homeName, networkName, stateName, imageName]));
+    expect(report.entries.some((e) => e.action === 'removed')).toBe(false);
+  });
+
+  it('docker commands are limited to info, ls, inspect and per-resource rm', () => {
+    // Contract "không có broad Docker cleanup": mọi lệnh docker cleanup phát ra
+    // phải là read-only (info/ls/inspect) hoặc rm đúng MỘT resource đã qua
+    // validate ownership. Một lệnh prune/system/rm-all thoát qua seam là lỗi
+    // phạm vi xoá — chặn ở đây thay vì tin vào đường đọc code.
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const homeName = `ecoma-${ns}-home`;
+    const docker: FakeDocker = {
+      names: new Map([['container', [homeName]]]),
+      labels: new Map([[`container/${homeName}`, ownedLabels(wt)]]),
+      removed: [],
+    };
+    const captured: string[][] = [];
+    const exec = (args: string[], env: NodeJS.ProcessEnv) => {
+      captured.push([...args]);
+      return fakeDockerExec(docker)(args, env);
+    };
+    runLocalCleanup({
+      dryRun: false,
+      env: {},
+      execDocker: exec,
+      worktreePresence: () => 'absent',
+    });
+    expect(captured.length).toBeGreaterThan(0);
+    const rmViolations: string[] = [];
+    for (const args of captured) {
+      // `info`/`ls`/`inspect`/`rm` là args[0] (docker <verb> ...); duy nhất
+      // `container rm --force <name>` dùng args[1] làm verb. Lấy cả hai, khớp
+      // theo tập hợp — một lệnh prune sẽ nêu `prune`/`system` ở một trong hai.
+      const verbs = [args[0], args[1] ?? ''];
+      expect(
+        verbs.some((v) => ['info', 'ls', 'inspect', 'rm'].includes(v)),
+        `cleanup must not issue docker ${args.join(' ')}`,
+      ).toBe(true);
+      if (verbs.includes('rm')) {
+        // rm phải nhắm đúng một resource, không bao giờ dạng all/prune. Vi phạm
+        // được gom rồi khẳng định ngoài vòng lặp (vitest(no-conditional-expect)).
+        if (args.length <= 2) rmViolations.push(`rm without a target: docker ${args.join(' ')}`);
+        if (args.includes('--all')) rmViolations.push(`--all: docker ${args.join(' ')}`);
+        if (args.includes('--prune')) rmViolations.push(`--prune: docker ${args.join(' ')}`);
+        const target = args.at(-1) ?? '';
+        if (!target.startsWith('ecoma-')) {
+          rmViolations.push(`rm target outside the ecoma- namespace: docker ${args.join(' ')}`);
+        }
+      }
+    }
+    expect(rmViolations, 'every docker rm must target exactly one owned ecoma-* resource').toEqual(
+      [],
+    );
+  });
+
+  it('partial rm failure: sibling removal proceeds and the failure is reported once', () => {
+    // #10 surfacing: một rm thất bại KHÔNG dừng các rm độc lập còn lại — mỗi
+    // kind được xử lý độc lập; failure phải nổi lên đúng một lần trong errors
+    // với stderr nguyên chữ, và entry tương ứng là `kept` kèm reason (không
+    // nuốt thành "removed" và không biến thành im lặng).
+    const wt = tempWorktree();
+    const ns = worktreeNamespace(wt);
+    const okName = `ecoma-${ns}-home`;
+    const failName = `ecoma-${ns}-traefik`;
+    const docker: FakeDocker = {
+      names: new Map([['container', [failName, okName]]]),
+      labels: new Map([
+        [`container/${failName}`, ownedLabels(wt)],
+        [`container/${okName}`, ownedLabels(wt)],
+      ]),
+      removed: [],
+      failRm: new Set([`container/${failName}`]),
+    };
+    const report = runLocalCleanup({
+      dryRun: false,
+      env: {},
+      execDocker: fakeDockerExec(docker),
+      worktreePresence: () => 'absent',
+    });
+    expect(docker.removed).toEqual([`container/${okName}`]);
+    const failEntry = report.entries.find((e) => e.name === failName);
+    expect(failEntry?.action).toBe('kept');
+    expect(failEntry?.reason).toContain('remove command failed');
+    expect(failEntry?.reason).toContain(`rm ${`container/${failName}`} fail (fake)`);
+    expect(report.errors).toHaveLength(1);
+    expect(report.errors[0]).toContain(failName);
   });
 });

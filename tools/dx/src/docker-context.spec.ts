@@ -196,7 +196,7 @@ describe('root .dockerignore: sensitive paths are excluded', () => {
     expect(isExcluded('apps/home/node_modules/x/index.js')).toBe(true);
     expect(isExcluded('apps/other-app/src/x.ts')).toBe(true);
     expect(isExcluded('libs/other-lib/src/x.ts')).toBe(true);
-    expect(isExcluded('tools/dx/src/local-deploy.ts')).toBe(true);
+    expect(isExcluded('tools/dx/src/index.spec.ts')).toBe(true);
     expect(isExcluded('docs/README.md')).toBe(true);
     expect(isExcluded('apps/home/.output/server/index.mjs')).toBe(true);
     expect(isExcluded('dist/x.js')).toBe(true);

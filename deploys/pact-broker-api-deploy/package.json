@@ -1,7 +1,11 @@
 {
   "name": "pact-broker-api-deploy",
   "private": true,
+  "type": "module",
   "main": "index.ts",
+  "dependencies": {
+    "@ecoma-io/deployment": "workspace:*"
+  },
   "ecoma": {
     "deployment": {
       "status": "scaffold"
@@ -9,7 +13,9 @@
   },
   "nx": {
     "implicitDependencies": [
-      "platform-deploy"
+      "platform-deploy",
+      "@ecoma-io/deployment",
+      "@ecoma-io/pact-broker-api"
     ],
     "tags": [
       "type:deployment",
@@ -26,11 +32,11 @@
         }
       },
       "local-up": {
-        "//": "Local lane — duy nhất một lane (`-c local`). Wave 2 (#264): unit nằm trong LOCAL_LANE_PROJECTS. dependsOn platform:local-up — stack đọc network + postgres qua StackReference platform, platform chưa up là StackReference rỗng. Edge `build` là build prerequisite NGOÀI lane (validator chấp nhận target `build`, không tham gia spine topo): WIC container chạy `wrangler dev` từ bundle `dist/` mount lúc container start — bundle chưa build là wrangler fail entry-point và container restart loop (#247).",
+        "//": "Local lane — duy nhất một lane (`-c local`). Entry colocated (`local.ts up`) KHÔNG lấy khóa lane nào (PR #424: serialization thật của cùng một stack là state lock của Pulumi): chuẩn bị bảng secret của riêng project (config set qua stdin), `pulumi up` stack của chính nó, rồi health gate container CỦA CHÍNH unit (`ecoma-<ns>-pact-api-wic` healthy theo healthcheck Docker của unit). Thứ tự toàn cục do `dependsOn` dưới đây quyết định (Nx Task Graph); entry KHÔNG gọi lệnh DX nào. Cache bị tắt ở targetDefaults `nx.json` (CONTRACT: mutate Docker/state thật).",
         "executor": "nx:run-commands",
         "options": {
           "cwd": "deploys/pact-broker-api-deploy",
-          "command": "npx tsx ../../tools/dx local-stack-step --stack pact-broker-api-deploy --step up"
+          "command": "npx tsx local.ts up"
         },
         "configurations": {
           "local": {}
@@ -49,6 +55,17 @@
             "target": "build"
           }
         ]
+      },
+      "local-down": {
+        "//": "Teardown của RIÊNG project này (`local.ts down` = `pulumi destroy --yes`; platform tự xoá volume PostgreSQL mọi lần down). KHÔNG có `dependsOn`: teardown không yêu cầu thứ tự ngược toàn cục — mỗi project tự xoá resource của mình trong namespace của worktree, `pulumi destroy` tự serialize trên stack state, và Docker chấp nhận rm trực tiếp từng resource. Idempotent: worktree chưa từng deploy là no-op exit 0; lỗi destroy thật thì exit 1. Cache bị tắt ở targetDefaults `nx.json`.",
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "deploys/pact-broker-api-deploy",
+          "command": "npx tsx local.ts down"
+        },
+        "configurations": {
+          "local": {}
+        }
       }
     }
   }

@@ -84,17 +84,30 @@ function resolveRootOrigin(): { hostname: string; port: string; ca: string } {
   if (raw !== undefined && raw.trim().length > 0) {
     return { ...readHostPort(raw.trim()), ca };
   }
-  // Không fallback đọc `.env` — khác skeleton một chút có chủ đích: stack local
-  // thuộc WORKTREE chạy `pnpm dx local-deploy` (namespace Docker derive từ path
-  // worktree đó), `.env` repo root cạnh suite có thể là port của một stack khác
-  // hoặc đã chết. Env là nguồn duy nhất; thiếu env là fail với remedy đúng một
-  // lệnh. (Nx tự load `.env` repo root vào env của task nên chạy qua `nx run`
-  // không rơi vào nhánh này khi checkout đó chính là nơi chạy stack.)
+  // Fallback đọc `.env` repo root — cần thiết khi suite chạy QUA MỘT invocation
+  // Nx duy nhất cùng lúc với deploy (`nx affected -t system-test -c local`):
+  // orchestrator của Nx snapshot env của MỌI task đã schedule ngay vòng lặp đầu
+  // (trước khi `platform-deploy:local-up` kịp ghi `.env`), nên env-process của
+  // task suite không bao giờ chứa ROOT_DOMAIN dù `.env` đã có trước khi suite
+  // chạy. Đọc FILE lúc global-setup chạy thì luôn thấy giá trị mới nhất.
+  // Cùng rationale với fallback của skeleton `home-public-e2e` (file nằm ở repo
+  // root của checkout đang chạy — worktree sở hữu stack, không phải worktree lạ).
+  try {
+    const text = readFileSync(join(SUITE_DIR, '../../../.env'), 'utf8');
+    for (const line of text.split(/\r?\n/u)) {
+      const match = /^ROOT_(?:DOMAIN|HOST)=(.*)$/u.exec(line.trim());
+      if (match && match[1].trim().length > 0) {
+        return { ...readHostPort(match[1].trim()), ca };
+      }
+    }
+  } catch {
+    // `.env` vắng mặt — rơi xuống throw bên dưới với message chỉ đúng remedy.
+  }
   throw new Error(
-    'identity-login-e2e global setup failed: ROOT_DOMAIN (or ROOT_HOST) is not set in the environment. ' +
-      'This suite targets the local platform stack of the checkout that ran `pnpm dx local-deploy` — ' +
-      'run it there (its .env supplies the dynamic Traefik host:port) or export ROOT_DOMAIN explicitly, ' +
-      'then rerun the suite. The suite must FAIL when the stack is unreachable; skipping is never acceptable.',
+    'identity-login-e2e global setup failed: ROOT_DOMAIN (or ROOT_HOST) is not set in the environment and no .env file defines it. ' +
+      'Deploy the local stack first (Nx provisions the `local-up` prerequisites) — deploying writes the dynamic Traefik host:port into the repo-root .env. ' +
+      'Or export ROOT_DOMAIN explicitly, then rerun the suite. ' +
+      'The suite must FAIL when the stack is unreachable; skipping is never acceptable.',
   );
 }
 
@@ -170,7 +183,7 @@ function fail(origin: string, elapsedMs: number, error: Error): never {
   console.error(
     `stack gate FAILED after ${elapsedMs}ms: ${origin}/api/auth/session is not serving the expected ` +
       `account contract (unauthenticated request must answer 401) — ${error.message}. ` +
-      'The local stack is not reachable or not ready. Start it with `pnpm dx local-deploy` ' +
+      'The local stack is not reachable or not ready. Start it with `pnpm nx affected -t system-test -c local` (Nx provisions the local-up prerequisites first) ' +
       '(in the checkout that owns the stack), then rerun the suite. ' +
       'This suite must FAIL when the stack is down; skipping is never an acceptable result.',
   );

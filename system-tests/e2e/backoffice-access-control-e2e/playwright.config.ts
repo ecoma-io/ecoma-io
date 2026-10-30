@@ -22,7 +22,7 @@ import { defineConfig, devices } from '@playwright/test';
  * giá thật của `home-public-e2e`). Config trả placeholder
  * `office.placeholder.invalid:443` vô hại; fail-closed thật nằm ở
  * `global-setup.ts` (probe trước test đầu tiên, exit 1
- * với remedy `pnpm dx local-deploy`).
+ * với remedy `pnpm nx affected -t system-test -c local` (Nx tự provision các prerequisite `local-up`)).
  *
  * ═══ TLS verify thật, không `ignoreHTTPSErrors` ═══
  *
@@ -35,7 +35,7 @@ import { defineConfig, devices } from '@playwright/test';
  *
  * ═══ Không `webServer`; gate thuộc global-setup ═══
  *
- * Stack là external state quản bởi `pnpm dx local-deploy`. Property
+ * Stack là external state quản bởi lane Nx `local-up` (deploy qua `pnpm nx affected -t system-test -c local`). Property
  * `globalSetup` + gate fail-closed trong `global-setup.ts` là CẶP phải luôn đi
  * cùng nhau: globalSetup chạy trước test đầu tiên ở CẢ đường target
  * `system-test` lẫn `npx playwright test` trực tiếp; quên wire property là mọi

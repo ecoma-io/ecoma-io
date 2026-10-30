@@ -3,6 +3,7 @@
     "strict": true,
     "outDir": "bin",
     "target": "es2020",
+    "lib": ["es2022"],
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "sourceMap": true,

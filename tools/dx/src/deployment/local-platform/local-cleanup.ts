@@ -8,15 +8,17 @@
  * vòng sống vào resource khác sau khi worktree biến mất.
  *
  * An toàn là tính chất ĐẦU TIÊN, không phải kiểm tra cuối:
- * - Ownership phải được chứng minh bằng label (`deploy-labels.ts`): resource
+ * - Ownership phải được chứng minh bằng label (`deploy-labels` của `@ecoma-io/deployment`): resource
  *   thiếu label, sai giá trị hay metadata mâu thuẫn KHÔNG bao giờ bị xoá, dù
  *   tên có trông giống resource ecoma.
  * - Worktree còn tồn tại trên đĩa (theo `normalizeWorktreeRoot` — path phải
  *   resolve được) là worktree SỐNG, resource của nó được giữ nguyên kể cả nếu
  *   developer đang không deploy.
- * - PostgreSQL volume persistent mặc định KHÔNG bị xoá — giữ đúng contract
- *   `local-destroy` (dữ liệu chỉ xoá khi opt-in tường minh). Hiện cleanup
- *   KHÔNG có cờ xoá volume: việc đó thuộc `local-destroy --remove-data`.
+ * - PostgreSQL volume bị XOÁ như mọi resource mồ côi đủ điều kiện khác —
+ *   cùng contract với down của `platform-deploy` (down xoá volume vô điều
+ *   kiện, không còn opt-in giữ dữ liệu). An toàn của volume không nằm ở hành
+ *   vi "giữ" mà ở chính các check ownership + presence: thiếu label, metadata
+ *   mâu thuẫn hay worktree còn sống là volume KHÔNG bao giờ bị xoá.
  * - Docker daemon không nói được / metadata not-readable ⇒ fail an toàn, không
  *   xoá gì.
  *
@@ -33,21 +35,23 @@ import { resolve, normalize } from 'node:path';
 
 import {
   classifyOwnership,
+  labelsFromInspect,
+  type DeployResourceKind,
+  dockerResourceName,
   LABEL_MANAGED_BY,
   LABEL_MANAGED_BY_VALUE,
-  labelsFromInspect,
-  OWNERSHIP_LABELS,
-  type OwnershipCheck,
-} from './deploy-labels.js';
-import {
-  dockerResourceName,
   NAMESPACE_LENGTH,
   normalizeWorktreeRoot,
-  type DeployResourceKind,
-} from './../../local-runtime/deploy-namespace.js';
-import type { ExecResult } from './pulumi-context.js';
+  OWNERSHIP_LABELS,
+  type OwnershipCheck,
+  type ExecResult,
+} from '@ecoma-io/deployment';
 
-/** Loại resource mà cleanup quét. */
+/**
+ * Kind volume PostgreSQL trong `CLEANUP_KINDS` — được cleanup XOÁ như mọi
+ * resource mồ côi đủ điều kiện (labels ownership hợp lệ + worktree confirmed
+ * absent), cùng contract với down vô điều kiện của `platform-deploy`.
+ */
 export const POSTGRES_VOLUME_KIND: DeployResourceKind = 'postgres-volume';
 
 export const CLEANUP_KINDS: readonly DeployResourceKind[] = [
@@ -280,12 +284,6 @@ export function decideResourceAction(
             'fail-closed, keeping the resource',
         };
       }
-      if (kind === POSTGRES_VOLUME_KIND) {
-        return {
-          action: 'kept',
-          reason: 'persistent PostgreSQL volume — cleanup does not delete it',
-        };
-      }
       return { action: 'remove' };
     }
   }
@@ -453,6 +451,25 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
       }
 
       if (decision.action === 'remove') {
+        // TOCTOU guard: presence đã được cache ở `presenceOnce` khi decide;
+        // re-check trực tiếp ngay trước lệnh rm để tránh xoá nhầm khi worktree
+        // được tạo lại trong cửa sổ giữa inspect và rm (đặc biệt volume).
+        if (ownership.state === 'owned') {
+          const freshPresence = presenceFn(ownership.worktreePath);
+          if (freshPresence !== 'absent') {
+            entries.push({
+              kind,
+              name,
+              worktreePath: ownership.worktreePath,
+              action: 'kept',
+              reason:
+                freshPresence === 'present'
+                  ? `worktree re-appeared between inspect and remove (${ownership.worktreePath}) — kept`
+                  : `cannot confirm worktree absence right before remove (${ownership.worktreePath}) — kept`,
+            });
+            continue;
+          }
+        }
         if (filter.dryRun) {
           entries.push({
             kind,

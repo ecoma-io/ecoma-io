@@ -82,16 +82,11 @@ tsconfig.tsbuildinfo
 # nhưng entry tường minh giữ Contracts: đổi tên thư mục state không âm thầm
 # đưa state vào Git.
 .pulumi-local-state/
-# Passphrase do `pnpm dx local-deploy` sinh cho local stack của worktree
+# Passphrase do entry `local-up` (tools/dx local-entry helper) sinh cho local stack của worktree
 # (xem `resolveLocalPassphrase` trong
 # `tools/dx/src/deployment/local-platform/pulumi-context.ts`).
 # Entry tường minh: đổi tên file không được âm thầm đưa passphrase vào Git.
 .pulumi-local-passphrase
-# Lock lane deploy của worktree (`acquireLaneLock` trong
-# `tools/dx/src/local-runtime/local-lock.ts`): metadata PID/token/cmdline của
-# orchestrator đang giữ lane — runtime state, không phải source.
-# Entry tường minh: đổi tên file không được âm thầm đưa lock vào Git.
-.ecoma-lane.lock
 Pulumi.*.yaml
 
 # State lifecycle của Worker process local (`worker-process.ts`): metadata

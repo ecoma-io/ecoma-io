@@ -10,8 +10,8 @@
 # certificate riêng, nên một store là đủ cho `fbi.com` lẫn subdomain sau này.
 #
 # ⚠️ `fbi.com` ở hai dòng dưới là HARD-CODE thứ hai của hostname local (nguồn
-# chân lý là `LOCAL_ROOT_HOSTNAME` trong `tools/dx/src/deployment/local-platform/platform-outputs-
-# contract.ts`). Chương trình Pulumi đã khóa file này với hằng số bằng spec
+# chân lý là `LOCAL_ROOT_HOSTNAME` trong `platform-outputs-contract` của
+# `@ecoma-io/deployment`). Chương trình Pulumi đã khóa file này với hằng số bằng spec
 # `traefik-dynamic.yml consistency` trong `platform-outputs-contract.spec.ts` —
 # đổi hostname mà quên file này, test đỏ ngay trước khi kịp deploy sai.
 tls:

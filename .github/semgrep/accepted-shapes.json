@@ -84,57 +84,32 @@
   },
   {
     "rule": "security-sensitive-value-in-http-response",
-    "path": "tools/dx/src/local-runtime/local-lock.ts",
-    "start": 115,
-    "end": 120,
-    "reason": "parseLockContent cua file lock tra ve {pid, token, startedAt, cmdline} - token la lock acquisition token (randomBytes hex), bat ky process cung user co the doc file lock truc tiep -> khong la secret-lookup heuristics can bao ve. Day la lock file lock trong worktree, KHONG phai HTTP response; rule taint match 'token' naming heuristic FP. Line pin re-anchored +33 khi them redactCmdline (OCR round #417: loc argv nhay cam truoc khi ghi cmdline vao lock file) - noi dung dong khong doi.",
+    "path": "deploys/platform-deploy/platform-env.ts",
+    "start": 77,
+    "end": 77,
+    "reason": "Rehomed from tools/dx local-env.ts:196 (PR #424 ownership split: platform env handling is owned by deploys/platform-deploy): internal CLI helper returns the PostgreSQL password to the caller that writes stack config/.env - deploys/ has no HTTP handler; naming-heuristic FP. Content unchanged from the accepted entry.",
     "lines": {
-      "115": "^  return \\{$",
-      "116": "^    pid,$",
-      "117": "^    token,$",
-      "118": "^    startedAt,$",
-      "119": "^    cmdline: cmdline as string\\[\\],$",
-      "120": "^  \\};$"
+      "77": "^    return \\{ state: 'found', password \\};$"
     }
   },
   {
     "rule": "security-sensitive-value-in-http-response",
-    "path": "tools/dx/src/deployment/local-platform/local-deploy.ts",
-    "start": 198,
-    "end": 198,
-    "reason": "Helper noi bo cua CLI tooling (tools/dx) tra mat khau PostgreSQL cho orchestrator - KHONG phai HTTP response: tools/ khong co HTTP handler, gia tri chi dung noi bo de ghi stack config/.env va truyen vao container qua pulumi.secret (redact). Khong ro ra browser/bundle/URL/public output. Line pin re-anchored +4 khi doi sang lock lane per-worktree (#363) - noi dung dong khong doi.",
+    "path": "deploys/platform-deploy/platform-env.ts",
+    "start": 172,
+    "end": 172,
+    "reason": "Rehomed from tools/dx local-env.ts:291 (PR #424 ownership split): same internal password lookup result, no HTTP surface; naming-heuristic FP. Content unchanged from the accepted entry.",
     "lines": {
-      "198": "^    return \\{ state: 'found', password \\};$"
+      "172": "^    return \\{ ok: true, password: lookup.password, generated: false \\};$"
     }
   },
   {
     "rule": "security-sensitive-value-in-http-response",
-    "path": "tools/dx/src/deployment/local-platform/local-deploy.ts",
-    "start": 679,
-    "end": 679,
-    "reason": "Helper noi bo cua CLI tooling (tools/dx) tra mat khau PostgreSQL cho orchestrator - KHONG phai HTTP response: tools/ khong co HTTP handler, gia tri chi dung noi bo de ghi stack config/.env va truyen vao container qua pulumi.secret (redact). Khong ro ra browser/bundle/URL/public output. Line pin re-anchored +38 khi doi sang lock lane per-worktree (#363) - noi dung dong khong doi.",
+    "path": "deploys/platform-deploy/platform-env.ts",
+    "start": 245,
+    "end": 245,
+    "reason": "Rehomed from tools/dx local-env.ts:364 (PR #424 ownership split): newly generated PostgreSQL password returned to the .env writer inside the deploy entry tooling; no HTTP surface; naming-heuristic FP. Content unchanged from the accepted entry.",
     "lines": {
-      "679": "^    return \\{ ok: true, password: lookup\\.password, generated: false \\};$"
-    }
-  },
-  {
-    "rule": "security-sensitive-value-in-http-response",
-    "path": "tools/dx/src/deployment/local-platform/local-deploy.ts",
-    "start": 752,
-    "end": 752,
-    "reason": "Helper noi bo cua CLI tooling (tools/dx) tra mat khau PostgreSQL cho orchestrator - KHONG phai HTTP response: tools/ khong co HTTP handler, gia tri chi dung noi bo de ghi stack config/.env va truyen vao container qua pulumi.secret (redact). Khong ro ra browser/bundle/URL/public output. Line pin re-anchored +38 cung dot thay doi lock lane (#363) - noi dung dong khong doi.",
-    "lines": {
-      "752": "^  return \\{ ok: true, password, generated: true \\};$"
-    }
-  },
-  {
-    "rule": "security-sensitive-value-in-http-response",
-    "path": "tools/dx/src/local-runtime/local-lock.ts",
-    "start": 285,
-    "end": 285,
-    "reason": "tryAcquire cua lock lane tra {release, token} cho orchestrator - token la lock acquisition token (randomBytes hex), khong roi khoi process qua HTTP. KHONG phai HTTP response; rule taint match 'token' naming heuristic FP. Entry moi khi doi sang lock lane per-worktree (#363): signature acquire doi tu release-only sang {release, token} de truyen lease xuong task con qua ECOMA_LANE_LEASE. Re-anchored 252->285 khi them redactCmdline (OCR round #417) - noi dung dong khong doi.",
-    "lines": {
-      "285": "^  return \\{ release, token \\};$"
+      "245": "^  return \\{ ok: true, password, generated: true \\};$"
     }
   }
 ]

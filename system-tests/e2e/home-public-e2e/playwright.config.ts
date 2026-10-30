@@ -16,7 +16,7 @@ import { defineConfig, devices } from '@playwright/test';
  * Stack local chạy sau Traefik với certificate self-signed `fbi.com` của repo
  * (`deploys/platform-deploy/local-certs/fbi.com.crt`, port Traefik ĐỘNG theo
  * mỗi lần container được tạo lại — giá trị thật nằm ở `ROOT_DOMAIN`/`ROOT_HOST`
- * trong `.env` mà `pnpm dx local-deploy` ghi). TLS phải được VERIFY THẬT SỰ —
+ * trong `.env` mà bước `local-up` của lane Nx ghi). TLS phải được VERIFY THẬT SỰ —
  * `ignoreHTTPSErrors: true` hay `NODE_TLS_REJECT_UNAUTHORIZED=0` là đường cấm,
  * vì suite sinh ra để chứng minh chuỗi DNS/TLS/routing/upstream; tắt verification
  * là test nói dối về đúng thứ nó được sinh ra để kiểm.
@@ -54,7 +54,7 @@ import { defineConfig, devices } from '@playwright/test';
  *
  * ═══ Không `webServer` ═══
  *
- * Stack là external state, quản bởi `pnpm dx local-deploy` — Playwright không
+ * Stack là external state, quản bởi lane Nx `local-up` (deploy qua `pnpm nx affected -t system-test -c local`) — Playwright không
  * tự dựng server. Gate "stack phải đang sống" thuộc `global-setup.ts`, được
  * wire qua property `globalSetup` bên dưới (fail-closed: stack không có →
  * suite ĐỎ, không bao giờ skip).
@@ -125,7 +125,7 @@ function withOrigin(raw: string): string {
 }
 
 /**
- * Origin gốc của stack local — giữ nguyên `host:port`. `pnpm dx local-deploy`
+ * Origin gốc của stack local — giữ nguyên `host:port`. `pnpm nx affected -t system-test -c local` — nó provision các prerequisite `local-up` trước
  * ghi `ROOT_HOST=<host>:<port>` (key sở hữu từ trước); #353 thêm `ROOT_DOMAIN`
  * với cùng giá trị cho system test. Đọc `ROOT_DOMAIN` trước, fallback
  * `ROOT_HOST` cho worktree chưa redeploy kể từ khi #353 merge.

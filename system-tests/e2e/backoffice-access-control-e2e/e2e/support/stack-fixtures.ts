@@ -71,7 +71,7 @@ export async function resolvePostgresContainer(origin: string): Promise<string> 
   if (candidates.length === 0) {
     throw new Error(
       `no traefik container publishes host port ${port} — the stack behind ${origin} is not running. ` +
-        'Start it with `pnpm dx local-deploy` first.',
+        'Start it with `pnpm nx affected -t system-test -c local` first.',
     );
   }
   if (candidates.length > 1) {
@@ -123,7 +123,18 @@ export async function seedAccountIdentity(
   postgresContainer: string,
   params: { readonly sub: string; readonly email: string },
 ): Promise<void> {
+  // Xoá challenge OTP của ĐÚNG định danh này trước khi challenge: rate limit
+  // của account (3 challenge/15 phút per address — `OTP_RATE_LIMIT_SHORT_MAX`,
+  // đếm thẳng từ bảng `otp_challenges`) là budget DÍNH LẠI GIỮA CÁC LẦN CHẠY —
+  // identity cố định của suite hết budget sau vài lần rerun dày (mỗi attempt
+  // retry của CI chạy lại trọn suite) và challenge ngừng cấp mã. `cleanupFixtureData`
+  // của `identity-login-e2e` áp cùng phép xoá cho identity của suite nó.
+  // Chỉ xoá hàng của hash địa chỉ fixture — không đụng challenge của identity khác.
+  const resetChallenge = `DELETE FROM account.otp_challenges WHERE address_hash = ${sqlQuote(
+    emailAddressHash(params.email),
+  )};`;
   const sql = [
+    resetChallenge,
     `INSERT INTO account.users (sub) VALUES (${sqlQuote(params.sub)}) ON CONFLICT DO NOTHING;`,
     `INSERT INTO account.email_addresses
        (user_sub, address_normalized, address_hash, status, is_sign_in, verified_at)

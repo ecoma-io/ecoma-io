@@ -29,7 +29,7 @@ import {
 import { spawnSync } from 'node:child_process';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 
-import { normalizeWorktreeRoot, worktreeNamespace } from './../local-runtime/deploy-namespace.js';
+import { normalizeWorktreeRoot, worktreeNamespace } from '@ecoma-io/deployment';
 import { workerProcessStateDir } from './worker-process.js';
 import { ROOT_DIR } from '../utils.js';
 

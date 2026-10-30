@@ -43,18 +43,15 @@ import * as docker from '@pulumi/docker';
 import * as dockerBuild from '@pulumi/docker-build';
 import * as pulumi from '@pulumi/pulumi';
 
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem backoffice-deploy
 import {
+  type PlatformOutputs,
   dockerResourceName,
   normalizeWorktreeRoot,
+  ownershipLabels,
+  shellQuote,
+  sqlQuote,
   worktreeNamespace,
-} from '../../tools/dx/src/local-runtime/deploy-namespace';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import { shellQuote, sqlQuote } from '../../tools/dx/src/local-runtime/shell-quote';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import { ownershipLabels } from '../../tools/dx/src/deployment/local-platform/deploy-labels';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import type { PlatformOutputs } from '../../tools/dx/src/deployment/local-platform/platform-outputs-contract';
+} from '@ecoma-io/deployment';
 
 /**
  * Image Node pin (theo DIGEST) để chạy migration runner trong container gắn
@@ -114,7 +111,7 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
   return pulumi.output(platform.getOutput(key)).apply((raw) => {
     if (raw === undefined || raw === null) {
       throw new Error(
-        `platformStackRef does not export "${key}". Run \`pnpm dx local-deploy\` (apply platform) first.`,
+        `platformStackRef does not export "${key}". Run \`pnpm nx run platform-deploy:local-up -c local\` (apply platform) first.`,
       );
     }
     return raw as PlatformOutputs[K];
@@ -132,8 +129,8 @@ const runtimePassword = conf.require('runtimePassword');
 const migratorPassword = conf.require('migratorPassword');
 const prunerPassword = conf.require('prunerPassword');
 
-// Secret HMAC của app — cùng kênh `--config` (stdin) như mật khẩu role; orchestration
-// (`local-deploy`) sinh và set, stack này đọc. Thiếu key là fail ngay lúc `pulumi up`
+// Secret HMAC của app — cùng kênh `--config` (stdin) như mật khẩu role; entry up
+// của chính stack này sinh và set, stack đọc lại. Thiếu key là fail ngay lúc `pulumi up`
 // (`conf.require`) chứ không Container với secret rỗng.
 const internalHmacSecret = conf.require('internalHmacSecret');
 const otpHmacSecret = conf.require('otpHmacSecret');
@@ -322,6 +319,13 @@ const account = new docker.Container(
     name: dockerResourceName(ns, 'account'),
     image: pulumi.interpolate`${imageTag}@${image.digest}`,
     restart: 'unless-stopped',
+    // Readiness resource-owned (`wait: true` — cùng ngữ nghĩa với platform):
+    // auth + transactional-mail đọc secret cross-stack qua StackReference, và
+    // StackReference resolve sau khi stack up thành công — `wait` bắt `up`
+    // thành công CHỈ khi healthcheck `/ready` (DB probe thật) đã `healthy`.
+    // Trần chờ = startPeriod 30s + 12 retries × 10s = 150s; waitTimeout 180s dư.
+    wait: true,
+    waitTimeout: 180,
     networksAdvanced: [{ name: networkName, aliases: ['ecoma-account'] }],
     envs: [
       `PORT=${ACCOUNT_INTERNAL_PORT}`,

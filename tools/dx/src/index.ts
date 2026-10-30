@@ -20,14 +20,8 @@ export const app = defineCommand({
     'semgrep-scan': () => import('./security/semgrep-scan.js').then((m) => m.default),
     'commit-signing': () => import('./security/commit-signing-command.js').then((m) => m.default),
     'provision-gate': () => import('./deployment/provision-gate-command.js').then((m) => m.default),
-    'local-stack-step': () =>
-      import('./deployment/local-platform/local-stack-step-command.js').then((m) => m.default),
-    'local-deploy': () =>
-      import('./deployment/local-platform/local-deploy-command.js').then((m) => m.default),
     'local-status': () =>
       import('./deployment/local-platform/local-status-command.js').then((m) => m.default),
-    'local-destroy': () =>
-      import('./deployment/local-platform/local-destroy-command.js').then((m) => m.default),
     'local-cleanup': () =>
       import('./deployment/local-platform/local-cleanup-command.js').then((m) => m.default),
     'local-worker-up': () => import('./workers/local-worker-up-command.js').then((m) => m.default),

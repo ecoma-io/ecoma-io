@@ -404,12 +404,15 @@ describe('wiring', () => {
     for (const required of [
       '{workspaceRoot}/.github/workflows/code-analysis.yml',
       '{workspaceRoot}/lefthook.yml',
-      // `shell-quote.spec.ts` ghim caller `deploys/backoffice-deploy/index.ts`
-      // qua `fs.readFileSync` — cũng vô hình với graph nếu không khai.
-      '{workspaceRoot}/deploys/backoffice-deploy/index.ts',
     ]) {
       expect(inputs).toContain(required);
     }
+    // Caller `deploys/backoffice-deploy/index.ts` mà `shell-quote.spec.ts`
+    // (nay ở `libs/deployment`) ghim đã RỜI named-input của DX: spec đó theo
+    // lib `@ecoma-io/deployment` đi, và lib đọc caller trực tiếp nên input
+    // `{projectRoot}/**/*` của lib đã phủ file caller. Khai lại ở đây là input
+    // nghịch hướng (dx đọc deploy source) — bị chặn trong review vòng này.
+    expect(inputs).not.toContain('{workspaceRoot}/deploys/backoffice-deploy/index.ts');
     // `{projectRoot}/**/*` phải còn ở đầu: xoá nó là mất toàn bộ source files
     // khỏi hash — test/lint/typecheck sẽ cache-hit sai trên mọi thay đổi code.
     expect(inputs).toContain('{projectRoot}/**/*');

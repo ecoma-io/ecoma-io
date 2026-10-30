@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 
+import { readRootHostPort } from './local-origin';
+
 /**
  * Fixture layer của suite — NỘI BỘ local stack, truy cập QUA Docker CLI.
  *
@@ -94,13 +96,10 @@ export function resolveStackNamespace(): string {
   if (cachedNamespace !== undefined) {
     return cachedNamespace;
   }
-  const fromEnv = process.env.ROOT_DOMAIN ?? process.env.ROOT_HOST;
-  if (fromEnv === undefined || fromEnv.trim().length === 0) {
-    throw new Error(
-      'ROOT_DOMAIN (or ROOT_HOST) is not set — cannot identify which local stack to seed. ' +
-        'Run the suite from the checkout that ran `pnpm dx local-deploy`.',
-    );
-  }
+  // Cùng một cơ chế resolve runtime config với `local-origin.ts`: ENV trước,
+  // fallback `.env` repo root TẠI THỜI ĐIỂM ĐỌC (Nx snapshot env của task suite
+  // TRƯỚC khi platform-deploy kịp ghi `.env` trong đường một-invocation).
+  const fromEnv = readRootHostPort();
   const port = fromEnv.includes(':') ? (fromEnv.split(':')[1] ?? '') : '443';
   const candidates = dockerLines(['ps', '--format', '{{.Names}}']).filter((name) =>
     /^ecoma-[a-z0-9]+-traefik$/u.test(name),
@@ -127,7 +126,7 @@ export function resolveStackNamespace(): string {
     throw new Error(
       `expected exactly one ecoma Traefik container publishing loopback port ${port}, found ` +
         `${matches.length}: ${JSON.stringify(matches)}. ROOT_DOMAIN must point at the live ` +
-        "stack's dynamic port — rerun `pnpm dx local-deploy` in the owning checkout and use its ROOT_DOMAIN.",
+        "stack's dynamic port — rerun the local lane in the owning checkout and use its ROOT_DOMAIN.",
     );
   }
   const namespace = dockerLines([
@@ -139,7 +138,7 @@ export function resolveStackNamespace(): string {
   if (namespace === undefined || !/^w[a-z0-9]{12}$/u.test(namespace)) {
     throw new Error(
       `Traefik container ${matches[0] ?? '(none)'} has no valid io.ecoma.worktree-id label — ` +
-        'the stack was not deployed by `pnpm dx local-deploy`; cannot identify its containers safely.',
+        'the stack was not deployed by the Nx local lane; cannot identify its containers safely.',
     );
   }
   cachedNamespace = namespace;

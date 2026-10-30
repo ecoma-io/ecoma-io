@@ -8,6 +8,30 @@
     "jose": "^6"
   },
   "nx": {
+    "//": [
+      "implicitDependencies — tập deploy unit mà kết quả test phụ thuộc, suy từ code suite:",
+      "- platform-deploy: cert local `deploys/platform-deploy/local-certs/fbi.com.crt` (global-setup.ts + e2e/support/local-origin.ts + playwright.config.ts đọc trực tiếp),",
+      "  `ROOT_DOMAIN`/`ROOT_HOST` do `local-up` của platform ghi vào `.env`, router Traefik của platform route mọi origin `auth.`/`account.`/`office.`,",
+      "  và container `ecoma-<ns>-postgres` mà e2e/support/local-origin.ts seed nằm trong namespace của platform.",
+      "- auth-deploy: origin `auth.<host>` là issuer OIDC — baseURL của browser (`playwright.config.ts`), gate probe discovery, mọi endpoint",
+      "  authorize/token/jwks/revocation/end-session mà protocol-surface + negative-paths + refresh-rotation gọi, và client",
+      "  `ecoma-backoffice-local` với redirect_uri `office.<host>` được seed bởi chính `local-up` của auth (deploys/auth-deploy/index.ts).",
+      "- account-deploy: browser điều hướng qua UI login/consent ở origin `account.<host>` (`accountOrigin()` trong oidc-browser-flow +",
+      "  refresh-rotation), user fixture được seed vào `db-account`, và hop `/authorize/confirm` relay do route verify của account cấp.",
+      "- backoffice-deploy: redirect_uri đăng ký là `https://office.<host>:<port>/api/auth/callback` — browser ĐẾN origin office ở bước 6",
+      "  (oidc-browser-flow `waitForURL(localRedirectUri())`): router Traefik của backoffice phải route `office.<host>` và middleware",
+      "  authn của BFF phải 401 từ chối callback (không tiêu thụ code) — kết quả test phụ thuộc cả hai hành vi đó.",
+      "- transactional-mail-deploy: OTP được đọc từ mail sink D1 trong container `ecoma-<ns>-mail-wic`",
+      "  (`local-origin.ts::pollOtpMail` docker exec vào đó) do `local-up` của mail provision.",
+      "Không khai home/pact/push: suite không chạm origin nào của chúng."
+    ],
+    "implicitDependencies": [
+      "platform-deploy",
+      "auth-deploy",
+      "account-deploy",
+      "backoffice-deploy",
+      "transactional-mail-deploy"
+    ],
     "tags": [
       "type:tooling",
       "scope:auth",
@@ -17,6 +41,21 @@
       "system-test": {
         "executor": "nx:run-commands",
         "cache": false,
+        "dependsOn": [
+          {
+            "projects": [
+              "platform-deploy",
+              "auth-deploy",
+              "account-deploy",
+              "backoffice-deploy",
+              "transactional-mail-deploy"
+            ],
+            "target": "local-up"
+          }
+        ],
+        "configurations": {
+          "local": {}
+        },
         "options": {
           "cwd": "system-tests/e2e/identity-oidc-e2e",
           "command": "npx playwright test"
@@ -28,7 +67,13 @@
           "repo, nhưng stack local phía sau là external state sống ngoài inputs của Nx — một cache",
           "hit sẽ che việc stack đã đổi trạng thái (container recreate, router Traefik chưa đăng ký",
           "lại) và trả kết quả xanh cho một hệ thống KHÔNG còn chạy như lúc cache được ghi. Suite",
-          "verify cả hệ thống đang chạy thật nên mỗi lần chạy phải chạm stack thật."
+          "verify cả hệ thống đang chạy thật nên mỗi lần chạy phải chạm stack thật.",
+          "`dependsOn` kéo prerequisite deploy: `local-up` của đúng năm deploy project mà suite phụ",
+          "thuộc — Nx schedule chúng TRƯỚC playwright test, dùng lại task đã chạy thay vì deploy lại.",
+          "Chỉ `local-up`, KHÔNG `local-smoke`: smoke dependsOn `home-deploy` (nó kiểm chuỗi redirect của home) nên sẽ ép",
+          "deploy cả 9 unit cho một suite chỉ cần 5. `configurations.local` cùng tên configuration mà",
+          "target `local-up` khai — `-c local` trên lệnh Nx lan configuration vào task prerequisite",
+          "(task id `...:local-up:local`)."
         ]
       }
     }

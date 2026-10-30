@@ -45,6 +45,8 @@ consumer được nêu tên.
 **System tests.** Nằm ở repo root `system-tests/`, bốn nhóm mục đích `e2e/`, `performance/`, `resilience/`, `smoke/`. Mỗi
 suite thực thi được là **một Nx project độc lập** — project config, setup, support, fixture của riêng nó. Mặc định **không
 có** `support/` hay `fixtures/` chung ở root; chỉ tách helper dùng chung khi consumer và dependency của nó tường minh.
+`system-tests/local-smoke/` là suite smoke của local platform: script verify serving path (HTTPS + redirect apex) mà
+`platform-deploy:local-smoke` gọi sau khi lane up xong.
 
 Ví dụ layout canonical cho `backoffice`:
 
@@ -91,8 +93,16 @@ Ba tên dưới đây là **canonical contract** — thêm suite mới phải g�
 | `test-integration` | **Toàn bộ** app-owned suites dưới `apps/<app>/tests/` — integration, contract, database và mọi suite app-owned khác |
 | `system-test`      | Execution target do **từng** system-test Nx project thực thi tự định nghĩa                                          |
 
-Thực thi: `nx run-many -t system-test` chạy mọi system-test project; `nx affected -t system-test` chỉ chọn đúng các suite bị
-ảnh hưởng khi project graph phản ánh đúng dependency thật của chúng.
+Thực thi: `nx run-many -t system-test` chạy mọi system-test project; `nx affected -t system-test -c local` chỉ chọn đúng các
+suite bị ảnh hưởng khi project graph phản ánh đúng dependency thật của chúng. Mỗi suite system-test khai báo dependency ở cả
+hai tầng graph — hai cơ chế bổ sung cho nhau, không thay thế nhau:
+
+- **Selection (project graph):** `implicitDependencies` trỏ tới các deploy unit mà luồng của suite chạm thật — thay đổi ảnh
+  hưởng deploy unit nào thì chọn đúng những suite đi qua deploy unit đó.
+- **Prerequisite (task graph):** target `system-test` khai `dependsOn` tới target `local-up` của đúng các deploy unit đó, kèm
+  `configurations.local`; cờ `-c local` truyền xuống mọi task prerequisite (task id dạng `platform-deploy:local-up:local`), nên
+  một invocation suite tự dựng đủ stack trước khi chạy — suite không chứa script deploy riêng.
+- **Tuần tự:** các suite dùng chung một local stack, nên thực thi với `--parallel=1`.
 
 Tên target ngoài ba tên trên không phải tầng phân loại. Cụ thể: `@nx/playwright/plugin` sinh target `e2e` trên project có
 `playwright.config.ts` — đó chỉ là **tên target do plugin suy ra**; một suite Playwright chạy UI của một app đơn lẻ vẫn là
@@ -129,6 +139,20 @@ Phân biệt ba khái niệm Nx hay bị lẫn:
   project cần nó — mỗi project tự dựng harness của mình (PostgreSQL qua testcontainers, D1 qua wrangler `getPlatformProxy`).
   **Không** có shared test-support library: import chéo deploy unit bị cấm bởi module-boundary rules (`05` §7), nên hai
   harness giống hệt nhau ở hai deploy unit là **có chủ đích**, không phải nợ kỹ thuật.
+- **Readiness là ranh giới riêng, không phải cạnh graph:** `dependsOn` chỉ bảo chứng thứ tự thực thi task — không bảo chứng
+  service đang healthy hay config đã sẵn sàng. Readiness của unit deploy thuộc container resource: mỗi container long-running
+  khai `wait: true` + healthcheck Docker của chính nó trong chương trình Pulumi, nên `pulumi up` xanh đã là bằng chứng
+  container phục vụ thật (trừ những gì healthcheck không nhìn thấy — config nghẽn, OIDC thiếu biến trả 503 fail-closed).
+  Suite system-test chống lại đúng phần đó bằng một gate có budget: **suite readiness gate** (`globalSetup` probe đúng
+  contract serving của unit mà suite nhắm tới — status code/mắt xích redirect thực tế, không phải TCP connect) với retry có
+  budget chỉ áp cho nhóm dấu hiệu "chưa sẵn sàng" thật sự; TLS sai, status bất ngờ là fail ngay. Smoke không phải health
+  check: smoke chứng minh serving path qua Traefik cho một luồng cụ thể, không chứng minh unit đủ điều kiện nhận test.
+- **Runtime config đọc tại thời điểm dùng, không tin env snapshot:** Nx snapshot môi trường của từng task trước khi
+  `platform-deploy:local-up` ghi `.env`, nên trong một invocation duy nhất env của tiến trình suite không chứa `ROOT_DOMAIN`
+  (giá trị sinh lúc deploy). Mọi điểm resolve runtime config của suite (config resolver, `globalSetup`, helper trong tiến
+  trình test) phải theo cùng một contract: env trước, fallback parse `.env` repo-root **tại thời điểm gọi**; fail-loud kèm
+  hướng dẫn chạy `nx affected -t system-test -c local` khi cả hai nguồn đều vắng. Riêng layer `playwright.config.ts` (được
+  eval khi build project graph — trước deploy) không đọc `.env`, dùng placeholder-host để không đỏ oan job CI khác.
 
 ## 7. Minimum requirements by responsibility and risk
 

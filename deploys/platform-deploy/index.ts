@@ -6,10 +6,10 @@
  * local deployment đồng thời trên một máy developer, nên mọi tên resource ở đây
  * đều bắt đầu từ namespace hash của worktree root. Hai worktree không bao giờ
  * đụng tên, và stack Pulumi local phải đi kèm namespace vì Pulumi state là
- * nguồn sự thật của resource (`tools/dx/src/local-runtime/deploy-namespace.ts`).
+ * nguồn sự thật của resource (`deploy-namespace` của `@ecoma-io/deployment`).
  *
  * Chương trình này KHÔNG đọc `.env`: nó nhận `namespace:worktreeRoot` qua Pulumi
- * config do `tools/dx local-deploy` truyền vào. `.env` là artifact tiện dụng sinh
+ * config do entry `local-up` của chính project (`local.ts`) truyền vào. `.env` là artifact tiện dụng sinh
  * ra TỪ outputs của stack này, không phải input — đọc vòng lại sẽ thành vòng phụ
  * thuộc.
  */
@@ -19,44 +19,31 @@ import * as docker from '@pulumi/docker';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-// `tools/dx` là workspace project `type:tooling`, còn deploy unit là
-// `type:deployment`. Import **nguồn** là chủ ý: deploy unit phải dùng CHUNG một
-// định nghĩa namespace và contract outputs, và Pulumi runtime `nodejs` chạy thẳng
-// `index.ts` — không có bước build `tools/dx` nào chạy trước để sinh package. Copy
-// hàm vào deploy unit sẽ tạo hai nơi định nghĩa cùng một thứ và để chúng lệch nhau.
-//
-// Specifier KHÔNG chữ `.js` (extensionless) — xem tsconfig cùng project để biết
-// vì sao `.js` lại fail lúc chạy thật.
-//
-// `@nx/enforce-module-boundaries` cấm import xuyên project bằng đường dẫn
-// tương đối theo mặc định; ở đây ngoại lệ đó được bật tường minh cho đúng hai
-// dòng này thay vì nới luật ở `.oxlintrc.json` — nới ở config là mở cho MỌI
-// project, còn disable ở đúng chỗ thì giữ được ranh giới cho phần còn lại của
-// repo.
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem giải thích ngay trên
+// Helper/contract dùng chung qua workspace package `@ecoma-io/deployment`
+// (`libs/deployment`) — một nguồn sự thật cho mọi deploy unit; copy hàm vào
+// deploy unit sẽ tạo hai nơi định nghĩa cùng một thứ và để chúng lệch nhau.
+// Ranh giới là một chiều: deploy → lib; lib KHÔNG được import ngược deploy
+// hay `tools/dx` (contract test của lib chặn).
 import {
-  dockerResourceName,
-  normalizeWorktreeRoot,
-  worktreeNamespace,
-} from '../../tools/dx/src/local-runtime/deploy-namespace';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do dòng trên
-import { ownershipLabels } from '../../tools/dx/src/deployment/local-platform/deploy-labels';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do dòng trên
-import {
-  extractTraefikHostPort,
   LOCAL_ROOT_HOSTNAME,
   TRAEFIK_INTERNAL_PORT,
-} from '../../tools/dx/src/deployment/local-platform/platform-outputs-contract';
+  dockerResourceName,
+  extractTraefikHostPort,
+  normalizeWorktreeRoot,
+  ownershipLabels,
+  worktreeNamespace,
+} from '@ecoma-io/deployment';
 
 /**
  * Thư mục chứa chương trình này — gốc để định vị cert local.
  *
- * Dùng `__dirname` chứ không phải `import.meta.url` vì Pulumi runtime `nodejs`
- * chạy chương trình dưới CommonJS: `import.meta` không hợp lệ ở đó, và bật
- * `"type": "module"` sẽ làm Pulumi rơi về ts-node vendor 7.0.1 (không có ESM
- * loader) nên không resolve được import ở trên.
+ * `import.meta.dirname` khả dụng vì package của chương trình khai
+ * `"type": "module"`: Pulumi runtime `nodejs` chạy chương trình qua ts-node/esm
+ * hooks (automatic ESM mode — điều kiện `type: "module"` + ts-node hiện đại
+ * resolvable từ peer của `@pulumi/pulumi`, ts-node 7.0.1 vendored không có ESM
+ * loader và không remap specifier `.js` sang `.ts`).
  */
-const programDir = __dirname;
+const programDir = import.meta.dirname;
 
 /**
  * Đường dẫn tuyệt đối tới một file tĩnh trong repo dùng làm bind-mount source.
@@ -239,7 +226,7 @@ const TRAEFIK_PING_FLAGS = ['--ping=true', '--ping.entrypoint=websecure'] as con
 const config = new pulumi.Config('namespace');
 
 /**
- * Worktree root do `tools/dx local-deploy` truyền vào.
+ * Worktree root do entry `local-up` (`local.ts`) truyền vào.
  *
  * `require` chứ không phải `get`: thiếu config thì namespace sẽ được hash từ
  * chuỗi rỗng và mọi tên resource trở nên không nhất quán giữa hai lần chạy — đúng
@@ -281,12 +268,21 @@ const traefik = new docker.Container('traefik', {
   name: dockerResourceName(ns, 'traefik'),
   image: TRAEFIK_IMAGE,
   // Container bị dừng do reboot máy hay restart daemon được DOCKER tự start
-  // lại nhờ `restart: unless-stopped` — không cần chạy lại `local-deploy`, và
+  // lại nhờ `restart: unless-stopped` — không cần chạy lại `local-up`, và
   // cũng không thể qua `pulumi up`: Pulumi so input khai với input đã lưu trong
   // state, hai bên đều là `unless-stopped` nên không có diff nào cả; việc start
   // lại là cơ chế restart policy của Docker, không phải của Pulumi. Chỉ `docker
   // stop` tường minh là được giữ ở trạng thái dừng (policy tôn trọng nó).
   restart: 'unless-stopped',
+  // Readiness thuộc resource này, không thuộc DX: `wait: true` bắt provider
+  // chờ Docker healthcheck chuyển `healthy` trước khi Container báo thành
+  // công — mọi resource phụ thuộc (outputs, unit kế tiếp qua StackReference)
+  // chỉ resolve sau khi Traefik phục vụ thật. Traefik đọc socket Docker lúc
+  // boot nên healthcheck `traefik healthcheck` có thể đỏ vài giây đầu
+  // (startPeriod 5s + 5 retries × interval 5s = trần ~30s); waitTimeout 90s
+  // là trần dư cho host chậm.
+  wait: true,
+  waitTimeout: 90,
   labels: Object.entries(labels).map(([label, value]) => ({ label, value })),
   command: [
     TRAEFIK_ENTRYPOINT_ADDRESS,
@@ -387,8 +383,8 @@ const traefik = new docker.Container('traefik', {
 /**
  * Password PostgreSQL đến từ Pulumi config dạng plaintext (local-dev only).
  *
- * Dùng `require` (không `requireSecret`): giá trị được sinh một lần bởi
- * `tools/dx local-deploy` và lưu dạng plaintext trong stack config local (file
+ * Dùng `require` (không `requireSecret`): giá trị được sinh một lần bởi entry
+ * up (`local.ts`) và lưu dạng plaintext trong stack config local (file
  * bị `.gitignore` — `Pulumi.*.yaml`). Passphrase local (`.pulumi-local-passphrase`)
  * mã hoá state Pulumi, KHÔNG mã hoá giá trị config này — nên `postgres:password`
  * vẫn plaintext theo chủ đích cho môi trường phát triển, KHÔNG áp dụng cho
@@ -408,7 +404,7 @@ const traefik = new docker.Container('traefik', {
  * config cho khớp) — xem `docs/solutions/local-platform/03-operations.md`
  * §Vòng đời dữ liệu.
  *
- * Orchestration (`tools/dx/src/deployment/local-platform/local-deploy.ts`) chỉ sinh password khi stack mới
+ * Entry up (`local.ts`) chỉ sinh password khi stack mới
  * VÀ volume chưa tồn tại; nếu volume đã có mà canonical password thiếu thì fail
  * thay vì sinh password mới không khớp.
  */
@@ -422,10 +418,11 @@ const postgresPassword = new pulumi.Config('postgres').require('password');
  *
  * `retainOnDelete` là mảnh thứ hai của đảm bảo đó: không có nó, `pulumi
  * destroy` xoá CẢ volume (đã kiểm thực nghiệm — volume biến mất cùng stack),
- * và lời hứa "mặc định giữ dữ liệu" của `tools/dx local-destroy` thành giả.
- * Với `retainOnDelete`, xoá resource khỏi state KHÔNG xoá volume Docker —
- * dữ liệu chỉ biến mất khi `local-destroy --remove-data` gọi `docker volume
- * rm` tường minh sau một cảnh báo.
+ * và destroy lỗi sẽ không tách được khỏi lỗi xoá volume (down tự gọi `docker
+ * volume rm` sau destroy, xem `runPlatformDown`). Với `retainOnDelete`, xoá
+ * resource khỏi state KHÔNG xoá volume Docker — volume chỉ biến mất khi down
+ * của entry gọi `docker volume rm` tường minh (vô điều kiện, cảnh báo trước
+ * khi mất dữ liệu).
  */
 const postgresVolume = new docker.Volume(
   'postgres-volume',
@@ -443,7 +440,7 @@ const postgresVolume = new docker.Volume(
  * trong cùng network mới chạm được nó, qua alias ổn định `ecoma-postgres`.
  *
  * Resource này CỐ Ý không xuất ra stack output: contract `PlatformOutputs` chỉ có
- * sáu khoá (xem `tools/dx/src/deployment/local-platform/platform-outputs-contract.ts`) và không khoá nào
+ * sáu khoá (xem `platform-outputs-contract` của `@ecoma-io/deployment`) và không khoá nào
  * mang id của database. Giữ nó trong state để Pulumi quản lý vòng đời — đó là
  * mục đích duy nhất cần tới biến.
  */
@@ -455,6 +452,12 @@ const postgres = new docker.Container('postgres', {
   // container sau reboot/restart daemon — `pulumi up` không làm được điều đó
   // vì input khai và input trong state đều là `unless-stopped`, không có diff.
   restart: 'unless-stopped',
+  // Readiness resource-owned (cùng ngữ nghĩa với traefik ở trên): `pg_isready`
+  // không xác thực mật khẩu nên cửa sổ chờ chỉ phụ thuộc initdb + boot —
+  // startPeriod 10s + 10 retries × 5s = trần ~60s; waitTimeout 120s dư cho
+  // lần đầu init volume (initdb chậm trên disk lạnh).
+  wait: true,
+  waitTimeout: 120,
   labels: Object.entries(labels).map(([label, value]) => ({ label, value })),
   // `envs` là mảng `KEY=VALUE` của provider này (không phải map `env`).
   // `pulumi.secret(...)` đánh dấu value để Pulumi redact trong diff/log/output
@@ -488,7 +491,7 @@ const postgres = new docker.Container('postgres', {
 
 /**
  * Outputs của platform stack — đây là CONTRACT với `home-deploy`, mô tả ở
- * `tools/dx/src/deployment/local-platform/platform-outputs-contract.ts`. Không secret nào được export.
+ * `platform-outputs-contract` của `@ecoma-io/deployment`. Không secret nào được export.
  */
 export const namespace = ns;
 export const networkName = network.name;

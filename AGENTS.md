@@ -94,11 +94,12 @@ The English rule applies to developer-authored content. The following are exempt
 ## Local Development Preview
 
 - Before operating the local stack, read `docs/solutions/local-platform/03-operations.md`.
-- Deploy or refresh the preview with `pnpm dx local-deploy`.
+- Deploy or refresh the preview with `pnpm nx run-many -t local-up -c local` (Nx coordinates ordering; each deploy project runs its own colocated entry).
 - Wait for the command to finish successfully; do not claim the stack is ready merely because the deployment command started or a container exists.
-- Use the actual URL printed by the successful deployment command; never guess the dynamic port or construct a URL from assumptions.
+- Confirm the stack end to end with `pnpm nx run platform-deploy:local-smoke -c local`; read the resulting URL from `.env` (`ROOT_HOST=fbi.com:<port>`) — never guess the dynamic port or construct a URL from assumptions.
 - Report the resulting preview URL clearly to the user.
 - If deployment fails, report the actual failed step and the actionable error; do not silently substitute manual Docker/Pulumi commands or a different serving method.
+- Tear down with `pnpm nx run-many -t local-down -c local` (no global teardown order; platform deletes its PostgreSQL volume on every down — local data is not preserved).
 - Distinguish successful HTTPS smoke-test verification from whether the developer's browser trusts the local self-signed certificate.
 - Never expose credentials when reporting status or URLs.
-- After deleting a worktree that had a local deployment, clean up its Docker resources with `pnpm dx local-cleanup` (use `--dry-run` first to preview). Cleanup deletes managed resources including persistent PostgreSQL volumes, but only for worktrees confirmed absent — ownership checks are mandatory and neither `local-destroy` nor `local-cleanup` can touch unrelated Docker volumes.
+- After deleting a worktree that had a local deployment, clean up its Docker resources with `pnpm dx local-cleanup` (use `--dry-run` first to preview). Cleanup deletes managed resources including persistent PostgreSQL volumes, but only for worktrees confirmed absent — ownership checks are mandatory and neither cleanup path can touch unrelated Docker volumes.

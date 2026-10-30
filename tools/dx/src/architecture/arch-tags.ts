@@ -373,6 +373,27 @@ export function validateRuntimeCompat(
     if (!depNode) continue;
     const depRuntime = depNode.tags.find((t) => t.startsWith('runtime:'));
     if (!depRuntime) continue; // dep lỗi schema — lượt 1 báo, khỏi nhân đôi
+    // Edge deployment → app (`type:composition`) là quan hệ ĐÓNG GÓI, không
+    // phải import runtime: deploy unit build/mount app đó vào container của
+    // mình (Dockerfile COPY, dist mount, WIC), hai process không cùng runtime
+    // trong một luồng gọi. Ma trận runtime chỉ có ý nghĩa cho cạnh import —
+    // áp nó lên edge đóng gói là chặn sai kiến trúc đã chốt (app edge chạy
+    // trong container native qua WIC/node-server). Chỉ deployment được phép
+    // carve-out này, và edge vẫn qua mọi lượt deployment graph khác.
+    // Carve-out CHỈ dành cho app `runtime:edge` được đóng gói vào container
+    // native của deploy unit — yêu cầu NGHIÊM: deploy unit phải `runtime:native`
+    // (một deployment gắn runtime khác đã sai schema sở hữu riêng; không ghim
+    // là lỗ bypass ma trận cho mọi `type:deployment`), và composition app với
+    // runtime khác (browser...) không nằm trong nghĩa đó, nên vẫn qua ma trận
+    // runtime.
+    if (
+      project.tags.includes(DEPLOYMENT_TYPE) &&
+      runtimeTag === 'runtime:native' &&
+      depNode.tags.includes('type:composition') &&
+      depRuntime === 'runtime:edge'
+    ) {
+      continue;
+    }
     if (!allowed.includes(depRuntime.slice('runtime:'.length))) {
       violations.push({
         project: project.name,

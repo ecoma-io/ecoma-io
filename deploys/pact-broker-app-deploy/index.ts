@@ -27,20 +27,18 @@ import * as docker from '@pulumi/docker';
 import * as dockerBuild from '@pulumi/docker-build';
 import * as pulumi from '@pulumi/pulumi';
 
-// `tools/dx` là workspace project `type:tooling`, còn deploy unit là
-// `type:deployment`. Import nguồn (specifier không đuôi) là chủ ý — chi tiết
-// vì sao KHÔNG dùng `.js` ghi ở `tsconfig.json` của project này; hai deploy
-// unit phải dùng CHUNG một định nghĩa namespace và contract outputs.
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem home-deploy
+// Helper/contract dùng chung qua workspace package `@ecoma-io/deployment`
+// (`libs/deployment`) — một nguồn sự thật cho mọi deploy unit; copy hàm vào
+// deploy unit sẽ tạo hai nơi định nghĩa cùng một thứ và để chúng lệch nhau.
+// Ranh giới là một chiều: deploy → lib; lib KHÔNG được import ngược deploy
+// hay `tools/dx` (contract test của lib chặn).
 import {
+  type PlatformOutputs,
   dockerResourceName,
   normalizeWorktreeRoot,
+  ownershipLabels,
   worktreeNamespace,
-} from '../../tools/dx/src/local-runtime/deploy-namespace';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import { ownershipLabels } from '../../tools/dx/src/deployment/local-platform/deploy-labels';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import type { PlatformOutputs } from '../../tools/dx/src/deployment/local-platform/platform-outputs-contract';
+} from '@ecoma-io/deployment';
 
 /** Cổng nội bộ mà Nitro preset `node-server` nghe (khớp `EXPOSE`/`ENV PORT` của image). */
 const PACT_APP_INTERNAL_PORT = 3000;
@@ -96,7 +94,7 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
       throw new Error(
         `platformStackRef does not export "${key}". Most common cause: the ` +
           `platform stack never completed \`up\` (empty outputs) or was ` +
-          `destroyed — run \`pnpm dx local-deploy\` (apply platform) first. ` +
+          `destroyed — run \`pnpm nx run platform-deploy:local-up -c local\` (apply platform) first. ` +
           `Refusing to deploy pact-broker-app with an empty configuration.`,
       );
     }
@@ -108,10 +106,10 @@ const networkName = requirePlatformOutput('networkName');
 const platformNamespace = requirePlatformOutput('namespace');
 const rootHostname = requirePlatformOutput('rootHostname');
 
-// Machine token mà BFF dùng gọi pact-broker-api — do orchestration sinh/set
-// qua stdin (`namespace:apiToken`, xem `localStackSecrets` trong
-// `tools/dx/src/deployment/local-platform/local-stack-step.ts`; giá trị cuối
-// do `pact-broker-api-deploy` sinh và wiring PR nối). Thiếu key là fail ngay
+// Machine token mà BFF dùng gọi pact-broker-api — entry up của stack này
+// set qua stdin (`namespace:apiToken`; giá trị do entry up của
+// `pact-broker-api-deploy` sinh và persist vào stack config của nó, entry này
+// đọc lại). Thiếu key là fail ngay
 // lúc `pulumi up` (`conf.require`) chứ không Container với secret rỗng.
 // `pulumi.secret` bọc TRƯỚC khi interpolate để giá trị redact trong diff/log.
 const apiToken = pulumi.secret(conf.require('apiToken'));
@@ -161,6 +159,11 @@ const pactApp = new docker.Container(dockerResourceName(ns, 'pact-app'), {
   // `restart: unless-stopped` để DOCKER tự start lại container sau
   // reboot/restart daemon — cùng lý do với traefik/postgres ở `platform-deploy`.
   restart: 'unless-stopped',
+  // Readiness resource-owned (`wait: true` — cùng ngữ nghĩa với platform):
+  // Nuxt SSR cold start có thể vượt 30s; Trần chờ = startPeriod 30s +
+  // 12 retries × 10s = 150s; waitTimeout 180s dư.
+  wait: true,
+  waitTimeout: 180,
   networksAdvanced: [{ name: networkName, aliases: ['ecoma-pact-app'] }],
   // `envs` (không phải `environment`): cặp `KEY=VALUE` dạng mảng chuỗi — shape
   // của `docker run -e`.

@@ -9,13 +9,13 @@
 > Phần lớn nội dung dưới đây là **hợp đồng và thiết kế đã chốt**, phần lớn **chưa hiện thực** trong repo. Đo trên cây
 > hiện tại:
 >
-> | Nhóm                                                                                       | Có thật trong repo?                                                                                                                                                                                                                                    |
-> | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-> | **Hai làn deploy** (`staging.yaml`, `production.yaml`, `release-prepare.yaml`)             | ❌ Không có. `.github/workflows/` chỉ có `ci.yaml`, `code-analysis.yml`, `code-review.yml`                                                                                                                                                             |
-> | **Delivery runner** (`tools/delivery/`, deploy gate, promotion gate, guard binding, audit) | ❌ Không có thư mục này. `tools/` chỉ có `dx/`                                                                                                                                                                                                         |
-> | **Nhóm deployment** (`deploys/`)                                                           | ✅ Có — 11 Pulumi deployment project, `platform-deploy` là tầng prerequisite. `platform-deploy` + `home-deploy` hiện thực local platform (managed resource thật, apply tường minh qua `pnpm dx local-deploy`); 9 project còn lại vẫn scaffold (§7.4.1) |
-> | **Release machinery** (`nx.json` `release.projects` + Nx Release config)                   | ✅ Có — khai trong `nx.json`, `projectsRelationship: independent`                                                                                                                                                                                      |
-> | **Migration runner** (§3)                                                                  | ❌ Không có job nào; migration PostgreSQL là **CI job theo thiết kế**, chưa dựng                                                                                                                                                                       |
+> | Nhóm                                                                                       | Có thật trong repo?                                                                                                                                                                                                                                                                                |
+> | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+> | **Hai làn deploy** (`staging.yaml`, `production.yaml`, `release-prepare.yaml`)             | ❌ Không có. `.github/workflows/` chỉ có `ci.yaml`, `code-analysis.yml`, `code-review.yml`                                                                                                                                                                                                         |
+> | **Delivery runner** (`tools/delivery/`, deploy gate, promotion gate, guard binding, audit) | ❌ Không có thư mục này. `tools/` chỉ có `dx/`                                                                                                                                                                                                                                                     |
+> | **Nhóm deployment** (`deploys/`)                                                           | ✅ Có — 11 Pulumi deployment project, `platform-deploy` là tầng prerequisite. `platform-deploy` + `home-deploy` hiện thực local platform (managed resource thật, lifecycle local điều phối qua Nx target `local-up`/`local-down` của từng deploy project); 9 project còn lại vẫn scaffold (§7.4.1) |
+> | **Release machinery** (`nx.json` `release.projects` + Nx Release config)                   | ✅ Có — khai trong `nx.json`, `projectsRelationship: independent`                                                                                                                                                                                                                                  |
+> | **Migration runner** (§3)                                                                  | ❌ Không có job nào; migration PostgreSQL là **CI job theo thiết kế**, chưa dựng                                                                                                                                                                                                                   |
 >
 > Hệ quả cách đọc: các mục §7.2–§7.5 và §9.1 viết ở thì hiện tại ("đang chạy", "đã hiện thực", "repo không còn…") mô tả
 > **mục tiêu đã chốt trong một thời điểm trước đó**, không phải trạng thái của cây code hôm nay. Đừng đọc chúng như bằng
@@ -497,7 +497,7 @@ Workflow `staging.yaml` và `production.yaml` là hiện thực hoá của phầ
 - Post-deploy verification **sau khi deploy xong**; kết quả ghi commit status `release/production-verified/<slug>`. **Không auto-rollback** (§8).
 - Staging và production là hai Worker identity tách biệt (`stg-ecoma-home` / `ecoma-home`) **và hai credential tách biệt**; production được deploy lại từ đúng source revision đã verify với env `production` của Wrangler — không có promote xuyên identity.
 
-Hai làn deploy application tách biệt với provisioning infrastructure: infrastructure thay đổi qua Pulumi project trong `deploys/` (§7.4.1); một release application **không** chạy `pulumi up`. **Hiện trạng:** làn infrastructure có một đường apply tường minh cho local platform (`pnpm dx local-deploy`, chỉ chạm hạ tầng local trên máy developer — không có workflow CI nào chạy `pulumi up`); còn staging/production chưa có đường provision nào, nên trên cây hiện tại hai làn cho environment thật **chưa tách biệt vì phía environment thật chưa có đường nào chạy**; §9.1 là hợp đồng đã chốt, phần hiện thực thuộc phase sau.
+Hai làn deploy application tách biệt với provisioning infrastructure: infrastructure thay đổi qua Pulumi project trong `deploys/` (§7.4.1); một release application **không** chạy `pulumi up`. **Hiện trạng:** làn infrastructure có một đường apply tường minh cho local platform (Nx target `local-up`/`local-down` của từng deploy project, chỉ chạm hạ tầng local trên máy developer — không có workflow CI nào chạy `pulumi up`); còn staging/production chưa có đường provision nào, nên trên cây hiện tại hai làn cho environment thật **chưa tách biệt vì phía environment thật chưa có đường nào chạy**; §9.1 là hợp đồng đã chốt, phần hiện thực thuộc phase sau.
 
 #### Retry quanh `wrangler deploy`
 
@@ -511,8 +511,8 @@ Retry **không** nới lỏng đường fail-closed: hết lần thử (hoặc g
 
 **Hiện trạng — nhóm deployment ở `deploys/`:** 11 Pulumi project (`platform-deploy` + 10 project theo deploy unit), mỗi
 project là `Pulumi.yaml` (`runtime: nodejs`) + một `index.ts`. `platform-deploy` và `home-deploy` hiện thực **local
-platform**: managed resource thật (network, Traefik, PostgreSQL, container home), apply tường minh qua
-`pnpm dx local-deploy` trên máy developer — chi tiết ở `solutions/local-platform/`. Chín project `<unit>-deploy` còn lại
+platform**: managed resource thật (network, Traefik, PostgreSQL, container home), lifecycle local điều phối qua Nx target
+`local-up`/`local-down` của từng deploy project trên máy developer — chi tiết ở `solutions/local-platform/`. Chín project `<unit>-deploy` còn lại
 vẫn scaffold (chỉ log, zero managed resource). `platform-deploy` là tầng platform prerequisite mà mọi `<unit>-deploy`
 khai là phụ thuộc; target `provision` ở mọi project chỉ in kế hoạch và **không** chạy `pulumi up`; **chưa có workflow CI
 nào chạy Pulumi** — resource thật chỉ được tạo/sửa qua lệnh local tường minh, không qua đường release.
@@ -525,7 +525,7 @@ nào chạy Pulumi** — resource thật chỉ được tạo/sửa qua lệnh l
 > tồn tại. Stack group đơn `ecoma-infra` **không** còn là hình hài hiện tại: nhóm `deploys/` chia theo deploy unit.
 >
 > Phạm vi hiện thực của resource thật: **chỉ local** — mỗi worktree một bộ (network, Traefik, PostgreSQL, container home),
-> apply tường minh qua `pnpm dx local-deploy`, không qua đường release nào. `deploys/platform-deploy` **đang** khai tài
+> lifecycle local điều phối qua Nx target `local-up`/`local-down` của từng deploy project, không qua đường release nào. `deploys/platform-deploy` **đang** khai tài
 > nguyên dùng chung trong phạm vi đó. Hình thái stack này **lệch có chủ đích** với hợp đồng stack `local` dùng một lần ở
 > dưới — chi tiết và lý do ở `solutions/local-platform/README.md`. Vì vậy hai claim "`hiện chưa có stack thật`" và "`local`
 > _không chạm tài nguyên thật_" ở đoạn **Stack grouping** dưới đây chỉ còn đúng cho **staging/production** — chúng
@@ -741,7 +741,7 @@ Về bề mặt UI, cả hai app **không còn là stub**: `apps/account` có pr
 
 ⚠️ **Bảng dưới là hợp đồng ownership, không phải bảng trạng thái.** Cột "Tạo / cập nhật / xoá" trả lời **ai sở hữu**, chưa
 trả lời **resource đó đã được tạo chưa**. Hiện trạng: chỉ local platform (network, Traefik, PostgreSQL, container home) được
-provision — và chỉ trên máy developer qua `pnpm dx local-deploy`, không có workflow CI nào chạy `pulumi up`; các resource
+provision — và chỉ trên máy developer qua Nx target `local-up`/`local-down` của các deploy project, không có workflow CI nào chạy `pulumi up`; các resource
 của environment thật (staging/production) **chưa** được provision bởi nhóm `deploys/` (§7.4.1) — mọi ô "Pulumi" trong cột
 này là **chủ sở hữu được giao**, chưa phải một hành động đã xảy ra.
 

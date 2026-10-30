@@ -18,20 +18,16 @@ import * as docker from '@pulumi/docker';
 import * as dockerBuild from '@pulumi/docker-build';
 import * as pulumi from '@pulumi/pulumi';
 
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- xem home-deploy
 import {
+  LOCAL_BACKOFFICE_CLIENT_ID,
+  type PlatformOutputs,
   dockerResourceName,
   normalizeWorktreeRoot,
+  ownershipLabels,
+  shellQuote,
+  sqlQuote,
   worktreeNamespace,
-} from '../../tools/dx/src/local-runtime/deploy-namespace';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import { shellQuote, sqlQuote } from '../../tools/dx/src/local-runtime/shell-quote';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import { ownershipLabels } from '../../tools/dx/src/deployment/local-platform/deploy-labels';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import type { PlatformOutputs } from '../../tools/dx/src/deployment/local-platform/platform-outputs-contract';
-// oxlint-disable-next-line @nx/enforce-module-boundaries -- cùng lý do
-import { LOCAL_BACKOFFICE_CLIENT_ID } from '../../tools/dx/src/deployment/local-platform/local-auth-contract';
+} from '@ecoma-io/deployment';
 
 const BACKOFFICE_INTERNAL_PORT = 3000;
 
@@ -65,7 +61,7 @@ function requirePlatformOutput<K extends keyof PlatformOutputs>(
   return pulumi.output(platform.getOutput(key)).apply((raw) => {
     if (raw === undefined || raw === null) {
       throw new Error(
-        `platformStackRef does not export "${key}". Run \`pnpm dx local-deploy\` (apply platform) first.`,
+        `platformStackRef does not export "${key}". Run \`pnpm nx run platform-deploy:local-up -c local\` (apply platform) first.`,
       );
     }
     return raw as PlatformOutputs[K];
@@ -152,6 +148,12 @@ const backoffice = new docker.Container(
     name: dockerResourceName(ns, 'backoffice'),
     image: pulumi.interpolate`${imageTag}@${image.digest}`,
     restart: 'unless-stopped',
+    // Readiness resource-owned (`wait: true` — cùng ngữ nghĩa với platform):
+    // unit kế tiếp (auth đọc secret account; E2E qua globalSetup) chỉ chạy
+    // sau khi healthcheck `/health` của container chuyển `healthy`. Trần chờ
+    // = startPeriod 30s + 12 retries × 10s = 150s; waitTimeout 180s dư.
+    wait: true,
+    waitTimeout: 180,
     networksAdvanced: [{ name: networkName, aliases: ['ecoma-backoffice'] }],
     envs: [
       `PORT=${BACKOFFICE_INTERNAL_PORT}`,
