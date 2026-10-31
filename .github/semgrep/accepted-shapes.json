@@ -111,5 +111,25 @@
     "lines": {
       "245": "^  return \\{ ok: true, password, generated: true \\};$"
     }
+  },
+  {
+    "rule": "security-sensitive-value-in-http-response",
+    "path": "apps/remote-cache/src/routes.ts",
+    "start": 172,
+    "end": 172,
+    "reason": "Show-once: POST /projects tra token nhan vat 1 lan trong response 201 (hop dong endpoint, comment 'Show-once'). Token hash da luu DB; toi vieu sau chi tra metadata. token o day la fresh token cua key moi chua duoc luu — khong phai secret co san.",
+    "lines": {
+      "172": "^      return \\{ tenantId: auth\\.tenantId, projectId, token \\} as const;$"
+    }
+  },
+  {
+    "rule": "security-sensitive-value-in-http-response",
+    "path": "apps/remote-cache/src/routes.ts",
+    "start": 204,
+    "end": 204,
+    "reason": "Show-once: POST /projects tra fresh token trong response 201 (hop dong endpoint). Token hash da luu DB; toi vieu sau chi tra metadata.",
+    "lines": {
+      "204": "^    return c\\.json\\(\\{ project: checked\\.payload, api_key: \\{ token: outcome\\.token \\} \\}, 201\\);$"
+    }
   }
 ]

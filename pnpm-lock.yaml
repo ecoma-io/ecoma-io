@@ -605,6 +605,34 @@ importers:
         specifier: workspace:*
         version: link:../../libs/web-push-notification-job-infrastructure
 
+  apps/remote-cache:
+    dependencies:
+      '@ecoma-io/remote-cache-contracts':
+        specifier: workspace:*
+        version: link:../../libs/remote-cache-contracts
+      '@ecoma-io/remote-cache-domain':
+        specifier: workspace:*
+        version: link:../../libs/remote-cache-domain
+      '@ecoma-io/remote-cache-infrastructure':
+        specifier: workspace:*
+        version: link:../../libs/remote-cache-infrastructure
+      hono:
+        specifier: ^4.13.13
+        version: 4.13.13
+      pg:
+        specifier: ^8.23.1
+        version: 8.23.1
+    devDependencies:
+      '@testcontainers/postgresql':
+        specifier: 12.2.1
+        version: 12.2.1(supports-color@10.2.2)
+      '@types/pg':
+        specifier: ^8.15.6
+        version: 8.23.1
+      testcontainers:
+        specifier: 12.2.1
+        version: 12.2.1(supports-color@10.2.2)
+
   apps/staff-access:
     dependencies:
       '@ecoma-io/staff-access-contracts':
@@ -740,6 +768,12 @@ importers:
         version: link:../../libs/deployment
 
   deploys/push-notification-deploy:
+    dependencies:
+      '@ecoma-io/deployment':
+        specifier: workspace:*
+        version: link:../../libs/deployment
+
+  deploys/remote-cache-deploy:
     dependencies:
       '@ecoma-io/deployment':
         specifier: workspace:*
@@ -920,6 +954,19 @@ importers:
       '@ecoma-io/push-notification-domain':
         specifier: workspace:*
         version: link:../push-notification-domain
+
+  libs/remote-cache-contracts: {}
+
+  libs/remote-cache-domain: {}
+
+  libs/remote-cache-infrastructure:
+    dependencies:
+      '@ecoma-io/remote-cache-domain':
+        specifier: workspace:*
+        version: link:../remote-cache-domain
+      postgres:
+        specifier: ^3.4.9
+        version: 3.4.9
 
   libs/staff-access-contracts: {}
 

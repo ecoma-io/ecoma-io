@@ -383,6 +383,19 @@
               "type:contracts"
             ]
           },
+          // scope:remote-cache — bounded context Remote Cache (ADR-0015, roadmap
+          // Phase 4): tenant/project/membership/API key, quota/retention/usage/audit.
+          // Scope riêng theo đúng ranh giới ownership của bounded context, cùng
+          // chính sách mặc định như các bounded context khác.
+          {
+            "sourceTag": "scope:remote-cache",
+            "onlyDependOnLibsWithTags": [
+              "scope:remote-cache",
+              "scope:shared",
+              "scope:platform",
+              "type:contracts"
+            ]
+          },
           // scope:shared là ĐÁY của trục ownership: CHỈ được phụ thuộc shared —
           // không platform, không implementation, không contract của scope nghiệp vụ
           // nào. `onlyDependOnLibsWithTags` khớp bất kỳ tag nào trong danh sách nên

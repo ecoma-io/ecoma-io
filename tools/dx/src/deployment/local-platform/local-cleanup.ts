@@ -78,6 +78,11 @@ export const CLEANUP_KINDS: readonly DeployResourceKind[] = [
   // không tạo container/volume nào tồn lại sau lệnh.
   'staff-access-wic',
   'staff-access-wic-state-init',
+  // WIC của remote-cache-deploy (P4.1 #442). Kind `remote-cache` giống kind
+  // `pact-api`: chỉ đặt tên command.local.Command (provision/migrate) —
+  // không tạo container/volume nào tồn lại sau lệnh.
+  'remote-cache-wic',
+  'remote-cache-wic-state-init',
   'network',
   'home-image',
   'backoffice-image',
@@ -88,12 +93,14 @@ export const CLEANUP_KINDS: readonly DeployResourceKind[] = [
   'mail-wic-image',
   'push-wic-image',
   'staff-access-wic-image',
+  'remote-cache-wic-image',
   'postgres-volume',
   'auth-wic-state',
   'pact-api-wic-state',
   'mail-wic-state',
   'push-wic-state',
   'staff-access-wic-state',
+  'remote-cache-wic-state',
 ];
 
 export interface CleanupFilter {
@@ -360,7 +367,8 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
             kind === 'pact-api-wic-state' ||
             kind === 'mail-wic-state' ||
             kind === 'push-wic-state' ||
-            kind === 'staff-access-wic-state'
+            kind === 'staff-access-wic-state' ||
+            kind === 'remote-cache-wic-state'
           ? 'volume'
           : kind === 'home-image' ||
               kind === 'backoffice-image' ||
@@ -370,7 +378,8 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
               kind === 'pact-api-wic-image' ||
               kind === 'mail-wic-image' ||
               kind === 'push-wic-image' ||
-              kind === 'staff-access-wic-image'
+              kind === 'staff-access-wic-image' ||
+              kind === 'remote-cache-wic-image'
             ? 'image'
             : 'container';
 
@@ -415,7 +424,8 @@ export function runLocalCleanup(filter: CleanupFilter): CleanupReport {
                   line.endsWith('-pact-api-wic:local') ||
                   line.endsWith('-mail-wic:local') ||
                   line.endsWith('-push-wic:local') ||
-                  line.endsWith('-staff-access-wic:local'))))
+                  line.endsWith('-staff-access-wic:local') ||
+                  line.endsWith('-remote-cache-wic:local'))))
           );
         }
         return line.startsWith('ecoma-') && line.endsWith(`-${kind}`);
