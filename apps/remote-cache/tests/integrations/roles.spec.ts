@@ -34,9 +34,12 @@ const RUNTIME = 'ecoma_remote_cache_runtime';
  * - `api_keys`: SELECT + INSERT; UPDATE **chỉ ở cấp cột** `revoked_at`.
  *   has_table_privilege bất khả tri cấp cột, sweep tính bằng table-level ACL —
  *   UPDATE cột khác được test riêng dưới đây.
+ * - `cache_entries`: SELECT + INSERT — data plane (P4.2) chỉ đọc ghi metadata;
+ *   UPDATE/DELETE/REVOKE không có (immutability qua trigger, re-PUT bị 409).
  */
 const EXPECTED_PRIVILEGES: Record<string, readonly string[]> = {
   api_keys: ['INSERT', 'SELECT'],
+  cache_entries: ['INSERT', 'SELECT'],
   projects: ['INSERT', 'SELECT'],
   tenant_members: ['SELECT'],
   tenants: ['INSERT', 'SELECT', 'UPDATE'],
