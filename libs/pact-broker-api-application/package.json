@@ -12,7 +12,8 @@
     }
   },
   "dependencies": {
-    "@ecoma-io/pact-broker-api-domain": "workspace:*"
+    "@ecoma-io/pact-broker-api-domain": "workspace:*",
+    "@ecoma-io/staff-access-contracts": "workspace:*"
   },
   "nx": {
     "tags": [

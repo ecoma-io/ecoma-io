@@ -41,6 +41,23 @@
   "observability": {
     "enabled": true,
   },
+  //
+  // ── Queue consumer ───────────────────────────────────────────────────────────
+  // Consumer của queue entitlement event (P3.2): nhận envelope `EntitlementEvent`
+  // từ `staff-access-relay` (P2.2), áp dụng vào membership Pact Broker.
+  // Tên queue khớp producer khai ở `apps/staff-access-relay/wrangler.jsonc`.
+  "queues": {
+    "consumers": [
+      {
+        "queue": "ecoma-staff-access-entitlement-events",
+        "binding": "ENTITLEMENT_EVENTS_QUEUE",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "ecoma-staff-access-entitlement-events-dlq",
+      },
+    ],
+  },
   "dev": {
     "port": 4204,
   },
