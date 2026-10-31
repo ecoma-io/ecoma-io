@@ -110,6 +110,65 @@ export class PgTenantRepo {
     return rows[0] ?? null;
   }
 
+  /**
+   * Bảo đảm tenant `name` tồn tại ACTIVE, idempotent, race-safe. Không tạo
+   * membership — chỉ đảm bảo hàng tenant. Dùng bởi consumer entitlement (P3.2)
+   * trước khi upsert membership theo event.
+   *
+   * Ném `PactBrokerTenantError` khi tenant tồn tại ở trạng thái deleted
+   * (fail-closed — không tự sửa dữ liệu đã xoá mềm).
+   */
+  async ensureTenant(name: string): Promise<string> {
+    return this.pool.connect().then(async (client) => {
+      try {
+        await client.query('BEGIN');
+
+        const inserted = await client.query<{ id: string; status: string }>(
+          `INSERT INTO pact.tenants (name) VALUES ($1)
+           ON CONFLICT (name) DO NOTHING
+           RETURNING id, status`,
+          [name],
+        );
+
+        let tenant: { id: string; status: string };
+        if (inserted.rows[0]) {
+          tenant = inserted.rows[0];
+        } else {
+          const existing = await client.query<{ id: string; status: string }>(
+            `SELECT id, status FROM pact.tenants WHERE name = $1`,
+            [name],
+          );
+          if (existing.rows[0] === undefined) {
+            throw new PactBrokerTenantError(`tenant ${name} vanished during bootstrap`);
+          }
+          tenant = existing.rows[0];
+        }
+
+        if (tenant.status !== 'active') {
+          throw new PactBrokerTenantError(`tenant ${name} is ${tenant.status}; refusing to use`);
+        }
+
+        await client.query('COMMIT');
+        return tenant.id;
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
+    });
+  }
+
+  /** Upsert membership `(tenant_id, sub, role)` — DO NOTHING nếu đã có. */
+  async upsertMember(tenantId: string, sub: string, role: string): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO pact.tenant_members (tenant_id, sub, role)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (tenant_id, sub) DO NOTHING`,
+      [tenantId, sub, role],
+    );
+  }
+
   /** Role của sub trong tenant; null khi không là member. */
   async getMemberRole(tenantId: string, sub: string): Promise<string | null> {
     const { rows } = await this.pool.query<{ role: string }>(

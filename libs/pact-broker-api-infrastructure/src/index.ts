@@ -29,6 +29,9 @@ export type {
 export { PactBrokerTenantError, PgTenantRepo } from './repo/tenant-repo';
 export type { MachineTokenRecord, TenantRecord } from './repo/tenant-repo';
 
+export { PgEntitlementSyncRepo } from './repo/entitlement-sync-repo';
+export type { EntitlementSyncStateRow } from './repo/entitlement-sync-repo';
+
 export { PgTokenRepo, insertAuditEvent } from './repo/token-repo';
 
 export { PgVerificationRepo } from './repo/verification-repo';

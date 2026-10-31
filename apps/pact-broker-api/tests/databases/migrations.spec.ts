@@ -19,6 +19,7 @@ import {
 const EXPECTED_TABLES = [
   'audit_events',
   'deployed_versions',
+  'entitlement_sync_state',
   'environments',
   'internal_nonces',
   'machine_tokens',
@@ -70,9 +71,9 @@ describe(`${PACT_BROKER_DATABASE} migrations on a real PostgreSQL`, () => {
     const migrator = await db.connectAsMigrator();
     try {
       const first = await applyAllMigrations(migrator);
-      expect(first.applied).toBe(1);
+      expect(first.applied).toBe(2);
       const second = await applyAllMigrations(migrator);
-      expect(second.applied).toBe(1);
+      expect(second.applied).toBe(2);
     } finally {
       await migrator.end();
     }
@@ -90,14 +91,14 @@ describe(`${PACT_BROKER_DATABASE} migrations on a real PostgreSQL`, () => {
     { timeout: 180_000 },
     async () => {
       // `applied` đếm file chạy trong lần gọi: lần đầu trên database trống phải
-      // là 1 (một file), chứng minh counter không phải luôn 0 — nếu counter hỏng
+      // là 2 (hai file), chứng minh counter không phải luôn 0 — nếu counter hỏng
       // thì CLI in "0 file(s) applied" trong khi schema có mặt.
       const fresh = await startPactBrokerDatabase();
       try {
         const migrator = await fresh.connectAsMigrator();
         try {
           const result = await applyAllMigrations(migrator);
-          expect(result.applied).toBe(1);
+          expect(result.applied).toBe(2);
           expect(result.tablesInPactSchema).toBe(EXPECTED_TABLES.length);
         } finally {
           await migrator.end();
