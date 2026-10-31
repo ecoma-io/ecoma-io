@@ -1,0 +1,25 @@
+{
+  "name": "@ecoma-io/remote-cache-infrastructure",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": {
+      "@ecoma-io/source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@ecoma-io/remote-cache-domain": "workspace:*",
+    "postgres": "^3.4.9"
+  },
+  "nx": {
+    "tags": [
+      "type:infrastructure",
+      "scope:remote-cache",
+      "runtime:edge"
+    ]
+  }
+}

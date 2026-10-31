@@ -2,7 +2,7 @@
 
 Self-hosted remote cache cho Nx: tái sử dụng kết quả task để rút ngắn build/CI. Đây là **disposable build state** — mất cache thì task chạy lại được, không mất correctness.
 
-> **Target evolution (Phase 4+):** service được định hướng thành bounded context `remote-cache` — multi-tenant SaaS, Nx-first (MVP), roadmap protocol sau đó là Gradle → Turborepo → Bazel/Moonrepo (chỉ roadmap, không phải phạm vi MVP). Target sở hữu tenant/project/membership/API key/quota/retention/usage metering/audit; hiện tại vẫn là disposable build state theo A18. Roadmap → [`architecture/roadmap.md`](../../architecture/roadmap.md) Phase 4/7. MVP dùng API key riêng của service; entitlement integration deferred.
+> **Bounded context:** nghiệp vụ multi-tenant của service này thuộc bounded context `remote-cache` — xác lập bằng [ADR-0015](../../domains/remote-cache/adr/0015-remote-cache-bounded-context.md) (storage `db-remote-cache`, ranh giới tenant với `pact-broker`, entitlement Staff Access deferred). Thư mục này giữ **thiết kế của deploy unit** (boundary kỹ thuật, protocol, streaming, storage partitioning, requirements, runbook); ranh giới nghiệp vụ và quyết định ownership → [`domains/remote-cache/`](../../domains/remote-cache/README.md). Roadmap → [`architecture/roadmap.md`](../../architecture/roadmap.md) Phase 4/7; MVP dùng API key riêng của service.
 
 ## Responsibility
 
@@ -20,3 +20,4 @@ Self-hosted remote cache cho Nx: tái sử dụng kết quả task để rút ng
 - [01-architecture.md](./01-architecture.md) — boundary, request flow, storage partitioning, invariants.
 - [02-requirements.md](./02-requirements.md) — FR/NFR, non-goals, acceptance criteria.
 - [03-operations.md](./03-operations.md) — configuration, CI, verification, runbook.
+- Bounded context `remote-cache` (ownership, tenant boundary, ADR) → [`domains/remote-cache/`](../../domains/remote-cache/README.md).

@@ -16,6 +16,7 @@ const LANE_PROJECTS = [
   'transactional-mail-deploy',
   'push-notification-deploy',
   'staff-access-deploy',
+  'remote-cache-deploy',
 ] as const;
 
 /** Mọi project trong `deploys/` phải thuộc một trong hai loại: lane project (có local lane) hoặc job deploy (chỉ build image). */

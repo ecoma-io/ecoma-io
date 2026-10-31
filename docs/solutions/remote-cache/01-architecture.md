@@ -1,6 +1,7 @@
 # Remote Cache Service — Architecture
 
 > Ranh giới hệ thống của `cache` (disposable, không phải correctness dependency) nằm ở [`docs/architecture/01-architecture.md`](../../architecture/01-architecture.md) A18 và invariant 22. File này chỉ thiết kế của riêng service.
+> Bounded context `remote-cache` (ownership, storage `db-remote-cache`, ranh giới tenant/entitlement) đã được xác lập bằng [ADR-0015](../../domains/remote-cache/adr/0015-remote-cache-bounded-context.md) — canonical của quyết định ownership; file này giữ thiết kế deploy unit.
 > Platform fact (Workers runtime limits): [`docs/architecture/04-platform-facts.md`](../../architecture/04-platform-facts.md) §2.2.
 
 ---
@@ -74,7 +75,7 @@ Hai plane cùng nằm trong một service; domain model của control plane gồ
 - **Quota/usage** — attribution theo project; semantics chống double-count khi retry/upload đồng thời.
 - **Audit** — mọi administrative mutation có entry actor/action/target/time/outcome; query được qua control plane.
 
-Chi tiết contract/API lock trước Phase 5 theo [`roadmap`](../../architecture/roadmap.md) (freeze point P4.1). Tenancy là yêu cầu MVP — không defer. Chuyển từ disposable infra sang SaaS bounded context cần ADR mới theo A18 ([`01-architecture.md`](../../architecture/01-architecture.md) §8) — tạo cùng lúc với P4.1.
+Chi tiết contract/API lock trước Phase 5 theo [`roadmap`](../../architecture/roadmap.md) (freeze point P4.1). Tenancy là yêu cầu MVP — không defer. Chuyển từ disposable infra sang SaaS bounded context đã được chốt bằng [ADR-0015](../../domains/remote-cache/adr/0015-remote-cache-bounded-context.md) theo A18 ([`01-architecture.md`](../../architecture/01-architecture.md) §8) — ADR là canonical của ownership/storage, file này giữ thiết kế kỹ thuật.
 
 Các lớp module tách trách nhiệm, dependency đi **một chiều**:
 

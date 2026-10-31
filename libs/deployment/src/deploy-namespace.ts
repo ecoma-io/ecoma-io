@@ -141,8 +141,17 @@ export type DeployResourceKind =
   /** Container init một-shot chown volume state WIC staff-access cho uid node. */
   | 'staff-access-wic-state-init'
   /** Provision/migrate ephemeral của staff-access-deploy (db-staff-access, P1.4 #428). */
-  | 'staff-access';
-
+  | 'staff-access'
+  /** WIC container của remote-cache-deploy (P4.1 #442, không shim). */
+  | 'remote-cache-wic'
+  /** Image của WIC remote-cache container. */
+  | 'remote-cache-wic-image'
+  /** Volume state wrangler của WIC remote-cache (persist dev registry). */
+  | 'remote-cache-wic-state'
+  /** Container init một-shot chown volume state WIC remote-cache cho uid node. */
+  | 'remote-cache-wic-state-init'
+  /** Provision/migrate ephemeral của remote-cache-deploy (db-remote-cache, P4.1 #442). */
+  | 'remote-cache';
 /**
  * Tên Docker resource hợp lệ và nhất quán cho một namespace.
  *
