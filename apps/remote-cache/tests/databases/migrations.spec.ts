@@ -48,9 +48,9 @@ describe('remote-cache migration runner on a real PostgreSQL', () => {
           ORDER BY c.relname`,
       );
       expect(rows.map((row) => row.relname)).toEqual(
-        ['api_keys', 'projects', 'tenant_members', 'tenants'].toSorted(),
+        ['api_keys', 'cache_entries', 'projects', 'tenant_members', 'tenants'].toSorted(),
       );
-      expect(result.tablesInRemoteCacheSchema).toBe(4);
+      expect(result.tablesInRemoteCacheSchema).toBe(5);
     } finally {
       await migrator.end();
     }
@@ -60,12 +60,12 @@ describe('remote-cache migration runner on a real PostgreSQL', () => {
     // Runner không có ledger — nó chạy LẠI mọi file. Tính idempotent của DDL
     // (`IF NOT EXISTS`, `CREATE OR REPLACE`, `DROP TRIGGER IF EXISTS`) là thứ
     // làm lần chạy thứ hai thành công mà không đổi gì: applied = số file,
-    // schema vẫn 4 bảng. Một migration mất idempotency lộ ngay ở đây.
+    // schema vẫn 5 bảng. Một migration mất idempotency lộ ngay ở đây.
     const migrator = await db.connectAsMigrator();
     try {
       const result = await applyAllMigrations(migrator);
       expect(result.applied).toBe(listMigrations().length);
-      expect(result.tablesInRemoteCacheSchema).toBe(4);
+      expect(result.tablesInRemoteCacheSchema).toBe(5);
     } finally {
       await migrator.end();
     }
@@ -153,6 +153,7 @@ describe('remote-cache migration runner on a real PostgreSQL', () => {
         [
           'api_key_revoked_at_after_created_check',
           'api_key_scopes_check',
+          'cache_entries_size_positive',
           'projects_name_check',
           'tenants_name_check',
           'tenants_status_check',
