@@ -35,3 +35,9 @@ export {
   revokeApiKey,
   type ApiKeyRow,
 } from './api-key-repository';
+export {
+  getCacheEntryByProjectAndHash,
+  insertCacheEntry,
+  listCacheEntriesByProject,
+  type CacheEntryRow,
+} from './cache-entry-repository';
