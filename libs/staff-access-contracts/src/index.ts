@@ -84,6 +84,11 @@ export {
   type StaffEntitlementEntry,
 } from './entitlement-read-contract';
 export {
+  shouldApplyEntitlementEvent,
+  type EntitlementEventDecision,
+  type EntitlementEventDecisionReason,
+} from './entitlement-event-consumer';
+export {
   ENTITLEMENT_EVENT_PRODUCER,
   ENTITLEMENT_EVENT_TYPES,
   entitlementEvent,
