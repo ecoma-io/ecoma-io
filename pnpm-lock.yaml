@@ -984,6 +984,25 @@ importers:
         specifier: ^3.4.9
         version: 3.4.9
 
+  libs/staff-access-reconciler-application:
+    dependencies:
+      '@ecoma-io/staff-access-contracts':
+        specifier: workspace:*
+        version: link:../staff-access-contracts
+
+  libs/staff-access-reconciler-infrastructure:
+    dependencies:
+      '@ecoma-io/staff-access-reconciler-application':
+        specifier: workspace:*
+        version: link:../staff-access-reconciler-application
+      pg:
+        specifier: ^8.23.1
+        version: 8.23.1
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
+
   libs/staff-access-relay-application: {}
 
   libs/staff-access-relay-infrastructure:
