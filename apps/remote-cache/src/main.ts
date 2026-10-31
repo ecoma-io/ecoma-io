@@ -15,6 +15,7 @@ import type { AppEnv } from './types';
 import { loadRemoteCacheConfig, type RemoteCacheConfig, type RemoteCacheEnv } from './config';
 import { isRemoteCacheDomainError } from '@ecoma-io/remote-cache-domain';
 import { remoteCacheRoutes } from './routes';
+import { remoteCacheDataRoutes } from './cache-routes';
 
 /** Config cache theo isolate: load mot lan, KHONG cache loi — isolate sau
  * request loi duoc co hoi nap lai khi binding da duoc gan. */
@@ -72,6 +73,9 @@ function createApp(): Hono<AppEnv> {
   // Control-plane skeleton — mount SAU middleware config: moi handler doc
   // `config` da kiem san, loi binding khong bao gio lo qua mot route nghiep vu.
   app.route('/', remoteCacheRoutes());
+
+  // Data plane (P4.2) — mount sau control plane, cung middleware config.
+  app.route('/', remoteCacheDataRoutes());
 
   // 404 dong nhat (khong leak route ton tai hay khong).
   app.notFound((c) =>

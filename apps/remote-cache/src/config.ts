@@ -12,11 +12,25 @@
 export interface RemoteCacheEnv {
   /** Hyperdrive binding toi `db-remote-cache`. Khong phai connection string. */
   DB_REMOTE_CACHE?: { connectionString: string };
+  /** Storage config — tat ca optional; thieu thi data plane fail-closed 503. */
+  S3_ENDPOINT?: string;
+  S3_BUCKET?: string;
+  S3_ACCESS_KEY_ID?: string;
+  S3_SECRET_ACCESS_KEY?: string;
+  /** Gioi han kich thuoc artifact (byte). Mac dinh 512 MiB neu khong cau hinh. */
+  MAX_ARTIFACT_SIZE?: string;
 }
 
 /** Cau hinh da kiem, dung boi composition root. */
 export interface RemoteCacheConfig {
   readonly hyperdrive: { connectionString: string };
+  readonly storage: {
+    readonly endpoint: string;
+    readonly bucket: string;
+    readonly accessKeyId: string;
+    readonly secretAccessKey: string;
+  } | null;
+  readonly maxArtifactSize: number;
 }
 
 /**
@@ -51,5 +65,25 @@ export function loadRemoteCacheConfig(
 ): RemoteCacheConfig {
   const env: RemoteCacheEnv = envInput ?? {};
   const hyperdrive = requireHyperdrive(env.DB_REMOTE_CACHE);
-  return { hyperdrive };
+
+  // Storage: tat ca optional — thieu bat ky field thi data plane fail-closed 503
+  // (khong co default storage). Khong nem khi thieu; route tra 503 khi storage null.
+  const storage =
+    env.S3_ENDPOINT && env.S3_BUCKET && env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY
+      ? {
+          endpoint: env.S3_ENDPOINT,
+          bucket: env.S3_BUCKET,
+          accessKeyId: env.S3_ACCESS_KEY_ID,
+          secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+        }
+      : null;
+
+  const maxArtifactSize =
+    env.MAX_ARTIFACT_SIZE &&
+    Number.isFinite(Number(env.MAX_ARTIFACT_SIZE)) &&
+    Number(env.MAX_ARTIFACT_SIZE) > 0
+      ? Number(env.MAX_ARTIFACT_SIZE)
+      : 512 * 1024 * 1024;
+
+  return { hyperdrive, storage, maxArtifactSize };
 }

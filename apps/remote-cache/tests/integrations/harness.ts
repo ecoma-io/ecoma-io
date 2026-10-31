@@ -190,7 +190,7 @@ async function provision(superuser: Client): Promise<void> {
 }
 
 /** Bảng data của schema `remote_cache` — thứ tự không quan trọng trong MỘT câu TRUNCATE. */
-const DATA_TABLES = ['api_keys', 'projects', 'tenant_members', 'tenants'] as const;
+const DATA_TABLES = ['api_keys', 'cache_entries', 'projects', 'tenant_members', 'tenants'] as const;
 
 /**
  * Dựng container PostgreSQL, provision hai role theo runbook, apply migration
