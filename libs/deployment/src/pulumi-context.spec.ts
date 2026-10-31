@@ -288,47 +288,55 @@ describe('ensureStack — real Pulumi subprocess isolation', () => {
   // trên máy developer, nơi lệnh này thực sự chạy).
   const hasCli = spawnSync('pulumi', ['version'], { encoding: 'utf8' }).status === 0;
 
-  it('two concurrent worktrees: independent backends, no shared state mutation', () => {
-    if (!hasCli) return; // skip im lặng — documented limitation
-    const wtA = tempWorktree();
-    const wtB = tempWorktree();
-    const ctxA = resolveContext(wtA);
-    const ctxB = resolveContext(wtB);
-    const envA = pulumiEnv(ctxA, { kind: 'inline', value: 'concurrent-test-pass' });
-    const envB = pulumiEnv(ctxB, { kind: 'inline', value: 'concurrent-test-pass' });
+  it(
+    'two concurrent worktrees: independent backends, no shared state mutation',
+    { timeout: 60_000 },
+    () => {
+      if (!hasCli) return; // skip im lặng — documented limitation
+      const wtA = tempWorktree();
+      const wtB = tempWorktree();
+      const ctxA = resolveContext(wtA);
+      const ctxB = resolveContext(wtB);
+      const envA = pulumiEnv(ctxA, { kind: 'inline', value: 'concurrent-test-pass' });
+      const envB = pulumiEnv(ctxB, { kind: 'inline', value: 'concurrent-test-pass' });
 
-    const projDirA = join(wtA, 'proj-a');
-    const projDirB = join(wtB, 'proj-b');
-    for (const dir of [projDirA, projDirB]) {
-      mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, 'Pulumi.yaml'), 'name: ctxspec\nruntime: nodejs\nmain: .\n', 'utf8');
-    }
+      const projDirA = join(wtA, 'proj-a');
+      const projDirB = join(wtB, 'proj-b');
+      for (const dir of [projDirA, projDirB]) {
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(
+          join(dir, 'Pulumi.yaml'),
+          'name: ctxspec\nruntime: nodejs\nmain: .\n',
+          'utf8',
+        );
+      }
 
-    // KỸ THUẬT: init thật trong backend của từng worktree — chứng minh backend
-    // env-only không cần login và state đi đúng chỗ.
-    ensureStack(projDirA, 'ctxspec', ctxA, envA);
-    ensureStack(projDirB, 'ctxspec', ctxB, envB);
+      // KỸ THUẬT: init thật trong backend của từng worktree — chứng minh backend
+      // env-only không cần login và state đi đúng chỗ.
+      ensureStack(projDirA, 'ctxspec', ctxA, envA);
+      ensureStack(projDirB, 'ctxspec', ctxB, envB);
 
-    // State của mỗi worktree chứa đúng stack của nó.
-    expect(existsSync(join(localStateDir(wtA), '.pulumi/stacks/ctxspec'))).toBe(true);
-    expect(existsSync(join(localStateDir(wtB), '.pulumi/stacks/ctxspec'))).toBe(true);
+      // State của mỗi worktree chứa đúng stack của nó.
+      expect(existsSync(join(localStateDir(wtA), '.pulumi/stacks/ctxspec'))).toBe(true);
+      expect(existsSync(join(localStateDir(wtB), '.pulumi/stacks/ctxspec'))).toBe(true);
 
-    // Stack name khác nhau giữa hai worktree (namespace trong tên) — dù backend
-    // env bị hoán đổi cũng không bao giờ trỏ nhầm stack.
-    expect(ctxA.stackName).not.toBe(ctxB.stackName);
+      // Stack name khác nhau giữa hai worktree (namespace trong tên) — dù backend
+      // env bị hoán đổi cũng không bao giờ trỏ nhầm stack.
+      expect(ctxA.stackName).not.toBe(ctxB.stackName);
 
-    // Dọn: xoá stack để state không vương lại trong temp (đã có afterAll rm).
-    for (const [dir, ctx, env] of [
-      [projDirA, ctxA, envA],
-      [projDirB, ctxB, envB],
-    ] as const) {
-      spawnSync('pulumi', ['stack', 'rm', '--yes', '--stack', fullStackRef('ctxspec', ctx)], {
-        cwd: dir,
-        encoding: 'utf8',
-        env,
-      });
-    }
-  });
+      // Dọn: xoá stack để state không vương lại trong temp (đã có afterAll rm).
+      for (const [dir, ctx, env] of [
+        [projDirA, ctxA, envA],
+        [projDirB, ctxB, envB],
+      ] as const) {
+        spawnSync('pulumi', ['stack', 'rm', '--yes', '--stack', fullStackRef('ctxspec', ctx)], {
+          cwd: dir,
+          encoding: 'utf8',
+          env,
+        });
+      }
+    },
+  );
 });
 
 describe('pulumiRun — prepareStack is opt-in', () => {
