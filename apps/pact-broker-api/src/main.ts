@@ -41,6 +41,7 @@ import { environmentRoutes } from './routes/environments';
 import { contractsRoutes } from './routes/contracts';
 import { webhookRoutes } from './routes/webhooks';
 import { adminRoutes } from './routes/admin';
+import { entitlementQueueBatch } from './entitlement-consumer';
 
 /** Giới hạn body: publish contract có thể lớn nhưng không vô hạn. 5 MiB. */
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
@@ -324,5 +325,25 @@ const app = buildApp();
 export default {
   async fetch(request: Request, env: AppEnv['Bindings'], ctx: ExecutionContext): Promise<Response> {
     return app.fetch(request, env, ctx);
+  },
+
+  /**
+   * Queue consumer của `ecoma-staff-access-entitlement-events` (P3.2):
+   * áp dụng event entitlement vào membership Pact Broker. Có cùng entry
+   * module với `fetch` — Worker này vừa phục vụ API vừa consume queue.
+   */
+  async queue(
+    batch: {
+      queue: string | undefined;
+      messages: readonly {
+        id: string;
+        body: unknown;
+        ack(): Promise<void>;
+        retry(): Promise<void>;
+      }[];
+    },
+    env: AppEnv['Bindings'],
+  ): Promise<void> {
+    await entitlementQueueBatch(batch, env as { HYPERDRIVE?: { connectionString: string } });
   },
 };

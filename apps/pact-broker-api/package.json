@@ -6,6 +6,7 @@
     "@ecoma-io/pact-broker-api-application": "workspace:*",
     "@ecoma-io/pact-broker-api-domain": "workspace:*",
     "@ecoma-io/pact-broker-api-infrastructure": "workspace:*",
+    "@ecoma-io/staff-access-contracts": "workspace:*",
     "hono": "^4.13.13",
     "pg": "^8.23.1",
     "zod": "^4.0.0"
