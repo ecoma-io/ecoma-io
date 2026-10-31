@@ -63,6 +63,18 @@ export {
   type AuditQueryValidation,
 } from './management-audit-contract';
 export {
+  ENTITLEMENT_DELIVERY_DEADLINE_MS,
+  ENTITLEMENT_DELIVERY_EVENT_CLASSES,
+  ENTITLEMENT_DELIVERY_LATENCY_METRIC,
+  ENTITLEMENT_DELIVERY_METRIC_LABELS,
+  ENTITLEMENT_FRESHNESS_CHECKS_TOTAL_METRIC,
+  ENTITLEMENT_FRESHNESS_FAIL_CLOSED_TOTAL_METRIC,
+  ENTITLEMENT_RECONCILIATION_STALE_PUBLISHED_TOTAL_METRIC,
+  isEntitlementDeliveryEventClass,
+  type EntitlementDeliveryEventClass,
+  type EntitlementDeliveryMetricDimensions,
+} from './entitlement-delivery-metrics-contract';
+export {
   ENTITLEMENT_PRODUCTS,
   ENTITLEMENT_READ_MAX_PAGE,
   ENTITLEMENT_MAX_REVISION,
