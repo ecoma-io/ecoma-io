@@ -129,6 +129,62 @@ describe('provisionEntitlementMembership', () => {
     expect(deps.sync.revisions['staff-0001|pact-broker']).toBe(2);
   });
 
+  it('entitlement.revoked sau entitlement.granted → membership được tạo trước vẫn còn, không bị xóa (P3.3)', async () => {
+    const deps = makeDeps();
+    // Granted trước: tạo membership role Member.
+    await provisionEntitlementMembership(makeEvent({ revision: 1 }), deps);
+    expect(deps.membership.calls).toEqual([
+      { tenantId: 'tenant-ecoma-internal', sub: 'staff-0001', role: 'member' },
+    ]);
+
+    // Revoked sau: ghi revision, KHÔNG gọi MembershipRepo, membership giữ nguyên.
+    const result = await provisionEntitlementMembership(
+      makeEvent({ type: 'entitlement.revoked', revision: 2 }),
+      deps,
+    );
+
+    expect(result.applied).toBe(false);
+    expect(result.reason).toBe('newer');
+    expect(deps.sync.revisions['staff-0001|pact-broker']).toBe(2);
+    // Membership vẫn còn: upsertMember chỉ được gọi 1 lần (lúc granted), không bị xóa.
+    expect(deps.membership.calls).toHaveLength(1);
+    expect(deps.membership.members['tenant-ecoma-internal|staff-0001']).toBe('member');
+  });
+
+  it('entitlement.revoked không gọi MembershipRepo — chỉ ghi sync state (P3.3 isolation)', async () => {
+    const deps = makeDeps();
+    // Chưa thấy revision nào (null) → revoked revision 1 là 'first', áp dụng revision nhưng KHÔNG tạo membership.
+    const result = await provisionEntitlementMembership(
+      makeEvent({ type: 'entitlement.revoked', revision: 1 }),
+      deps,
+    );
+
+    expect(result.applied).toBe(false);
+    expect(result.reason).toBe('first');
+    // Revoked chỉ ghi sync state, không đụng membership.
+    expect(deps.membership.calls).toHaveLength(0);
+    expect(deps.sync.revisions['staff-0001|pact-broker']).toBe(1);
+  });
+
+  it('hai entitlement.revoked liên tiếp → membership vẫn giữ nguyên, revision tiến lên (P3.3)', async () => {
+    const deps = makeDeps();
+    await provisionEntitlementMembership(makeEvent({ revision: 1 }), deps);
+    expect(deps.membership.members['tenant-ecoma-internal|staff-0001']).toBe('member');
+
+    await provisionEntitlementMembership(
+      makeEvent({ type: 'entitlement.revoked', revision: 2 }),
+      deps,
+    );
+    await provisionEntitlementMembership(
+      makeEvent({ type: 'entitlement.revoked', revision: 3 }),
+      deps,
+    );
+
+    expect(deps.sync.revisions['staff-0001|pact-broker']).toBe(3);
+    expect(deps.membership.calls).toHaveLength(1); // Chỉ granted tạo membership
+    expect(deps.membership.members['tenant-ecoma-internal|staff-0001']).toBe('member');
+  });
+
   it('sản phẩm khác pact-broker → bỏ qua, reason not-product', async () => {
     const deps = makeDeps();
     const result = await provisionEntitlementMembership(makeEvent({ product: 'backoffice' }), deps);
