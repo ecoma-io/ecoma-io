@@ -51,7 +51,11 @@ export class PgTenantRepo {
         await client.query('BEGIN');
 
         // Bước 1: thử INSERT. RETURNING rỗng = đã có (kể cả do race).
-        const inserted = await client.query<{ id: string; name: string; status: string }>(
+        const inserted = await client.query<{
+          id: string;
+          name: string;
+          status: string;
+        }>(
           `INSERT INTO pact.tenants (name) VALUES ($1)
            ON CONFLICT (name) DO NOTHING
            RETURNING id, name, status`,
@@ -63,10 +67,11 @@ export class PgTenantRepo {
           tenant = inserted.rows[0];
         } else {
           // Bước 2: select lại hàng của bên thắng race.
-          const existing = await client.query<{ id: string; name: string; status: string }>(
-            `SELECT id, name, status FROM pact.tenants WHERE name = $1`,
-            [name],
-          );
+          const existing = await client.query<{
+            id: string;
+            name: string;
+            status: string;
+          }>(`SELECT id, name, status FROM pact.tenants WHERE name = $1`, [name]);
           if (existing.rows[0] === undefined) {
             throw new PactBrokerTenantError(`tenant ${name} vanished during bootstrap`);
           }
@@ -253,5 +258,51 @@ export class PgTenantRepo {
       [tenantId, tokenId],
     );
     return (rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Rotate token — thay token_hash bằng giá trị mới, bản rõ trả về đúng một
+   * lần. Token cũ (hash cũ) mất hiệu lực ngay lập tức vì mọi request tra hash
+   * rồi check. Trả null khi không tìm thấy token hoặc token đã bị revoke.
+   *
+   * `client` là pg client đã mở (đã BEGIN trong route) — xoay + ghi audit cùng
+   * diễn ra trên một transaction duy nhất, fail-closed: nếu audit bị lỗi, toàn
+   * bộ transaction rollback và token mới không được lưu.
+   */
+  async rotateMachineToken(
+    client: import('pg').PoolClient,
+    tenantId: string,
+    tokenId: string,
+    _actorSub: string | null,
+  ): Promise<{ token: string; record: MachineTokenRecord } | null> {
+    const raw = randomToken();
+    const tokenHash = await sha256Hex(raw);
+
+    const { rows } = await client.query<{
+      id: string;
+      tenant_id: string;
+      name: string;
+      scopes: string;
+      created_at: Date;
+    }>(
+      `UPDATE pact.machine_tokens
+          SET token_hash = $1
+        WHERE tenant_id = $2 AND id = $3::uuid AND revoked_at IS NULL
+        RETURNING id, tenant_id, name, scopes, created_at`,
+      [tokenHash, tenantId, tokenId],
+    );
+    const row = rows[0];
+    if (row === undefined) return null;
+    return {
+      token: raw,
+      record: {
+        id: row.id,
+        tenantId: row.tenant_id,
+        name: row.name,
+        scopes: row.scopes,
+        createdAt: row.created_at.toISOString(),
+        revokedAt: null,
+      },
+    };
   }
 }

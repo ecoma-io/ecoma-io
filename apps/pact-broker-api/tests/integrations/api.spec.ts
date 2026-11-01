@@ -243,14 +243,18 @@ describe(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
     );
     tenantBSecret = replacement.token;
     await pool.end();
-    const revoked = await reqJson('/pacticipants', { headers: auth(revokedSecret) });
+    const revoked = await reqJson('/pacticipants', {
+      headers: auth(revokedSecret),
+    });
     expect(revoked.status).toBe(401);
     expect(stripRequestId(revoked.body)).toEqual(stripRequestId(missing.body));
     expect(stripRequestId(unknown.body)).toEqual(stripRequestId(missing.body));
   });
 
   it('serves HAL index with compatibility version and publish-contracts link', async () => {
-    const { status, body } = await reqJson('/', { headers: auth(tenantASecret) });
+    const { status, body } = await reqJson('/', {
+      headers: auth(tenantASecret),
+    });
     expect(status).toBe(200);
     // HAL dùng `_links` — truy cập bằng bracket để không vi phạm
     // no-underscore-dangle.
@@ -279,7 +283,9 @@ describe(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
       method: 'POST',
       headers: auth(tenantASecret),
       body: JSON.stringify({
-        consumerVersionSelectors: Array.from({ length: 60 }, (_, i) => ({ tag: `t${i}` })),
+        consumerVersionSelectors: Array.from({ length: 60 }, (_, i) => ({
+          tag: `t${i}`,
+        })),
       }),
     });
     expect(tooMany.status).toBe(400);
@@ -289,7 +295,9 @@ describe(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
       method: 'POST',
       headers: auth(tenantASecret),
       body: JSON.stringify({
-        consumerVersionSelectors: Array.from({ length: 51 }, (_, i) => ({ tag: `t${i}` })),
+        consumerVersionSelectors: Array.from({ length: 51 }, (_, i) => ({
+          tag: `t${i}`,
+        })),
       }),
     });
     expect(justAbove.status).toBe(400);
@@ -299,7 +307,9 @@ describe(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
       method: 'POST',
       headers: auth(tenantASecret),
       body: JSON.stringify({
-        consumerVersionSelectors: Array.from({ length: 50 }, (_, i) => ({ tag: `t${i}` })),
+        consumerVersionSelectors: Array.from({ length: 50 }, (_, i) => ({
+          tag: `t${i}`,
+        })),
       }),
     });
     expect(within.status).toBe(200);
@@ -358,7 +368,10 @@ describe(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
 
     // Control: body nhỏ cùng hình dạng stream vẫn publish được 201 — chứng
     // minh 413 ở trên đến từ cap byte, không phải từ hình dạng stream.
-    const small = samplePact({ consumer: 'order-service', provider: 'payment-service' });
+    const small = samplePact({
+      consumer: 'order-service',
+      provider: 'payment-service',
+    });
     const smallStream = await app.request(
       `${BASE}/pacts/provider/payment-service/consumer/order-service/version/1.0.0`,
       {
@@ -386,7 +399,9 @@ describe(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
     });
 
     // B list pacticipants: trống.
-    const list = await reqJson('/pacticipants', { headers: auth(tenantBSecret) });
+    const list = await reqJson('/pacticipants', {
+      headers: auth(tenantBSecret),
+    });
     expect(list.status).toBe(200);
     expect((list.body as { _links: Record<string, unknown> })['_links']).not.toHaveProperty(
       'order-service',
@@ -403,7 +418,10 @@ describe(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
       headers: auth(tenantBSecret),
     });
     expect(matrix.status).toBe(200);
-    const matrixBody = matrix.body as { matrix: unknown[]; deployable?: boolean };
+    const matrixBody = matrix.body as {
+      matrix: unknown[];
+      deployable?: boolean;
+    };
     expect(matrixBody.matrix).toHaveLength(0);
   });
 
@@ -438,7 +456,10 @@ describe(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
       {
         method: 'POST',
         headers: auth(tenantBSecret),
-        body: JSON.stringify({ success: true, providerApplicationVersion: '2.0.0' }),
+        body: JSON.stringify({
+          success: true,
+          providerApplicationVersion: '2.0.0',
+        }),
       },
     );
     expect(ver.status).toBe(201);
@@ -458,7 +479,9 @@ describe(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
   });
 
   it('can-i-deploy fails closed (tri-state) when nothing is verified and deployed', async () => {
-    await publishPact(tenantASecret, 'svc-c', 'svc-p', '1.0.0', { branch: 'main' });
+    await publishPact(tenantASecret, 'svc-c', 'svc-p', '1.0.0', {
+      branch: 'main',
+    });
 
     // No verification, no deployment → unknown → KHÔNG được deploy.
     // Route là query-style (khớp CLI `pact-broker can-i-deploy --pacticipant …`).
@@ -488,7 +511,9 @@ describe(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
       { headers: auth(tenantASecret) },
     );
     expect(status).toBe(200);
-    const bodyObj = body as { summary: { deployable: boolean | null; reason: string } };
+    const bodyObj = body as {
+      summary: { deployable: boolean | null; reason: string };
+    };
     expect(bodyObj.summary.deployable).toBeNull();
     expect(bodyObj.summary.reason).toContain('no pacts published');
   });
@@ -499,7 +524,9 @@ describe(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
       { headers: auth(tenantASecret) },
     );
     expect(status).toBe(200);
-    const bodyObj = body as { summary: { deployable: boolean | null; reason: string } };
+    const bodyObj = body as {
+      summary: { deployable: boolean | null; reason: string };
+    };
     expect(bodyObj.summary.deployable).toBeNull();
     expect(bodyObj.summary.reason).toContain('There is no version 9.9.9 of ghost-svc');
     // Hai tình huống rỗng phải phân biệt được qua reason.
@@ -514,16 +541,23 @@ describe(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
       body: JSON.stringify({ name: 'one-shot', scopes: ['write'] }),
     });
     expect(created.status).toBe(201);
-    const createdBody = created.body as { token: { id: string }; secret: string };
+    const createdBody = created.body as {
+      token: { id: string };
+      secret: string;
+    };
     expect(createdBody.secret).toMatch(/^[A-Za-z0-9_-]{30,}$/u);
     const tokenId = createdBody.token.id;
 
     // Token mới dùng được ngay.
-    const used = await reqJson('/pacticipants', { headers: auth(createdBody.secret) });
+    const used = await reqJson('/pacticipants', {
+      headers: auth(createdBody.secret),
+    });
     expect(used.status).toBe(200);
 
     // List KHÔNG chứa secret.
-    const list = await reqJson('/admin/machine-tokens', { headers: auth(tenantASecret) });
+    const list = await reqJson('/admin/machine-tokens', {
+      headers: auth(tenantASecret),
+    });
     expect(list.status).toBe(200);
     expect(JSON.stringify(list.body)).not.toContain(createdBody.secret);
     expect(JSON.stringify(list.body)).not.toContain(tenantASecret);
@@ -534,8 +568,245 @@ describe(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
       headers: auth(tenantASecret),
     });
     expect(revoked.status).toBe(204);
-    const after = await reqJson('/pacticipants', { headers: auth(createdBody.secret) });
+    const after = await reqJson('/pacticipants', {
+      headers: auth(createdBody.secret),
+    });
     expect(after.status).toBe(401);
+  });
+
+  it('machine token rotate: old token blocked immediately, new token works', async () => {
+    // Create token.
+    const created = await reqJson('/admin/machine-tokens', {
+      method: 'POST',
+      headers: auth(tenantASecret),
+      body: JSON.stringify({ name: 'rotatable', scopes: ['write'] }),
+    });
+    expect(created.status).toBe(201);
+    const createdBody = created.body as {
+      token: { id: string };
+      secret: string;
+    };
+    const tokenId = createdBody.token.id;
+
+    // Token cũ dùng được ngay.
+    const before = await reqJson('/pacticipants', {
+      headers: auth(createdBody.secret),
+    });
+    expect(before.status).toBe(200);
+
+    // Rotate → trả secret mới, token cũ chặn ngay lập tức.
+    const rotated = await reqJson(`/admin/machine-tokens/${tokenId}/rotate`, {
+      method: 'POST',
+      headers: auth(tenantASecret),
+    });
+    expect(rotated.status).toBe(200);
+    const rotatedBody = rotated.body as {
+      token: { id: string };
+      secret: string;
+    };
+    expect(rotatedBody.token.id).toBe(tokenId);
+    expect(rotatedBody.secret).not.toBe(createdBody.secret);
+
+    // Token cũ bị chặn ngay request đầu sau rotate.
+    const afterOld = await reqJson('/pacticipants', {
+      headers: auth(createdBody.secret),
+    });
+    expect(afterOld.status).toBe(401);
+
+    // Token mới dùng được.
+    const afterNew = await reqJson('/pacticipants', {
+      headers: auth(rotatedBody.secret),
+    });
+    expect(afterNew.status).toBe(200);
+
+    // List KHÔNG chứa secret nào.
+    const list = await reqJson('/admin/machine-tokens', {
+      headers: auth(tenantASecret),
+    });
+    expect(list.status).toBe(200);
+    expect(JSON.stringify(list.body)).not.toContain(createdBody.secret);
+    expect(JSON.stringify(list.body)).not.toContain(rotatedBody.secret);
+  });
+
+  it('machine token rotate: writes audit_events row with action machine_token.rotate', async () => {
+    // Create token.
+    const created = await reqJson('/admin/machine-tokens', {
+      method: 'POST',
+      headers: auth(tenantASecret),
+      body: JSON.stringify({ name: 'audited-rotate', scopes: ['write'] }),
+    });
+    expect(created.status).toBe(201);
+    const tokenId = (created.body as { token: { id: string } }).token.id;
+
+    const rotated = await reqJson(`/admin/machine-tokens/${tokenId}/rotate`, {
+      method: 'POST',
+      headers: auth(tenantASecret),
+    });
+    expect(rotated.status).toBe(200);
+
+    // assert audit_events ghi row action = 'machine_token.rotate'.
+    const client = await db.connect();
+    try {
+      const { rows } = await client.query<{ action: string }>(
+        `SELECT action FROM pact.audit_events
+         WHERE action = $1 AND detail->>'tokenId' = $2`,
+        ['machine_token.rotate', tokenId],
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].action).toBe('machine_token.rotate');
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('machine token rotate: rotating an already-revoked token returns 404', async () => {
+    // Create token.
+    const created = await reqJson('/admin/machine-tokens', {
+      method: 'POST',
+      headers: auth(tenantASecret),
+      body: JSON.stringify({ name: 'revoked-then-rotate', scopes: ['write'] }),
+    });
+    expect(created.status).toBe(201);
+    const tokenId = (created.body as { token: { id: string } }).token.id;
+
+    // Revoke trước rồi rotate → 404, token không được lưu lại.
+    const revoked = await reqJson(`/admin/machine-tokens/${tokenId}`, {
+      method: 'DELETE',
+      headers: auth(tenantASecret),
+    });
+    expect(revoked.status).toBe(204);
+
+    const rotated = await reqJson(`/admin/machine-tokens/${tokenId}/rotate`, {
+      method: 'POST',
+      headers: auth(tenantASecret),
+    });
+    expect(rotated.status).toBe(404);
+
+    // Token cũ (đã revoke) vẫn không dùng được.
+    const after = await reqJson('/pacticipants', {
+      headers: auth((created.body as { secret: string }).secret),
+    });
+    expect(after.status).toBe(401);
+  });
+
+  it('machine token rotate: double rotation invalidates first new secret (show-once)', async () => {
+    // Create token.
+    const created = await reqJson('/admin/machine-tokens', {
+      method: 'POST',
+      headers: auth(tenantASecret),
+      body: JSON.stringify({ name: 'double-rotate', scopes: ['write'] }),
+    });
+    expect(created.status).toBe(201);
+    const createdBody = created.body as {
+      token: { id: string };
+      secret: string;
+    };
+    const tokenId = createdBody.token.id;
+
+    // Rotate lần 1 → secret mới.
+    const rotated1 = await reqJson(`/admin/machine-tokens/${tokenId}/rotate`, {
+      method: 'POST',
+      headers: auth(tenantASecret),
+    });
+    expect(rotated1.status).toBe(200);
+    const rotated1Body = rotated1.body as { secret: string };
+
+    // Rotate lần 2 → secret lần 2.
+    const rotated2 = await reqJson(`/admin/machine-tokens/${tokenId}/rotate`, {
+      method: 'POST',
+      headers: auth(tenantASecret),
+    });
+    expect(rotated2.status).toBe(200);
+    const rotated2Body = rotated2.body as { secret: string };
+    expect(rotated2Body.secret).not.toBe(rotated1Body.secret);
+
+    // Secret lần 1 đã bị invalid: dùng lại là 401.
+    const afterFirst = await reqJson('/pacticipants', {
+      headers: auth(rotated1Body.secret),
+    });
+    expect(afterFirst.status).toBe(401);
+
+    // Secret lần 2 dùng được.
+    const afterSecond = await reqJson('/pacticipants', {
+      headers: auth(rotated2Body.secret),
+    });
+    expect(afterSecond.status).toBe(200);
+  });
+
+  it('machine token rotate: cannot rotate token of another tenant (cross-tenant blocked)', async () => {
+    // Tạo token của tenant A.
+    const createdA = await reqJson('/admin/machine-tokens', {
+      method: 'POST',
+      headers: auth(tenantASecret),
+      body: JSON.stringify({ name: 'token-a', scopes: ['read'] }),
+    });
+    expect(createdA.status).toBe(201);
+    const tokenIdA = (createdA.body as { token: { id: string } }).token.id;
+
+    // Token B cố rotate token của tenant A → 404 (không thấy token của tenant khác,
+    // vì DELETE/UPDATE lọc theo tenant_id ở DB).
+    const rotatedCross = await reqJson(`/admin/machine-tokens/${tokenIdA}/rotate`, {
+      method: 'POST',
+      headers: auth(tenantBSecret),
+    });
+    expect(rotatedCross.status).toBe(404);
+
+    // Token của tenant A vẫn dùng được bình thường.
+    const stillWorks = await reqJson('/pacticipants', {
+      headers: auth((createdA.body as { secret: string }).secret),
+    });
+    expect(stillWorks.status).toBe(200);
+  });
+
+  it('tenant isolation: token of tenant A cannot revoke token of tenant B', async () => {
+    // Tạo token của tenant B qua admin API của tenant B.
+    const createdB = await reqJson('/admin/machine-tokens', {
+      method: 'POST',
+      headers: auth(tenantBSecret),
+      body: JSON.stringify({ name: 'token-b', scopes: ['read'] }),
+    });
+    expect(createdB.status).toBe(201);
+    const tokenIdB = (createdB.body as { token: { id: string } }).token.id;
+
+    // Token admin của tenant A cố revoke token của tenant B → 404 (không thấy).
+    const revokeCross = await reqJson(`/admin/machine-tokens/${tokenIdB}`, {
+      method: 'DELETE',
+      headers: auth(tenantASecret),
+    });
+    expect(revokeCross.status).toBe(404);
+
+    // Token của tenant B vẫn dùng được bình thường.
+    const stillWorks = await reqJson('/pacticipants', {
+      headers: auth((createdB.body as { secret: string }).secret),
+    });
+    expect(stillWorks.status).toBe(200);
+  });
+
+  it('tenant isolation: machine token of tenant A cannot list tokens of tenant B', async () => {
+    // Tạo token của tenant B qua token admin của tenant B.
+    const createdB = await reqJson('/admin/machine-tokens', {
+      method: 'POST',
+      headers: auth(tenantBSecret),
+      body: JSON.stringify({ name: 'token-b', scopes: ['read'] }),
+    });
+    expect(createdB.status).toBe(201);
+
+    // Token admin của tenant A list tokens của chính nó: không thấy token của B.
+    const listA = await reqJson('/admin/machine-tokens', {
+      headers: auth(tenantASecret),
+    });
+    expect(listA.status).toBe(200);
+    const embedded = (listA.body as Record<string, unknown>)['_embedded'] as
+      | { tokens: Array<{ name: string }> }
+      | undefined;
+    const namesA = embedded?.tokens.map((t) => t.name) ?? [];
+    expect(namesA).not.toContain('token-b');
+
+    // Token của tenant B vẫn dùng được bình thường.
+    const stillWorksB = await reqJson('/pacticipants', {
+      headers: auth((createdB.body as { secret: string }).secret),
+    });
+    expect(stillWorksB.status).toBe(200);
   });
 
   it('scope hierarchy: read token cannot publish, write token can read', async () => {
@@ -556,7 +827,9 @@ describe(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
     expect(denied.status).toBe(403);
 
     // write đọc được (read ⊂ write).
-    const readable = await reqJson('/pacticipants', { headers: auth(writeToken.token) });
+    const readable = await reqJson('/pacticipants', {
+      headers: auth(writeToken.token),
+    });
     expect(readable.status).toBe(200);
 
     // write KHÔNG vào admin (admin ⊃ write, chiều ngược lại không đúng).
@@ -567,7 +840,9 @@ describe(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
   });
 
   it('deployments: record, undeploy, and matrix sees the deployed target', async () => {
-    await publishPact(tenantASecret, 'dep-c', 'dep-p', '1.0.0', { branch: 'main' });
+    await publishPact(tenantASecret, 'dep-c', 'dep-p', '1.0.0', {
+      branch: 'main',
+    });
     // verification success của dep-p 1.0.0 (provider version riêng) — để matrix có candidate.
     const latest = await reqJson('/pacts/provider/dep-p/consumer/dep-c/latest', {
       headers: auth(tenantASecret),
@@ -577,7 +852,10 @@ describe(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
     await reqJson(`/pacts/provider/dep-p/consumer/dep-c/pact-version/${sha}/verification-results`, {
       method: 'POST',
       headers: auth(tenantASecret),
-      body: JSON.stringify({ success: true, providerApplicationVersion: '2.0.0' }),
+      body: JSON.stringify({
+        success: true,
+        providerApplicationVersion: '2.0.0',
+      }),
     });
 
     // Tạo environment rồi record deployment của consumer version 1.0.0.
@@ -694,7 +972,9 @@ describe(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
       }),
     });
     const webhookId = (created.body as { id?: string }).id;
-    const cross = await reqJson(`/webhooks/${webhookId}`, { headers: auth(tenantBSecret) });
+    const cross = await reqJson(`/webhooks/${webhookId}`, {
+      headers: auth(tenantBSecret),
+    });
     expect(cross.status).toBe(404);
   });
 });

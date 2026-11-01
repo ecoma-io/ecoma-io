@@ -115,6 +115,60 @@ export function adminRoutes(adminAuth: () => MiddlewareHandler<AppEnv>): Hono<Ap
     );
   });
 
+  // Rotate machine token — token cũ mất hiệu lực ngay lập tức, bản rõ trả về
+  // đúng một lần (show-once). Tương tự tạo: caller phải có scope admin.
+  app.post('/machine-tokens/:id/rotate', adminAuth(), async (c) => {
+    const id = c.req.param('id');
+    if (!UUID_RE.test(id)) {
+      return c.json({ error: 'Not Found', message: 'Token not found' }, 404);
+    }
+    const tenantId = currentTenantId(c);
+    const callerTokenId = c.get('tokenId') ?? null;
+    const repo = new PgTenantRepo(c.get('pool'));
+
+    // Xoay + ghi audit cùng diễn ra trên một transaction duy nhất trên một pg
+    // client (fail-closed): nếu audit lỗi, toàn bộ transaction rollback và
+    // token mới không được lưu — không tuân thủ claim "cùng transaction" sai.
+    const client = await c.get('pool').connect();
+    try {
+      await client.query('BEGIN');
+      const rotated = await repo.rotateMachineToken(client, tenantId, id, null);
+      if (rotated === null) {
+        await client.query('ROLLBACK');
+        return c.json({ error: 'Not Found', message: 'Token not found or already revoked' }, 404);
+      }
+      await insertAuditEvent(client, {
+        tenantId,
+        actorSub: null,
+        actorTokenId: callerTokenId,
+        action: 'machine_token.rotate',
+        outcome: 'success',
+        detail: { tokenId: id },
+      });
+      await client.query('COMMIT');
+
+      return c.json(
+        {
+          token: {
+            id: rotated.record.id,
+            name: rotated.record.name,
+            scopes: rotated.record.scopes.split(' ').filter((s) => s !== ''),
+            createdAt: rotated.record.createdAt,
+            revokedAt: null,
+          },
+          // Show-once: giá trị duy nhất lần này response chứa nó.
+          secret: rotated.token,
+        },
+        200,
+      );
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
+
   // Revoke machine token — hiệu lực tức thời.
   app.delete('/machine-tokens/:id', adminAuth(), async (c) => {
     const id = c.req.param('id');
