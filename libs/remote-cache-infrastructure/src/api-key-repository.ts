@@ -29,6 +29,9 @@ export interface ApiKeyRow {
   /** NULL = con hieu luc; revoke la SET `revoked_at`, khong DELETE. */
   readonly revoked_at: string | null;
   readonly created_at: string;
+  /** true neu key la credential CI tin cahy (duoc phep ghi neu co scope write).
+   * false = key khong tin cahy (fork/PR) — chi duoc doc, khong bao ghi. */
+  readonly trusted_ci: boolean;
 }
 
 /** Lay api key theo id. */
@@ -54,7 +57,7 @@ export async function getApiKeyByTokenHash(
   tokenHash: string,
 ): Promise<ApiKeyRow | null> {
   const rows = await db.unsafe<ApiKeyRow>(
-    `SELECT id, project_id, token_hash, scopes, revoked_at, created_at
+    `SELECT id, project_id, token_hash, scopes, revoked_at, created_at, trusted_ci
        FROM remote_cache.api_keys
       WHERE token_hash = $1`,
     [tokenHash],
@@ -90,12 +93,15 @@ export async function insertApiKey(
     /** SHA-256 hex — khong bao gio token gon. */
     readonly tokenHash: string;
     readonly scopes: readonly RemoteCacheApiKeyScope[];
+    /** true neu key la credential CI tin cahy (duoc phep ghi neu co scope write).
+     * false = key khong tin cahy (fork/PR) — chi duoc doc. Mac dinh false. */
+    readonly trusted_ci?: boolean;
   },
 ): Promise<void> {
   await db.unsafe(
-    `INSERT INTO remote_cache.api_keys (id, project_id, token_hash, scopes)
-     VALUES ($1, $2, $3, $4)`,
-    [entry.id, entry.projectId, entry.tokenHash, entry.scopes.join(' ')],
+    `INSERT INTO remote_cache.api_keys (id, project_id, token_hash, scopes, trusted_ci)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [entry.id, entry.projectId, entry.tokenHash, entry.scopes.join(' '), entry.trusted_ci ?? false],
   );
 }
 

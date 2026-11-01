@@ -40,6 +40,8 @@ import {
   type RemoteCacheClient,
 } from '@ecoma-io/remote-cache-infrastructure';
 import type { RemoteCacheApiKeyScope } from '@ecoma-io/remote-cache-domain';
+import { isRemoteCacheDomainError } from '@ecoma-io/remote-cache-domain';
+import { enforceTenantLifecycle } from './lifecycle';
 import type { AppEnv } from './types';
 import { decodeKeysetCursor, encodeKeysetCursor } from './cursor';
 
@@ -76,6 +78,8 @@ interface AuthenticatedKey {
   readonly scopes: readonly RemoteCacheApiKeyScope[];
   /** Key con hieu luc (revoked_at IS NULL) duoc kiem o duong auth. */
   readonly active: true;
+  /** true neu key la credential CI tin cahy (duoc phep ghi neu co scope write). */
+  readonly trustedCi: boolean;
 }
 
 /**
@@ -121,6 +125,7 @@ async function requireApiKey(
     tenantId: project.tenant_id,
     scopes: row.scopes.split(' ') as RemoteCacheApiKeyScope[],
     active: true,
+    trustedCi: row.trusted_ci,
   };
 }
 
@@ -149,6 +154,31 @@ export function remoteCacheRoutes(): Hono<AppEnv> {
       if (!auth.scopes.includes('write')) {
         return { authError: forbidden('This API key does not carry the write scope.') } as const;
       }
+      // P4.4: key phai duoc tin cay (trustedCi) moi duoc phep ghi project. Fork/PR key
+      // (trustedCi=false) khong bao gia duoc phep ghi, neu ngay ca co scope write.
+      if (!auth.trustedCi) {
+        return { authError: forbidden('This API key is not trusted for write access.') } as const;
+      }
+      // P4.4: chi caller da duoc tin cay moi duoc phep tao key trusted_ci. Fork/PR key
+      // khong the tao mot key tin cay (trusted_ci=true) qua duong write nay.
+      if (request.trusted_ci && !auth.trustedCi) {
+        return { authError: forbidden('Only a trusted key can create a trusted CI key.') } as const;
+      }
+      // P4.4: luon re-check trang thai lifecycle tu DB tren duong ghi (fail-closed,
+      // bo qua cache). Neu tenant khong active hoac DB lookup that bai -> 409.
+      try {
+        await enforceTenantLifecycle(db, auth.tenantId, false);
+      } catch (error) {
+        if (isRemoteCacheDomainError(error)) {
+          return {
+            authError: {
+              status: 409 as const,
+              body: { error: 'Conflict', message: `Tenant lifecycle rejected: ${error.message}` },
+            },
+          } as const;
+        }
+        throw error;
+      }
       const existing = await getProjectByTenantAndName(db, auth.tenantId, request.name);
       if (existing !== null) {
         return { conflict: true } as const;
@@ -166,6 +196,7 @@ export function remoteCacheRoutes(): Hono<AppEnv> {
           projectId,
           tokenHash,
           scopes: request.api_key_scopes,
+          trusted_ci: request.trusted_ci,
         });
         return freshToken;
       });

@@ -32,3 +32,15 @@ export function isRemoteCacheTenantStatus(value: unknown): value is RemoteCacheT
     typeof value === 'string' && (REMOTE_CACHE_TENANT_STATUSES as readonly string[]).includes(value)
   );
 }
+
+/** Kiem mot trang thai lifecycle co phai `active` khong — duong enforce
+ * fail-closed o tang serving: chi `active` moi duoc phep doc/ghi cache. */
+export function isRemoteCacheTenantStatusActive(status: RemoteCacheTenantStatus): boolean {
+  return status === REMOTE_CACHE_TENANT_STATUS.active;
+}
+
+/** Tap nhan trang thai bi tu choi (khong `active`) — dung cho fail-closed. */
+export const REMOTE_CACHE_TENANT_STATUS_REJECTED = [
+  REMOTE_CACHE_TENANT_STATUS.suspended,
+  REMOTE_CACHE_TENANT_STATUS.deleted,
+] as const;

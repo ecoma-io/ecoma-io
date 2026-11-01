@@ -68,8 +68,8 @@ async function seedProjectWithToken(client: import('pg').Client): Promise<{
     [projectId, tenantId, 'p45-project'],
   );
   await client.query(
-    `INSERT INTO remote_cache.api_keys (id, project_id, token_hash, scopes) VALUES ($1, $2, $3, $4)`,
-    [apiKeyId, projectId, tokenHash, 'read write'],
+    `INSERT INTO remote_cache.api_keys (id, project_id, token_hash, scopes, trusted_ci) VALUES ($1, $2, $3, $4, $5)`,
+    [apiKeyId, projectId, tokenHash, 'read write', true],
   );
   return { tenantId, projectId, token };
 }

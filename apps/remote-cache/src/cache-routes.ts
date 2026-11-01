@@ -25,6 +25,8 @@ import {
 } from '@ecoma-io/remote-cache-infrastructure';
 import type { CacheObjectStorage } from './storage';
 import type { RemoteCacheApiKeyScope } from '@ecoma-io/remote-cache-domain';
+import { enforceTenantLifecycle } from './lifecycle';
+import { isRemoteCacheDomainError } from '@ecoma-io/remote-cache-domain';
 
 interface HttpError {
   readonly status: 400 | 401 | 403 | 404 | 409 | 413 | 503;
@@ -74,11 +76,14 @@ interface AuthenticatedKey {
   readonly projectId: string;
   readonly tenantId: string;
   readonly scopes: readonly RemoteCacheApiKeyScope[];
+  /** true neu key la credential CI tin cahy (duoc phep ghi neu co scope write). */
+  readonly trustedCi: boolean;
 }
 
 async function requireApiKey(
   db: RemoteCacheClient,
   authorizationHeader: string | undefined,
+  useCache: boolean,
 ): Promise<AuthenticatedKey | HttpError> {
   const bearerPrefix = 'Bearer ';
   if (
@@ -98,10 +103,28 @@ async function requireApiKey(
   if (project === null) {
     return unauthorized();
   }
+
+  // Enforce tenant lifecycle — fail-closed: tenant phai active moi duoc phep
+  // doc/ghi. Doc duong su dung cache (useCache=true); ghi duong luon re-check
+  // tu DB (useCache=false, bat bo cache). Domain error (tenant bi tu choi)
+  // chuyen thanh HttpError de Worker tra lai status hop le thay 500.
+  try {
+    await enforceTenantLifecycle(db, project.tenant_id, useCache);
+  } catch (error) {
+    if (isRemoteCacheDomainError(error)) {
+      return {
+        status: 409 as const,
+        body: { error: 'Conflict', message: `Tenant lifecycle rejected: ${error.message}` },
+      };
+    }
+    throw error;
+  }
+
   return {
     projectId: project.id,
     tenantId: project.tenant_id,
     scopes: row.scopes.split(' ') as RemoteCacheApiKeyScope[],
+    trustedCi: row.trusted_ci,
   };
 }
 
@@ -185,7 +208,7 @@ export function remoteCacheDataRoutes(
     }
 
     const outcome = await withRemoteCacheClient(config, async (db) => {
-      const auth = await requireApiKey(db, c.req.header('authorization'));
+      const auth = await requireApiKey(db, c.req.header('authorization'), true);
       if ('status' in auth) return { authError: auth } as const;
       if (!hasScope(auth.scopes, 'read')) {
         return { authError: forbidden('This API key does not carry the read scope.') } as const;
@@ -263,8 +286,15 @@ export function remoteCacheDataRoutes(
 
     // Auth truoc khi upload.
     const authOutcome = await withRemoteCacheClient(config, async (db) => {
-      const auth = await requireApiKey(db, c.req.header('authorization'));
+      const auth = await requireApiKey(db, c.req.header('authorization'), false);
       if ('status' in auth) return { authError: auth } as const;
+
+      // Fork/PR write protection: key khong tin cahy (trustedCi=false) khong
+      // bao gio duoc phep ghi, neu ngay ca co scope `write`.
+      if (!auth.trustedCi) {
+        return { authError: forbidden('This API key is not trusted for write access.') } as const;
+      }
+
       if (!hasScope(auth.scopes, 'write')) {
         return { authError: forbidden('This API key does not carry the write scope.') } as const;
       }

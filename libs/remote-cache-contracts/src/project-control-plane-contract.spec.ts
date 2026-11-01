@@ -62,7 +62,7 @@ describe('create-project request contract', () => {
     });
     expect(result).toEqual({
       ok: true,
-      payload: { name: 'orders-cache', api_key_scopes: ['read', 'write'] },
+      payload: { name: 'orders-cache', api_key_scopes: ['read', 'write'], trusted_ci: false },
     });
   });
 
@@ -120,6 +120,47 @@ describe('create-project request contract', () => {
     });
     expect(result.ok).toBe(false);
     expectRejectedBy(result, 'invalid_project_name', 'DNS-like');
+  });
+
+  it('accepts trusted_ci boolean and defaults to false', () => {
+    const trusted = validateCreateRemoteCacheProjectRequest({
+      name: 'orders-cache',
+      api_key_scopes: ['read', 'write'],
+      trusted_ci: true,
+    });
+    expect(trusted.ok).toBe(true);
+    expect((trusted as { ok: true; payload: { trusted_ci: boolean } }).payload.trusted_ci).toBe(
+      true,
+    );
+
+    const untrusted = validateCreateRemoteCacheProjectRequest({
+      name: 'orders-cache',
+      api_key_scopes: ['read'],
+      trusted_ci: false,
+    });
+    expect(untrusted.ok).toBe(true);
+    expect((untrusted as { ok: true; payload: { trusted_ci: boolean } }).payload.trusted_ci).toBe(
+      false,
+    );
+
+    const absent = validateCreateRemoteCacheProjectRequest({
+      name: 'orders-cache',
+      api_key_scopes: ['read'],
+    });
+    expect(absent.ok).toBe(true);
+    expect((absent as { ok: true; payload: { trusted_ci: boolean } }).payload.trusted_ci).toBe(
+      false,
+    );
+  });
+
+  it('rejects trusted_ci when not a boolean', () => {
+    const result = validateCreateRemoteCacheProjectRequest({
+      name: 'x',
+      api_key_scopes: ['read'],
+      trusted_ci: 'yes',
+    });
+    expect(result.ok).toBe(false);
+    expectRejectedBy(result, 'invalid_payload', 'boolean');
   });
 });
 

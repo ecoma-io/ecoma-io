@@ -139,13 +139,19 @@ export interface CreateRemoteCacheProjectRequest {
   readonly name: string;
   /** Scopes của key mặc định tạo kèm project — không rỗng, không lặp. */
   readonly api_key_scopes: readonly RemoteCacheApiKeyScope[];
+  /**
+   * true nếu key mặc định là credential CI tin cậy (được phép ghi nếu có scope
+   * `write`). false = key không tin cậy (fork/PR) — chỉ được đọc, không bao giờ
+   * được ghi (P4.4 fork/PR write protection). Mac định false.
+   */
+  readonly trusted_ci?: boolean;
 }
 
 const CREATE_REQUEST_KEYS = ['name', 'api_key_scopes'] as const;
 
 /**
  * Validate request tạo project — shape đóng (không trường lạ), tên đúng hình,
- * scopes không rỗng không lặp.
+ * scopes không rỗng không lặp, trusted_ci (nếu có) phải là boolean.
  */
 export function validateCreateRemoteCacheProjectRequest(
   value: unknown,
@@ -170,7 +176,7 @@ export function validateCreateRemoteCacheProjectRequest(
     }
   }
   for (const key of keys) {
-    if (!(CREATE_REQUEST_KEYS as readonly string[]).includes(key)) {
+    if (!(CREATE_REQUEST_KEYS as readonly string[]).includes(key) && key !== 'trusted_ci') {
       return {
         ok: false,
         reason: 'forbidden_field',
@@ -199,11 +205,20 @@ export function validateCreateRemoteCacheProjectRequest(
     };
   }
 
+  if (record.trusted_ci !== undefined && typeof record.trusted_ci !== 'boolean') {
+    return {
+      ok: false,
+      reason: 'invalid_payload',
+      detail: 'trusted_ci must be a boolean if present.',
+    };
+  }
+
   return {
     ok: true,
     payload: {
       name: record.name,
       api_key_scopes: [...record.api_key_scopes] as RemoteCacheApiKeyScope[],
+      trusted_ci: record.trusted_ci ?? false,
     },
   };
 }

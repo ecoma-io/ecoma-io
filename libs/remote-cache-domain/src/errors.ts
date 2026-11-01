@@ -17,6 +17,7 @@ export type RemoteCacheDomainErrorCode =
   | 'tenant_not_found'
   | 'tenant_suspended'
   | 'tenant_deleted'
+  | 'tenant_lookup_failed'
   | 'project_not_found'
   | 'project_not_in_tenant'
   | 'invalid_api_key_scope'
@@ -33,6 +34,7 @@ export const REMOTE_CACHE_DOMAIN_ERROR_MESSAGES: Record<RemoteCacheDomainErrorCo
   tenant_not_found: 'Tenant not found.',
   tenant_suspended: 'Tenant is suspended.',
   tenant_deleted: 'Tenant is deleted.',
+  tenant_lookup_failed: 'Tenant lookup failed.',
   project_not_found: 'Project not found.',
   project_not_in_tenant: 'The project does not belong to the tenant.',
   invalid_api_key_scope: 'API key scope is not valid.',
