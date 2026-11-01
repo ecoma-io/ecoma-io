@@ -125,15 +125,18 @@ export function adminRoutes(adminAuth: () => MiddlewareHandler<AppEnv>): Hono<Ap
     const tenantId = currentTenantId(c);
     const callerTokenId = c.get('tokenId') ?? null;
     const repo = new PgTenantRepo(c.get('pool'));
-    const rotated = await repo.rotateMachineToken(tenantId, id, null);
-    if (rotated === null) {
-      return c.json({ error: 'Not Found', message: 'Token not found or already revoked' }, 404);
-    }
 
-    // Audit trong cùng transaction với action: fail-closed — lỗi audit propagate.
+    // Xoay + ghi audit cùng diễn ra trên một transaction duy nhất trên một pg
+    // client (fail-closed): nếu audit lỗi, toàn bộ transaction rollback và
+    // token mới không được lưu — không tuân thủ claim "cùng transaction" sai.
     const client = await c.get('pool').connect();
     try {
       await client.query('BEGIN');
+      const rotated = await repo.rotateMachineToken(client, tenantId, id, null);
+      if (rotated === null) {
+        await client.query('ROLLBACK');
+        return c.json({ error: 'Not Found', message: 'Token not found or already revoked' }, 404);
+      }
       await insertAuditEvent(client, {
         tenantId,
         actorSub: null,
@@ -143,27 +146,27 @@ export function adminRoutes(adminAuth: () => MiddlewareHandler<AppEnv>): Hono<Ap
         detail: { tokenId: id },
       });
       await client.query('COMMIT');
+
+      return c.json(
+        {
+          token: {
+            id: rotated.record.id,
+            name: rotated.record.name,
+            scopes: rotated.record.scopes.split(' ').filter((s) => s !== ''),
+            createdAt: rotated.record.createdAt,
+            revokedAt: null,
+          },
+          // Show-once: giá trị duy nhất lần này response chứa nó.
+          secret: rotated.token,
+        },
+        200,
+      );
     } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined);
       throw error;
     } finally {
       client.release();
     }
-
-    return c.json(
-      {
-        token: {
-          id: rotated.record.id,
-          name: rotated.record.name,
-          scopes: rotated.record.scopes.split(' ').filter((s) => s !== ''),
-          createdAt: rotated.record.createdAt,
-          revokedAt: null,
-        },
-        // Show-once: giá trị duy nhất lần này response chứa nó.
-        secret: rotated.token,
-      },
-      200,
-    );
   });
 
   // Revoke machine token — hiệu lực tức thời.

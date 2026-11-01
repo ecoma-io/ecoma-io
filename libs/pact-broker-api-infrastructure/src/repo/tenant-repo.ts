@@ -51,7 +51,11 @@ export class PgTenantRepo {
         await client.query('BEGIN');
 
         // Bước 1: thử INSERT. RETURNING rỗng = đã có (kể cả do race).
-        const inserted = await client.query<{ id: string; name: string; status: string }>(
+        const inserted = await client.query<{
+          id: string;
+          name: string;
+          status: string;
+        }>(
           `INSERT INTO pact.tenants (name) VALUES ($1)
            ON CONFLICT (name) DO NOTHING
            RETURNING id, name, status`,
@@ -63,10 +67,11 @@ export class PgTenantRepo {
           tenant = inserted.rows[0];
         } else {
           // Bước 2: select lại hàng của bên thắng race.
-          const existing = await client.query<{ id: string; name: string; status: string }>(
-            `SELECT id, name, status FROM pact.tenants WHERE name = $1`,
-            [name],
-          );
+          const existing = await client.query<{
+            id: string;
+            name: string;
+            status: string;
+          }>(`SELECT id, name, status FROM pact.tenants WHERE name = $1`, [name]);
           if (existing.rows[0] === undefined) {
             throw new PactBrokerTenantError(`tenant ${name} vanished during bootstrap`);
           }
@@ -259,8 +264,13 @@ export class PgTenantRepo {
    * Rotate token — thay token_hash bằng giá trị mới, bản rõ trả về đúng một
    * lần. Token cũ (hash cũ) mất hiệu lực ngay lập tức vì mọi request tra hash
    * rồi check. Trả null khi không tìm thấy token hoặc token đã bị revoke.
+   *
+   * `client` là pg client đã mở (đã BEGIN trong route) — xoay + ghi audit cùng
+   * diễn ra trên một transaction duy nhất, fail-closed: nếu audit bị lỗi, toàn
+   * bộ transaction rollback và token mới không được lưu.
    */
   async rotateMachineToken(
+    client: import('pg').PoolClient,
     tenantId: string,
     tokenId: string,
     _actorSub: string | null,
@@ -268,7 +278,7 @@ export class PgTenantRepo {
     const raw = randomToken();
     const tokenHash = await sha256Hex(raw);
 
-    const { rows } = await this.pool.query<{
+    const { rows } = await client.query<{
       id: string;
       tenant_id: string;
       name: string;

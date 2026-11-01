@@ -135,24 +135,24 @@
   {
     "rule": "security-sensitive-value-in-http-response",
     "path": "apps/pact-broker-api/src/routes/admin.ts",
-    "start": 153,
-    "end": 166,
-    "reason": "Show-once machine token rotation: POST /admin/machine-tokens/:id/rotate tra token ban ro DUNG MOT LAN trong response 200 - day la hop dong cua endpoint (xem comment 'Show-once' trong code). Token hash nam trong DB; moi list sau do chi thay metadata. Xoay thay token_hash cu, token cu mat hieu luc luc lan sau.",
+    "start": 150,
+    "end": 163,
+    "reason": "Show-once machine token rotation: POST /admin/machine-tokens/:id/rotate tra token ban ro DUNG MOT LAN trong response 200 - day la hop dong cua endpoint (xem comment 'Show-once' trong code). Token hash nam trong DB; moi list sau do chi thay metadata. Xoay thay token_hash cu, token cu mat hieu luc luc lan sau. Xoay + ghi audit cung transaction tren mot pg client (fail-closed) - doi vi tri block response vi xoay chuyen vao trong try/catch/COMMIT.",
     "lines": {
-      "153": "^    return c\\.json\\($",
-      "154": "^      \\{$",
-      "155": "^        token: \\{$",
-      "156": "^          id: rotated\\.record\\.id,$",
-      "157": "^          name: rotated\\.record\\.name,$",
-      "158": "^          scopes: rotated\\.record\\.scopes\\.split\\(' '\\)\\.filter\\(\\(s\\) => s !== ''\\),$",
-      "159": "^          createdAt: rotated\\.record\\.createdAt,$",
-      "160": "^          revokedAt: null,$",
+      "150": "^      return c\\.json\\($",
+      "151": "^        \\{$",
+      "152": "^          token: \\{$",
+      "153": "^            id: rotated\\.record\\.id,$",
+      "154": "^            name: rotated\\.record\\.name,$",
+      "155": "^            scopes: rotated\\.record\\.scopes\\.split\\(' '\\)\\.filter\\(\\(s\\) => s !== ''\\),$",
+      "156": "^            createdAt: rotated\\.record\\.createdAt,$",
+      "157": "^            revokedAt: null,$",
+      "158": "^          \\},$",
+      "159": "^          // Show-once: giá trị duy nhất lần này response chứa nó\\.$",
+      "160": "^          secret: rotated\\.token,$",
       "161": "^        \\},$",
-      "162": "^        // Show-once: giá trị duy nhất lần này response chứa nó\\.$",
-      "163": "^        secret: rotated\\.token,$",
-      "164": "^      \\},$",
-      "165": "^      200,$",
-      "166": "^    \\);$"
+      "162": "^        200,$",
+      "163": "^      \\);$"
     }
   }
 ]
