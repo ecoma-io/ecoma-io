@@ -124,7 +124,7 @@ export default defineNuxtConfig({
     vueI18n: './vue-i18n.config.ts',
   },
   nitro: {
-    plugins: ['~/server/plugins/staff-access-service-shim.ts'],
+    plugins: [new URL('./server/plugins/staff-access-service-shim.ts', import.meta.url).pathname],
   },
   pwa: {
     registerType: 'prompt',
