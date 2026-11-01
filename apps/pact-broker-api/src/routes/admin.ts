@@ -72,17 +72,22 @@ export function adminRoutes(adminAuth: () => MiddlewareHandler<AppEnv>): Hono<Ap
     const tenantId = currentTenantId(c);
     const callerTokenId = c.get('tokenId') ?? null;
     const repo = new PgTenantRepo(c.get('pool'));
-    const { token, record } = await repo.createMachineToken(
-      tenantId,
-      null, // actor sub: machine token path không có user sub
-      parsed.data.name,
-      parsed.data.scopes,
-    );
-
-    // Audit trong cùng transaction với action: fail-closed — lỗi audit propagate.
     const client = await c.get('pool').connect();
+    let token: string;
+    let record: Awaited<ReturnType<PgTenantRepo['createMachineToken']>>['record'];
     try {
       await client.query('BEGIN');
+      const created = await repo.createMachineTokenWithClient(
+        client,
+        tenantId,
+        null, // actor sub: machine token path không có user sub
+        parsed.data.name,
+        parsed.data.scopes,
+      );
+      token = created.token;
+      record = created.record;
+
+      // Audit trong cùng transaction với action: fail-closed — lỗi audit propagate.
       await insertAuditEvent(client, {
         tenantId,
         actorSub: null,
@@ -92,27 +97,27 @@ export function adminRoutes(adminAuth: () => MiddlewareHandler<AppEnv>): Hono<Ap
         detail: { tokenId: record.id, scopes: parsed.data.scopes },
       });
       await client.query('COMMIT');
+
+      return c.json(
+        {
+          token: {
+            id: record.id,
+            name: parsed.data.name,
+            scopes: parsed.data.scopes,
+            createdAt: record.createdAt,
+            revokedAt: null,
+          },
+          // Show-once: giá trị duy nhất lần này response chứa nó.
+          secret: token,
+        },
+        201,
+      );
     } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined);
       throw error;
     } finally {
       client.release();
     }
-
-    return c.json(
-      {
-        token: {
-          id: record.id,
-          name: parsed.data.name,
-          scopes: parsed.data.scopes,
-          createdAt: record.createdAt,
-          revokedAt: null,
-        },
-        // Show-once: giá trị duy nhất lần này response chứa nó.
-        secret: token,
-      },
-      201,
-    );
   });
 
   // Rotate machine token — token cũ mất hiệu lực ngay lập tức, bản rõ trả về
@@ -178,14 +183,15 @@ export function adminRoutes(adminAuth: () => MiddlewareHandler<AppEnv>): Hono<Ap
     const tenantId = currentTenantId(c);
     const callerTokenId = c.get('tokenId') ?? null;
     const repo = new PgTenantRepo(c.get('pool'));
-    const ok = await repo.revokeMachineToken(tenantId, id);
-    if (!ok) {
-      return c.json({ error: 'Not Found', message: 'Token not found (or already revoked)' }, 404);
-    }
-
     const client = await c.get('pool').connect();
     try {
       await client.query('BEGIN');
+      const ok = await repo.revokeMachineTokenWithClient(client, tenantId, id);
+      if (!ok) {
+        await client.query('ROLLBACK');
+        return c.json({ error: 'Not Found', message: 'Token not found (or already revoked)' }, 404);
+      }
+
       await insertAuditEvent(client, {
         tenantId,
         actorSub: null,

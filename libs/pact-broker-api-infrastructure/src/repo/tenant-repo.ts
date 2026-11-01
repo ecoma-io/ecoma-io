@@ -12,7 +12,7 @@
  * trả đúng MỘT lần lúc tạo (show-once); revoke = set revoked_at, hiệu lực tức
  * thời vì mọi request tra hash rồi check.
  */
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { randomToken, sha256Hex } from '@ecoma-io/pact-broker-api-application';
 
 export interface TenantRecord {
@@ -195,11 +195,21 @@ export class PgTenantRepo {
     name: string,
     scopes: string[],
   ): Promise<{ token: string; record: MachineTokenRecord }> {
+    return this.createMachineTokenWithClient(this.pool, tenantId, actorSub, name, scopes);
+  }
+
+  async createMachineTokenWithClient(
+    db: Pool | PoolClient,
+    tenantId: string,
+    actorSub: string | null,
+    name: string,
+    scopes: string[],
+  ): Promise<{ token: string; record: MachineTokenRecord }> {
     // 32 byte entropy = 192 bit, base64url không padding.
     const raw = randomToken();
     const tokenHash = await sha256Hex(raw);
 
-    const { rows } = await this.pool.query<{
+    const { rows } = await db.query<{
       id: string;
       tenant_id: string;
       scopes: string;
@@ -251,7 +261,15 @@ export class PgTenantRepo {
 
   /** Revoke — set revoked_at; hiệu lực tức thời. false khi không tìm thấy. */
   async revokeMachineToken(tenantId: string, tokenId: string): Promise<boolean> {
-    const { rowCount } = await this.pool.query(
+    return this.revokeMachineTokenWithClient(this.pool, tenantId, tokenId);
+  }
+
+  async revokeMachineTokenWithClient(
+    db: Pool | PoolClient,
+    tenantId: string,
+    tokenId: string,
+  ): Promise<boolean> {
+    const { rowCount } = await db.query(
       `UPDATE pact.machine_tokens
           SET revoked_at = now()
         WHERE tenant_id = $1 AND id = $2::uuid AND revoked_at IS NULL`,

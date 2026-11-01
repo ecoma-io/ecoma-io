@@ -628,6 +628,59 @@ describe(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
     expect(JSON.stringify(list.body)).not.toContain(rotatedBody.secret);
   });
 
+  it('machine token create: audit failure rolls back token state', async () => {
+    const admin = await db.connect();
+    try {
+      await admin.query('REVOKE INSERT ON pact.audit_events FROM ecoma_pact_broker_runtime');
+
+      const created = await reqJson('/admin/machine-tokens', {
+        method: 'POST',
+        headers: auth(tenantASecret),
+        body: JSON.stringify({ name: 'audit-failure-create', scopes: ['write'] }),
+      });
+      expect(created.status).toBe(500);
+
+      const { rows } = await admin.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM pact.machine_tokens WHERE name = $1`,
+        ['audit-failure-create'],
+      );
+      expect(rows[0]?.count).toBe('0');
+    } finally {
+      await admin.query('GRANT INSERT ON pact.audit_events TO ecoma_pact_broker_runtime');
+      await admin.end();
+    }
+  });
+
+  it('machine token revoke: audit failure rolls back revoked_at', async () => {
+    const pool = await db.createRuntimePool();
+    const repo = new Infra.PgTenantRepo(pool);
+    const tenantId = (await repo.getTenantByName('tenant-a'))?.id ?? '';
+    const created = await repo.createMachineToken(tenantId, 'sub-a-owner', 'audit-failure-revoke', [
+      'write',
+    ]);
+    await pool.end();
+
+    const admin = await db.connect();
+    try {
+      await admin.query('REVOKE INSERT ON pact.audit_events FROM ecoma_pact_broker_runtime');
+
+      const revoked = await reqJson(`/admin/machine-tokens/${created.record.id}`, {
+        method: 'DELETE',
+        headers: auth(tenantASecret),
+      });
+      expect(revoked.status).toBe(500);
+
+      const { rows } = await admin.query<{ revoked_at: Date | null }>(
+        `SELECT revoked_at FROM pact.machine_tokens WHERE id = $1`,
+        [created.record.id],
+      );
+      expect(rows[0]?.revoked_at).toBeNull();
+    } finally {
+      await admin.query('GRANT INSERT ON pact.audit_events TO ecoma_pact_broker_runtime');
+      await admin.end();
+    }
+  });
+
   it('machine token rotate: writes audit_events row with action machine_token.rotate', async () => {
     // Create token.
     const created = await reqJson('/admin/machine-tokens', {
