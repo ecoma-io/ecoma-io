@@ -18,15 +18,18 @@
 /** Giá trị duy nhất của `runtimeConfig.public.backofficeDataMode` bật mock. */
 export const BACKOFFICE_PREVIEW_DATA_MODE = 'prototype' as const;
 
+/** Giá trị của `runtimeConfig.public.backofficeDataMode` bật adapter thật. */
+export const BACKOFFICE_REALTIME_DATA_MODE = 'realtime' as const;
+
 /**
  * Giá trị cấu hình nghĩa là **không** bật mock — mặc định của
  * `runtimeConfig.public.backofficeDataMode` và là giá trị khai ở lane
  * Production.
  *
- * Hai giá trị hợp lệ của `NITRO_PUBLIC_BACKOFFICE_DATA_MODE` là `'prototype'`
- * (bật) và `'disabled'` (không bật); đọc file này là biết hết tập giá trị, không
- * phải tra `nuxt.config.ts`/`wrangler.jsonc`. Mọi giá trị khác — kể cả gõ sai
- * `'disabled'` — fail closed về `'unavailable'`.
+ * Ba giá trị hợp lệ của `NITRO_PUBLIC_BACKOFFICE_DATA_MODE` là `'prototype'`
+ * (bật mock), `'realtime'` (bật adapter thật) và `'disabled'` (không bật);
+ * đọc file này là biết hết tập giá trị, không phải tra `nuxt.config.ts`/`wrangler.jsonc`.
+ * Mọi giá trị khác — kể cả gõ sai `'disabled'` — fail closed về `'unavailable'`.
  */
 export const BACKOFFICE_DATA_MODE_DISABLED = 'disabled' as const;
 
@@ -42,7 +45,10 @@ export const BACKOFFICE_DATA_MODE_DISABLED = 'disabled' as const;
  * `'unavailable'` vẫn là literal vì nó **không** phải giá trị cấu hình: nó là
  * trạng thái fail-closed khi cấu hình thiếu/sai, không lane nào khai nó.
  */
-export type BackofficeDataMode = typeof BACKOFFICE_PREVIEW_DATA_MODE | 'unavailable';
+export type BackofficeDataMode =
+  | typeof BACKOFFICE_PREVIEW_DATA_MODE
+  | typeof BACKOFFICE_REALTIME_DATA_MODE
+  | 'unavailable';
 
 /**
  * Phân giải giá trị thô của deployment configuration thành chế độ dữ liệu.
@@ -54,6 +60,10 @@ export type BackofficeDataMode = typeof BACKOFFICE_PREVIEW_DATA_MODE | 'unavaila
 export function resolveBackofficeDataMode(raw: unknown): BackofficeDataMode {
   if (raw === BACKOFFICE_PREVIEW_DATA_MODE) {
     return BACKOFFICE_PREVIEW_DATA_MODE;
+  }
+
+  if (raw === BACKOFFICE_REALTIME_DATA_MODE) {
+    return BACKOFFICE_REALTIME_DATA_MODE;
   }
 
   return 'unavailable';

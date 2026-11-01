@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { BACKOFFICE_PREVIEW_DATA_MODE, resolveBackofficeDataMode } from './data-mode';
+import {
+  BACKOFFICE_PREVIEW_DATA_MODE,
+  BACKOFFICE_REALTIME_DATA_MODE,
+  resolveBackofficeDataMode,
+} from './data-mode';
 
 /**
  * Matrix quyết định chế độ dữ liệu.
@@ -16,6 +20,11 @@ describe('resolveBackofficeDataMode', () => {
     expect(BACKOFFICE_PREVIEW_DATA_MODE).toBe('prototype');
   });
 
+  it('enables realtime only when the value equals the specified string exactly', () => {
+    expect(resolveBackofficeDataMode(BACKOFFICE_REALTIME_DATA_MODE)).toBe('realtime');
+    expect(BACKOFFICE_REALTIME_DATA_MODE).toBe('realtime');
+  });
+
   it('fails closed when configuration is missing', () => {
     expect(resolveBackofficeDataMode(undefined)).toBe('unavailable');
     expect(resolveBackofficeDataMode(null)).toBe('unavailable');
@@ -29,7 +38,6 @@ describe('resolveBackofficeDataMode', () => {
     ['thừa khoảng trắng', 'prototype '],
     ['từ đồng nghĩa không được hỗ trợ', 'preview'],
     ['từ đồng nghĩa không được hỗ trợ', 'mock'],
-    ['từ đồng nghĩa không được hỗ trợ', 'realtime'],
     ['chuỗi boolean', 'true'],
     ['giá trị không liên quan', 'yes'],
     ['giá trị của app khác', 'staging'],

@@ -34,6 +34,7 @@ export {
 export {
   BACKOFFICE_DATA_MODE_DISABLED,
   BACKOFFICE_PREVIEW_DATA_MODE,
+  BACKOFFICE_REALTIME_DATA_MODE,
   resolveBackofficeDataMode,
   type BackofficeDataMode,
 } from './data-mode';
