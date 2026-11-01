@@ -329,4 +329,33 @@ describe('read routes /api/staff, /api/roles, /api/permissions', () => {
       expect(status).toBe(503);
     });
   });
+
+  describe('no direct cross-domain database access (fail-closed when staff-access unavailable)', () => {
+    it('answers 503 for /api/staff when staff-access binding is absent even though DB is present', async () => {
+      const { status } = await get('/api/staff', {
+        env: { DB_BACKOFFICE: { connectionString: runtimeConnectionString() } },
+        principal: { actorSub: READER },
+      });
+
+      expect(status).toBe(503);
+    });
+
+    it('answers 503 for /api/roles when staff-access binding is absent even though DB is present', async () => {
+      const { status } = await get('/api/roles', {
+        env: { DB_BACKOFFICE: { connectionString: runtimeConnectionString() } },
+        principal: { actorSub: READER },
+      });
+
+      expect(status).toBe(503);
+    });
+
+    it('answers 503 for /api/permissions when staff-access binding is absent even though DB is present', async () => {
+      const { status } = await get('/api/permissions', {
+        env: { DB_BACKOFFICE: { connectionString: runtimeConnectionString() } },
+        principal: { actorSub: READER },
+      });
+
+      expect(status).toBe(503);
+    });
+  });
 });
