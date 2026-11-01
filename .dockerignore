@@ -62,6 +62,7 @@ libs/*
 !libs/account-contracts
 !libs/auth-contracts
 !libs/internal-auth-contracts
+!libs/staff-access-contracts
 !libs/account-domain
 !libs/transactional-mail-contracts
 tools/*
