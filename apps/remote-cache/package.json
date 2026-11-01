@@ -99,6 +99,20 @@
           "command": "npx tsc --noEmit -p tsconfig.db.json"
         }
       },
+      "test": {
+        "executor": "nx:run-commands",
+        "dependsOn": [],
+        "options": {
+          "cwd": "apps/remote-cache",
+          "command": "npx vitest run -c vitest.config.mts"
+        },
+        "//": [
+          "Target `test` = colocated unit/component spec của project (06-testing.md §4).",
+          "Suite integration (PostgreSQL thật qua testcontainers) nằm ở target `test-integration`",
+          "với config riêng (`vitest.integration.config.mts`) — không gộp vào `test` để tránh",
+          "suite app-owned bị bỏ qua silenciously khi `include` không khớp."
+        ]
+      },
       "test-integration": {
         "executor": "nx:run-commands",
         "dependsOn": [],
