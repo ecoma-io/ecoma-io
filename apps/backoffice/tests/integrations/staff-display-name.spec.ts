@@ -10,13 +10,18 @@
  * `displayName`), và các nhánh degrade hoạt động khi Service Binding vắng hoặc
  * chết **trong khi DB sống** — tổ hợp mà unit suite không dựng được.
  *
+ * ⚠️ P5.1 (issue #475): staff directory giờ đọc từ Staff Access management API
+ * qua `STAFF_ACCESS_SERVICE` + `AUTH_INTERNAL_SECRET`, không còn từ DB
+ * backoffice. Env của mọi test phải có cả hai binding staff-access, không thì
+ * route trả 503 fail-closed.
+ *
  * ⚠️ Account thật không có mặt ở đây (không container): binding
- * `ACCOUNT_SERVICE` là **fake `fetch`** gắn thẳng vào `event.context.cloudflare.env`
- * — cùng ranh giới mà client đọc trong production. Đường account thật
- * (envelope HMAC + PostgreSQL account) được chứng minh ở phía provider
- * (`apps/account` `profiles-route-e2e.spec.ts`), còn unit suite của client đã
- * ghim envelope và validation. Xếp lớp như vậy tránh dựng hai container DB
- * trong một suite.
+ * `ACCOUNT_SERVICE` là **fake `fetch`** gắn thẳng vào
+ * `event.context.cloudflare.env` — cùng ranh giới mà client đọc trong production.
+ * Đường account thật (envelope HMAC + PostgreSQL account) được chứng minh ở
+ * phía provider (`apps/account` `profiles-route-e2e.spec.ts`), còn unit suite
+ * của client đã ghim envelope và validation. Xếp lớp như vậy tránh dựng hai
+ * container DB trong một suite.
  */
 
 import { createApp, createRouter, defineEventHandler, toWebHandler } from 'h3';
@@ -29,6 +34,7 @@ import { resetDisplayNameCacheForTests } from '@ecoma-io/backoffice-application'
 import {
   ACCOUNT_SERVICE_BINDING_NAME,
   AUTH_INTERNAL_SECRET_ENV,
+  STAFF_ACCESS_SERVICE_BINDING_NAME,
 } from '@ecoma-io/backoffice-infrastructure';
 
 import staffRoute from '../../server/api/staff.get';
@@ -69,6 +75,58 @@ const UNNAMED_STAFF = accountId('c');
 
 const SECRET = 'test-internal-hmac-secret-0123456789abcdef';
 
+/** Service Binding giả trả staff directory (P5.1) — nhân sự đến từ Staff Access
+ * management API, không từ DB backoffice. Mỗi test gán binding này kèm secret
+ * để route đọc được sổ staff, rồi merge tên từ account qua account binding. */
+const staffBinding = {
+  fetch: vi.fn<() => Promise<Response>>(
+    async () =>
+      new Response(
+        JSON.stringify({
+          staff: [
+            {
+              id: 's-reader',
+              sub: READER,
+              status: 'active',
+              display_name: 'Người Đọc',
+              created_at: '2026-01-01T00:00:00Z',
+              updated_at: '2026-01-01T00:00:00Z',
+            },
+            {
+              id: 's-named',
+              sub: NAMED_STAFF,
+              status: 'active',
+              display_name: 'Nguyễn Văn B',
+              created_at: '2026-01-01T00:00:00Z',
+              updated_at: '2026-01-01T00:00:00Z',
+            },
+            {
+              id: 's-unnamed',
+              sub: UNNAMED_STAFF,
+              status: 'active',
+              display_name: 'Chưa Đặt Tên',
+              created_at: '2026-01-01T00:00:00Z',
+              updated_at: '2026-01-01T00:00:00Z',
+            },
+          ],
+          next_cursor: null,
+        }),
+        { status: 200 },
+      ),
+  ),
+};
+
+/** Env chuẩn: DB thật + binding staff-access (P5.1) + binding account do test
+ * chỉ định. Không có staff-access ⇒ route trả 503 fail-closed. */
+function envWithAccount(accountBinding: unknown, connStr: string): Record<string, unknown> {
+  return {
+    DB_BACKOFFICE: { connectionString: connStr },
+    [STAFF_ACCESS_SERVICE_BINDING_NAME]: staffBinding,
+    [AUTH_INTERNAL_SECRET_ENV]: SECRET,
+    [ACCOUNT_SERVICE_BINDING_NAME]: accountBinding,
+  };
+}
+
 /** Binding fake trả một response profile sẵn — mock `fetch` của Service Binding. */
 function fakeBinding(body: unknown): { fetch: ReturnType<typeof vi.fn> } {
   return {
@@ -103,15 +161,6 @@ describe('GET /api/staff — displayName merge (integration)', () => {
 
   function runtimeConnectionString(): string {
     return `postgres://ecoma_backoffice_runtime:${db.rolePassword}@${db.host}:${db.port}/${BACKOFFICE_DATABASE}`;
-  }
-
-  /** Env chuẩn: DB thật + binding account do test chỉ định. */
-  function envWithAccount(binding: unknown): Record<string, unknown> {
-    return {
-      DB_BACKOFFICE: { connectionString: runtimeConnectionString() },
-      [ACCOUNT_SERVICE_BINDING_NAME]: binding,
-      [AUTH_INTERNAL_SECRET_ENV]: SECRET,
-    };
   }
 
   beforeAll(async () => {
@@ -162,31 +211,83 @@ describe('GET /api/staff — displayName merge (integration)', () => {
       ]),
     );
 
-    const { status, body } = await get(envWithAccount(binding));
+    const { status, body } = await get(envWithAccount(binding, runtimeConnectionString()));
 
     expect(status).toBe(200);
     // Thứ tự `ORDER BY sub` của #99 giữ nguyên; `displayName` là trường thêm.
     expect(body).toEqual({
       staff: [
-        { sub: READER, status: 'active', displayName: 'Người Đọc' },
-        { sub: NAMED_STAFF, status: 'active', displayName: 'Nguyễn Văn B' },
-        { sub: UNNAMED_STAFF, status: 'active', displayName: null },
+        {
+          id: 's-reader',
+          sub: READER,
+          status: 'active',
+          display_name: 'Người Đọc',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          displayName: 'Người Đọc',
+        },
+        {
+          id: 's-named',
+          sub: NAMED_STAFF,
+          status: 'active',
+          display_name: 'Nguyễn Văn B',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          displayName: 'Nguyễn Văn B',
+        },
+        {
+          id: 's-unnamed',
+          sub: UNNAMED_STAFF,
+          status: 'active',
+          display_name: 'Chưa Đặt Tên',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          displayName: null,
+        },
       ],
     });
+    expect(staffBinding.fetch).toHaveBeenCalledTimes(1);
+    expect(binding.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('answers 200 with displayName null when the account binding is absent — controlled degrade', async () => {
     // DB sống (binding Hyperdrive thật), chỉ thiếu binding account.
     const { status, body } = await get({
       DB_BACKOFFICE: { connectionString: runtimeConnectionString() },
+      [STAFF_ACCESS_SERVICE_BINDING_NAME]: staffBinding,
+      [AUTH_INTERNAL_SECRET_ENV]: SECRET,
     });
 
     expect(status).toBe(200);
     expect(body).toEqual({
       staff: [
-        { sub: READER, status: 'active', displayName: null },
-        { sub: NAMED_STAFF, status: 'active', displayName: null },
-        { sub: UNNAMED_STAFF, status: 'active', displayName: null },
+        {
+          id: 's-reader',
+          sub: READER,
+          status: 'active',
+          display_name: 'Người Đọc',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          displayName: null,
+        },
+        {
+          id: 's-named',
+          sub: NAMED_STAFF,
+          status: 'active',
+          display_name: 'Nguyễn Văn B',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          displayName: null,
+        },
+        {
+          id: 's-unnamed',
+          sub: UNNAMED_STAFF,
+          status: 'active',
+          display_name: 'Chưa Đặt Tên',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          displayName: null,
+        },
       ],
     });
     expect(loggedEntry('staff.account_degraded')).toMatchObject({
@@ -201,14 +302,38 @@ describe('GET /api/staff — displayName merge (integration)', () => {
       }),
     };
 
-    const { status, body } = await get(envWithAccount(binding));
+    const { status, body } = await get(envWithAccount(binding, runtimeConnectionString()));
 
     expect(status).toBe(200);
     expect(body).toEqual({
       staff: [
-        { sub: READER, status: 'active', displayName: null },
-        { sub: NAMED_STAFF, status: 'active', displayName: null },
-        { sub: UNNAMED_STAFF, status: 'active', displayName: null },
+        {
+          id: 's-reader',
+          sub: READER,
+          status: 'active',
+          display_name: 'Người Đọc',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          displayName: null,
+        },
+        {
+          id: 's-named',
+          sub: NAMED_STAFF,
+          status: 'active',
+          display_name: 'Nguyễn Văn B',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          displayName: null,
+        },
+        {
+          id: 's-unnamed',
+          sub: UNNAMED_STAFF,
+          status: 'active',
+          display_name: 'Chưa Đặt Tên',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          displayName: null,
+        },
       ],
     });
     expect(loggedEntry('staff.account_degraded')).toMatchObject({ reason: 'unreachable' });
@@ -221,14 +346,38 @@ describe('GET /api/staff — displayName merge (integration)', () => {
       profiles: [{ sub: NAMED_STAFF, displayName: 'X', email: 'leak@example.com' }],
     });
 
-    const { status, body } = await get(envWithAccount(binding));
+    const { status, body } = await get(envWithAccount(binding, runtimeConnectionString()));
 
     expect(status).toBe(200);
     expect(body).toEqual({
       staff: [
-        { sub: READER, status: 'active', displayName: null },
-        { sub: NAMED_STAFF, status: 'active', displayName: null },
-        { sub: UNNAMED_STAFF, status: 'active', displayName: null },
+        {
+          id: 's-reader',
+          sub: READER,
+          status: 'active',
+          display_name: 'Người Đọc',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          displayName: null,
+        },
+        {
+          id: 's-named',
+          sub: NAMED_STAFF,
+          status: 'active',
+          display_name: 'Nguyễn Văn B',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          displayName: null,
+        },
+        {
+          id: 's-unnamed',
+          sub: UNNAMED_STAFF,
+          status: 'active',
+          display_name: 'Chưa Đặt Tên',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          displayName: null,
+        },
       ],
     });
     expect(loggedEntry('staff.account_degraded')).toMatchObject({ reason: 'invalid_response' });
@@ -243,7 +392,7 @@ describe('GET /api/staff — displayName merge (integration)', () => {
       ]),
     );
 
-    await get(envWithAccount(binding));
+    await get(envWithAccount(binding, runtimeConnectionString()));
 
     expect(binding.fetch).toHaveBeenCalledTimes(1);
     const request = binding.fetch.mock.calls[0]?.[0] as Request;

@@ -81,6 +81,7 @@ export default {
       accountId: 'Account ID',
       status: 'Staff status',
       roles: 'Assigned roles',
+      entitlements: 'Entitlements',
     },
     noRoles: 'No roles assigned',
     empty: 'No staff records yet.',
@@ -90,6 +91,32 @@ export default {
       suspended: 'Suspended',
       terminated: 'Terminated',
     },
+    entitlements: {
+      entitled: 'Entitled',
+      revoked: 'Revoked',
+      none: 'No entitlements',
+    },
+  },
+
+  audit: {
+    title: 'Audit trail',
+    description:
+      'History of authorization-sensitive actions — actor, target, action, time, and outcome.',
+    column: {
+      time: 'Time',
+      actor: 'Actor',
+      target: 'Target',
+      action: 'Action',
+      outcome: 'Outcome',
+      reason: 'Reason',
+    },
+    outcome: {
+      success: 'Success',
+      failure: 'Failure',
+      denied: 'Denied',
+    },
+    empty: 'No audit entries yet.',
+    noResults: 'No audit entries match this filter.',
   },
 
   roles: {
@@ -207,6 +234,7 @@ export default {
     staff: 'Staff',
     roles: 'Roles',
     permissions: 'Permissions',
+    audit: 'Audit',
   },
 
   pages: {

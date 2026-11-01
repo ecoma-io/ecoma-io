@@ -105,24 +105,28 @@ const STAFF: readonly StaffMember[] = [
     displayName: 'Linh Trần',
     status: 'active',
     roleIds: ['operator'],
+    entitlements: [{ product: 'backoffice', status: 'entitled' }],
   },
   {
     accountId: ACCOUNT_IDS.minh,
     displayName: 'Minh Nguyễn',
     status: 'active',
     roleIds: ['support'],
+    entitlements: [{ product: 'backoffice', status: 'entitled' }],
   },
   {
     accountId: ACCOUNT_IDS.an,
     displayName: 'An Lê',
     status: 'suspended',
     roleIds: ['operator', 'support'],
+    entitlements: [{ product: 'backoffice', status: 'entitled' }],
   },
   {
     accountId: ACCOUNT_IDS.quang,
     displayName: 'Quang Phạm',
     status: 'terminated',
     roleIds: ['auditor'],
+    entitlements: [{ product: 'backoffice', status: 'revoked' }],
   },
   {
     // Staff **không** có role nào: tập role rỗng là trạng thái hợp lệ, và một
@@ -131,6 +135,7 @@ const STAFF: readonly StaffMember[] = [
     displayName: 'Thu Vũ',
     status: 'active',
     roleIds: [],
+    entitlements: [],
   },
 ];
 

@@ -22,6 +22,7 @@
       "  user fixture được seed vào `db-account` (stack-fixtures.ts::seedAccountIdentity).",
       "- transactional-mail-deploy: OTP được đọc từ mail sink D1 trong container `ecoma-<ns>-mail-wic`",
       "  (`stack-fixtures.ts::readOtpFromMailSink` docker exec vào đó) do `local-up` của mail provision.",
+      "- staff-access-deploy: `/api/staff` (P5.1, issue #475) đọc từ Staff Access API → `db-staff-access` (`staff_access.staff`), không còn `db-backoffice`; suite seed staff row vào `staff_access.staff` qua `seedStaffAccessStaff` trước khi assert 200 listing.",
       "Không khai home/pact/push: suite không chạm origin nào của chúng."
     ],
     "implicitDependencies": [
@@ -29,7 +30,8 @@
       "backoffice-deploy",
       "auth-deploy",
       "account-deploy",
-      "transactional-mail-deploy"
+      "transactional-mail-deploy",
+      "staff-access-deploy"
     ],
     "tags": [
       "type:tooling",
@@ -47,7 +49,8 @@
               "backoffice-deploy",
               "auth-deploy",
               "account-deploy",
-              "transactional-mail-deploy"
+              "transactional-mail-deploy",
+              "staff-access-deploy"
             ],
             "target": "local-up"
           }

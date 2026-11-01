@@ -12,6 +12,7 @@ import {
   resolvePostgresContainer,
   seedAccountIdentity,
   seedBackofficeGrant,
+  seedStaffAccessStaff,
 } from './support/stack-fixtures';
 
 /**
@@ -122,6 +123,10 @@ test.describe.serial('permission enforcement for staff.read', () => {
       roleId: TEST_ROLE_ID,
       permissionId: 'staff.read',
     });
+    // P5.1: `/api/staff` đọc từ Staff Access API (`staff_access.staff` của
+    // `db-staff-access`), không còn từ `db-backoffice` — seed staff row vào
+    // staff-access trước khi assert 200 listing.
+    await seedStaffAccessStaff(postgres, { sub: PERMISSION_IDENTITY.sub });
 
     const sinceMs = Date.now();
     const mailWic = mailWicContainerOf(postgres);

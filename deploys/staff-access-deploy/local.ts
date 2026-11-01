@@ -18,6 +18,7 @@
 
 import {
   ensureStackForEntry,
+  generateInternalHmacSecret,
   generatePostgresPassword,
   pulumiDestroyForEntry,
   pulumiUpForEntry,
@@ -33,6 +34,11 @@ async function prepare(foundation: EntryFoundation): Promise<void> {
   const secrets: ReadonlyArray<readonly [string, string]> = [
     ['namespace:runtimePassword', generatePostgresPassword()],
     ['namespace:migratorPassword', generatePostgresPassword()],
+    // `internalHmacSecret`: envelope HMAC dùng chung staff-access ↔ backoffice —
+    // backoffice ký envelope gọi management API, staff-access sẽ verify ở Phase sau.
+    // Sinh một giá trị khi up đầu tiên, persist vào stack config để backoffice-deploy
+    // đọc lại qua cross-stack config (cùng pattern account-deploy → auth-deploy).
+    ['namespace:internalHmacSecret', generateInternalHmacSecret()],
   ];
   for (const [configKey, configValue] of secrets) {
     setStackConfig('staff-access-deploy', configKey, configValue, foundation);

@@ -57,5 +57,7 @@ export function createUnavailableBackofficeAdapter(): BackofficeDataAdapter {
     listStaff: unavailable,
     listRoles: unavailable,
     listPermissions: unavailable,
+    listEntitlements: unavailable,
+    listAuditEntries: unavailable,
   };
 }

@@ -80,6 +80,7 @@ const zhCN: BackofficeMessages = {
       accountId: 'Account ID',
       status: '员工状态',
       roles: '已分配角色',
+      entitlements: '产品订阅',
     },
     noRoles: '未分配角色',
     empty: '暂无员工记录。',
@@ -89,6 +90,31 @@ const zhCN: BackofficeMessages = {
       suspended: '停用',
       terminated: '已终止',
     },
+    entitlements: {
+      entitled: '已订阅',
+      revoked: '已撤销',
+      none: '未订阅任何产品',
+    },
+  },
+
+  audit: {
+    title: '审计轨迹',
+    description: '授权敏感操作的历史记录 — actor、target、action、时间和结果。',
+    column: {
+      time: '时间',
+      actor: 'Actor',
+      target: 'Target',
+      action: '操作',
+      outcome: '结果',
+      reason: '原因',
+    },
+    outcome: {
+      success: '成功',
+      failure: '失败',
+      denied: '拒绝',
+    },
+    empty: '暂无审计记录。',
+    noResults: '未找到匹配的审计记录。',
   },
 
   roles: {
@@ -185,6 +211,7 @@ const zhCN: BackofficeMessages = {
     staff: '员工',
     roles: '角色',
     permissions: '权限',
+    audit: '审计',
   },
 
   pages: {

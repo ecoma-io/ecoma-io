@@ -260,6 +260,11 @@ describe('root .dockerignore: required build inputs are included', () => {
     expect(isExcluded('libs/transactional-mail-contracts/src/index.ts')).toBe(false);
   });
 
+  it('staff-access contracts enter the context', () => {
+    expect(isExcluded('libs/staff-access-contracts/package.json')).toBe(false);
+    expect(isExcluded('libs/staff-access-contracts/src/index.ts')).toBe(false);
+  });
+
   it('pact-broker-app and its ui closure enter the context', () => {
     expect(isExcluded('apps/pact-broker-app/package.json')).toBe(false);
     expect(isExcluded('apps/pact-broker-app/.npmrc')).toBe(false);

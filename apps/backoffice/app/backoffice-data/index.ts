@@ -39,9 +39,11 @@ export {
   type BackofficeDataMode,
 } from './data-mode';
 export type {
+  AuditEntry,
   BackofficeDataAdapter,
   BackofficePrototypeData,
   Permission,
+  StaffEntitlementSummary,
   StaffMember,
   StaffStatus,
   SystemRole,

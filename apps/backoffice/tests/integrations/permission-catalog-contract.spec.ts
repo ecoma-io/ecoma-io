@@ -91,11 +91,13 @@ describe('permission call sites resolve to an active row in the sealed catalog',
     // hiện tại. Nếu ai đó đổi tên route hoặc thêm route mới mà máy quét
     // không bắt, canary này đỏ — thay vì test xanh vì quét thiếu.
     const callSites = readServerCallSites(SERVER_DIR, PROJECT_ROOT);
-    const permissions = callSites
-      .map((site) => site.permission)
-      .toSorted((a, b) => a.localeCompare(b, 'en'));
+    const permissions = [...new Set(callSites.map((site) => site.permission))].toSorted((a, b) =>
+      a.localeCompare(b, 'en'),
+    );
 
-    expect(permissions).toEqual(['permission.read', 'role.read', 'staff.read']);
+    // `staff.read` dùng bởi hai route (`staff.get`, `entitlements.get`) ⇒ deduplicate
+    // trước khi so với catalog: 4 id duy nhất, không 5 lần gọi.
+    expect(permissions).toEqual(['audit.read', 'permission.read', 'role.read', 'staff.read']);
   });
 
   it('does not accept an id that is not in the catalog', async () => {

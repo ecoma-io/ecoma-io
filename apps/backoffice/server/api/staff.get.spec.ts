@@ -1,32 +1,37 @@
 /**
- * Unit test của merge `displayName` trong `GET /api/staff` (issue #325) —
- * classification nhánh **controlled degrade** tách khỏi suite integration:
- * cache module-level được reset giữa các test qua
- * {@link resetDisplayNameCacheForTests}, và Service Binding là mock duy nhất.
+ * Unit test của `GET /api/staff` sau P5.1 (issue #475): staff directory đọc
+ * từ Staff Access management API qua `fetchStaffDirectory`, sau đó merge
+ * `displayName` từ `account` (issue #325, giữ nguyên).
  *
- * ⚠️ Suite integration (read-routes.spec.ts) seed PostgreSQL thật; suite này
- * ghim các quyết định chính sách: hit cache không tạo call, miss tạo đúng một
- * batch, account hỏng ⇒ 200 với `displayName: null` + log `staff.account_degraded`.
+ * Suite ghim các quyết định chính sách: client staff-access chưa cấu hình
+ * ⇒ `503`; staff-access trả lỗi ⇒ `503` + log; account hỏng ⇒ controlled
+ * degrade (`200` với `displayName: null`). Service Binding của cả hai client
+ * là mock duy nhất.
  */
 
 import { createApp, createRouter, defineEventHandler, toWebHandler } from 'h3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { accountProfilesResponse } from '@ecoma-io/account-contracts';
-import { resetDisplayNameCacheForTests, storeDisplayNames } from '@ecoma-io/backoffice-application';
-import {
-  ACCOUNT_SERVICE_BINDING_NAME,
-  AUTH_INTERNAL_SECRET_ENV,
-} from '@ecoma-io/backoffice-infrastructure';
-
 import { PRINCIPAL_CONTEXT_KEY } from '../principal';
 import staffRoute from './staff.get';
+import { resetDisplayNameCacheForTests, storeDisplayNames } from '@ecoma-io/backoffice-application';
+import {
+  accountClientConfig,
+  fetchAccountProfiles,
+  fetchStaffDirectory,
+  staffAccessClientConfig,
+} from '@ecoma-io/backoffice-infrastructure';
+import type {
+  AccountClientConfig,
+  StaffAccessClientConfig,
+  StaffDirectoryCallResult,
+} from '@ecoma-io/backoffice-infrastructure';
 
 const writeLog = vi.fn<(entry: Record<string, unknown>) => void>();
 vi.mock('../log', () => ({ writeLog: (...args: unknown[]) => writeLog(...args) }));
 
-// Khung enforcement giữ allow — subject của suite này là merge + degrade, không
-// phải permission checkpoint (có spec riêng).
+// Enforcement giữ allow — subject của suite này là staff-access source +
+// displayName merge, không phải permission checkpoint (có spec riêng).
 vi.mock('../authorization', () => ({
   requirePermission: async () => ({
     allowed: true,
@@ -36,18 +41,10 @@ vi.mock('../authorization', () => ({
   }),
 }));
 
-// ⚠️ KHÔNG mock `../db`: `readWorkerEnv`/`poolBinding` giữ bản thật — cả hai
-// đọc `event.context.cloudflare.env` (test gắn `readEnv` vào đó ở `get()`
-// dưới), và `backofficeHyperdrive` của barrel mock ở dưới trả
-// `readEnv.DB_BACKOFFICE` ⇒ đường điều khiển của test không đổi.
-
-// Pool `pg` giả trả một sổ staff cứng — query thật thuộc suite integration.
-// ⚠️ `vi.mock` thay thế **toàn bộ** module: mọi export mà route import phải có
-// mặt trong factory, kể cả `listStaff` (thiếu nó là TypeError ở route, bị
-// `failClosedOnDatabaseError` nuốt thành 503 — đúng lỗi mà dòng này từng gây).
-// Các hàm client account (`accountClientConfig`, `fetchAccountProfiles`) giữ
-// bản **thật** qua `importOriginal` — mock chỉ nhắm phần pool/authorization;
-// signing + validator thật là chủ đề unit suite của chính client trong lib.
+// ⚠️ KHÔNG mock `../db`: `readWorkerEnv`/`poolBinding` giữ bản thật — đọc
+// `event.context.cloudflare.env` (test gắn `readEnv` vào đó ở `get()` dưới),
+// và `backofficeHyperdrive` của factory mock dưới trả `readEnv.DB_BACKOFFICE`
+// ⇒ đường điều khiển enforcement không đổi.
 vi.mock('@ecoma-io/backoffice-infrastructure', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@ecoma-io/backoffice-infrastructure')>();
   return {
@@ -56,22 +53,43 @@ vi.mock('@ecoma-io/backoffice-infrastructure', async (importOriginal) => {
       (env as { DB_BACKOFFICE?: unknown })?.DB_BACKOFFICE ?? null,
     backofficeNodeDatabaseUrl: () => null,
     loadPrincipalAuthorization: async () => ({ assignments: [] }),
-    listStaff: async (client: { query: (text: string) => Promise<{ rows: typeof STAFF_ROWS }> }) =>
-      (await client.query('SELECT sub, status FROM backoffice.staff ORDER BY sub')).rows,
     withBackofficePool: async <T>(_hyperdrive: unknown, callback: (pool: unknown) => Promise<T>) =>
       callback({
         connect: async () => ({
           release: () => undefined,
-          query: async (text: string) => {
-            if (text.includes('FROM backoffice.staff')) {
-              return { rows: STAFF_ROWS, rowCount: STAFF_ROWS.length };
-            }
-            return { rows: [], rowCount: 0 };
-          },
+          query: async () => ({ rows: [], rowCount: 0 }),
         }),
       }),
+    // staff-access client: config + fetch kiểm soát bởi test qua `vi.hoisted`.
+    staffAccessClientConfig: vi.fn<[unknown], StaffAccessClientConfig | null>(() => staffConfig),
+    fetchStaffDirectory: vi.fn<[], StaffDirectoryCallResult>(async () => ({
+      ok: true,
+      staff: STAFF_MEMBERS,
+    })),
+    // account client: config + profiles kiểm soát bởi test qua `vi.hoisted`.
+    accountClientConfig: vi.fn<[unknown], AccountClientConfig | null>(() => accountConfig),
+    fetchAccountProfiles: vi.fn<[Record<string, string>, readonly string[]]>(async () => ({
+      ok: true,
+      profiles: ACCOUNT_PROFILES,
+    })),
   };
 });
+
+const staffBinding = vi.hoisted(() =>
+  fakeBinding(JSON.stringify({ staff: [], next_cursor: null })),
+);
+const staffConfig = vi.hoisted(() => ({
+  binding: staffBinding,
+  signHeaders: vi.fn<[string], Record<string, string>>().mockResolvedValue({}),
+}));
+
+const accountBinding = vi.hoisted(() =>
+  fakeBinding(JSON.stringify({ profiles: [], next_cursor: null })),
+);
+const accountConfig = vi.hoisted(() => ({
+  binding: accountBinding,
+  signHeaders: vi.fn<[string], Record<string, string>>().mockResolvedValue({}),
+}));
 
 let readEnv: Record<string, unknown> = {};
 
@@ -79,19 +97,36 @@ const SUB_A = 'sub_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const SUB_B = 'sub_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const SECRET = 'unit-test-internal-secret-0123456789abcdef';
 
-const STAFF_ROWS = [
-  { sub: SUB_A, status: 'active' },
-  { sub: SUB_B, status: 'suspended' },
+const STAFF_MEMBERS = [
+  {
+    id: 's1',
+    sub: SUB_A,
+    status: 'active',
+    display_name: 'Nguyễn Văn A',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 's2',
+    sub: SUB_B,
+    status: 'suspended',
+    display_name: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  },
 ];
 
-/** Binding giả ghi lại URL được gọi để assert batch width. */
+const ACCOUNT_PROFILES = [
+  { sub: SUB_A, displayName: 'Nguyễn Văn A' },
+  { sub: SUB_B, displayName: null },
+];
+
+/** Binding giả trả body sẵn. */
 function fakeBinding(body: unknown): { fetch: ReturnType<typeof vi.fn> } {
   return {
-    fetch: vi.fn<(input: Request) => Promise<Response>>(async (request: Request) => {
-      // Bridge thật trả body bất kể path; assert nội dung request nằm ở test.
-      void request;
-      return new Response(JSON.stringify(body), { status: 200 });
-    }),
+    fetch: vi.fn<(input: Request) => Promise<Response>>(
+      async () => new Response(JSON.stringify(body), { status: 200 }),
+    ),
   };
 }
 
@@ -115,44 +150,91 @@ async function get(): Promise<{ status: number; body: unknown }> {
   };
 }
 
-describe('GET /api/staff — displayName merge (#325)', () => {
+const staffRow = (overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> => ({
+  id: 's1',
+  sub: SUB_A,
+  status: 'active',
+  display_name: 'Nguyễn Văn A',
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+  ...overrides,
+});
+
+describe('GET /api/staff — staff-access source', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetDisplayNameCacheForTests();
-    // Enforcement khung đòi binding `DB_BACKOFFICE` trong env (fail-closed 503
-    // khi vắng) — mọi case ở đây đều có DB sống; biến số của suite là phần
-    // `ACCOUNT_SERVICE`/`AUTH_INTERNAL_SECRET` của env.
+    // Enforcement đòi binding `DB_BACKOFFICE` trong env (fail-closed 503 khi
+    // vắng). Mọi case đều có DB sống; biến số là staff-access + account.
     readEnv = { DB_BACKOFFICE: { connectionString: 'postgres://fake' } };
+    (staffAccessClientConfig as ReturnType<typeof vi.fn>).mockReturnValue(staffConfig);
+    (fetchStaffDirectory as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      staff: STAFF_MEMBERS,
+    });
+    staffBinding.fetch.mockClear();
+    accountBinding.fetch.mockClear();
   });
 
-  it('answers 200 with displayName null for every row when account is unconfigured', async () => {
+  it('answers 503 when the staff-access client is unconfigured', async () => {
+    (staffAccessClientConfig as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    readEnv = { DB_BACKOFFICE: { connectionString: 'postgres://fake' } };
+
+    const { status } = await get();
+
+    expect(status).toBe(503);
+    expect(fetchStaffDirectory).not.toHaveBeenCalled();
+  });
+
+  it('answers 503 when staff-access call fails, and logs once', async () => {
+    (fetchStaffDirectory as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      reason: 'unreachable',
+    });
+
     const { status, body } = await get();
 
-    expect(status).toBe(200);
-    expect(body).toEqual({
-      staff: [
-        { sub: SUB_A, status: 'active', displayName: null },
-        { sub: SUB_B, status: 'suspended', displayName: null },
-      ],
-    });
+    expect(status).toBe(503);
+    expect(body).toEqual(expect.objectContaining({ statusCode: 503 }));
     expect(writeLog).toHaveBeenCalledWith(
       expect.objectContaining({
-        event: 'staff.account_degraded',
-        reason: 'account_client_unconfigured',
+        event: 'staff_access_directory_failed',
+        route: '/api/staff',
+        status: 503,
+        reason: 'unreachable',
       }),
     );
   });
 
-  it('answers 200 with displayName null when the account call fails, and logs one degrade line', async () => {
-    const binding = {
-      fetch: vi.fn<() => Promise<Response>>(async () => {
-        throw new Error('network down');
-      }),
-    };
+  it('answers 200 with staff from staff-access and displayName null when account is unconfigured', async () => {
+    (accountClientConfig as ReturnType<typeof vi.fn>).mockReturnValue(null);
+
+    const { status, body } = await get();
+
+    expect(status).toBe(200);
+    expect(body).toEqual({
+      staff: [
+        { ...staffRow(), displayName: null },
+        {
+          ...staffRow({ id: 's2', sub: SUB_B, status: 'suspended', display_name: null }),
+          displayName: null,
+        },
+      ],
+    });
+    expect(fetchStaffDirectory).toHaveBeenCalledTimes(1);
+    expect(fetchAccountProfiles).not.toHaveBeenCalled();
+  });
+
+  it('merges display names from a successful account batch call', async () => {
+    (accountClientConfig as ReturnType<typeof vi.fn>).mockReturnValue(accountConfig);
+    (fetchAccountProfiles as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      profiles: ACCOUNT_PROFILES,
+    });
     readEnv = {
       DB_BACKOFFICE: { connectionString: 'postgres://fake' },
-      [ACCOUNT_SERVICE_BINDING_NAME]: binding,
-      [AUTH_INTERNAL_SECRET_ENV]: SECRET,
+      STAFF_ACCESS_SERVICE: staffBinding,
+      AUTH_INTERNAL_SECRET: SECRET,
     };
 
     const { status, body } = await get();
@@ -160,51 +242,34 @@ describe('GET /api/staff — displayName merge (#325)', () => {
     expect(status).toBe(200);
     expect(body).toEqual({
       staff: [
-        { sub: SUB_A, status: 'active', displayName: null },
-        { sub: SUB_B, status: 'suspended', displayName: null },
+        { ...staffRow(), displayName: 'Nguyễn Văn A' },
+        {
+          ...staffRow({ id: 's2', sub: SUB_B, status: 'suspended', display_name: null }),
+          displayName: null,
+        },
       ],
     });
-    expect(writeLog).toHaveBeenCalledWith(
-      expect.objectContaining({ event: 'staff.account_degraded', reason: 'unreachable' }),
+    expect(fetchAccountProfiles).toHaveBeenCalledWith(
+      accountConfig,
+      expect.arrayContaining([SUB_A, SUB_B]),
     );
-  });
-
-  it('merges display names from a successful batch call', async () => {
-    const binding = fakeBinding(
-      accountProfilesResponse([
-        { sub: SUB_A, displayName: 'Nguyễn Văn A' },
-        { sub: SUB_B, displayName: null },
-      ]),
-    );
-    readEnv = {
-      DB_BACKOFFICE: { connectionString: 'postgres://fake' },
-      [ACCOUNT_SERVICE_BINDING_NAME]: binding,
-      [AUTH_INTERNAL_SECRET_ENV]: SECRET,
-    };
-
-    const { status, body } = await get();
-
-    expect(status).toBe(200);
-    expect(body).toEqual({
-      staff: [
-        { sub: SUB_A, status: 'active', displayName: 'Nguyễn Văn A' },
-        { sub: SUB_B, status: 'suspended', displayName: null },
-      ],
-    });
     expect(writeLog).not.toHaveBeenCalledWith(
       expect.objectContaining({ event: 'staff.account_degraded' }),
     );
   });
 
-  it('asks only for subs missing from the cache, in one batch', async () => {
-    const binding = fakeBinding(accountProfilesResponse([{ sub: SUB_B, displayName: 'B' }]));
+  it('asks account only for subs missing from the cache, in one batch', async () => {
+    (accountClientConfig as ReturnType<typeof vi.fn>).mockReturnValue(accountConfig);
+    (fetchAccountProfiles as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      profiles: [{ sub: SUB_B, displayName: 'B' }],
+    });
     readEnv = {
       DB_BACKOFFICE: { connectionString: 'postgres://fake' },
-      [ACCOUNT_SERVICE_BINDING_NAME]: binding,
-      [AUTH_INTERNAL_SECRET_ENV]: SECRET,
+      STAFF_ACCESS_SERVICE: staffBinding,
+      AUTH_INTERNAL_SECRET: SECRET,
     };
 
-    // SUB_A đã có tên tươi trong cache — batch chỉ còn SUB_B.
     storeDisplayNames([{ sub: SUB_A, displayName: 'Cached' }], Date.now());
 
     const { status, body } = await get();
@@ -212,61 +277,42 @@ describe('GET /api/staff — displayName merge (#325)', () => {
     expect(status).toBe(200);
     expect(body).toEqual({
       staff: [
-        { sub: SUB_A, status: 'active', displayName: 'Cached' },
-        { sub: SUB_B, status: 'suspended', displayName: 'B' },
+        { ...staffRow(), displayName: 'Cached' },
+        {
+          ...staffRow({ id: 's2', sub: SUB_B, status: 'suspended', display_name: null }),
+          displayName: 'B',
+        },
       ],
     });
-    const request = binding.fetch.mock.calls[0]?.[0] as Request;
-    expect(request.url).toContain(`subs=${SUB_B}`);
-    expect(request.url).not.toContain(`${SUB_A}`);
+    expect(fetchAccountProfiles).toHaveBeenCalledWith(
+      accountConfig,
+      expect.not.arrayContaining([SUB_A]),
+    );
   });
 
-  it('does not call account at all when every sub is cached', async () => {
-    const binding = fakeBinding(accountProfilesResponse([]));
+  it('controlled degrade: 200 with displayName null when account fails, logs one line', async () => {
+    (accountClientConfig as ReturnType<typeof vi.fn>).mockReturnValue(accountConfig);
+    (fetchAccountProfiles as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('network down'));
     readEnv = {
       DB_BACKOFFICE: { connectionString: 'postgres://fake' },
-      [ACCOUNT_SERVICE_BINDING_NAME]: binding,
-      [AUTH_INTERNAL_SECRET_ENV]: SECRET,
+      STAFF_ACCESS_SERVICE: staffBinding,
+      AUTH_INTERNAL_SECRET: SECRET,
     };
-
-    storeDisplayNames(
-      [
-        { sub: SUB_A, displayName: 'A' },
-        { sub: SUB_B, displayName: 'B' },
-      ],
-      Date.now(),
-    );
 
     const { status, body } = await get();
 
     expect(status).toBe(200);
     expect(body).toEqual({
       staff: [
-        { sub: SUB_A, status: 'active', displayName: 'A' },
-        { sub: SUB_B, status: 'suspended', displayName: 'B' },
+        { ...staffRow(), displayName: null },
+        {
+          ...staffRow({ id: 's2', sub: SUB_B, status: 'suspended', display_name: null }),
+          displayName: null,
+        },
       ],
     });
-    expect(binding.fetch).not.toHaveBeenCalled();
-  });
-
-  it('treats a cached null as fresh — no re-fetch within the TTL', async () => {
-    const binding = fakeBinding(
-      accountProfilesResponse([
-        { sub: SUB_A, displayName: null },
-        { sub: SUB_B, displayName: null },
-      ]),
+    expect(writeLog).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'staff.account_degraded', reason: 'unreachable' }),
     );
-    readEnv = {
-      DB_BACKOFFICE: { connectionString: 'postgres://fake' },
-      [ACCOUNT_SERVICE_BINDING_NAME]: binding,
-      [AUTH_INTERNAL_SECRET_ENV]: SECRET,
-    };
-
-    await get();
-    expect(binding.fetch).toHaveBeenCalledTimes(1);
-
-    // Lần đọc thứ hai trong TTL: null vẫn tươi, không batch thứ hai.
-    await get();
-    expect(binding.fetch).toHaveBeenCalledTimes(1);
   });
 });

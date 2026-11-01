@@ -16,9 +16,15 @@
  * 2. **Staff status là trục riêng** (§4.2). Bao gồm cả `terminated`: hiện nó để
  *    thấy trạng thái hợp lệ, không động đến account.
  *
+ * P5.4 (issue #478): thêm cột "Đăng ký sản phẩm" (entitlements) — mỗi staff
+ * có thể có entitlement đối với một số sản phẩm nội bộ (ví dụ `backoffice`).
+ * Adapter trả `entitlements` kèm mỗi `StaffMember` qua `listEntitlements`, và
+ * cột này hiển thị trạng thái entitlement mỗi sản phẩm, các sản phẩm khác nhau
+ * ngăn nhau bởi dấu phẩy. Staff không có entitlement nào hiện nhãn riêng
+ * (`staff.entitlements.none`).
+ *
  * Tính năng: search theo tên hoặc Account ID; filter theo staff status; phân
- * biệt `empty` (tập dữ liệu rỗng — khó xảy ra ở fixture này) và `noResults`
- * (kết quả lọc/search không trả gì).
+ * biệt `empty` (tập dữ liệu rỗng) và `noResults` (kết quả lọc/search không trả gì).
  */
 import { computed, ref } from 'vue';
 import { useI18n } from '#i18n';
@@ -75,6 +81,18 @@ const statusLabel = (status: StaffStatus): string => {
     case 'terminated':
       return i18n.t('staff.status.terminated');
   }
+};
+
+/** Hiển thị entitlement của một staff: mỗi sản phẩm trong cột riêng, ngăn bằng dấu phẩy. */
+const entitlementsLabel = (
+  entitlements: readonly { readonly product: string; readonly status: 'entitled' | 'revoked' }[],
+): string => {
+  if (entitlements.length === 0) {
+    return i18n.t('staff.entitlements.none');
+  }
+  return entitlements
+    .map((e) => `${e.product}: ${i18n.t(`staff.entitlements.${e.status}`)}`)
+    .join(', ');
 };
 </script>
 
@@ -156,6 +174,7 @@ const statusLabel = (status: StaffStatus): string => {
                 <th class="text-left font-medium p-3">{{ i18n.t('staff.column.accountId') }}</th>
                 <th class="text-left font-medium p-3">{{ i18n.t('staff.column.status') }}</th>
                 <th class="text-left font-medium p-3">{{ i18n.t('staff.column.roles') }}</th>
+                <th class="text-left font-medium p-3">{{ i18n.t('staff.column.entitlements') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -185,6 +204,9 @@ const statusLabel = (status: StaffStatus): string => {
                   <template v-else>
                     {{ member.roleIds.join(', ') }}
                   </template>
+                </td>
+                <td class="p-3 text-muted-foreground">
+                  {{ entitlementsLabel(member.entitlements) }}
                 </td>
               </tr>
             </tbody>

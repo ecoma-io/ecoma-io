@@ -76,3 +76,23 @@ export {
   fetchAccountProfiles,
 } from './account/client';
 export type { AccountServiceBinding } from './account/client';
+
+export {
+  STAFF_ACCESS_SERVICE_BINDING_NAME,
+  STAFF_ACCESS_SECRET_ENV,
+  staffAccessClientConfig,
+  fetchStaffDirectory,
+  fetchRoleCatalog,
+  fetchPermissionCatalog,
+  fetchStaffEntitlements,
+  fetchAuditEntries,
+} from './staff-access/client';
+export type { StaffServiceBinding } from './staff-access/client';
+export type {
+  StaffDirectoryCallResult,
+  RoleCatalogCallResult,
+  PermissionCatalogCallResult,
+  StaffEntitlementsCallResult,
+  AuditListCallResult,
+  StaffAccessCallFailureReason,
+} from './staff-access/client';

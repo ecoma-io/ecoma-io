@@ -1,7 +1,9 @@
 import type {
+  AuditEntry,
   BackofficeDataAdapter,
   BackofficePrototypeData,
   Permission,
+  StaffEntitlementSummary,
   StaffMember,
   SystemRole,
 } from './types';
@@ -50,6 +52,18 @@ export function createMockBackofficeAdapter(
 
     async listPermissions(): Promise<readonly Permission[]> {
       return state.permissions;
+    },
+
+    async listEntitlements(_staffId: string): Promise<readonly StaffEntitlementSummary[]> {
+      // Prototype chưa đồng bộ entitlement từ Staff Access: trả tập rỗng,
+      // không phải dữ liệu mẫu bịa. UI hiển thị "không có entitlement" cho
+      // mọi staff khi chạy chế độ prototype.
+      return [];
+    },
+
+    async listAuditEntries(_query: Record<string, string>): Promise<readonly AuditEntry[]> {
+      // Prototype không đồng bộ bản ghi audit từ Staff Access: trả tập rỗng.
+      return [];
     },
   };
 }
