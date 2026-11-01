@@ -23,7 +23,8 @@ export type RemoteCacheDomainErrorCode =
   | 'invalid_api_key_scope'
   | 'api_key_revoked'
   | 'api_key_not_found'
-  | 'invalid_transition';
+  | 'invalid_transition'
+  | 'quota_exceeded';
 
 /**
  * Message cua tung ma — bang doc nguon duy nhat cua factory. Runtime string
@@ -41,6 +42,7 @@ export const REMOTE_CACHE_DOMAIN_ERROR_MESSAGES: Record<RemoteCacheDomainErrorCo
   api_key_revoked: 'API key has been revoked.',
   api_key_not_found: 'API key not found.',
   invalid_transition: 'The state transition is not valid.',
+  quota_exceeded: 'Write would exceed project quota.',
 };
 
 /** Error domain: `code` on dinh + `message` ngan gon. */

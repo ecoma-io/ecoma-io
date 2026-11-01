@@ -39,7 +39,8 @@ describe('remote-cache migration runner on a real PostgreSQL', () => {
       expect(result.applied).toBe(files.length);
 
       // Không có bảng lịch sử để đối chiếu: catalog là nguồn sự thật duy nhất —
-      // đếm bảng `CREATE TABLE remote_cache.*` (4 bảng data) qua catalog thật.
+      // đếm bảng `CREATE TABLE remote_cache.*` (8 bảng: 5 bảng data P4.1/P4.2 +
+      // 3 bảng P4.3 quota_limits, usage_counters, audit_log) qua catalog thật.
       const { rows } = await migrator.query<{ relname: string }>(
         `SELECT c.relname
            FROM pg_class c
@@ -48,9 +49,18 @@ describe('remote-cache migration runner on a real PostgreSQL', () => {
           ORDER BY c.relname`,
       );
       expect(rows.map((row) => row.relname)).toEqual(
-        ['api_keys', 'cache_entries', 'projects', 'tenant_members', 'tenants'].toSorted(),
+        [
+          'api_keys',
+          'audit_log',
+          'cache_entries',
+          'projects',
+          'quota_limits',
+          'tenant_members',
+          'tenants',
+          'usage_counters',
+        ].toSorted(),
       );
-      expect(result.tablesInRemoteCacheSchema).toBe(5);
+      expect(result.tablesInRemoteCacheSchema).toBe(8);
     } finally {
       await migrator.end();
     }
@@ -65,7 +75,7 @@ describe('remote-cache migration runner on a real PostgreSQL', () => {
     try {
       const result = await applyAllMigrations(migrator);
       expect(result.applied).toBe(listMigrations().length);
-      expect(result.tablesInRemoteCacheSchema).toBe(5);
+      expect(result.tablesInRemoteCacheSchema).toBe(8);
     } finally {
       await migrator.end();
     }
@@ -153,11 +163,15 @@ describe('remote-cache migration runner on a real PostgreSQL', () => {
         [
           'api_key_revoked_at_after_created_check',
           'api_key_scopes_check',
+          'audit_log_action_check',
+          'audit_log_outcome_check',
           'cache_entries_size_positive',
           'projects_name_check',
+          'quota_limits_nonnegative',
           'tenants_name_check',
           'tenants_status_check',
           'tenant_members_role_check',
+          'usage_counters_nonnegative',
         ].toSorted(),
       );
 

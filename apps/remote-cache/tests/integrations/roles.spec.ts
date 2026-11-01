@@ -36,13 +36,24 @@ const RUNTIME = 'ecoma_remote_cache_runtime';
  *   UPDATE cột khác được test riêng dưới đây.
  * - `cache_entries`: SELECT + INSERT — data plane (P4.2) chỉ đọc ghi metadata;
  *   UPDATE/DELETE/REVOKE không có (immutability qua trigger, re-PUT bị 409).
+ * - `quota_limits`: chỉ SELECT — data plane (P4.3) đọc quota limit để kiểm tra
+ *   ghi; không INSERT/UPDATE/DELETE trên data plane (quota limit được control
+ *   plane cấu hình qua migrator credential, không phải runtime).
+ * - `usage_counters`: SELECT + INSERT + UPDATE — data plane (P4.3) cập nhật bộ
+ *   đếm sau mỗi ghi thành công qua `upsertUsageCounter` (`INSERT ... ON CONFLICT
+ *   DO UPDATE`) và `rebuildUsageCounter`; không DELETE (migrator seed ban đầu).
+ * - `audit_log`: SELECT + INSERT — data plane (P4.3) chỉ append; `insertAuditLog`
+ *   dùng `RETURNING id` cần SELECT; không UPDATE/DELETE trên runtime (append-only, R15).
  */
 const EXPECTED_PRIVILEGES: Record<string, readonly string[]> = {
   api_keys: ['INSERT', 'SELECT'],
+  audit_log: ['INSERT', 'SELECT'],
   cache_entries: ['INSERT', 'SELECT'],
   projects: ['INSERT', 'SELECT'],
+  quota_limits: ['SELECT'],
   tenant_members: ['SELECT'],
   tenants: ['INSERT', 'SELECT', 'UPDATE'],
+  usage_counters: ['INSERT', 'SELECT', 'UPDATE'],
 };
 
 /** Bỏ comment `--` ra khỏi SQL trước khi quét nội dung (pattern roles.spec). */
@@ -118,6 +129,20 @@ describe('roles and grants on db-remote-cache', () => {
       expect(colRows[0]?.can_token_hash).toBe(false);
       expect(colRows[0]?.can_scopes).toBe(false);
       expect(colRows[0]?.can_project_id).toBe(false);
+
+      // cache_entries: `insertCacheEntry` dung `ON CONFLICT DO UPDATE SET
+      // expires_at` -> can UPDATE cot expires_at (cap cot, bang-level chi
+      // SELECT + INSERT).
+      const { rows: cacheColRows } = await client.query<{
+        can_expires_at: boolean;
+        can_size_bytes: boolean;
+      }>(
+        `SELECT has_column_privilege($1, 'remote_cache.cache_entries', 'expires_at', 'UPDATE') AS can_expires_at,
+                has_column_privilege($1, 'remote_cache.cache_entries', 'size_bytes', 'UPDATE') AS can_size_bytes`,
+        [RUNTIME],
+      );
+      expect(cacheColRows[0]?.can_expires_at).toBe(true);
+      expect(cacheColRows[0]?.can_size_bytes).toBe(false);
     } finally {
       await client.end();
     }

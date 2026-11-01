@@ -41,3 +41,15 @@ export {
   listCacheEntriesByProject,
   type CacheEntryRow,
 } from './cache-entry-repository';
+export {
+  getQuotaLimitByProject,
+  upsertQuotaLimit,
+  type QuotaLimitRow,
+} from './quota-limit-repository';
+export {
+  getUsageCounterByProject,
+  upsertUsageCounter,
+  rebuildUsageCounter,
+  type UsageCounterRow,
+} from './usage-counter-repository';
+export { insertAuditLog, type AuditLogRow } from './audit-log-repository';

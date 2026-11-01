@@ -189,8 +189,21 @@ async function provision(superuser: Client): Promise<void> {
   );
 }
 
-/** Bảng data của schema `remote_cache` — thứ tự không quan trọng trong MỘT câu TRUNCATE. */
-const DATA_TABLES = ['api_keys', 'cache_entries', 'projects', 'tenant_members', 'tenants'] as const;
+/**
+ * Bảng data của schema `remote_cache` — thứ tự không quan trọng trong MỘT câu
+ * TRUNCATE ... CASCADE (FK giữa bảng data, ví dụ projects→tenants, cache_entries→projects;
+ * CASCADE giải quyết thứ tự truncate).
+ */
+const DATA_TABLES = [
+  'api_keys',
+  'audit_log',
+  'cache_entries',
+  'projects',
+  'quota_limits',
+  'tenant_members',
+  'tenants',
+  'usage_counters',
+] as const;
 
 /**
  * Dựng container PostgreSQL, provision hai role theo runbook, apply migration
@@ -280,7 +293,9 @@ export async function startRemoteCacheDatabase(): Promise<RemoteCacheDatabase> {
         // liệt kê đủ bảng trong MỘT câu TRUNCATE.
         const client = await connect();
         try {
-          await client.query(`TRUNCATE remote_cache.${DATA_TABLES.join(', remote_cache.')}`);
+          await client.query(
+            `TRUNCATE remote_cache.${DATA_TABLES.join(', remote_cache.')} CASCADE`,
+          );
         } finally {
           await client.end();
         }
