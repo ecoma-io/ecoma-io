@@ -538,6 +538,120 @@ describe(`${PACT_BROKER_DATABASE} API end-to-end`, () => {
     expect(after.status).toBe(401);
   });
 
+  it('machine token rotate: old token blocked immediately, new token works', async () => {
+    // Create token.
+    const created = await reqJson('/admin/machine-tokens', {
+      method: 'POST',
+      headers: auth(tenantASecret),
+      body: JSON.stringify({ name: 'rotatable', scopes: ['write'] }),
+    });
+    expect(created.status).toBe(201);
+    const createdBody = created.body as { token: { id: string }; secret: string };
+    const tokenId = createdBody.token.id;
+
+    // Token cũ dùng được ngay.
+    const before = await reqJson('/pacticipants', { headers: auth(createdBody.secret) });
+    expect(before.status).toBe(200);
+
+    // Rotate → trả secret mới, token cũ chặn ngay lập tức.
+    const rotated = await reqJson(`/admin/machine-tokens/${tokenId}/rotate`, {
+      method: 'POST',
+      headers: auth(tenantASecret),
+    });
+    expect(rotated.status).toBe(200);
+    const rotatedBody = rotated.body as { token: { id: string }; secret: string };
+    expect(rotatedBody.token.id).toBe(tokenId);
+    expect(rotatedBody.secret).not.toBe(createdBody.secret);
+
+    // Token cũ bị chặn ngay request đầu sau rotate.
+    const afterOld = await reqJson('/pacticipants', { headers: auth(createdBody.secret) });
+    expect(afterOld.status).toBe(401);
+
+    // Token mới dùng được.
+    const afterNew = await reqJson('/pacticipants', { headers: auth(rotatedBody.secret) });
+    expect(afterNew.status).toBe(200);
+
+    // List KHÔNG chứa secret nào.
+    const list = await reqJson('/admin/machine-tokens', { headers: auth(tenantASecret) });
+    expect(list.status).toBe(200);
+    expect(JSON.stringify(list.body)).not.toContain(createdBody.secret);
+    expect(JSON.stringify(list.body)).not.toContain(rotatedBody.secret);
+  });
+
+  it('machine token rotate: cannot rotate token of another tenant (cross-tenant blocked)', async () => {
+    // Tạo token của tenant A.
+    const createdA = await reqJson('/admin/machine-tokens', {
+      method: 'POST',
+      headers: auth(tenantASecret),
+      body: JSON.stringify({ name: 'token-a', scopes: ['read'] }),
+    });
+    expect(createdA.status).toBe(201);
+    const tokenIdA = (createdA.body as { token: { id: string } }).token.id;
+
+    // Token B cố rotate token của tenant A → 404 (không thấy token của tenant khác,
+    // vì DELETE/UPDATE lọc theo tenant_id ở DB).
+    const rotatedCross = await reqJson(`/admin/machine-tokens/${tokenIdA}/rotate`, {
+      method: 'POST',
+      headers: auth(tenantBSecret),
+    });
+    expect(rotatedCross.status).toBe(404);
+
+    // Token của tenant A vẫn dùng được bình thường.
+    const stillWorks = await reqJson('/pacticipants', {
+      headers: auth((createdA.body as { secret: string }).secret),
+    });
+    expect(stillWorks.status).toBe(200);
+  });
+
+  it('tenant isolation: token of tenant A cannot revoke token of tenant B', async () => {
+    // Tạo token của tenant B qua admin API của tenant B.
+    const createdB = await reqJson('/admin/machine-tokens', {
+      method: 'POST',
+      headers: auth(tenantBSecret),
+      body: JSON.stringify({ name: 'token-b', scopes: ['read'] }),
+    });
+    expect(createdB.status).toBe(201);
+    const tokenIdB = (createdB.body as { token: { id: string } }).token.id;
+
+    // Token admin của tenant A cố revoke token của tenant B → 404 (không thấy).
+    const revokeCross = await reqJson(`/admin/machine-tokens/${tokenIdB}`, {
+      method: 'DELETE',
+      headers: auth(tenantASecret),
+    });
+    expect(revokeCross.status).toBe(404);
+
+    // Token của tenant B vẫn dùng được bình thường.
+    const stillWorks = await reqJson('/pacticipants', {
+      headers: auth((createdB.body as { secret: string }).secret),
+    });
+    expect(stillWorks.status).toBe(200);
+  });
+
+  it('tenant isolation: machine token of tenant A cannot list tokens of tenant B', async () => {
+    // Tạo token của tenant B qua token admin của tenant B.
+    const createdB = await reqJson('/admin/machine-tokens', {
+      method: 'POST',
+      headers: auth(tenantBSecret),
+      body: JSON.stringify({ name: 'token-b', scopes: ['read'] }),
+    });
+    expect(createdB.status).toBe(201);
+
+    // Token admin của tenant A list tokens của chính nó: không thấy token của B.
+    const listA = await reqJson('/admin/machine-tokens', { headers: auth(tenantASecret) });
+    expect(listA.status).toBe(200);
+    const embedded = (listA.body as Record<string, unknown>)['_embedded'] as
+      | { tokens: Array<{ name: string }> }
+      | undefined;
+    const namesA = embedded?.tokens.map((t) => t.name) ?? [];
+    expect(namesA).not.toContain('token-b');
+
+    // Token của tenant B vẫn dùng được bình thường.
+    const stillWorksB = await reqJson('/pacticipants', {
+      headers: auth((createdB.body as { secret: string }).secret),
+    });
+    expect(stillWorksB.status).toBe(200);
+  });
+
   it('scope hierarchy: read token cannot publish, write token can read', async () => {
     const pool = await db.createRuntimePool();
     const { PgTenantRepo } = Infra;

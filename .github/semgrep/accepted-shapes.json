@@ -131,5 +131,28 @@
     "lines": {
       "204": "^    return c\\.json\\(\\{ project: checked\\.payload, api_key: \\{ token: outcome\\.token \\} \\}, 201\\);$"
     }
+  },
+  {
+    "rule": "security-sensitive-value-in-http-response",
+    "path": "apps/pact-broker-api/src/routes/admin.ts",
+    "start": 153,
+    "end": 166,
+    "reason": "Show-once machine token rotation: POST /admin/machine-tokens/:id/rotate tra token ban ro DUNG MOT LAN trong response 200 - day la hop dong cua endpoint (xem comment 'Show-once' trong code). Token hash nam trong DB; moi list sau do chi thay metadata. Xoay thay token_hash cu, token cu mat hieu luc luc lan sau.",
+    "lines": {
+      "153": "^    return c\\.json\\($",
+      "154": "^      \\{$",
+      "155": "^        token: \\{$",
+      "156": "^          id: rotated\\.record\\.id,$",
+      "157": "^          name: rotated\\.record\\.name,$",
+      "158": "^          scopes: rotated\\.record\\.scopes\\.split\\(' '\\)\\.filter\\(\\(s\\) => s !== ''\\),$",
+      "159": "^          createdAt: rotated\\.record\\.createdAt,$",
+      "160": "^          revokedAt: null,$",
+      "161": "^        \\},$",
+      "162": "^        // Show-once: giá trị duy nhất lần này response chứa nó\\.$",
+      "163": "^        secret: rotated\\.token,$",
+      "164": "^      \\},$",
+      "165": "^      200,$",
+      "166": "^    \\);$"
+    }
   }
 ]

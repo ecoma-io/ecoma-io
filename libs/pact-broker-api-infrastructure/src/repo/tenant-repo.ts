@@ -254,4 +254,45 @@ export class PgTenantRepo {
     );
     return (rowCount ?? 0) > 0;
   }
+
+  /**
+   * Rotate token — thay token_hash bằng giá trị mới, bản rõ trả về đúng một
+   * lần. Token cũ (hash cũ) mất hiệu lực ngay lập tức vì mọi request tra hash
+   * rồi check. Trả null khi không tìm thấy token hoặc token đã bị revoke.
+   */
+  async rotateMachineToken(
+    tenantId: string,
+    tokenId: string,
+    _actorSub: string | null,
+  ): Promise<{ token: string; record: MachineTokenRecord } | null> {
+    const raw = randomToken();
+    const tokenHash = await sha256Hex(raw);
+
+    const { rows } = await this.pool.query<{
+      id: string;
+      tenant_id: string;
+      name: string;
+      scopes: string;
+      created_at: Date;
+    }>(
+      `UPDATE pact.machine_tokens
+          SET token_hash = $1
+        WHERE tenant_id = $2 AND id = $3::uuid AND revoked_at IS NULL
+        RETURNING id, tenant_id, name, scopes, created_at`,
+      [tokenHash, tenantId, tokenId],
+    );
+    const row = rows[0];
+    if (row === undefined) return null;
+    return {
+      token: raw,
+      record: {
+        id: row.id,
+        tenantId: row.tenant_id,
+        name: row.name,
+        scopes: row.scopes,
+        createdAt: row.created_at.toISOString(),
+        revokedAt: null,
+      },
+    };
+  }
 }
