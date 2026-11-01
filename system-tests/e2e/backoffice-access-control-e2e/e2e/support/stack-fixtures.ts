@@ -214,8 +214,9 @@ export async function seedBackofficeGrant(
  * `/api/staff` đọc từ Staff Access API thay vì `db-backoffice` (issue #475).
  *
  * Shape `sub` phải khớp CHECK `^sub_[a-z2-7]{32}$` của cột `sub` và định danh
- * fixture của suite (`PERMISSION_IDENTITY.sub`). `ON CONFLICT DO NOTHING` để
- * rerun an toàn cùng stack.
+ * fixture của suite (`PERMISSION_IDENTITY.sub`). `display_name` là bắt buộc theo
+ * wire contract, nên fixture ghi một tên không rỗng. Upsert để rerun an toàn
+ * cùng stack và sửa được row cũ thiếu tên.
  */
 export async function seedStaffAccessStaff(
   postgresContainer: string,
@@ -223,8 +224,9 @@ export async function seedStaffAccessStaff(
 ): Promise<void> {
   const status = params.status ?? 'active';
   const sql = [
-    `INSERT INTO staff_access.staff (sub, status)
-     VALUES (${sqlQuote(params.sub)}, ${sqlQuote(status)}) ON CONFLICT DO NOTHING;`,
+    `INSERT INTO staff_access.staff (sub, display_name, status)
+     VALUES (${sqlQuote(params.sub)}, ${sqlQuote('Permission Test Staff')}, ${sqlQuote(status)})
+     ON CONFLICT (sub) DO UPDATE SET display_name = EXCLUDED.display_name, status = EXCLUDED.status;`,
   ].join('\n');
   await dockerExec(postgresContainer, [
     'psql',

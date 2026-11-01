@@ -62,32 +62,53 @@ export function httpStaffAccessServiceBinding(params: {
   };
 }
 
+export function mountStaffAccessServiceBinding(params: {
+  context: Record<string, unknown>;
+  origin: unknown;
+}): void {
+  if (typeof params.origin !== 'string' || params.origin === '') {
+    return;
+  }
+
+  const cloudflare = (params.context['cloudflare'] ?? {}) as {
+    env?: Record<string, unknown>;
+  };
+  const env = cloudflare.env ?? {};
+
+  // Nitro's node-server preset không tạo Cloudflare context. Tạo một env
+  // container chỉ cho local adapter; Workers cung cấp binding environment
+  // thật nên đi qua nhánh hiện hữu bên dưới.
+  if (!cloudflare.env) {
+    if (typeof process === 'undefined' || !process.versions?.node) {
+      return;
+    }
+    cloudflare.env = env;
+    params.context['cloudflare'] = cloudflare;
+  }
+
+  // Binding thật của Workers (hoặc một shim đã mount trên chính event này)
+  // — giữ nguyên, không ghi đè.
+  if (env[STAFF_ACCESS_SERVICE_BINDING_NAME]) {
+    return;
+  }
+
+  env[STAFF_ACCESS_SERVICE_BINDING_NAME] = httpStaffAccessServiceBinding({
+    origin: params.origin,
+  });
+}
+
 export default defineNitroPlugin((nitroApp) => {
   nitroApp.hooks.hook('request', (event) => {
     // Backoffice đọc binding qua `event.context.cloudflare.env` (xem
     // `readWorkerEnv` của `server/db.ts`), không qua
     // `useRuntimeConfig(event).cloudflare.env`. Gán trực tiếp vào đây để
-    // shim nhìn thấy được từ `staffAccessClientConfig(env)`.
+    // shim nhìn thấy được từ `staffAccessClientConfig`.
     const context = event.context as Record<string, unknown>;
-    const cloudflare = context['cloudflare'] as { env?: Record<string, unknown> } | undefined;
-    const env = cloudflare?.env;
-
-    // Binding thật của Workers (hoặc một shim đã mount trên chính event này)
-    // — giữ nguyên, không ghi đè.
-    if (env?.[STAFF_ACCESS_SERVICE_BINDING_NAME]) {
-      return;
-    }
-
     const config = useRuntimeConfig(event) as Record<string, unknown>;
-    const origin = config.backofficeStaffAccessServiceUrl;
-    if (typeof origin !== 'string' || origin === '') {
-      return;
-    }
 
-    if (!env) {
-      return;
-    }
-
-    env[STAFF_ACCESS_SERVICE_BINDING_NAME] = httpStaffAccessServiceBinding({ origin });
+    mountStaffAccessServiceBinding({
+      context,
+      origin: config.backofficeStaffAccessServiceUrl,
+    });
   });
 });
