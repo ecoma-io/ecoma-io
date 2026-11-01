@@ -12,14 +12,15 @@
 --     SELECT trên `permissions`; INSERT/UPDATE thuộc migrator.
 --
 -- ⚠️ Phạm vi ý định của file này — **chỉ seed permission**:
---   * INSERT 3 permission read: `staff.read`, `role.read`, `permission.read`,
---     status `active`.
+--   * INSERT 4 permission read: `staff.read`, `role.read`, `permission.read`,
+--     `audit.read`, status `active`.
 --   * KHÔNG INSERT role, role_permissions, role_assignments, staff. System-defined
 --     role là quyết định riêng (ADR-0004), phải xuất phát từ catalog thực tế —
 --     không phát minh ở đây.
---   * KHÔNG surplus: đúng ba permission route read của #99 cần
---     (`GET /api/staff`, `GET /api/roles`, `GET /api/permissions`). Không thêm
---     permission "cho chắc", không thêm permission chưa được route nào dùng.
+--   * `audit.read` được thêm bởi P5.4 (issue #478): route `GET /api/audit/entries`
+--     enforce `audit.read` qua `requirePermission`, cần row `active` trong catalog
+--     để không bị deny lặng. Đây là permission route mới dùng, không phải surplus.
+--   * KHÔNG thêm permission chưa được route nào dùng.
 --
 -- Idempotent + drift-proof:
 --   * `WHERE NOT EXISTS (domain, action)` tự tài liệu hoá ý định: nếu slot
@@ -39,7 +40,8 @@ SELECT v.id, v.domain, v.action, v.status
 FROM (VALUES
   ('staff.read', 'staff', 'read', 'active'),
   ('role.read', 'role', 'read', 'active'),
-  ('permission.read', 'permission', 'read', 'active')
+  ('permission.read', 'permission', 'read', 'active'),
+  ('audit.read', 'audit', 'read', 'active')
 ) AS v(id, domain, action, status)
 WHERE NOT EXISTS (
   SELECT 1 FROM backoffice.permissions p

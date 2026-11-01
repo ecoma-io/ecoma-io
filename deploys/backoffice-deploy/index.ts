@@ -44,6 +44,13 @@ const BACKOFFICE_INTERNAL_PORT = 3000;
  */
 const AUTH_INTERNAL_PORT_OF_AUTH_WIC = 4203;
 
+/**
+ * Cổng HTTP nội bộ của worker `ecoma-staff-access` trong WIC của staff-access-deploy
+ * — `dev.port` của `apps/staff-access/wrangler.jsonc`. Giá trị này được copy vì hai
+ * stack là hai Pulumi program độc lập.
+ */
+const STAFF_ACCESS_INTERNAL_PORT = 4206;
+
 const traefikPrefix = (ns: string): string => `backoffice-${ns}`;
 
 const conf = new pulumi.Config('namespace');
@@ -72,6 +79,15 @@ const networkName = requirePlatformOutput('networkName');
 const platformNamespace = requirePlatformOutput('namespace');
 const rootHostname = requirePlatformOutput('rootHostname');
 const traefikHostPort = requirePlatformOutput('traefikHostPort');
+
+// Secret `internalHmacSecret` sinh bởi staff-access-deploy (envelope HMAC
+// staff-access ↔ backoffice). Đọc lại từ stack config của staff-access-deploy
+// (cùng pattern auth-deploy đọc `internalHmacSecret` từ account-deploy stack).
+// Giá trị được `local.ts` đọc từ staff-access-deploy stack config và persist
+// vào stack config của backoffice-deploy, nên `index.ts` chỉ cần `conf.require`.
+// Vắng ⇒ backoffice container không gắn AUTH_INTERNAL_SECRET ⇒ staff-access
+// client fail-closed 503 mọi `/api/staff`/`/api/roles`/`/api/permissions`.
+const internalHmacSecret = conf.require('internalHmacSecret');
 
 // Mật khẩu hai role local — do orchestration sinh và truyền qua --config.
 const runtimePassword = conf.require('runtimePassword');
@@ -176,6 +192,19 @@ const backoffice = new docker.Container(
       // `local-auth-contract`, hai stack import cùng hằng; lệch giá trị là
       // authorize `invalid_client` nên không copy chuỗi.
       `NUXT_BACKOFFICE_AUTH_CLIENT_ID=${LOCAL_BACKOFFICE_CLIENT_ID}`,
+      // Secret HMAC envelope dùng chung staff-access ↔ backoffice — đọc lại từ
+      // stack config của staff-access-deploy (cùng pattern account-deploy → auth-deploy).
+      // staff-access client của ba route `/api/staff`, `/api/roles`, `/api/permissions`
+      // cần binding `STAFF_ACCESS_SERVICE` + secret này để ký envelope; thiếu biến
+      // là client trả `null` ⇒ route fail-closed `503`.
+      pulumi.interpolate`AUTH_INTERNAL_SECRET=${pulumi.secret(internalHmacSecret)}`,
+      // Origin fetch server-side tới staff-access qua alias DNS nội bộ
+      // `ecoma-staff-access` của WIC staff-access-deploy (port 4206). Container
+      // Node không resolve được hostname `staff-access.<rootHostname>` và không đi
+      // ra host loopback được — đường duy nhất là alias Docker trên platform network.
+      // Shim Nitro trong backoffice biến URL này thành binding `STAFF_ACCESS_SERVICE`
+      // lúc runtime (xem `server/plugins/staff-access-service-shim.ts`).
+      pulumi.interpolate`NUXT_BACKOFFICE_STAFF_ACCESS_SERVICE_URL=http://ecoma-staff-access:${STAFF_ACCESS_INTERNAL_PORT}`,
       // Origin fetch server-side: JWKS (`/jwks.json`) và token exchange
       // (`/token`) chạy TRONG container Node, mà container không resolve được
       // `auth.<rootHostname>` và không đi ra host loopback được — đường duy

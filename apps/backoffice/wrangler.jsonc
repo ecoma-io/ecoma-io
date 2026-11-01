@@ -49,6 +49,10 @@
       "binding": "ACCOUNT_SERVICE",
       "service": "ecoma-account-bridge",
     },
+    {
+      "binding": "STAFF_ACCESS_SERVICE",
+      "service": "ecoma-staff-access",
+    },
   ],
   "dev": {
     "port": 4201,

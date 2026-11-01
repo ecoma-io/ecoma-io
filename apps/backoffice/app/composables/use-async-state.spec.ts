@@ -25,6 +25,7 @@ const OLDER: readonly StaffMember[] = [
     displayName: 'Bản Cũ',
     status: 'active',
     roleIds: [],
+    entitlements: [],
   },
 ];
 const NEWER: readonly StaffMember[] = [
@@ -33,6 +34,7 @@ const NEWER: readonly StaffMember[] = [
     displayName: 'Bản Mới',
     status: 'active',
     roleIds: [],
+    entitlements: [],
   },
 ];
 

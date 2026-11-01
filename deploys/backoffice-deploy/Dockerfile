@@ -25,6 +25,7 @@ COPY libs/backoffice-application/package.json ./libs/backoffice-application/
 COPY libs/backoffice-infrastructure/package.json ./libs/backoffice-infrastructure/
 COPY libs/ui-app-shell/package.json ./libs/ui-app-shell/
 COPY libs/ui-ecoma-logo/package.json ./libs/ui-ecoma-logo/
+COPY libs/staff-access-contracts/package.json ./libs/staff-access-contracts/
 
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --ignore-scripts --trust-lockfile
@@ -37,6 +38,7 @@ COPY libs/backoffice-application/ ./libs/backoffice-application/
 COPY libs/backoffice-infrastructure/ ./libs/backoffice-infrastructure/
 COPY libs/ui-app-shell/ ./libs/ui-app-shell/
 COPY libs/ui-ecoma-logo/ ./libs/ui-ecoma-logo/
+COPY libs/staff-access-contracts/ ./libs/staff-access-contracts/
 COPY tsconfig.base.json ./
 
 ENV NODE_ENV=production

@@ -53,24 +53,30 @@ describe('createRealBackofficeAdapter', () => {
     vi.unstubAllGlobals();
   });
 
-  it('isPreview = false (adapter thật không phải prototype)', () => {
+  it('isPreview is false for the real adapter', () => {
     respondWith(STAFF_RESPONSE);
     expect(createRealBackofficeAdapter().isPreview).toBe(false);
   });
 
-  it('listStaff ánh xạ wire shape sang StaffMember UI', async () => {
+  it('listStaff maps wire shape to StaffMember UI shape', async () => {
     respondWith(STAFF_RESPONSE);
     const adapter = createRealBackofficeAdapter();
 
     const staff = await adapter.listStaff();
 
     expect(staff).toEqual([
-      { accountId: 'acct_1', displayName: 'Nguyễn Văn A', status: 'active', roleIds: [] },
-      { accountId: 'acct_2', displayName: '', status: 'suspended', roleIds: [] },
+      {
+        accountId: 'acct_1',
+        displayName: 'Nguyễn Văn A',
+        status: 'active',
+        roleIds: [],
+        entitlements: [],
+      },
+      { accountId: 'acct_2', displayName: '', status: 'suspended', roleIds: [], entitlements: [] },
     ]);
   });
 
-  it('listRoles ánh xạ wire shape sang SystemRole UI', async () => {
+  it('listRoles maps wire shape to SystemRole UI shape', async () => {
     respondWith(ROLES_RESPONSE);
     const adapter = createRealBackofficeAdapter();
 
@@ -82,7 +88,7 @@ describe('createRealBackofficeAdapter', () => {
     ]);
   });
 
-  it('listPermissions ánh xạ wire shape sang Permission UI', async () => {
+  it('listPermissions maps wire shape to Permission UI shape', async () => {
     respondWith(PERMISSIONS_RESPONSE);
     const adapter = createRealBackofficeAdapter();
 
@@ -95,7 +101,7 @@ describe('createRealBackofficeAdapter', () => {
     ]);
   });
 
-  it('gọi fetch cùng-origin cho mỗi route', async () => {
+  it('calls fetch to same-origin path for each route', async () => {
     const responses: Record<string, unknown> = {
       '/api/staff': STAFF_RESPONSE,
       '/api/roles': ROLES_RESPONSE,
@@ -130,7 +136,7 @@ describe('createRealBackofficeAdapter', () => {
     vi.unstubAllGlobals();
   });
 
-  it('phi 2xx làm reject promise (fail-closed, không trả dữ liệu giả)', async () => {
+  it('non-2xx response rejects the promise (fail-closed, no fake data)', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(
@@ -151,7 +157,7 @@ describe('createRealBackofficeAdapter', () => {
     vi.unstubAllGlobals();
   });
 
-  it('lỗi mạng làm reject promise', async () => {
+  it('network error rejects the promise', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (): Promise<Response> => {
@@ -172,7 +178,7 @@ describe('createRealBackofficeAdapter', () => {
    * wire, không phải dữ liệu bị lỗi. UI sẽ hiển thị nhãn riêng cho tên trống
    * (xem `staff.vue`).
    */
-  it('displayName null → chuỗi rỗng trong StaffMember', async () => {
+  it('null displayName maps to empty string in StaffMember', async () => {
     respondWith({
       staff: [{ sub: 'acct_1', status: 'active', displayName: null }],
     });
@@ -187,7 +193,7 @@ describe('createRealBackofficeAdapter', () => {
    * Mỗi phương thức đọc gọi `fetch` một lần riêng lẻ — không chia sẻ cache,
    * không gọi lại route cho nhiều method.
    */
-  it('mỗi method gọi đúng một route tương ứng', async () => {
+  it('each method calls exactly one corresponding route', async () => {
     const responses: Record<string, unknown> = {
       '/api/staff': STAFF_RESPONSE,
       '/api/roles': ROLES_RESPONSE,

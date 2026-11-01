@@ -16,8 +16,10 @@
  * chạy trên fixture thật; test nào cần tập rỗng hoặc giá trị riêng thì truyền vào.
  */
 import type {
+  AuditEntry,
   BackofficeDataAdapter,
   Permission,
+  StaffEntitlementSummary,
   StaffMember,
   SystemRole,
 } from '../app/backoffice-data/types';
@@ -42,6 +44,8 @@ export type FakeBackofficeAdapter = {
   readonly staffCalls: FakeCall<readonly StaffMember[]>[];
   readonly rolesCalls: FakeCall<readonly SystemRole[]>[];
   readonly permissionsCalls: FakeCall<readonly Permission[]>[];
+  readonly entitlementsCalls: FakeCall<readonly StaffEntitlementSummary[]>[];
+  readonly auditEntriesCalls: FakeCall<readonly AuditEntry[]>[];
   /** Resolve mọi lần gọi (kể cả đã settle, vì `resolve` lần hai là no-op) bằng dữ liệu đã cấu hình. */
   readonly settleAll: () => Promise<void>;
   /** Reject mọi lần gọi chưa settle bằng `error`. */
@@ -94,12 +98,16 @@ export function createFakeBackofficeAdapter(data: FakeAdapterData = {}): FakeBac
   const staffCalls: FakeCall<readonly StaffMember[]>[] = [];
   const rolesCalls: FakeCall<readonly SystemRole[]>[] = [];
   const permissionsCalls: FakeCall<readonly Permission[]>[] = [];
+  const entitlementsCalls: FakeCall<readonly StaffEntitlementSummary[]>[] = [];
+  const auditEntriesCalls: FakeCall<readonly AuditEntry[]>[] = [];
 
   const adapter: BackofficeDataAdapter = {
     isPreview: data.isPreview ?? true,
     listStaff: () => makeCall(staffCalls).promise,
     listRoles: () => makeCall(rolesCalls).promise,
     listPermissions: () => makeCall(permissionsCalls).promise,
+    listEntitlements: () => makeCall(entitlementsCalls).promise,
+    listAuditEntries: () => makeCall(auditEntriesCalls).promise,
   };
 
   return {
@@ -107,6 +115,8 @@ export function createFakeBackofficeAdapter(data: FakeAdapterData = {}): FakeBac
     staffCalls,
     rolesCalls,
     permissionsCalls,
+    entitlementsCalls,
+    auditEntriesCalls,
     settleAll: async () => {
       for (const call of staffCalls) {
         call.resolve(staff);
@@ -117,10 +127,22 @@ export function createFakeBackofficeAdapter(data: FakeAdapterData = {}): FakeBac
       for (const call of permissionsCalls) {
         call.resolve(permissions);
       }
+      for (const call of entitlementsCalls) {
+        call.resolve([]);
+      }
+      for (const call of auditEntriesCalls) {
+        call.resolve([]);
+      }
       // ⚠️ `allSettled`, không phải `all`: test có thể đã reject một lần gọi trước đó
       // trong cùng hàng đợi — việc đó đã được composable xử lý và không được làm
       // `settleAll()` ném lỗi.
-      await allPendingSettled([...staffCalls, ...rolesCalls, ...permissionsCalls]);
+      await allPendingSettled([
+        ...staffCalls,
+        ...rolesCalls,
+        ...permissionsCalls,
+        ...entitlementsCalls,
+        ...auditEntriesCalls,
+      ]);
     },
     failAll: async (error) => {
       for (const call of staffCalls) {
@@ -132,10 +154,22 @@ export function createFakeBackofficeAdapter(data: FakeAdapterData = {}): FakeBac
       for (const call of permissionsCalls) {
         call.reject(error);
       }
+      for (const call of entitlementsCalls) {
+        call.reject(error);
+      }
+      for (const call of auditEntriesCalls) {
+        call.reject(error);
+      }
       // Promise đã reject phải có người bắt, nếu không vitest báo unhandled rejection
       // ở một test khác. `run()` của `useAsyncState` là người bắt đầu tiên; đây là lưới
       // an toàn cho trường hợp test reject một lần gọi mà chưa có ai await nó.
-      await allPendingSettled([...staffCalls, ...rolesCalls, ...permissionsCalls]);
+      await allPendingSettled([
+        ...staffCalls,
+        ...rolesCalls,
+        ...permissionsCalls,
+        ...entitlementsCalls,
+        ...auditEntriesCalls,
+      ]);
     },
   };
 }

@@ -28,7 +28,14 @@ import {
   BACKOFFICE_REALTIME_DATA_MODE,
   type BackofficeDataMode,
 } from './data-mode';
-import type { BackofficeDataAdapter, Permission, StaffMember, SystemRole } from './types';
+import type {
+  AuditEntry,
+  BackofficeDataAdapter,
+  Permission,
+  StaffEntitlementSummary,
+  StaffMember,
+  SystemRole,
+} from './types';
 import { createUnavailableBackofficeAdapter } from './unavailable-adapter';
 import { createRealBackofficeAdapter } from './real-adapter';
 
@@ -72,6 +79,14 @@ function createPrototypeBackofficeAdapter(): BackofficeDataAdapter {
 
     async listPermissions(): Promise<readonly Permission[]> {
       return (await load()).listPermissions();
+    },
+
+    async listEntitlements(staffId: string): Promise<readonly StaffEntitlementSummary[]> {
+      return (await load()).listEntitlements(staffId);
+    },
+
+    async listAuditEntries(query: Record<string, string>): Promise<readonly AuditEntry[]> {
+      return (await load()).listAuditEntries(query);
     },
   };
 }

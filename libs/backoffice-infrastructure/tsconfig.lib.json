@@ -17,13 +17,19 @@
   "exclude": ["out-tsc", "dist", "src/**/*.test.ts", "src/**/*.spec.ts"],
   "references": [
     {
-      "path": "../account-contracts/tsconfig.lib.json"
+      "path": "../staff-access-contracts/tsconfig.lib.json"
+    },
+    {
+      "path": "../internal-auth-contracts/tsconfig.lib.json"
+    },
+    {
+      "path": "../backoffice-domain/tsconfig.lib.json"
     },
     {
       "path": "../backoffice-application/tsconfig.lib.json"
     },
     {
-      "path": "../backoffice-domain/tsconfig.lib.json"
+      "path": "../account-contracts/tsconfig.lib.json"
     }
   ]
 }

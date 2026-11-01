@@ -18,6 +18,9 @@
 
 import {
   ensureStackForEntry,
+  deployProjectDir,
+  exec,
+  fullStackRef,
   generatePostgresPassword,
   pulumiDestroyForEntry,
   pulumiUpForEntry,
@@ -30,9 +33,40 @@ async function prepare(foundation: EntryFoundation): Promise<void> {
   // Stack phải tồn tại trước khi `config set` — lần up đầu trên worktree mới,
   // state dir chưa có và mọi lệnh config exit 1 (xem `ensureStackForEntry`).
   ensureStackForEntry('backoffice-deploy', foundation);
+
+  // Đọc `internalHmacSecret` từ stack config của staff-access-deploy (cùng
+  // pattern auth-deploy đọc `internalHmacSecret` từ account-deploy stack).
+  // staff-access-deploy up phải chạy trước backoffice-deploy (c declared
+  // dependsOn ở package.json) nên stack config của staff-access-deploy đã có
+  // giá trị này.
+  const readInternalSecret = exec(
+    'pulumi',
+    [
+      'config',
+      'get',
+      'namespace:internalHmacSecret',
+      '--stack',
+      fullStackRef('staff-access-deploy', foundation.ctx),
+    ],
+    deployProjectDir('staff-access-deploy'),
+    foundation.env,
+  );
+  if (readInternalSecret.status !== 0 || readInternalSecret.stdout.trim().length === 0) {
+    console.error(
+      '[backoffice-deploy] up: reading namespace:internalHmacSecret from the staff-access-deploy stack ' +
+        `failed (exit ${String(readInternalSecret.status)}) — staff-access up must run BEFORE backoffice ` +
+        '(dependsOn at package.json). `nx run staff-access-deploy:local-up -c local` trước, rồi chạy lại.`',
+    );
+    process.exit(1);
+  }
+  const internalHmacSecret = readInternalSecret.stdout.trim();
+
   const secrets: ReadonlyArray<readonly [string, string]> = [
     ['namespace:runtimePassword', generatePostgresPassword()],
     ['namespace:migratorPassword', generatePostgresPassword()],
+    // Giá trị đọc lại từ staff-access-deploy — hai stack dùng CHÍNH MỘT secret
+    // envelope HMAC để ký envelope gọi staff-access management API.
+    ['namespace:internalHmacSecret', internalHmacSecret],
   ];
   for (const [configKey, configValue] of secrets) {
     setStackConfig('backoffice-deploy', configKey, configValue, foundation);

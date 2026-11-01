@@ -3,7 +3,7 @@
  *
  * Kiểm chứng:
  *   - seed chạy qua migrator role (harness apply bằng credential migrator thật),
- *   - đúng 3 permission read `staff.read`, `role.read`, `permission.read`,
+ *   - đúng 4 permission read `staff.read`, `role.read`, `permission.read`,
  *     status `active`, không surplus;
  *   - idempotent: apply lại không double-insert **và không đổi nội dung**;
  *   - **self-heal**: xoá (hoặc đổi status) một row seed rồi apply lại ⇒
@@ -33,6 +33,7 @@ import {
 } from '../integrations/harness';
 
 const EXPECTED_SEEDED = [
+  { id: 'audit.read', domain: 'audit', action: 'read', status: 'active' },
   { id: 'permission.read', domain: 'permission', action: 'read', status: 'active' },
   { id: 'role.read', domain: 'role', action: 'read', status: 'active' },
   { id: 'staff.read', domain: 'staff', action: 'read', status: 'active' },
@@ -96,7 +97,13 @@ describe('permission catalog seed (0003) on a real PostgreSQL', () => {
     const client = await db.connect();
     try {
       await client.query(`DELETE FROM backoffice.permissions WHERE id = 'role.read'`);
-      expect(await readCatalog(db)).toEqual([EXPECTED_SEEDED[0], EXPECTED_SEEDED[2]]);
+      // 4 seed (alphabetical): [audit.read, permission.read, role.read, staff.read].
+      // Xoá `role.read` (index 2) ⇒ còn 3 row [audit.read, permission.read, staff.read].
+      expect(await readCatalog(db)).toEqual([
+        EXPECTED_SEEDED[0],
+        EXPECTED_SEEDED[1],
+        EXPECTED_SEEDED[3],
+      ]);
 
       await applyMigrations(client);
     } finally {
@@ -161,7 +168,12 @@ describe('permission catalog seed (0003) on a real PostgreSQL', () => {
       const { rows } = await runtime.query<{ id: string }>(
         `SELECT id FROM backoffice.permissions ORDER BY id`,
       );
-      expect(rows.map((row) => row.id)).toEqual(['permission.read', 'role.read', 'staff.read']);
+      expect(rows.map((row) => row.id)).toEqual([
+        'audit.read',
+        'permission.read',
+        'role.read',
+        'staff.read',
+      ]);
     } finally {
       await runtime.end();
     }

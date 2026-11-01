@@ -39,6 +39,10 @@ import staffRoute from '../../server/api/staff.get';
 import rolesRoute from '../../server/api/roles.get';
 import permissionsRoute from '../../server/api/permissions.get';
 import { PRINCIPAL_CONTEXT_KEY } from '../../server/principal';
+import {
+  STAFF_ACCESS_SERVICE_BINDING_NAME,
+  AUTH_INTERNAL_SECRET_ENV,
+} from '@ecoma-io/backoffice-infrastructure';
 import { BACKOFFICE_DATABASE, type BackofficeDatabase, startBackofficeDatabase } from './harness';
 
 /**
@@ -59,6 +63,48 @@ function accountId(char: string): string {
 const READER = accountId('a');
 const NO_PERMISSION_STAFF = accountId('b');
 const SUSPENDED_STAFF = accountId('c');
+
+const SECRET = 'test-internal-hmac-secret-0123456789abcdef';
+
+/** Service Binding giả trả staff directory (P5.1) — nhân sự bây giờ đến từ
+ * Staff Access management API, không còn từ `db-backoffice`. Các sub dưới đây
+ * khớp với staff được seed trong `beforeEach` để enforcement `staff.read`
+ * vẫn đúng, còn dữ liệu danh sách đi qua binding này. */
+const staffBinding = {
+  fetch: async () =>
+    new Response(
+      JSON.stringify({
+        staff: [
+          {
+            id: 's-reader',
+            sub: READER,
+            status: 'active',
+            display_name: 'Người Đọc',
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
+          },
+          {
+            id: 's-noperm',
+            sub: NO_PERMISSION_STAFF,
+            status: 'active',
+            display_name: 'Không Quyền',
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
+          },
+          {
+            id: 's-suspended',
+            sub: SUSPENDED_STAFF,
+            status: 'suspended',
+            display_name: 'Bị Khóa',
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
+          },
+        ],
+        next_cursor: null,
+      }),
+      { status: 200 },
+    ),
+};
 
 /**
  * Dựng h3 app với 3 route thật rồi gọi một path.
@@ -144,7 +190,9 @@ describe('read routes /api/staff, /api/roles, /api/permissions', () => {
       );
       await client.query(
         `INSERT INTO backoffice.role_permissions (role_id, permission_id)
-           VALUES ('sys_staff_reader', 'staff.read')`,
+           VALUES ('sys_staff_reader', 'staff.read'),
+                  ('sys_staff_reader', 'role.read'),
+                  ('sys_staff_reader', 'permission.read')`,
       );
       await client.query(
         `INSERT INTO backoffice.role_assignments (staff_sub, role_id) VALUES ($1, 'sys_staff_reader')`,
@@ -158,7 +206,11 @@ describe('read routes /api/staff, /api/roles, /api/permissions', () => {
   describe('happy path', () => {
     it('returns 200 with the staff directory for a principal holding staff.read', async () => {
       const { status, body } = await get('/api/staff', {
-        env: { DB_BACKOFFICE: { connectionString: runtimeConnectionString() } },
+        env: {
+          DB_BACKOFFICE: { connectionString: runtimeConnectionString() },
+          [STAFF_ACCESS_SERVICE_BINDING_NAME]: staffBinding,
+          [AUTH_INTERNAL_SECRET_ENV]: SECRET,
+        },
         principal: { actorSub: READER },
       });
 
@@ -168,9 +220,33 @@ describe('read routes /api/staff, /api/roles, /api/permissions', () => {
       // merge degrade về `null` cho mọi hàng — controlled degrade của sổ staff.
       expect(body).toEqual({
         staff: [
-          { sub: READER, status: 'active', displayName: null },
-          { sub: NO_PERMISSION_STAFF, status: 'active', displayName: null },
-          { sub: SUSPENDED_STAFF, status: 'suspended', displayName: null },
+          {
+            id: 's-reader',
+            sub: READER,
+            status: 'active',
+            display_name: 'Người Đọc',
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
+            displayName: null,
+          },
+          {
+            id: 's-noperm',
+            sub: NO_PERMISSION_STAFF,
+            status: 'active',
+            display_name: 'Không Quyền',
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
+            displayName: null,
+          },
+          {
+            id: 's-suspended',
+            sub: SUSPENDED_STAFF,
+            status: 'suspended',
+            display_name: 'Bị Khóa',
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
+            displayName: null,
+          },
         ],
       });
     });
@@ -249,6 +325,35 @@ describe('read routes /api/staff, /api/roles, /api/permissions', () => {
             connectionString: `postgres://ecoma_backoffice_runtime:${db.rolePassword}@127.0.0.1:1/${BACKOFFICE_DATABASE}`,
           },
         },
+        principal: { actorSub: READER },
+      });
+
+      expect(status).toBe(503);
+    });
+  });
+
+  describe('no direct cross-domain database access (fail-closed when staff-access unavailable)', () => {
+    it('answers 503 for /api/staff when staff-access binding is absent even though DB is present', async () => {
+      const { status } = await get('/api/staff', {
+        env: { DB_BACKOFFICE: { connectionString: runtimeConnectionString() } },
+        principal: { actorSub: READER },
+      });
+
+      expect(status).toBe(503);
+    });
+
+    it('answers 503 for /api/roles when staff-access binding is absent even though DB is present', async () => {
+      const { status } = await get('/api/roles', {
+        env: { DB_BACKOFFICE: { connectionString: runtimeConnectionString() } },
+        principal: { actorSub: READER },
+      });
+
+      expect(status).toBe(503);
+    });
+
+    it('answers 503 for /api/permissions when staff-access binding is absent even though DB is present', async () => {
+      const { status } = await get('/api/permissions', {
+        env: { DB_BACKOFFICE: { connectionString: runtimeConnectionString() } },
         principal: { actorSub: READER },
       });
 

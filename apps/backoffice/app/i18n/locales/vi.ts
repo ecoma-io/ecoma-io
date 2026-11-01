@@ -73,6 +73,7 @@ const vi: BackofficeMessages = {
       accountId: 'Account ID',
       status: 'Trạng thái nhân sự',
       roles: 'Vai trò đã gán',
+      entitlements: 'Đăng ký sản phẩm',
     },
     noRoles: 'Chưa gán vai trò',
     empty: 'Chưa có bản ghi nhân sự.',
@@ -82,6 +83,32 @@ const vi: BackofficeMessages = {
       suspended: 'Tạm khoãng',
       terminated: 'Đã chấm dứt',
     },
+    entitlements: {
+      entitled: 'Đã đăng ký',
+      revoked: 'Đã thu hồi',
+      none: 'Chưa đăng ký sản phẩm nào',
+    },
+  },
+
+  audit: {
+    title: 'Vết nhảy kiểm toán',
+    description:
+      'Lịch sử các thao tác nhạy cảm quyền — actor, target, action, thời điểm và kết quả.',
+    column: {
+      time: 'Thời điểm',
+      actor: 'Actor',
+      target: 'Target',
+      action: 'Hành động',
+      outcome: 'Kết quả',
+      reason: 'Lý do',
+    },
+    outcome: {
+      success: 'Thành công',
+      failure: 'Thất bại',
+      denied: 'Từ chối',
+    },
+    empty: 'Chưa có bản ghi audit nào.',
+    noResults: 'Không có bản ghi audit nào khớp bộ lọc.',
   },
 
   roles: {
@@ -178,6 +205,7 @@ const vi: BackofficeMessages = {
     staff: 'Nhân sự',
     roles: 'Vai trò',
     permissions: 'Quyền',
+    audit: 'Kiểm toán',
   },
 
   pages: {

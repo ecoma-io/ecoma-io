@@ -502,6 +502,9 @@ importers:
       '@ecoma-io/backoffice-infrastructure':
         specifier: workspace:*
         version: link:../../libs/backoffice-infrastructure
+      '@ecoma-io/staff-access-contracts':
+        specifier: workspace:*
+        version: link:../../libs/staff-access-contracts
       '@ecoma-io/ui-app-shell':
         specifier: workspace:*
         version: link:../../libs/ui-app-shell
@@ -886,6 +889,12 @@ importers:
       '@ecoma-io/backoffice-domain':
         specifier: workspace:*
         version: link:../backoffice-domain
+      '@ecoma-io/internal-auth-contracts':
+        specifier: workspace:*
+        version: link:../internal-auth-contracts
+      '@ecoma-io/staff-access-contracts':
+        specifier: workspace:*
+        version: link:../staff-access-contracts
       jose:
         specifier: 6.2.14
         version: 6.2.14

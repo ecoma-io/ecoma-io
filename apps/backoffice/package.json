@@ -7,6 +7,7 @@
     "@ecoma-io/backoffice-application": "workspace:*",
     "@ecoma-io/backoffice-domain": "workspace:*",
     "@ecoma-io/backoffice-infrastructure": "workspace:*",
+    "@ecoma-io/staff-access-contracts": "workspace:*",
     "@ecoma-io/ui-app-shell": "workspace:*",
     "@ecoma-io/ui-ecoma-logo": "workspace:*",
     "jose": "6.2.14"

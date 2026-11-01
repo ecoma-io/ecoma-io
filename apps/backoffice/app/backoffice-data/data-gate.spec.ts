@@ -343,7 +343,7 @@ describe('import boundaries', () => {
     // import qua nó thì bề mặt đó chỉ là mô tả sai, và "chỗ lộ bypass" mà barrel
     // được cho là ghim thực chất không gác gì cả.
     expect(new Set(barrelImporters)).toEqual(
-      new Set(['composables/use-backoffice-adapter.ts', 'pages/staff.vue']),
+      new Set(['composables/use-backoffice-adapter.ts', 'pages/audit.vue', 'pages/staff.vue']),
     );
   });
 });

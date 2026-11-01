@@ -53,8 +53,8 @@ const ACTOR_TWO = accountId('y');
 /** Role custom (không `sys_`) — runtime chỉ gán được role custom (ADR-0004). */
 const CUSTOM_ROLE = 'role_race_fixture';
 
-/** Catalog seed của `0003` — đúng ba permission read, không hơn. */
-const EXPECTED_CATALOG_IDS = ['permission.read', 'role.read', 'staff.read'];
+/** Catalog seed của `0003` — đúng bốn permission read, không hơn. */
+const EXPECTED_CATALOG_IDS = ['audit.read', 'permission.read', 'role.read', 'staff.read'];
 
 /**
  * Toàn bộ bảng của schema `backoffice` — snapshot số hàng trên TẤT CẢ, vì
@@ -180,7 +180,7 @@ describe('double-apply no-op and assignment races on db-backoffice (#85)', () =>
 
     expect(await rowCountPerTable(db)).toEqual(before);
     expect(await catalogIds(db)).toEqual(catalogBefore);
-    // Seed idempotency nhìn thấy được: catalog vẫn đúng 3 row của `0003`,
+    // Seed idempotency nhìn thấy được: catalog vẫn đúng 4 row của `0003`,
     // `ON CONFLICT DO NOTHING` + `WHERE NOT EXISTS` không nhân bản chúng.
     expect(catalogBefore).toEqual(EXPECTED_CATALOG_IDS);
   });

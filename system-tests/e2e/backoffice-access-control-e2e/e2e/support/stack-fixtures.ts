@@ -209,6 +209,36 @@ export async function seedBackofficeGrant(
   ]);
 }
 
+/**
+ * Seed staff row vào `staff_access.staff` của `db-staff-access` — P5.1 chuyển
+ * `/api/staff` đọc từ Staff Access API thay vì `db-backoffice` (issue #475).
+ *
+ * Shape `sub` phải khớp CHECK `^sub_[a-z2-7]{32}$` của cột `sub` và định danh
+ * fixture của suite (`PERMISSION_IDENTITY.sub`). `ON CONFLICT DO NOTHING` để
+ * rerun an toàn cùng stack.
+ */
+export async function seedStaffAccessStaff(
+  postgresContainer: string,
+  params: { readonly sub: string; readonly status?: string },
+): Promise<void> {
+  const status = params.status ?? 'active';
+  const sql = [
+    `INSERT INTO staff_access.staff (sub, status)
+     VALUES (${sqlQuote(params.sub)}, ${sqlQuote(status)}) ON CONFLICT DO NOTHING;`,
+  ].join('\n');
+  await dockerExec(postgresContainer, [
+    'psql',
+    '-U',
+    'ecoma_local',
+    '-d',
+    'db-staff-access',
+    '-v',
+    'ON_ERROR_STOP=1',
+    '-c',
+    sql,
+  ]);
+}
+
 // -------------------------------------------------------------------------------------------
 // OTP từ mail sink
 // -------------------------------------------------------------------------------------------

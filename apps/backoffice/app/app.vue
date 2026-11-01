@@ -78,6 +78,7 @@ const nav = computed<AppShellNavSection[]>(() => [
       { title: t('nav.staff'), href: '/staff' },
       { title: t('nav.roles'), href: '/roles' },
       { title: t('nav.permissions'), href: '/permissions' },
+      { title: t('nav.audit'), href: '/audit' },
     ],
   },
 ]);

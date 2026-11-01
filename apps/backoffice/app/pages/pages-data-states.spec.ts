@@ -41,6 +41,7 @@ const STAFF: readonly [StaffMember] = [
     displayName: 'Nhân Viên Kiểm Thử',
     status: 'active',
     roleIds: ['operator'],
+    entitlements: [],
   },
 ];
 
@@ -315,6 +316,7 @@ describe('staff — tells an empty result set apart from a search miss', () => {
         displayName: 'Nhân Viên Bị Đình Chỉ',
         status: 'suspended',
         roleIds: [],
+        entitlements: [],
       },
     ];
     const fake = createFakeBackofficeAdapter({ staff });

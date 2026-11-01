@@ -25,8 +25,26 @@
  *    không có đường nào làm một thao tác nhạy cảm "thành công" từ browser.
  */
 
-/** Trạng thái membership trong staff directory — trục **khác** account status. */
+import type { AuditEntry } from '@ecoma-io/staff-access-contracts';
+
+/**
+ * Trạng thái staff membership — riêng biệt với account status (§4.2).
+ */
 export type StaffStatus = 'active' | 'suspended' | 'terminated';
+
+export type { AuditEntry };
+
+/**
+ * Tóm tắt entitlement của một staff đối với một sản phẩm nội bộ — chỉ mang
+ * tính khả dụng sản phẩm (ADR-0009: entitlement ≠ authorization), không mang
+ * verdict/permission/role.
+ */
+export type StaffEntitlementSummary = {
+  /** Sản phẩm nội bộ (`backoffice`, `pact-broker`, `remote-cache`, ...). */
+  readonly product: string;
+  /** `entitled` = có sẵn dùng, `revoked` = đã thu hồi. */
+  readonly status: 'entitled' | 'revoked';
+};
 
 /**
  * Một thành viên staff.
@@ -43,6 +61,12 @@ export type StaffMember = {
   readonly status: StaffStatus;
   /** Các role đã gán — tập rỗng là hợp lệ: một Account tồn tại không hàm ý là staff. */
   readonly roleIds: readonly string[];
+  /**
+   * Tóm tắt entitlement của staff đối với các sản phẩm nội bộ — tập rỗng là
+   * hợp lệ khi adapter chưa đồng bộ hoặc staff không có entitlement nào.
+   * Được populate riêng qua `listEntitlements`, không phải từ `listStaff`.
+   */
+  readonly entitlements: readonly StaffEntitlementSummary[];
 };
 
 /**
@@ -113,4 +137,16 @@ export type BackofficeDataAdapter = {
   listStaff(): Promise<readonly StaffMember[]>;
   listRoles(): Promise<readonly SystemRole[]>;
   listPermissions(): Promise<readonly Permission[]>;
+  /**
+   * Tóm tắt entitlement của một staff đối với các sản phẩm nội bộ (ví dụ
+   * `backoffice`, `pact-broker`, `remote-cache`). Mỗi entry chỉ mang tính khả
+   * dụng sản phẩm (ADR-0009 — entitlement ≠ authorization), không mang
+   * verdict/permission/role.
+   */
+  listEntitlements(staffId: string): Promise<readonly StaffEntitlementSummary[]>;
+  /**
+   * Bản ghi authorization audit theo bộ lọc (actor, target, action, khung
+   * thời gian, correlation_id...). Chỉ đọc, append-only phía server.
+   */
+  listAuditEntries(query: Record<string, string>): Promise<readonly AuditEntry[]>;
 };
