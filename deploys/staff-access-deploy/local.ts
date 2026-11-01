@@ -33,6 +33,7 @@ async function prepare(foundation: EntryFoundation): Promise<void> {
   const secrets: ReadonlyArray<readonly [string, string]> = [
     ['namespace:runtimePassword', generatePostgresPassword()],
     ['namespace:migratorPassword', generatePostgresPassword()],
+    ['namespace:internalHmacSecret', generatePostgresPassword()],
   ];
   for (const [configKey, configValue] of secrets) {
     setStackConfig('staff-access-deploy', configKey, configValue, foundation);

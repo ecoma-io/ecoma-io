@@ -56,6 +56,7 @@ describe('staff-access migration runner on a real PostgreSQL', () => {
           'authorization_audit',
           'entitlement_outbox_events',
           'entitlements',
+          'internal_nonces',
           'permissions',
           'role_assignments',
           'role_permissions',
@@ -63,7 +64,7 @@ describe('staff-access migration runner on a real PostgreSQL', () => {
           'staff',
         ].toSorted(),
       );
-      expect(result.tablesInStaffAccessSchema).toBe(8);
+      expect(result.tablesInStaffAccessSchema).toBe(9);
     } finally {
       await migrator.end();
     }
@@ -78,7 +79,7 @@ describe('staff-access migration runner on a real PostgreSQL', () => {
     try {
       const result = await applyAllMigrations(migrator);
       expect(result.applied).toBe(listMigrations().length);
-      expect(result.tablesInStaffAccessSchema).toBe(8);
+      expect(result.tablesInStaffAccessSchema).toBe(9);
     } finally {
       await migrator.end();
     }

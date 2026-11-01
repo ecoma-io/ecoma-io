@@ -12,5 +12,10 @@ export interface AppEnv {
   };
   readonly Bindings: {
     DB_STAFF_ACCESS?: { connectionString: string };
+    AUTH_INTERNAL_SECRET?: string;
+    AUTH_INTERNAL_KID?: string;
+    AUTH_INTERNAL_PREVIOUS_SECRET?: string;
+    AUTH_INTERNAL_PREVIOUS_KID?: string;
+    AUTH_INTERNAL_SKEW_SECONDS?: string;
   };
 }

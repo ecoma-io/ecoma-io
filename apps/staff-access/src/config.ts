@@ -1,32 +1,39 @@
-/**
- * Nap cau hinh cua Worker `staff-access` tu binding.
- *
- * Nguyen tac giong `apps/pact-broker-api/src/config.ts` va `apps/auth/src/config.ts`:
- * **thieu cau hinh la loi, khong phai ly do doan**. Moi `require` nem
- * `StaffAccessAppConfigurationError` lam request fail-closed thay vi chay bang
- * default doan duoc. Message neu TEN bien trong loi — KHONG BAO GIO neu gia tri.
- */
+import {
+  assertKid,
+  DEFAULT_SKEW_SECONDS,
+  MAX_SKEW_SECONDS,
+  resolveSkewSeconds,
+} from '@ecoma-io/internal-auth-contracts';
 
-/** Shape cua `env` ma Worker nhan tu binding + secrets. */
 export interface StaffAccessEnv {
-  /** Hyperdrive binding toi `db-staff-access`. Khong phai connection string. */
   DB_STAFF_ACCESS?: { connectionString: string };
+  AUTH_INTERNAL_SECRET?: string;
+  AUTH_INTERNAL_KID?: string;
+  AUTH_INTERNAL_PREVIOUS_SECRET?: string;
+  AUTH_INTERNAL_PREVIOUS_KID?: string;
+  AUTH_INTERNAL_SKEW_SECONDS?: string;
 }
 
-/** Cau hinh da kiem, dung boi composition root. */
 export interface StaffAccessConfig {
   readonly hyperdrive: { connectionString: string };
+  readonly internalSecret: string;
+  readonly internalKid: string | undefined;
+  readonly internalSecretsByKid: ReadonlyMap<string, string>;
+  readonly internalAuthSkewSeconds: number;
 }
 
-/**
- * Nem khi thieu/gia cau hinh. Thong bao neu TEN bien de nguoi van hanh biet
- * cap cai gi — nhung khong bao gio neu gia tri (cung luat F-07 cua auth).
- */
 export class StaffAccessAppConfigurationError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'StaffAccessAppConfigurationError';
   }
+}
+
+function requireSecret(value: string | undefined, name: string): string {
+  if (value === undefined || value.trim() === '' || value !== value.trim()) {
+    throw new StaffAccessAppConfigurationError(`Worker Secret ${name} is missing or malformed`);
+  }
+  return value;
 }
 
 function requireHyperdrive(value: unknown): { connectionString: string } {
@@ -35,20 +42,68 @@ function requireHyperdrive(value: unknown): { connectionString: string } {
       'Hyperdrive binding DB_STAFF_ACCESS has not been attached; staff-access fails closed',
     );
   }
-  const cs = (value as { connectionString?: unknown }).connectionString;
-  if (typeof cs !== 'string' || cs === '') {
+  const connectionString = (value as { connectionString?: unknown }).connectionString;
+  if (typeof connectionString !== 'string' || connectionString === '') {
     throw new StaffAccessAppConfigurationError(
       'Hyperdrive binding DB_STAFF_ACCESS has no connectionString; staff-access fails closed',
     );
   }
-  return { connectionString: cs };
+  return { connectionString };
 }
 
-/** Nap va kiem toan bo cau hinh. `undefined`/`null` coi nhu env rong. */
+function optionalKid(value: string | undefined, name: string): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    assertKid(value);
+    return value;
+  } catch {
+    throw new StaffAccessAppConfigurationError(`Worker Secret ${name} is invalid`);
+  }
+}
+
+function parseSkew(value: string | undefined): number {
+  if (value === undefined || value === '') return DEFAULT_SKEW_SECONDS;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > MAX_SKEW_SECONDS) {
+    throw new StaffAccessAppConfigurationError('AUTH_INTERNAL_SKEW_SECONDS is invalid');
+  }
+  return resolveSkewSeconds(parsed);
+}
+
 export function loadStaffAccessConfig(
   envInput: StaffAccessEnv | undefined | null,
 ): StaffAccessConfig {
-  const env: StaffAccessEnv = envInput ?? {};
+  const env = envInput ?? {};
   const hyperdrive = requireHyperdrive(env.DB_STAFF_ACCESS);
-  return { hyperdrive };
+  const internalSecret = requireSecret(env.AUTH_INTERNAL_SECRET, 'AUTH_INTERNAL_SECRET');
+  const internalKid = optionalKid(env.AUTH_INTERNAL_KID, 'AUTH_INTERNAL_KID');
+  const previousSecret = env.AUTH_INTERNAL_PREVIOUS_SECRET;
+  const previousKid = optionalKid(env.AUTH_INTERNAL_PREVIOUS_KID, 'AUTH_INTERNAL_PREVIOUS_KID');
+  if (previousSecret !== undefined) requireSecret(previousSecret, 'AUTH_INTERNAL_PREVIOUS_SECRET');
+  if ((previousSecret === undefined) !== (previousKid === undefined)) {
+    throw new StaffAccessAppConfigurationError(
+      'AUTH_INTERNAL_PREVIOUS_SECRET and AUTH_INTERNAL_PREVIOUS_KID must be configured together',
+    );
+  }
+  if (internalKid !== undefined && previousKid === internalKid) {
+    throw new StaffAccessAppConfigurationError(
+      'AUTH_INTERNAL_KID must differ from AUTH_INTERNAL_PREVIOUS_KID',
+    );
+  }
+  const internalSecretsByKid = new Map<string, string>();
+  if (internalKid !== undefined) internalSecretsByKid.set(internalKid, internalSecret);
+  if (previousKid !== undefined && previousSecret !== undefined) {
+    internalSecretsByKid.set(previousKid, previousSecret);
+  }
+  return {
+    hyperdrive,
+    internalSecret,
+    internalKid,
+    internalSecretsByKid,
+    internalAuthSkewSeconds: parseSkew(env.AUTH_INTERNAL_SKEW_SECONDS),
+  };
+}
+
+export function resolveInternalSecret(config: StaffAccessConfig): (kid: string) => Promise<string> {
+  return async (kid) => config.internalSecretsByKid.get(kid) ?? '';
 }

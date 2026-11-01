@@ -49,6 +49,7 @@ const EXPECTED_PRIVILEGES: Record<string, readonly string[]> = {
   authorization_audit: ['INSERT', 'SELECT'],
   entitlement_outbox_events: ['INSERT', 'SELECT'],
   entitlements: ['INSERT', 'SELECT', 'UPDATE'],
+  internal_nonces: ['DELETE', 'INSERT', 'SELECT'],
   permissions: ['SELECT'],
   role_assignments: ['INSERT', 'SELECT'],
   role_permissions: ['SELECT'],

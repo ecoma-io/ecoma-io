@@ -17,13 +17,16 @@
   "exclude": ["out-tsc", "dist", "vitest.config.mts", "src/**/*.test.ts", "src/**/*.spec.ts"],
   "references": [
     {
-      "path": "../../libs/staff-access-contracts/tsconfig.lib.json"
-    },
-    {
       "path": "../../libs/staff-access-infrastructure/tsconfig.lib.json"
     },
     {
       "path": "../../libs/staff-access-domain/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/staff-access-contracts/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/internal-auth-contracts/tsconfig.lib.json"
     }
   ]
 }

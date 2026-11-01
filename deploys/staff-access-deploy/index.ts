@@ -124,6 +124,7 @@ const platformNamespace = requirePlatformOutput('namespace');
 // --config (stdin, không argv).
 const runtimePassword = conf.requireSecret('runtimePassword');
 const migratorPassword = conf.requireSecret('migratorPassword');
+const internalHmacSecret = conf.requireSecret('internalHmacSecret');
 
 const verifiedNamespace = pulumi.output(platformNamespace).apply((upstreamNs) => {
   if (upstreamNs !== ns) {
@@ -391,6 +392,7 @@ const wic = new docker.Container(
       },
     ],
     envs: [
+      pulumi.interpolate`AUTH_INTERNAL_SECRET=${pulumi.secret(internalHmacSecret)}`,
       pulumi.interpolate`CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_DB_STAFF_ACCESS=${pulumi.secret(hyperdriveLocalConnectionString)}`,
     ],
     labels: Object.entries(labels).map(([label, value]) => ({ label, value })),
