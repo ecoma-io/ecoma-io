@@ -47,6 +47,12 @@
               "platform-deploy"
             ],
             "target": "local-up"
+          },
+          {
+            "projects": [
+              "staff-access-deploy"
+            ],
+            "target": "local-up"
           }
         ]
       },

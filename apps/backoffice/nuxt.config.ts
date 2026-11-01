@@ -53,6 +53,18 @@ export default defineNuxtConfig({
     // vẫn là danh tính `iss`/authorize — chỉ fetch origin đổi. Xem JSDoc của
     // `server/auth/config.ts`.
     backofficeAuthInternalOrigin: '',
+    // Origin fetch server-side tới `staff-access` — **tuỳ chọn** (đối lập ba biến
+    // trên): rỗng = không mount shim ⇒ `staffAccessClientConfig()` trả `null`
+    // ⇒ mọi gọi staff-access fail-closed `binding_missing`, đúng trạng thái
+    // production khi hạ tầng chưa provision. Có giá trị (local:
+    // `http://ecoma-staff-access:4206` do backoffice-deploy cấp) = fetch từ
+    // origin nội bộ vì container không resolve được hostname `staff-access`
+    // và không đi ra host loopback được.
+    //
+    // Cùng nguyên tắc với `backofficeAuthInternalOrigin`: envelope HMAC ký trên
+    // chính path của request (`/staff`, `/roles`, `/permissions`), shim chỉ thay
+    // protocol + authority của URL, KHÔNG ký thêm gì, KHÔNG giữ khoá.
+    backofficeStaffAccessServiceUrl: '',
     public: {
       backofficeDataMode: BACKOFFICE_DATA_MODE_DISABLED,
       // URL trang profile của `account` (origin + path, vd
@@ -110,6 +122,9 @@ export default defineNuxtConfig({
     })),
     restructureDir: 'app/i18n',
     vueI18n: './vue-i18n.config.ts',
+  },
+  nitro: {
+    plugins: ['~/server/plugins/staff-access-service-shim.ts'],
   },
   pwa: {
     registerType: 'prompt',

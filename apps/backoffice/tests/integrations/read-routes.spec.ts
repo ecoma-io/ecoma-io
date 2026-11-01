@@ -190,7 +190,9 @@ describe('read routes /api/staff, /api/roles, /api/permissions', () => {
       );
       await client.query(
         `INSERT INTO backoffice.role_permissions (role_id, permission_id)
-           VALUES ('sys_staff_reader', 'staff.read')`,
+           VALUES ('sys_staff_reader', 'staff.read'),
+                  ('sys_staff_reader', 'role.read'),
+                  ('sys_staff_reader', 'permission.read')`,
       );
       await client.query(
         `INSERT INTO backoffice.role_assignments (staff_sub, role_id) VALUES ($1, 'sys_staff_reader')`,
