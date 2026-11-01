@@ -13,6 +13,10 @@
  *   `insertCacheEntry` ghi vào đây (giả lập metadata insert), còn body được lưu
  *   vào `InMemoryObjectStorage` thật qua `storage.putIfAbsent`. GET đọc metadata
  *   từ `entriesByKey` rồi body từ storage — giống real data plane.
+ *
+ * P4.3: mock `db.begin` để transaction có thể chạy trong unit test — transaction
+ * trong unit test không bắt buộc commit thật (không có DB thật), chỉ cần callback
+ * được gọi và kết quả trả về đúng.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
@@ -31,8 +35,27 @@ const tokensByHash = new Map<
   string,
   { projectId: string; tenantId: string; scopes: readonly string[] }
 >();
-const entriesByKey = new Map<string, { body: Uint8Array; contentType: string | null }>();
-let insertResult = 1;
+const entriesByKey = new Map<
+  string,
+  { body: Uint8Array; contentType: string | null; expiresAt: string | null }
+>();
+let insertResult = true;
+const quotaLimitsByProject = new Map<
+  string,
+  { max_storage_bytes: number; max_entry_count: number }
+>();
+const usageCountersByProject = new Map<
+  string,
+  { storage_bytes_used: number; entry_count: number }
+>();
+const auditLog: Array<{
+  actor: string;
+  action: string;
+  target: string;
+  outcome: string;
+  details?: string;
+  project_id?: string;
+}> = [];
 
 async function sha256Hex(input: string): Promise<string> {
   const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
@@ -53,7 +76,10 @@ async function registerToken(
 function resetState(): void {
   tokensByHash.clear();
   entriesByKey.clear();
-  insertResult = 1;
+  quotaLimitsByProject.clear();
+  usageCountersByProject.clear();
+  auditLog.length = 0;
+  insertResult = true;
 }
 
 vi.mock('@ecoma-io/remote-cache-infrastructure', async (importOriginal) => {
@@ -63,7 +89,13 @@ vi.mock('@ecoma-io/remote-cache-infrastructure', async (importOriginal) => {
     withRemoteCacheClient: vi.fn<
       (_config: unknown, fn: (db: RemoteCacheClient) => Promise<unknown>) => Promise<unknown>
     >(async (_config: unknown, fn: (db: RemoteCacheClient) => Promise<unknown>) => {
-      const fake = { unsafe: async () => [] } as unknown as RemoteCacheClient;
+      // P4.3: mock `begin` để transaction chạy trong unit test. Transaction object
+      // co `unsafe` de insertAuditLog goi db.unsafe(tx, ...) va tra ve [{ id }].
+      const fake = {
+        unsafe: async () => [],
+        begin: async <T>(cb: (tx: unknown) => Promise<T>): Promise<T> =>
+          await cb({ unsafe: async () => [{ id: 'audit-id' }] }),
+      } as unknown as RemoteCacheClient;
       return fn(fake);
     }),
     getApiKeyByTokenHash: vi.fn<
@@ -116,6 +148,7 @@ vi.mock('@ecoma-io/remote-cache-infrastructure', async (importOriginal) => {
         size_bytes: string;
         content_type: string | null;
         created_at: string;
+        expires_at: string | null;
       } | null>
     >(async (_db: unknown, projectId: string, hash: string) => {
       for (const row of tokensByHash.values()) {
@@ -131,6 +164,7 @@ vi.mock('@ecoma-io/remote-cache-infrastructure', async (importOriginal) => {
               size_bytes: String(entry.body.byteLength),
               content_type: entry.contentType,
               created_at: new Date().toISOString(),
+              expires_at: null,
             };
           }
           return null;
@@ -139,18 +173,105 @@ vi.mock('@ecoma-io/remote-cache-infrastructure', async (importOriginal) => {
       return null;
     }),
     insertCacheEntry: vi.fn<
-      (_db: unknown, entry: { objectKey: string; contentType?: string | null }) => Promise<number>
-    >(async (_db: unknown, entry: { objectKey: string; contentType?: string | null }) => {
-      // Ghi metadata (giả lập). Body được lưu riêng vào storage thật bởi route.
-      if (insertResult === 1) {
+      (
+        _db: unknown,
+        entry: {
+          projectId: string;
+          hash: string;
+          objectKey: string;
+          sizeBytes: number;
+          contentType?: string | null;
+          expiresAt?: string | null;
+        },
+      ) => Promise<{ wasInsert: boolean }>
+    >(
+      async (
+        _db: unknown,
+        entry: {
+          projectId: string;
+          hash: string;
+          objectKey: string;
+          sizeBytes: number;
+          contentType?: string | null;
+          expiresAt?: string | null;
+        },
+      ) => {
+        // Ghi metadata (giả lập). Body được lưu riêng vào storage thật bởi route.
+        if (!insertResult) {
+          // P4.3: giả lập conflict (entry đã tồn tại → không cho phép ghi đè).
+          return { wasInsert: false };
+        }
         const key = entry.objectKey;
         const existing = entriesByKey.get(key);
         entriesByKey.set(key, {
           body: existing?.body ?? new Uint8Array(0),
           contentType: entry.contentType ?? null,
+          expiresAt: entry.expiresAt ?? null,
         });
-      }
-      return insertResult;
+        return { wasInsert: true };
+      },
+    ),
+    getQuotaLimitByProject: vi.fn<
+      (
+        _db: unknown,
+        projectId: string,
+      ) => Promise<{
+        id: string;
+        project_id: string;
+        max_storage_bytes: number;
+        max_entry_count: number;
+        created_at: string;
+        updated_at: string;
+      } | null>
+    >(async (_db: unknown, projectId: string) => {
+      const q = quotaLimitsByProject.get(projectId);
+      if (!q) return null;
+      return {
+        id: 'quota-id',
+        project_id: projectId,
+        max_storage_bytes: q.max_storage_bytes,
+        max_entry_count: q.max_entry_count,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+    }),
+    getUsageCounterByProject: vi.fn<
+      (
+        _db: unknown,
+        projectId: string,
+      ) => Promise<{
+        id: string;
+        project_id: string;
+        storage_bytes_used: number;
+        entry_count: number;
+        updated_at: string;
+      } | null>
+    >(async (_db: unknown, projectId: string) => {
+      const u = usageCountersByProject.get(projectId);
+      if (!u) return null;
+      return {
+        id: 'usage-id',
+        project_id: projectId,
+        storage_bytes_used: u.storage_bytes_used,
+        entry_count: u.entry_count,
+        updated_at: new Date().toISOString(),
+      };
+    }),
+    insertAuditLog: vi.fn<
+      (
+        _db: unknown,
+        entry: {
+          actor: string;
+          action: string;
+          target: string;
+          outcome: string;
+          details?: string;
+          project_id?: string;
+        },
+      ) => Promise<string>
+    >(async (_db: unknown, entry) => {
+      auditLog.push(entry);
+      return 'audit-id';
     }),
   };
 });

@@ -19,6 +19,12 @@ export interface RemoteCacheEnv {
   S3_SECRET_ACCESS_KEY?: string;
   /** Gioi han kich thuoc artifact (byte). Mac dinh 512 MiB neu khong cau hinh. */
   MAX_ARTIFACT_SIZE?: string;
+  /** Quota mac dinh (byte) cho project chua co hang quota_limits. 0 = khong han che. */
+  DEFAULT_MAX_STORAGE_BYTES?: string;
+  /** Quota mac dinh (so luong entry) cho project chua co hang quota_limits. 0 = khong han che. */
+  DEFAULT_MAX_ENTRY_COUNT?: string;
+  /** Retention TTL mac dinh (giay) cho entry moi; rong/0 = khong co TTL (dung storage lifecycle). */
+  DEFAULT_RETENTION_TTL_SECONDS?: string;
 }
 
 /** Cau hinh da kiem, dung boi composition root. */
@@ -31,6 +37,15 @@ export interface RemoteCacheConfig {
     readonly secretAccessKey: string;
   } | null;
   readonly maxArtifactSize: number;
+  /** Quota mac dinh ap dung cho project chua co hang quota_limits (0 = khong han che). */
+  readonly quota: {
+    readonly defaultMaxStorageBytes: number;
+    readonly defaultMaxEntryCount: number;
+  };
+  /** Retention TTL mac dinh (giay) cho entry moi; null = dung storage lifecycle. */
+  readonly retention: {
+    readonly defaultTtlSeconds: number | null;
+  };
 }
 
 /**
@@ -59,6 +74,23 @@ function requireHyperdrive(value: unknown): { connectionString: string } {
   return { connectionString: cs };
 }
 
+/** Nap va xac thuc mot so nguyen khong am tu env; neu invalid thi nem RemoteCacheAppConfigurationError (fail-closed). */
+function requireNonNegativeNumber(
+  env: RemoteCacheEnv,
+  key: 'DEFAULT_MAX_STORAGE_BYTES' | 'DEFAULT_MAX_ENTRY_COUNT',
+  defaultValue: number,
+): number {
+  const raw = env[key];
+  if (raw === undefined || raw === '') return defaultValue;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) {
+    throw new RemoteCacheAppConfigurationError(
+      `Invalid ${key}: ${raw}. Must be a non-negative integer.`,
+    );
+  }
+  return n;
+}
+
 /** Nap va kiem toan bo cau hinh. `undefined`/`null` coi nhu env rong. */
 export function loadRemoteCacheConfig(
   envInput: RemoteCacheEnv | undefined | null,
@@ -85,5 +117,21 @@ export function loadRemoteCacheConfig(
       ? Number(env.MAX_ARTIFACT_SIZE)
       : 512 * 1024 * 1024;
 
-  return { hyperdrive, storage, maxArtifactSize };
+  const defaultMaxStorageBytes = requireNonNegativeNumber(env, 'DEFAULT_MAX_STORAGE_BYTES', 0);
+  const defaultMaxEntryCount = requireNonNegativeNumber(env, 'DEFAULT_MAX_ENTRY_COUNT', 0);
+
+  const defaultTtlSecondsRaw =
+    env.DEFAULT_RETENTION_TTL_SECONDS &&
+    Number.isFinite(Number(env.DEFAULT_RETENTION_TTL_SECONDS)) &&
+    Number(env.DEFAULT_RETENTION_TTL_SECONDS) > 0
+      ? Number(env.DEFAULT_RETENTION_TTL_SECONDS)
+      : null;
+
+  return {
+    hyperdrive,
+    storage,
+    maxArtifactSize,
+    quota: { defaultMaxStorageBytes, defaultMaxEntryCount },
+    retention: { defaultTtlSeconds: defaultTtlSecondsRaw },
+  };
 }
