@@ -36,13 +36,23 @@ const RUNTIME = 'ecoma_remote_cache_runtime';
  *   UPDATE cột khác được test riêng dưới đây.
  * - `cache_entries`: SELECT + INSERT — data plane (P4.2) chỉ đọc ghi metadata;
  *   UPDATE/DELETE/REVOKE không có (immutability qua trigger, re-PUT bị 409).
+ * - `quota_limits`: SELECT + INSERT — data plane (P4.3) đọc quota limit để
+ *   kiểm tra ghi; không UPDATE/DELETE trên data plane.
+ * - `usage_counters`: SELECT + INSERT + UPDATE — data plane (P4.3) cập nhật bộ
+ *   đếm sau mỗi ghi thành công qua `upsertUsageCounter` (`INSERT ... ON CONFLICT
+ *   DO UPDATE`) và `rebuildUsageCounter`; không DELETE (migrator seed ban đầu).
+ * - `audit_log`: SELECT + INSERT — data plane (P4.3) chỉ append; `insertAuditLog`
+ *   dùng `RETURNING id` cần SELECT; không UPDATE/DELETE trên runtime (append-only, R15).
  */
 const EXPECTED_PRIVILEGES: Record<string, readonly string[]> = {
   api_keys: ['INSERT', 'SELECT'],
+  audit_log: ['INSERT', 'SELECT'],
   cache_entries: ['INSERT', 'SELECT'],
   projects: ['INSERT', 'SELECT'],
+  quota_limits: ['INSERT', 'SELECT'],
   tenant_members: ['SELECT'],
   tenants: ['INSERT', 'SELECT', 'UPDATE'],
+  usage_counters: ['INSERT', 'SELECT', 'UPDATE'],
 };
 
 /** Bỏ comment `--` ra khỏi SQL trước khi quét nội dung (pattern roles.spec). */

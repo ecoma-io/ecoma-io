@@ -18,6 +18,7 @@ export interface CacheEntryRow {
   readonly size_bytes: string;
   readonly content_type: string | null;
   readonly created_at: string;
+  readonly expires_at: string | null;
 }
 
 /** Lay entry theo project + hash — duong read-side. NULL khi miss. */
@@ -27,7 +28,7 @@ export async function getCacheEntryByProjectAndHash(
   hash: string,
 ): Promise<CacheEntryRow | null> {
   const rows = await db.unsafe<CacheEntryRow>(
-    `SELECT id, project_id, hash, object_key, size_bytes, content_type, created_at
+    `SELECT id, project_id, hash, object_key, size_bytes, content_type, created_at, expires_at
        FROM remote_cache.cache_entries
       WHERE project_id = $1 AND hash = $2`,
     [projectId, hash],
@@ -41,7 +42,7 @@ export async function listCacheEntriesByProject(
   projectId: string,
 ): Promise<readonly CacheEntryRow[]> {
   return db.unsafe<CacheEntryRow>(
-    `SELECT id, project_id, hash, object_key, size_bytes, content_type, created_at
+    `SELECT id, project_id, hash, object_key, size_bytes, content_type, created_at, expires_at
        FROM remote_cache.cache_entries
       WHERE project_id = $1
       ORDER BY created_at, id`,
@@ -62,17 +63,25 @@ export async function insertCacheEntry(
     readonly objectKey: string;
     readonly sizeBytes: number;
     readonly contentType: string | null;
+    readonly expiresAt: string | null;
   },
 ): Promise<number> {
   const result = await db.unsafe<{ inserted: string }>(
     `WITH inserted AS (
-       INSERT INTO remote_cache.cache_entries (project_id, hash, object_key, size_bytes, content_type)
-       VALUES ($1, $2, $3, $4, $5)
+       INSERT INTO remote_cache.cache_entries (project_id, hash, object_key, size_bytes, content_type, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (project_id, hash) DO NOTHING
        RETURNING 1 AS one
      )
      SELECT count(*)::text AS inserted FROM inserted`,
-    [entry.projectId, entry.hash, entry.objectKey, entry.sizeBytes, entry.contentType],
+    [
+      entry.projectId,
+      entry.hash,
+      entry.objectKey,
+      entry.sizeBytes,
+      entry.contentType,
+      entry.expiresAt,
+    ],
   );
   return Number(result[0]?.inserted ?? '0');
 }

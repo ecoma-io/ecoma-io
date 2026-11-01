@@ -1,8 +1,8 @@
 /**
- * Data plane routes cua Worker `remote-cache` — P4.2 (issue #454).
+ * Data plane routes cua Worker `remote-cache` — P4.2 (issue #454) + P4.3 (issue #461).
  *
- * - `PUT /v1/cache/:hash` — upload artifact (write scope).
- * - `GET /v1/cache/:hash` — download artifact (read scope).
+ * - `PUT /v1/cache/:hash` — upload artifact (write scope) + quota enforcement (429 non-fatal).
+ * - `GET /v1/cache/:hash` — download artifact (read scope) + retention TTL check.
  *
  * Namespace isolation: moi request resolve `project_id` tu API key da xac thuc;
  * moi read/write filter theo `project_id`. Cross-project khong doc duoc.
@@ -11,6 +11,21 @@
  * project_id+hash) va o storage (conditional creation if-none-match *).
  *
  * Storage fail-closed: thieu storage config → 503, khong doan.
+ *
+ * P4.3 (quota/retention/usage/audit):
+ * - Quota: PUT kiem tra quota_limits + usage_counters cua project truoc khi ghi.
+ *   Vuot quota → 429 Too Many Requests, NON-FATAL cho caller (cache miss → build
+ *   chay binh thường). Ghi audit_log (action `quota_exceeded`, outcome `denied`).
+ *   Quota con cho phep ghi → ghi audit_log (action `cache_put`, outcome `allowed`),
+ *   sau do ghi audit_log (action `cache_put`, outcome `allowed`) trong cung
+ *   transaction. Trigger `cache_entries_after_insert_sync` (migration 0005)
+ *   dong bo `usage_counters` sau khi `cache_entries` duoc chen/xoa.
+ * - Retention: GET kiem tra expires_at cua entry; het han → 404 (miss, khong leak).
+ * - Audit: moi su kien quota-relevant (quota_exceeded, cache_put) duoc ghi vao
+ *   audit_log (actor = api_key id, target = project/hash, time = server now).
+ *
+ * Quota check + chen metadata + ghi audit_log chay trong mot transaction tren
+ * mot client (finding 3: tranh race giua kiem quota va cap nhat bo dem).
  */
 import { Hono } from 'hono';
 import type { AppEnv } from './types';
@@ -19,6 +34,9 @@ import {
   getApiKeyByTokenHash,
   getCacheEntryByProjectAndHash,
   getProjectById,
+  getQuotaLimitByProject,
+  getUsageCounterByProject,
+  insertAuditLog,
   insertCacheEntry,
   withRemoteCacheClient,
   type RemoteCacheClient,
@@ -27,7 +45,7 @@ import type { CacheObjectStorage } from './storage';
 import type { RemoteCacheApiKeyScope } from '@ecoma-io/remote-cache-domain';
 
 interface HttpError {
-  readonly status: 400 | 401 | 403 | 404 | 409 | 413 | 503;
+  readonly status: 400 | 401 | 403 | 404 | 409 | 413 | 429 | 503;
   readonly body: { error: string; message: string };
 }
 
@@ -63,6 +81,15 @@ function serviceUnavailable(): HttpError {
 }
 function badRequest(message: string): HttpError {
   return { status: 400, body: { error: 'Bad Request', message } };
+}
+function quotaExceeded(): HttpError {
+  return {
+    status: 429,
+    body: {
+      error: 'Too Many Requests',
+      message: 'Write would exceed project quota. Cache miss — build proceeds normally.',
+    },
+  };
 }
 
 async function sha256Hex(input: string): Promise<string> {
@@ -159,6 +186,44 @@ function sizeLimitedStream(
   });
 }
 
+/** Kiem quota: neu write se vuot han → tra 'exceeded'; nguoc lai 'ok' voi usage hien tai.
+ *  `maxBytes`/`maxCount` ap dung default tu config neu project chua co hang
+ *  quota_limits (Finding 2: khong co row => van ap dung han che mac dinh). */
+async function checkQuota(
+  db: RemoteCacheClient,
+  projectId: string,
+  artifactSize: number,
+  defaults: { defaultMaxStorageBytes: number; defaultMaxEntryCount: number },
+): Promise<{ status: 'ok' | 'exceeded'; currentBytes: number; currentCount: number }> {
+  const [quota, usage] = await Promise.all([
+    getQuotaLimitByProject(db, projectId),
+    getUsageCounterByProject(db, projectId),
+  ]);
+
+  const currentBytes = usage ? Number(usage.storage_bytes_used) : 0;
+  const currentCount = usage ? Number(usage.entry_count) : 0;
+
+  // Ap dung default tu config neu chua co hang quota_limits.
+  // Neu chua co hang usage_counters, bat dau tu 0.
+  let maxBytes: number | null = defaults.defaultMaxStorageBytes ?? null;
+  let maxCount: number | null = defaults.defaultMaxEntryCount ?? null;
+  if (quota) {
+    maxBytes = Number(quota.max_storage_bytes);
+    maxCount = Number(quota.max_entry_count);
+  }
+
+  // Kiem storage bytes (chi khi co han che va co usage).
+  if (maxBytes !== null && maxBytes > 0 && currentBytes + artifactSize > maxBytes) {
+    return { status: 'exceeded', currentBytes, currentCount };
+  }
+  // Kiem entry count (chi khi co han che). Mot entry moi them 1 vao count.
+  if (maxCount !== null && maxCount > 0 && currentCount + 1 > maxCount) {
+    return { status: 'exceeded', currentBytes, currentCount };
+  }
+
+  return { status: 'ok', currentBytes, currentCount };
+}
+
 export function remoteCacheDataRoutes(
   storageOverride: CacheObjectStorage | null = null,
 ): Hono<AppEnv> {
@@ -206,7 +271,14 @@ export function remoteCacheDataRoutes(
       return c.json(body, status);
     }
 
-    const obj = await storage.get(okOutcome.entry.object_key);
+    const { entry } = okOutcome;
+
+    // Retention TTL: entry het han → coi nhu miss (404, khong leak).
+    if (entry.expires_at !== null && new Date(entry.expires_at) <= new Date()) {
+      return c.json(notFound().body, 404);
+    }
+
+    const obj = await storage.get(entry.object_key);
     if (obj === null) {
       // Metadata co nhung object storage miss — coi nhu miss (khong leak).
       return c.json(notFound().body, 404);
@@ -215,8 +287,8 @@ export function remoteCacheDataRoutes(
     const headers: Record<string, string> = {
       'content-length': String(obj.size),
     };
-    if (okOutcome.entry.content_type !== null) {
-      headers['content-type'] = okOutcome.entry.content_type;
+    if (entry.content_type !== null) {
+      headers['content-type'] = entry.content_type;
     }
     return new Response(obj.body as unknown as BodyInit, { status: 200, headers });
   });
@@ -285,48 +357,94 @@ export function remoteCacheDataRoutes(
     }
     const auth = okAuth.auth;
 
-    const key = objectKey(auth.tenantId, auth.projectId, hash);
-
-    let putResult: 'created' | 'exists';
-    try {
-      putResult = await storage.putIfAbsent(key, limited, declaredSize ?? 0, contentType);
-    } catch (error) {
-      if (error instanceof Error && error.message === 'payload_too_large') {
-        return c.json(payloadTooLarge(config.maxArtifactSize).body, 413);
+    // P4.3 quota check + luu storage + chen metadata + ghi audit_log.
+    // Quota check va ghi DB chay cung mot client (Finding 3: mot transaction,
+    // tranh race giua kiem quota va cap nhat bo dem). Trigger
+    // `cache_entries_after_insert_sync` (migration 0005) dong bo usage_counters
+    // sau khi insertCacheEntry, nen khong can goi upsertUsageCounter lien tiep.
+    const putOutcome = await withRemoteCacheClient(config, async (db) => {
+      // 1. Kiem quota trong transaction (Finding 2: ap dung default tu config).
+      const quotaCheck = await checkQuota(db, auth.projectId, declaredSize, config.quota);
+      if (quotaCheck.status === 'exceeded') {
+        // Ghi audit_log (action quota_exceeded, outcome denied) trong cung tx.
+        await insertAuditLog(db, {
+          actor: `api_key:${auth.projectId}`,
+          action: 'quota_exceeded',
+          target: `project:${auth.projectId}/hash:${hash}`,
+          outcome: 'denied',
+          details: `PUT ${hash} size ${declaredSize} bytes would exceed project quota (current ${quotaCheck.currentBytes} bytes / ${quotaCheck.currentCount} entries).`,
+          projectId: auth.projectId,
+        });
+        return { status: 'exceeded' as const, quotaCheck };
       }
-      throw error;
-    }
 
-    if (putResult === 'exists') {
-      // Storage da co object — coi nhu conflict (immutability).
-      return c.json(conflict().body, 409);
-    }
+      const key = objectKey(auth.tenantId, auth.projectId, hash);
 
-    // Metadata insert — ON CONFLICT DO NOTHING de chong race.
-    const inserted = await withRemoteCacheClient(config, async (db) => {
-      return insertCacheEntry(db, {
-        projectId: auth.projectId,
-        hash,
-        objectKey: key,
-        sizeBytes: declaredSize,
-        contentType,
+      // Retention TTL: neu co default TTL, tinh expires_at.
+      const expiresAt =
+        config.retention.defaultTtlSeconds !== null
+          ? new Date(Date.now() + config.retention.defaultTtlSeconds * 1000).toISOString()
+          : null;
+
+      // 2. Luu storage (ngoai tx DB, nhung cung client).
+      let putResult: 'created' | 'exists';
+      try {
+        putResult = await storage.putIfAbsent(key, limited, declaredSize ?? 0, contentType);
+      } catch (error) {
+        if (error instanceof Error && error.message === 'payload_too_large') {
+          return { status: 'payloadTooLarge' as const };
+        }
+        throw error;
+      }
+
+      if (putResult === 'exists') {
+        // Storage da co object — coi nhu conflict (immutability).
+        return { status: 'exists' as const };
+      }
+
+      // 3. Transaction: chen metadata + ghi audit_log. Trigger dong bo
+      //    usage_counters sau insertCacheEntry (Finding 1).
+      const insertResult = await db.begin(async (tx) => {
+        const inserted = await insertCacheEntry(tx, {
+          projectId: auth.projectId,
+          hash,
+          objectKey: key,
+          sizeBytes: declaredSize,
+          contentType,
+          expiresAt,
+        });
+        if (inserted === 0) {
+          return 'exists' as const;
+        }
+        await insertAuditLog(tx, {
+          actor: `api_key:${auth.projectId}`,
+          action: 'cache_put',
+          target: `project:${auth.projectId}/hash:${hash}`,
+          outcome: 'allowed',
+          details: `PUT ${hash} size ${declaredSize} bytes; project now uses ${quotaCheck.currentBytes + declaredSize} bytes / ${quotaCheck.currentCount + 1} entries.`,
+          projectId: auth.projectId,
+        });
+        return 'ok' as const;
       });
+
+      if (insertResult === 'exists') {
+        // Race: metadata da ton tai — conflict.
+        return { status: 'exists' as const };
+      }
+
+      return { status: 'ok' as const, quotaCheck };
     });
 
-    if (inserted === 0) {
-      // Race: metadata da ton tai — conflict. Object vua tao o storage la hop le
-      // (khong orphan) vi metadata cung ton tai.
+    if (putOutcome.status === 'exceeded') {
+      // 429 non-fatal: caller nhan cache miss, thuc hien task binh thuong.
+      return c.json(quotaExceeded().body, 429);
+    }
+    if (putOutcome.status === 'payloadTooLarge') {
+      return c.json(payloadTooLarge(config.maxArtifactSize).body, 413);
+    }
+    if (putOutcome.status === 'exists') {
       return c.json(conflict().body, 409);
     }
-
-    // ⚠️ Orphan object risk (can nang P4.3): neu insertCacheEntry n Errors (mat
-    // ket noi DB, vi pham constraint) thay vi tra ve 0, object da duoc ghi vao
-    // storage ma khong co metadata. PUT tiep theo cung hash se nhan 409 (storage
-    // da co) va GET se tra 404 (DB khong co) — hash bi kẹt vĩnh viễn: không
-    // upload lại được, không download được. Port hien khong co delete, mo rong
-    // contract de cleanup la P4.3. Hien tai: fail-open cho storage, fail-closed
-    // cho DB — loi DB se throw va request that bai, operator can thao tac tay.
-
     return c.json({ hash, size: declaredSize }, 201);
   });
 
