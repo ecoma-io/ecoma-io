@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@ecoma-io/internal-auth-contracts": "workspace:*",
     "@ecoma-io/staff-access-contracts": "workspace:*",
     "@ecoma-io/staff-access-domain": "workspace:*",
     "@ecoma-io/staff-access-infrastructure": "workspace:*",

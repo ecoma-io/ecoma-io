@@ -25,6 +25,27 @@ describe('staff-access worker skeleton', () => {
     expect(body.error).toBe('Service Unavailable');
   });
 
+  it('rejects management requests without an internal envelope', async () => {
+    resetCachedConfig();
+    const app = buildApp();
+    const response = await app.request(
+      '/staff',
+      {
+        headers: {
+          'content-type': 'application/json',
+        },
+        ...({
+          // The binding is only used after authentication; this request must fail first.
+        } as object),
+      },
+      {
+        DB_STAFF_ACCESS: { connectionString: 'postgres://x' },
+        AUTH_INTERNAL_SECRET: 'internal-secret-test',
+      },
+    );
+    expect(response.status).toBe(401);
+  });
+
   it('adds security headers to every response', async () => {
     const app = buildApp();
     const response = await app.request('/health');
@@ -45,7 +66,10 @@ describe('staff-access worker skeleton', () => {
 
 describe('loadStaffAccessConfig', () => {
   it('accepts a bound Hyperdrive object and exposes its connection string', () => {
-    const config = loadStaffAccessConfig({ DB_STAFF_ACCESS: { connectionString: 'postgres://x' } });
+    const config = loadStaffAccessConfig({
+      DB_STAFF_ACCESS: { connectionString: 'postgres://x' },
+      AUTH_INTERNAL_SECRET: 'internal-secret-test',
+    });
     expect(config.hyperdrive.connectionString).toBe('postgres://x');
   });
 

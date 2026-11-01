@@ -60,7 +60,13 @@ function beginPassingClientAsTx(): (
     fn(buildFakeClient() as unknown as StaffAccessTransaction);
 }
 
-const CONFIG = { hyperdrive: { connectionString: 'postgres://hyperdrive.invalid/db' } };
+const CONFIG = {
+  hyperdrive: { connectionString: 'postgres://hyperdrive.invalid/db' },
+  internalSecret: 'internal-secret-test',
+  internalKid: undefined,
+  internalSecretsByKid: new Map<string, string>(),
+  internalAuthSkewSeconds: 300,
+};
 
 function buildTestApp(): Hono<AppEnv> {
   const app = new Hono<AppEnv>();

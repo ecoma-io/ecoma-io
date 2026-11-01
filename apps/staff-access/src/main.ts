@@ -9,8 +9,19 @@
  */
 import { Hono } from 'hono';
 import type { ExecutionContext } from 'hono';
+import {
+  INTERNAL_BODY_LIMIT_BYTES,
+  NONCE_TTL_BUFFER_SECONDS,
+  verifyRequest,
+} from '@ecoma-io/internal-auth-contracts';
+import { withStaffAccessClient } from '@ecoma-io/staff-access-infrastructure';
 import type { AppEnv } from './types';
-import { loadStaffAccessConfig, type StaffAccessConfig, type StaffAccessEnv } from './config';
+import {
+  loadStaffAccessConfig,
+  resolveInternalSecret,
+  type StaffAccessConfig,
+  type StaffAccessEnv,
+} from './config';
 import { isStaffAccessDomainError } from '@ecoma-io/staff-access-domain';
 import { staffAccessRoutes } from './routes';
 
@@ -28,6 +39,39 @@ function getConfig(env: StaffAccessEnv | null | undefined): StaffAccessConfig {
     cachedConfig = loadStaffAccessConfig(env);
   }
   return cachedConfig;
+}
+
+async function readBody(request: Request): Promise<Uint8Array | null> {
+  if (request.body === null) return new Uint8Array();
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const part = await reader.read();
+      if (part.done) break;
+      size += part.value.byteLength;
+      if (size > INTERNAL_BODY_LIMIT_BYTES) return null;
+      chunks.push(part.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
+function headersForVerification(request: Request): Record<string, string | null> {
+  const headers: Record<string, string | null> = {};
+  request.headers.forEach((value, key) => {
+    headers[key] = value;
+  });
+  return headers;
 }
 
 function createApp(): Hono<AppEnv> {
@@ -62,6 +106,54 @@ function createApp(): Hono<AppEnv> {
         return c.json({ error: 'Service Unavailable', message: 'Service is not configured' }, 503);
       }
       throw error;
+    }
+    await next();
+    return undefined;
+  });
+
+  // Every management route requires the canonical internal HMAC envelope. The
+  // health probe is deliberately credential-free and was handled above.
+  app.use('*', async (c, next) => {
+    if (new URL(c.req.raw.url).pathname === '/health') {
+      await next();
+      return;
+    }
+    const config = c.get('config');
+    const body = await readBody(c.req.raw.clone());
+    if (body === null) {
+      return c.json({ error: 'Payload Too Large' }, 413);
+    }
+    const verification = await verifyRequest({
+      method: c.req.raw.method,
+      path: new URL(c.req.raw.url).pathname + new URL(c.req.raw.url).search,
+      body,
+      headers: headersForVerification(c.req.raw),
+      secret: config.internalSecret,
+      secretByKid: resolveInternalSecret(config),
+      now: String(Math.floor(Date.now() / 1000)),
+      skewSeconds: config.internalAuthSkewSeconds,
+      claimNonce: async (nonce, timestampSeconds) => {
+        const expiresAt =
+          timestampSeconds + config.internalAuthSkewSeconds + NONCE_TTL_BUFFER_SECONDS;
+        const rows = await withStaffAccessClient({ hyperdrive: config.hyperdrive }, async (db) =>
+          db.unsafe(
+            `WITH deleted AS (
+               DELETE FROM staff_access.internal_nonces WHERE expires_at <= $2
+             )
+             INSERT INTO staff_access.internal_nonces (nonce, expires_at)
+             VALUES ($1, $2)
+             ON CONFLICT (nonce) DO NOTHING
+             RETURNING nonce`,
+            [nonce, expiresAt],
+          ),
+        );
+        return rows.length === 0;
+      },
+    });
+    if (!verification.ok) {
+      return c.json({ error: 'Unauthorized' }, 401, {
+        'WWW-Authenticate': 'HMAC realm="ecoma-internal"',
+      });
     }
     await next();
     return undefined;

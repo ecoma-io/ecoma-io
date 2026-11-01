@@ -47,6 +47,13 @@
   "observability": {
     "enabled": true,
   },
+  "secrets": [
+    "AUTH_INTERNAL_SECRET",
+    "AUTH_INTERNAL_KID",
+    "AUTH_INTERNAL_PREVIOUS_SECRET",
+    "AUTH_INTERNAL_PREVIOUS_KID",
+    "AUTH_INTERNAL_SKEW_SECONDS",
+  ],
   "dev": {
     "port": 4206,
   },
