@@ -129,7 +129,7 @@
       // nào khác — kể cả gõ sai hoa/thường hay thừa khoảng trắng — đều fail
       // closed về trạng thái unavailable.
       "vars": {
-        "NITRO_PUBLIC_BACKOFFICE_DATA_MODE": "prototype",
+        "NITRO_PUBLIC_BACKOFFICE_DATA_MODE": "realtime",
       },
       // Bề mặt public của `account` — xem ghi chú cùng khoá ở `apps/home`.
       // App này **phẳng**: không có chiều locale (không `app/pages/[locale]`),

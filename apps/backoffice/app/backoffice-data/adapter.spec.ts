@@ -94,7 +94,7 @@ describe('createBackofficeAdapter', () => {
     // tính đầy đủ mà `satisfies` bảo vệ ở compile time: nếu bảng thiếu một mode,
     // mode đó rơi về unavailable và `isPreview` thành `false`, tức preview im
     // lặng mất dữ liệu mẫu mà không có tín hiệu nào.
-    const MODES: readonly BackofficeDataMode[] = ['prototype', 'unavailable'];
+    const MODES: readonly BackofficeDataMode[] = ['prototype', 'realtime', 'unavailable'];
 
     for (const mode of MODES) {
       const adapter = createBackofficeAdapter(mode);
@@ -127,7 +127,7 @@ describe('createBackofficeAdapter', () => {
     // `createBackofficeAdapter` là API công khai của barrel, nên phép tra cứu
     // phải chịu được giá trị lạ: một mode ngoài union rơi về unavailable chứ
     // không ném `TypeError` khi tra cứu bảng.
-    const unknownMode = 'realtime' as BackofficeDataMode;
+    const unknownMode = 'nonexistent' as BackofficeDataMode;
     const adapter = createBackofficeAdapter(unknownMode);
 
     expect(adapter.isPreview).toBe(false);

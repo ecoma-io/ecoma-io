@@ -23,9 +23,14 @@
  * liệu thật — tức là **chỉ** ở lane `prototype`. Ở production mọi lần đọc rơi
  * vào adapter unavailable, nên chunk fixture không bao giờ được tải.
  */
-import { BACKOFFICE_PREVIEW_DATA_MODE, type BackofficeDataMode } from './data-mode';
+import {
+  BACKOFFICE_PREVIEW_DATA_MODE,
+  BACKOFFICE_REALTIME_DATA_MODE,
+  type BackofficeDataMode,
+} from './data-mode';
 import type { BackofficeDataAdapter, Permission, StaffMember, SystemRole } from './types';
 import { createUnavailableBackofficeAdapter } from './unavailable-adapter';
+import { createRealBackofficeAdapter } from './real-adapter';
 
 /** Factory adapter: nhận không tham số, trả về adapter đã dựng xong. */
 type BackofficeAdapterFactory = () => BackofficeDataAdapter;
@@ -109,6 +114,7 @@ function createPrototypeBackofficeAdapter(): BackofficeDataAdapter {
  */
 const ADAPTER_FACTORIES: Readonly<Partial<Record<BackofficeDataMode, BackofficeAdapterFactory>>> = {
   [BACKOFFICE_PREVIEW_DATA_MODE]: createPrototypeBackofficeAdapter,
+  [BACKOFFICE_REALTIME_DATA_MODE]: createRealBackofficeAdapter,
   unavailable: createUnavailableBackofficeAdapter,
 } satisfies Readonly<Record<BackofficeDataMode, BackofficeAdapterFactory>>;
 

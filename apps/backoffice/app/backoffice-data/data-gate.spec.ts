@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { createBackofficeAdapter } from './adapter';
 import {
   BACKOFFICE_DATA_MODE_DISABLED,
-  BACKOFFICE_PREVIEW_DATA_MODE,
+  BACKOFFICE_REALTIME_DATA_MODE,
   resolveBackofficeDataMode,
 } from './data-mode';
 
@@ -122,8 +122,8 @@ describe('deployment configuration', () => {
     expect(declaredMode('production')).toBe('disabled');
   });
 
-  it('staging declares NITRO_PUBLIC_BACKOFFICE_DATA_MODE=prototype explicitly', () => {
-    expect(declaredMode('staging')).toBe('prototype');
+  it('staging declares NITRO_PUBLIC_BACKOFFICE_DATA_MODE=realtime explicitly', () => {
+    expect(declaredMode('staging')).toBe('realtime');
   });
 
   it('the two envs declare vars separately (vars do not inherit)', () => {
@@ -149,19 +149,19 @@ describe('deployment configuration', () => {
     });
   });
 
-  it('the value staging declares resolves, through the real decision, to the prototype adapter', () => {
+  it('the value staging declares resolves, through the real decision, to the real adapter', () => {
     const resolved = resolveBackofficeDataMode(declaredMode('staging'));
     const adapter = createBackofficeAdapter(resolved);
 
-    expect(resolved).toBe('prototype');
-    expect(adapter.isPreview).toBe(true);
+    expect(resolved).toBe('realtime');
+    expect(adapter.isPreview).toBe(false);
   });
 
   it('the values the two envs declare are the constants the module names', () => {
     // Hai khẳng định literal ở trên ghim chính xác chuỗi nằm trong file; test này
     // nối chúng với **hằng số của module**, để `data-mode.ts` là nơi khai tập giá
     // trị hợp lệ và việc đổi giá trị ở đó mà quên cấu hình (hoặc ngược lại) là đỏ.
-    expect(declaredMode('staging')).toBe(BACKOFFICE_PREVIEW_DATA_MODE);
+    expect(declaredMode('staging')).toBe(BACKOFFICE_REALTIME_DATA_MODE);
     expect(declaredMode('production')).toBe(BACKOFFICE_DATA_MODE_DISABLED);
   });
 
@@ -213,6 +213,7 @@ describe('import boundaries', () => {
     expect(BACKOFFICE_DATA.adapter).toMatch(/from '\.\/data-mode'/u);
     expect(BACKOFFICE_DATA.adapter).toMatch(/import\('\.\/mock-adapter'\)/u);
     expect(BACKOFFICE_DATA.adapter).toMatch(/from '\.\/unavailable-adapter'/u);
+    expect(BACKOFFICE_DATA.adapter).toMatch(/from '\.\/real-adapter'/u);
     expect(BACKOFFICE_DATA.adapter).not.toMatch(/#app|#imports|nitropack|h3/u);
   });
 
@@ -251,9 +252,12 @@ describe('import boundaries', () => {
 
   it('data-mode derives its type from the constant and returns the constant', () => {
     expect(BACKOFFICE_DATA.dataMode).toMatch(
-      /type BackofficeDataMode = typeof BACKOFFICE_PREVIEW_DATA_MODE \| 'unavailable'/u,
+      /type BackofficeDataMode =\s*\|\s*typeof BACKOFFICE_PREVIEW_DATA_MODE/u,
     );
+    expect(BACKOFFICE_DATA.dataMode).toMatch(/\| typeof BACKOFFICE_REALTIME_DATA_MODE/u);
+    expect(BACKOFFICE_DATA.dataMode).toMatch(/\| 'unavailable'/u);
     expect(BACKOFFICE_DATA.dataMode).toMatch(/return BACKOFFICE_PREVIEW_DATA_MODE/u);
+    expect(BACKOFFICE_DATA.dataMode).toMatch(/return BACKOFFICE_REALTIME_DATA_MODE/u);
     expect(BACKOFFICE_DATA.dataMode).not.toMatch(/return 'prototype'/u);
   });
 
