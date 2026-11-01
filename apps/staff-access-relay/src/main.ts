@@ -117,6 +117,8 @@ export async function runOnce(env: RelayEnv, startedAtMs: number): Promise<void>
       failed: result.failed,
       dlq: result.dlq,
       retried: result.retried,
+      deadline_exceeded: result.deadlineExceeded,
+      deadline_exceeded_by_class: result.deadlineExceededByClass,
     });
   } finally {
     await pool.end().catch(() => undefined);

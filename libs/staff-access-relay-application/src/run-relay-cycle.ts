@@ -2,6 +2,15 @@ import type { OutboxRepository } from './outbox-repository';
 import type { OutboxRow } from './records';
 import type { QueuePublisher } from './queue-publisher';
 
+export type RelayEventClass = 'high' | 'normal';
+
+export const RELAY_EVENT_DEADLINES_MS: Readonly<Record<RelayEventClass, number>> = {
+  high: 5_000,
+  normal: 60_000,
+};
+
+export type EventClassForRow = (row: OutboxRow, envelope: unknown) => RelayEventClass;
+
 /**
  * Deps của một lượt relay — mọi ngưỡng vận hành là tham số truyền vào, không
  * phải hằng số module scope (cùng lý lẽ với `PublishOutboxBatchConfig` của
@@ -25,8 +34,12 @@ export interface RelayCycleDeps {
   readonly backoffCapMs: number;
   /** Số lần retry trong cùng run sau lần thử đầu (tổng lần thử = 1 + maxInRunRetries). */
   readonly maxInRunRetries: number;
-  /** Sleep injection cho test — production dùng `setTimeout`. */
+  /** Sleep injection for tests; production uses setTimeout. */
   readonly sleep?: (ms: number) => Promise<void>;
+  /** Resolves the deadline class without changing the frozen event envelope. */
+  readonly eventClassForRow?: EventClassForRow;
+  /** Deadline override for tests; production uses RELAY_EVENT_DEADLINES_MS. */
+  readonly eventDeadlinesMs?: Readonly<Record<RelayEventClass, number>>;
 }
 
 /** Kết quả một lượt relay — đủ để log một dòng JSON từ composition root. */
@@ -37,8 +50,10 @@ export interface RelayCycleResult {
   readonly failed: number;
   /** Row đạt trần attempts — KHÔNG còn được claim, chờ replay manual. */
   readonly dlq: number;
-  /** Tổng số lần retry đã chạy trong run (không tính lần thử đầu của mỗi row). */
   readonly retried: number;
+  /** Published rows whose producer-to-relay age already exceeded their class deadline. */
+  readonly deadlineExceeded: number;
+  readonly deadlineExceededByClass: Readonly<Record<RelayEventClass, number>>;
 }
 
 /**
@@ -82,6 +97,19 @@ export async function runRelayCycle(
   const nowMs = nowMsOverride ?? deps.clock?.now() ?? Date.now();
   const sleep = deps.sleep ?? defaultSleep;
 
+  const eventClassForRow = deps.eventClassForRow ?? defaultEventClassForRow;
+  const deadlines = deps.eventDeadlinesMs ?? RELAY_EVENT_DEADLINES_MS;
+
+  const emptyResult = {
+    claimed: 0,
+    published: 0,
+    failed: 0,
+    dlq: 0,
+    retried: 0,
+    deadlineExceeded: 0,
+    deadlineExceededByClass: { high: 0, normal: 0 },
+  } as const;
+
   const claimed = await deps.outbox.claimPending({
     limit: deps.batchSize,
     maxAttempts: deps.maxAttempts,
@@ -90,13 +118,15 @@ export async function runRelayCycle(
 
   // No-op thuần khi không claim được gì — không network call nào phía dưới.
   if (claimed.length === 0) {
-    return { claimed: 0, published: 0, failed: 0, dlq: 0, retried: 0 };
+    return emptyResult;
   }
 
   let published = 0;
   let failed = 0;
   let dlq = 0;
   let retried = 0;
+  let deadlineExceeded = 0;
+  const deadlineExceededByClass: Record<RelayEventClass, number> = { high: 0, normal: 0 };
 
   // Tuần tự, không Promise.all — cùng lý lẽ với outbox-publisher của
   // transactional-mail: N lần Queue.send() song song trong một invocation là
@@ -111,6 +141,23 @@ export async function runRelayCycle(
       await deps.outbox.recordFailure({
         eventId: row.event_id,
         lastError: 'invalid_payload',
+        nowMs,
+      });
+      failed += 1;
+      if (row.attempts >= deps.maxAttempts) {
+        dlq += 1;
+      }
+      continue;
+    }
+
+    const eventClass = eventClassForRow(row, envelope);
+    const occurredAtMs = Date.parse(row.occurred_at);
+    if (!Number.isFinite(occurredAtMs) || nowMs - occurredAtMs > deadlines[eventClass]) {
+      deadlineExceeded += 1;
+      deadlineExceededByClass[eventClass] += 1;
+      await deps.outbox.recordFailure({
+        eventId: row.event_id,
+        lastError: 'delivery_deadline_exceeded',
         nowMs,
       });
       failed += 1;
@@ -158,7 +205,21 @@ export async function runRelayCycle(
     }
   }
 
-  return { claimed: claimed.length, published, failed, dlq, retried };
+  return {
+    claimed: claimed.length,
+    published,
+    failed,
+    dlq,
+    retried,
+    deadlineExceeded,
+    deadlineExceededByClass,
+  };
+}
+
+function defaultEventClassForRow(row: OutboxRow): RelayEventClass {
+  // The frozen envelope has no transport/risk field. Revocations are the
+  // high-risk class; grants use the normal class until the contract evolves.
+  return row.event_type === 'entitlement.revoked' ? 'high' : 'normal';
 }
 
 /**
