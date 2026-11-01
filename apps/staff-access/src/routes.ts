@@ -1,5 +1,4 @@
-/**
- * Management routes cua Worker `staff-access` — Milestone B (P1.4, issue
+/** Management routes for the staff-access Worker.
  * #428): staff directory read, role/permission catalog read, assignment
  * list/create/revoke, authorization audit query, entitlement read model.
  *
@@ -75,6 +74,19 @@ import {
 import { staffAccessDomainError } from '@ecoma-io/staff-access-domain';
 import type { AppEnv } from './types';
 import { decodeKeysetCursor, encodeKeysetCursor } from './cursor';
+
+const HIGH_ENTITLEMENT_FRESHNESS_MS = 5_000;
+const NORMAL_ENTITLEMENT_FRESHNESS_MS = 60_000;
+
+function isEntitlementFresh(
+  row: { status: string; occurred_at: string },
+  nowMs = Date.now(),
+): boolean {
+  const occurredAtMs = Date.parse(row.occurred_at);
+  const deadline =
+    row.status === 'revoked' ? HIGH_ENTITLEMENT_FRESHNESS_MS : NORMAL_ENTITLEMENT_FRESHNESS_MS;
+  return Number.isFinite(occurredAtMs) && nowMs - occurredAtMs <= deadline;
+}
 
 /** Loi http chuan cua route — body JSON khong leak noi bo. */
 interface HttpError {
@@ -539,7 +551,7 @@ export function staffAccessRoutes(): Hono<AppEnv> {
     const row = await withClient(c, (db) =>
       getEntitlement(db, c.req.param('id'), c.req.param('product')),
     );
-    if (row === null) {
+    if (row === null || !isEntitlementFresh(row)) {
       return c.json(notFound('Entitlement not found.').body, 404);
     }
     return c.json({
@@ -553,8 +565,12 @@ export function staffAccessRoutes(): Hono<AppEnv> {
 
   app.get('/staff/:id/entitlements', async (c) => {
     const rows = await withClient(c, (db) => listEntitlementsForStaff(db, c.req.param('id')));
+    const freshRows = rows.filter((row) => isEntitlementFresh(row));
+    if (freshRows.length !== rows.length) {
+      return c.json({ error: 'Service Unavailable', message: 'Entitlement state is stale.' }, 503);
+    }
     return c.json({
-      entitlements: rows.map((row) => ({
+      entitlements: freshRows.map((row) => ({
         staff_id: row.staff_id,
         product: row.product,
         status: row.status as 'entitled' | 'revoked',

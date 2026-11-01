@@ -130,6 +130,7 @@ function makeDeps(
     backoffCapMs: 5,
     maxInRunRetries: 2,
     sleep: async () => undefined,
+    eventDeadlinesMs: { high: Number.MAX_SAFE_INTEGER, normal: Number.MAX_SAFE_INTEGER },
     ...overrides,
   };
 }
@@ -139,7 +140,15 @@ describe('runRelayCycle', () => {
     const outbox = new FakeOutbox([]);
     const queue = new FakeQueue();
     const result = await runRelayCycle(makeDeps(outbox, queue));
-    expect(result).toEqual({ claimed: 0, published: 0, failed: 0, dlq: 0, retried: 0 });
+    expect(result).toEqual({
+      claimed: 0,
+      published: 0,
+      failed: 0,
+      dlq: 0,
+      retried: 0,
+      deadlineExceeded: 0,
+      deadlineExceededByClass: { high: 0, normal: 0 },
+    });
     expect(queue.sent).toHaveLength(0);
   });
 
@@ -153,6 +162,31 @@ describe('runRelayCycle', () => {
     expect(queue.sent).toHaveLength(1);
     const snapshot = outbox.snapshot('11111111-1111-4111-8111-111111111111');
     expect(snapshot?.published_at).not.toBeNull();
+  });
+
+  it('reports class-specific deadline breaches without blocking publication', async () => {
+    const row = makeRow({
+      event_type: 'entitlement.revoked',
+      occurred_at: '2026-10-30T00:00:00Z',
+      payload: JSON.stringify({
+        event_id: '11111111-1111-4111-8111-111111111111',
+        type: 'entitlement.revoked',
+        staff_id: 'staff_1',
+        product: 'backoffice',
+        revision: 3,
+        occurred_at: '2026-10-30T00:00:00Z',
+        producer: 'staff-access',
+      }),
+    });
+    const outbox = new FakeOutbox([row]);
+    const queue = new FakeQueue();
+    const result = await runRelayCycle(
+      makeDeps(outbox, queue, { eventDeadlinesMs: { high: 5_000, normal: 60_000 } }),
+      Date.parse('2026-10-30T00:00:06Z'),
+    );
+    expect(result.published).toBe(0);
+    expect(result.failed).toBe(1);
+    expect(result.deadlineExceededByClass).toEqual({ high: 1, normal: 0 });
   });
 
   it('uses event_id as the queue idempotency key', async () => {

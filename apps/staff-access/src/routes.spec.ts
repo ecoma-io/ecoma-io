@@ -347,6 +347,21 @@ describe('staff-access management routes', () => {
     expect(body.error).toBe('Not Found');
   });
 
+  it('fails closed when a revoked entitlement is older than the high freshness bound', async () => {
+    unsafeMock.mockResolvedValue([
+      {
+        staff_id: 'staff_1',
+        product: 'backoffice',
+        status: 'revoked',
+        revision: '2',
+        occurred_at: new Date(Date.now() - 5_001).toISOString(),
+      },
+    ]);
+    const app = buildTestApp();
+    const response = await app.request('/staff/staff_1/entitlements/backoffice');
+    expect(response.status).toBe(404);
+  });
+
   it('returns 404 for the entitlement of an unknown staff and product', async () => {
     unsafeMock.mockResolvedValue([]);
     const app = buildTestApp();

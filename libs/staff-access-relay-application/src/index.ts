@@ -21,6 +21,9 @@ export type { QueuePublisher } from './queue-publisher';
 
 export {
   backoffDelayMs,
+  RELAY_EVENT_DEADLINES_MS,
+  type EventClassForRow,
+  type RelayEventClass,
   type RelayCycleDeps,
   type RelayCycleResult,
   runRelayCycle,
