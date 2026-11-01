@@ -54,7 +54,7 @@ async function seedProjectWithToken(client: import('pg').Client): Promise<{
   const token = 'p42-integration-test-token-' + crypto.randomUUID();
   const tokenHash = await sha256Hex(token);
   const { rows: tenantRows } = await client.query<{ id: string }>(
-    `INSERT INTO remote_cache.tenants (name) VALUES ($1) RETURNING id`,
+    `INSERT INTO remote_cache.tenants (name, status) VALUES ($1, 'active') RETURNING id`,
     ['integration-tenant-' + crypto.randomUUID()],
   );
   const tenantId = tenantRows[0]?.id ?? '';
@@ -65,8 +65,8 @@ async function seedProjectWithToken(client: import('pg').Client): Promise<{
     [projectId, tenantId, 'integration-project'],
   );
   await client.query(
-    `INSERT INTO remote_cache.api_keys (id, project_id, token_hash, scopes) VALUES ($1, $2, $3, $4)`,
-    [apiKeyId, projectId, tokenHash, 'read write'],
+    `INSERT INTO remote_cache.api_keys (id, project_id, token_hash, scopes, trusted_ci) VALUES ($1, $2, $3, $4, $5)`,
+    [apiKeyId, projectId, tokenHash, 'read write', true],
   );
   return { tenantId, projectId, token };
 }
@@ -280,5 +280,247 @@ describe('data plane cache PUT/GET', () => {
       headers: { authorization: 'Bearer ' },
     } as unknown as Request);
     expect(bad.status).toBe(401);
+  });
+
+  // ---- P4.4: CI credential write protection ----
+
+  it('untrusted CI key cannot PUT (fork/PR write protection)', async () => {
+    const migrator = await db.connectAsMigrator();
+    let token = '';
+    try {
+      const tokenRaw = 'untrusted-ci-token-' + crypto.randomUUID();
+      const tokenHash = await sha256Hex(tokenRaw);
+      const { rows: tenantRows } = await migrator.query<{ id: string }>(
+        `INSERT INTO remote_cache.tenants (name) VALUES ($1) RETURNING id`,
+        ['untrusted-ci-tenant-' + crypto.randomUUID()],
+      );
+      const tenantId = tenantRows[0]?.id ?? '';
+      const projectId = crypto.randomUUID();
+      const apiKeyId = crypto.randomUUID();
+      await migrator.query(
+        `INSERT INTO remote_cache.projects (id, tenant_id, name) VALUES ($1, $2, $3)`,
+        [projectId, tenantId, 'untrusted-ci-project'],
+      );
+      // trusted_ci defaults to false — key not trusted for write.
+      await migrator.query(
+        `INSERT INTO remote_cache.api_keys (id, project_id, token_hash, scopes) VALUES ($1, $2, $3, $4)`,
+        [apiKeyId, projectId, tokenHash, 'read write'],
+      );
+      token = tokenRaw;
+    } finally {
+      await migrator.end();
+    }
+
+    const bodyBytes = new TextEncoder().encode('ci-artifact');
+    const put = await app.request(`http://localhost/v1/cache/${encodeURIComponent('ci-hash')}`, {
+      ...envFor(),
+      method: 'PUT',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/octet-stream',
+        'content-length': String(bodyBytes.byteLength),
+      },
+      body: bodyBytes,
+    } as unknown as Request);
+    expect(put.status).toBe(403);
+  });
+
+  it('trusted CI key with write scope can PUT', async () => {
+    const migrator = await db.connectAsMigrator();
+    let token = '';
+    try {
+      const tokenRaw = 'trusted-ci-token-' + crypto.randomUUID();
+      const tokenHash = await sha256Hex(tokenRaw);
+      const { rows: tenantRows } = await migrator.query<{ id: string }>(
+        `INSERT INTO remote_cache.tenants (name) VALUES ($1) RETURNING id`,
+        ['trusted-ci-tenant-' + crypto.randomUUID()],
+      );
+      const tenantId = tenantRows[0]?.id ?? '';
+      const projectId = crypto.randomUUID();
+      const apiKeyId = crypto.randomUUID();
+      await migrator.query(
+        `INSERT INTO remote_cache.projects (id, tenant_id, name) VALUES ($1, $2, $3)`,
+        [projectId, tenantId, 'trusted-ci-project'],
+      );
+      await migrator.query(
+        `INSERT INTO remote_cache.api_keys (id, project_id, token_hash, scopes, trusted_ci) VALUES ($1, $2, $3, $4, $5)`,
+        [apiKeyId, projectId, tokenHash, 'read write', true],
+      );
+      token = tokenRaw;
+    } finally {
+      await migrator.end();
+    }
+
+    const bodyBytes = new TextEncoder().encode('ci-artifact');
+    const put = await app.request(
+      `http://localhost/v1/cache/${encodeURIComponent('ci-trusted-hash')}`,
+      {
+        ...envFor(),
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/octet-stream',
+          'content-length': String(bodyBytes.byteLength),
+        },
+        body: bodyBytes,
+      } as unknown as Request,
+    );
+    expect(put.status).toBe(201);
+  });
+
+  // ---- P4.4: fail-closed when lifecycle state stale/unknown ----
+
+  it('suspended tenant cannot GET (fail-closed)', async () => {
+    const migrator = await db.connectAsMigrator();
+    let token = '';
+    try {
+      const tokenRaw = 'suspended-token-' + crypto.randomUUID();
+      const tokenHash = await sha256Hex(tokenRaw);
+      const { rows: tenantRows } = await migrator.query<{ id: string }>(
+        `INSERT INTO remote_cache.tenants (name, status) VALUES ($1, 'suspended') RETURNING id`,
+        ['suspended-tenant-' + crypto.randomUUID()],
+      );
+      const tenantId = tenantRows[0]?.id ?? '';
+      const projectId = crypto.randomUUID();
+      const apiKeyId = crypto.randomUUID();
+      await migrator.query(
+        `INSERT INTO remote_cache.projects (id, tenant_id, name) VALUES ($1, $2, $3)`,
+        [projectId, tenantId, 'suspended-project'],
+      );
+      await migrator.query(
+        `INSERT INTO remote_cache.api_keys (id, project_id, token_hash, scopes, trusted_ci) VALUES ($1, $2, $3, $4, $5)`,
+        [apiKeyId, projectId, tokenHash, 'read', true],
+      );
+      token = tokenRaw;
+    } finally {
+      await migrator.end();
+    }
+
+    const res = await app.request(`http://localhost/v1/cache/${encodeURIComponent('any-hash')}`, {
+      ...envFor(),
+      headers: { authorization: `Bearer ${token}` },
+    } as unknown as Request);
+    expect(res.status).toBe(409);
+  });
+
+  it('deleted tenant cannot GET (fail-closed)', async () => {
+    const migrator = await db.connectAsMigrator();
+    let token = '';
+    try {
+      const tokenRaw = 'deleted-token-' + crypto.randomUUID();
+      const tokenHash = await sha256Hex(tokenRaw);
+      const { rows: tenantRows } = await migrator.query<{ id: string }>(
+        `INSERT INTO remote_cache.tenants (name, status) VALUES ($1, 'deleted') RETURNING id`,
+        ['deleted-tenant-' + crypto.randomUUID()],
+      );
+      const tenantId = tenantRows[0]?.id ?? '';
+      const projectId = crypto.randomUUID();
+      const apiKeyId = crypto.randomUUID();
+      await migrator.query(
+        `INSERT INTO remote_cache.projects (id, tenant_id, name) VALUES ($1, $2, $3)`,
+        [projectId, tenantId, 'deleted-project'],
+      );
+      await migrator.query(
+        `INSERT INTO remote_cache.api_keys (id, project_id, token_hash, scopes, trusted_ci) VALUES ($1, $2, $3, $4, $5)`,
+        [apiKeyId, projectId, tokenHash, 'read', true],
+      );
+      token = tokenRaw;
+    } finally {
+      await migrator.end();
+    }
+
+    const res = await app.request(`http://localhost/v1/cache/${encodeURIComponent('any-hash')}`, {
+      ...envFor(),
+      headers: { authorization: `Bearer ${token}` },
+    } as unknown as Request);
+    expect(res.status).toBe(409);
+  });
+
+  // ---- P4.4: write-path fail-closed on tenant lifecycle ----
+
+  it('suspended tenant cannot PUT (fail-closed)', async () => {
+    const migrator = await db.connectAsMigrator();
+    let token = '';
+    try {
+      const tokenRaw = 'suspended-put-token-' + crypto.randomUUID();
+      const tokenHash = await sha256Hex(tokenRaw);
+      const { rows: tenantRows } = await migrator.query<{ id: string }>(
+        `INSERT INTO remote_cache.tenants (name, status) VALUES ($1, 'suspended') RETURNING id`,
+        ['suspended-put-tenant-' + crypto.randomUUID()],
+      );
+      const tenantId = tenantRows[0]?.id ?? '';
+      const projectId = crypto.randomUUID();
+      const apiKeyId = crypto.randomUUID();
+      await migrator.query(
+        `INSERT INTO remote_cache.projects (id, tenant_id, name) VALUES ($1, $2, $3)`,
+        [projectId, tenantId, 'suspended-put-project'],
+      );
+      await migrator.query(
+        `INSERT INTO remote_cache.api_keys (id, project_id, token_hash, scopes, trusted_ci) VALUES ($1, $2, $3, $4, $5)`,
+        [apiKeyId, projectId, tokenHash, 'read write', true],
+      );
+      token = tokenRaw;
+    } finally {
+      await migrator.end();
+    }
+
+    const bodyBytes = new TextEncoder().encode('fail-closed-put');
+    const put = await app.request(
+      `http://localhost/v1/cache/${encodeURIComponent('suspended-hash')}`,
+      {
+        ...envFor(),
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/octet-stream',
+          'content-length': String(bodyBytes.byteLength),
+        },
+        body: bodyBytes,
+      } as unknown as Request,
+    );
+    expect(put.status).toBe(409);
+  });
+
+  it('deleted tenant cannot PUT (fail-closed)', async () => {
+    const migrator = await db.connectAsMigrator();
+    let token = '';
+    try {
+      const tokenRaw = 'deleted-put-token-' + crypto.randomUUID();
+      const tokenHash = await sha256Hex(tokenRaw);
+      const { rows: tenantRows } = await migrator.query<{ id: string }>(
+        `INSERT INTO remote_cache.tenants (name, status) VALUES ($1, 'deleted') RETURNING id`,
+        ['deleted-put-tenant-' + crypto.randomUUID()],
+      );
+      const tenantId = tenantRows[0]?.id ?? '';
+      const projectId = crypto.randomUUID();
+      const apiKeyId = crypto.randomUUID();
+      await migrator.query(
+        `INSERT INTO remote_cache.projects (id, tenant_id, name) VALUES ($1, $2, $3)`,
+        [projectId, tenantId, 'deleted-put-project'],
+      );
+      await migrator.query(
+        `INSERT INTO remote_cache.api_keys (id, project_id, token_hash, scopes, trusted_ci) VALUES ($1, $2, $3, $4, $5)`,
+        [apiKeyId, projectId, tokenHash, 'read write', true],
+      );
+      token = tokenRaw;
+    } finally {
+      await migrator.end();
+    }
+
+    const bodyBytes = new TextEncoder().encode('fail-closed-put');
+    const put = await app.request(
+      `http://localhost/v1/cache/${encodeURIComponent('deleted-hash')}`,
+      {
+        ...envFor(),
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/octet-stream',
+          'content-length': String(bodyBytes.byteLength),
+        },
+        body: bodyBytes,
+      } as unknown as Request,
+    );
+    expect(put.status).toBe(409);
   });
 });

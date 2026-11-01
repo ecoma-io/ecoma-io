@@ -70,12 +70,29 @@ vi.mock('@ecoma-io/remote-cache-infrastructure', async (importOriginal) => {
       (
         _db: unknown,
         tokenHash: string,
-      ) => Promise<{ project_id: string; scopes: string; revoked_at: null } | null>
+      ) => Promise<{
+        project_id: string;
+        scopes: string;
+        revoked_at: null;
+        trusted_ci?: boolean;
+      } | null>
     >(async (_db: unknown, tokenHash: string) => {
       const row = tokensByHash.get(tokenHash);
       if (!row) return null;
-      return { project_id: row.projectId, scopes: row.scopes.join(' '), revoked_at: null };
+      return {
+        project_id: row.projectId,
+        scopes: row.scopes.join(' '),
+        revoked_at: null,
+        trusted_ci: true,
+      };
     }),
+    getTenantById: vi.fn<(_db: unknown, tenantId: string) => Promise<{ status: string } | null>>(
+      async (_db: unknown, _tenantId: string) => {
+        // P4.4: enforceTenantLifecycle goi getTenantById de re-check trang thai tenant.
+        // Mock tra ve active de enforcement qua trong unit test data plane.
+        return { status: 'active' };
+      },
+    ),
     getProjectById: vi.fn<
       (_db: unknown, projectId: string) => Promise<{ id: string; tenant_id: string } | null>
     >(async (_db: unknown, projectId: string) => {

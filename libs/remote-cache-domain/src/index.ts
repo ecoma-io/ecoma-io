@@ -27,7 +27,9 @@
 export {
   REMOTE_CACHE_TENANT_STATUS,
   REMOTE_CACHE_TENANT_STATUSES,
+  REMOTE_CACHE_TENANT_STATUS_REJECTED,
   isRemoteCacheTenantStatus,
+  isRemoteCacheTenantStatusActive,
   type RemoteCacheTenantStatus,
 } from './tenant-status';
 export {
