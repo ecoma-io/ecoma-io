@@ -1,0 +1,2 @@
+paths-ignore:
+  - .github/semgrep

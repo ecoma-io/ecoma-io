@@ -1,0 +1,46 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "analytics": false,
+  "neverConnectToCloud": true,
+  "tui": {
+    "enabled": false
+  },
+  "namedInputs": {
+    "default": ["{projectRoot}/**/*", "sharedGlobals"],
+    "production": [
+      "default",
+      "!{projectRoot}/.oxlintrc.json",
+      "!{projectRoot}/**/?(*.)+(spec|test).[jt]s?(x)?(.snap)",
+      "!{projectRoot}/tsconfig.spec.json",
+      "!{projectRoot}/.output",
+      "!{projectRoot}/.nuxt",
+      "!{projectRoot}/.output-node",
+      "!{projectRoot}/.nuxt-node",
+      "!{projectRoot}/dist"
+    ],
+    "sharedGlobals": []
+  },
+  "release": {
+    "projects": [],
+    "projectsRelationship": "independent",
+    "version": {
+      "conventionalCommits": true,
+      "fallbackCurrentVersionResolver": "disk"
+    },
+    "versionPlans": true,
+    "git": {
+      "commit": false,
+      "commitMessage": "chore(release): release {projectName} {version}",
+      "tag": false,
+      "push": false
+    },
+    "changelog": {
+      "projectChangelogs": {
+        "file": "{projectRoot}/CHANGELOG.md"
+      }
+    },
+    "releaseTag": {
+      "pattern": "{projectName}@{version}"
+    }
+  }
+}

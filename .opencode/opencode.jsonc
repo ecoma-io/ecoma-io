@@ -1,0 +1,6 @@
+{
+  // Đăng ký plugin cục bộ chạy hook theo định dạng Claude Code.
+  // Path resolve từ thư mục chứa file config này (.opencode/).
+  // Sửa code plugin cần `opencode service restart` để nạp lại.
+  "plugins": ["../tools/opencode-cc-hooks-adapter"],
+}

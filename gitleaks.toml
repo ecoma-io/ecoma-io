@@ -1,0 +1,18 @@
+[extend]
+useDefault = true
+
+[allowlist]
+paths = [
+  '''^.env''',
+  '''^tmp/''',
+  '''^.nx/''',
+  '''^*/node_modules/''',
+  '''^*/dist/''',
+  '''^*/dist-*/''',
+  '''^*/.output/''',
+  '''^*/.output-*/''',
+  '''^*/.nuxt/''',
+  '''^/.certs/''',
+  '''^/.pulumi-local-state/''',
+]
+

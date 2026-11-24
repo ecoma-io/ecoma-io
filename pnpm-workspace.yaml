@@ -1,0 +1,86 @@
+packages:
+  - 'apps/*'
+  - 'libs/*'
+  - 'kernels/*'
+  - 'contexts/*/domain'
+  - 'contexts/*/usecase'
+  - 'contexts/*/infrastructure'
+  - 'contexts/llm/*/*'
+  - 'databases/*'
+  - 'deploys/*'
+  - 'tools/*'
+  - 'tests/*'
+autoInstallPeers: true
+
+allowBuilds:
+  nx: true
+  '@parcel/watcher': true
+  '@scarf/scarf': true
+  '@pulumi/command': true
+  '@pulumi/docker-build': true
+
+  esbuild: true
+  lefthook: true
+  protobufjs: true
+  unrs-resolver: true
+  workerd: true
+  sharp: true
+  ssh2: true
+  cpu-features: true
+minimumReleaseAgeExclude:
+  - '@cloudflare/workers-types@5.20261121.1 || 5.20261124.1'
+  - '@cloudflare/workers-utils@0.57.0'
+  - '@lucide/vue@1.79.0'
+  - '@nuxt/kit@4.7.0'
+  - '@nuxt/nitro-server@4.7.0'
+  - '@nuxt/nitro-v3-server@4.7.0'
+  - '@nuxt/schema@4.7.0'
+  - '@nuxt/vite-builder@4.7.0'
+  - '@nuxt/vite-server@4.7.0'
+  - '@oxfmt/binding-android-arm-eabi@0.80.0'
+  - '@oxfmt/binding-android-arm64@0.80.0'
+  - '@oxfmt/binding-darwin-arm64@0.80.0'
+  - '@oxfmt/binding-darwin-x64@0.80.0'
+  - '@oxfmt/binding-freebsd-x64@0.80.0'
+  - '@oxfmt/binding-linux-arm-gnueabihf@0.80.0'
+  - '@oxfmt/binding-linux-arm-musleabihf@0.80.0'
+  - '@oxfmt/binding-linux-arm64-gnu@0.80.0'
+  - '@oxfmt/binding-linux-arm64-musl@0.80.0'
+  - '@oxfmt/binding-linux-ppc64-gnu@0.80.0'
+  - '@oxfmt/binding-linux-riscv64-gnu@0.80.0'
+  - '@oxfmt/binding-linux-riscv64-musl@0.80.0'
+  - '@oxfmt/binding-linux-s390x-gnu@0.80.0'
+  - '@oxfmt/binding-linux-x64-gnu@0.80.0'
+  - '@oxfmt/binding-linux-x64-musl@0.80.0'
+  - '@oxfmt/binding-openharmony-arm64@0.80.0'
+  - '@oxfmt/binding-win32-arm64-msvc@0.80.0'
+  - '@oxfmt/binding-win32-ia32-msvc@0.80.0'
+  - '@oxfmt/binding-win32-x64-msvc@0.80.0'
+  - '@oxlint/binding-android-arm-eabi@1.95.0'
+  - '@oxlint/binding-android-arm64@1.95.0'
+  - '@oxlint/binding-darwin-arm64@1.95.0'
+  - '@oxlint/binding-darwin-x64@1.95.0'
+  - '@oxlint/binding-freebsd-x64@1.95.0'
+  - '@oxlint/binding-linux-arm-gnueabihf@1.95.0'
+  - '@oxlint/binding-linux-arm-musleabihf@1.95.0'
+  - '@oxlint/binding-linux-arm64-gnu@1.95.0'
+  - '@oxlint/binding-linux-arm64-musl@1.95.0'
+  - '@oxlint/binding-linux-ppc64-gnu@1.95.0'
+  - '@oxlint/binding-linux-riscv64-gnu@1.95.0'
+  - '@oxlint/binding-linux-riscv64-musl@1.95.0'
+  - '@oxlint/binding-linux-s390x-gnu@1.95.0'
+  - '@oxlint/binding-linux-x64-gnu@1.95.0'
+  - '@oxlint/binding-linux-x64-musl@1.95.0'
+  - '@oxlint/binding-openharmony-arm64@1.95.0'
+  - '@oxlint/binding-win32-arm64-msvc@1.95.0'
+  - '@oxlint/binding-win32-ia32-msvc@1.95.0'
+  - '@oxlint/binding-win32-x64-msvc@1.95.0'
+  - '@vueuse/core@15.1.0'
+  - '@vueuse/metadata@15.1.0'
+  - '@vueuse/shared@15.1.0'
+  - miniflare@5.20261123.0-beta
+  - nitropack@2.14.0
+  - nuxt@4.7.0
+  - oxfmt@0.80.0
+  - oxlint@1.95.0
+  - wrangler@4.167.0

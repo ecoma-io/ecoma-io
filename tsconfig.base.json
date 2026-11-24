@@ -1,0 +1,48 @@
+{
+  "compilerOptions": {
+    "importHelpers": true,
+    "isolatedModules": true,
+    "lib": ["es2023"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "noEmitOnError": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "es2022",
+    "customConditions": ["@ecoma-io/ecoma-io"],
+    "paths": {
+      "@ecoma-io/account-domain": ["./contexts/account/domain/src/index.ts"],
+      "@ecoma-io/account-usecase": ["./contexts/account/usecase/src/index.ts"],
+      "@ecoma-io/auth-domain": ["./contexts/auth/domain/src/index.ts"],
+      "@ecoma-io/auth-usercase": ["./contexts/auth/usecase/src/index.ts"],
+      "@ecoma-io/domain-primitives": ["./kernels/domain-primitives/src/index.ts"],
+      "@ecoma-io/llm-consumer-routing-domain": [
+        "./contexts/llm/consumer-routing/domain/src/index.ts"
+      ],
+      "@ecoma-io/llm-consumer-tenant-domain": [
+        "./contexts/llm/consumer-tenant/domain/src/index.ts"
+      ],
+      "@ecoma-io/llm-financial-domain": ["./contexts/llm/financial/domain/src/index.ts"],
+      "@ecoma-io/llm-inference-domain": ["./contexts/llm/inference/domain/src/index.ts"],
+      "@ecoma-io/llm-marketplace-domain": ["./contexts/llm/marketplace/domain/src/index.ts"],
+      "@ecoma-io/llm-seller-governance-domain": [
+        "./contexts/llm/seller-governance/domain/src/index.ts"
+      ],
+      "@ecoma-io/llm-seller-pricing-domain": ["./contexts/llm/seller-pricing/domain/src/index.ts"],
+      "@ecoma-io/llm-seller-tenant-domain": ["./contexts/llm/seller-tenant/domain/src/index.ts"],
+      "@ecoma-io/llm-serving-usecase": ["./contexts/llm/serving/usecase/src/index.ts"],
+      "@ecoma-io/llm-usage-domain": ["./contexts/llm/usage/domain/src/index.ts"],
+      "@ecoma-io/staff-access-domain": ["./contexts/staff-access/domain/src/index.ts"],
+      "@ecoma-io/tenant-kernel-domain": ["./kernels/tenant-kernel-domain/src/index.ts"],
+      "@ecoma-io/transactional-mail-domain": ["./contexts/transactional-mail/domain/src/index.ts"],
+      "@ecoma-io/transactional-mail-usecase": [
+        "./contexts/transactional-mail/usecase/src/index.ts"
+      ],
+      "@ecoma-io/usecase-primitives": ["./kernels/usecase-primitives/src/index.ts"]
+    }
+  }
+}

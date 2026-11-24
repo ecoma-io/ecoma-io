@@ -1,0 +1,371 @@
+name: CI
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Run every project instead of the affected set'
+        type: boolean
+        required: false
+        default: false
+  schedule:
+    - cron: '17 3 * * *'
+
+permissions: {}
+
+env:
+  ECOMA_NX_CACHE_SERVER: ${{ secrets.ECOMA_NX_CACHE_SERVER }}
+  ECOMA_NX_CACHE_ACCESS_TOKEN: ${{ secrets.ECOMA_NX_CACHE_ACCESS_TOKEN }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  conformance:
+    name: conformance
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Verify pull requets title
+        if: github.event_name == 'pull_request'
+        run: echo "${{ github.event.pull_request.title }}" | pnpm exec commitlint
+
+      - name: Validate project tags
+        run: pnpm exec tsx tools/validate-project-tags.ts
+
+      - name: Gitkeep lint
+        run: pnpm exec tsx tools/gitkeep-lint
+
+      - name: Markdown linting
+        run: pnpm exec markdownlint-cli2
+
+      - name: Linting
+        uses: ./.github/actions/run-nx-target
+        with:
+          targets: lint
+          affected: ${{ !inputs.force && github.event_name != 'schedule' }}
+
+      - name: Type check
+        uses: ./.github/actions/run-nx-target
+        with:
+          targets: typecheck
+          affected: ${{ !inputs.force && github.event_name != 'schedule' }}
+
+      - name: Unit test
+        uses: ./.github/actions/run-nx-target
+        with:
+          targets: test
+          affected: ${{ !inputs.force && github.event_name != 'schedule' }}
+
+  analysis:
+    name: analysis
+    if: github.event.deleted != true
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout repository
+        id: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # CodeQL runs independently of Gitleaks scope resolution.
+      - name: Initialize CodeQL
+        id: codeql-init
+        uses: github/codeql-action/init@38112626f97ac1fd7acf3df7ebca51f4677c1b38 # v4.39.4
+        with:
+          languages: javascript-typescript, actions
+          build-mode: none
+          config-file: ./.github/codeql-config.yml
+
+      - name: Analyze with CodeQL
+        id: codeql-analyze
+        uses: github/codeql-action/analyze@38112626f97ac1fd7acf3df7ebca51f4677c1b38 # v4.39.4
+        with:
+          category: /codeql
+          output: ${{ runner.temp }}/codeql-results
+          upload: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'never' || 'always' }}
+
+      - name: Upload CodeQL SARIF for fork pull requests
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: codeql-sarif
+          path: ${{ runner.temp }}/codeql-results
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Resolve Gitleaks scan scope
+        id: gitleaks-scope
+        if: always() && steps.checkout.outcome == 'success'
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.event.after }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_GROUP_SHA: ${{ github.event.merge_group.head_sha }}
+        run: |
+          set -Eeuo pipefail
+
+          die() {
+            echo "::error::$1"
+            exit 1
+          }
+
+          is_sha() {
+            [[ "$1" =~ ^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$ ]]
+          }
+
+          is_zero_sha() {
+            [[ "$1" =~ ^(0{40}|0{64})$ ]]
+          }
+
+          verify_commit() {
+            local sha="$1"
+            is_sha "$sha" || die "Invalid commit SHA: $sha"
+            git cat-file -e "${sha}^{commit}" 2>/dev/null \
+              || die "Commit object is unavailable: $sha"
+          }
+
+          set_scope() {
+            local log_opts="$1"
+            local description="$2"
+            local count
+
+            count="$(git rev-list --count $log_opts 2>/dev/null)" \
+              || die "Unable to enumerate commits for Gitleaks scope."
+            [[ "$count" =~ ^[0-9]+$ ]] || die "Invalid commit count."
+            (( count > 0 )) || die "Gitleaks scan scope contains no commits."
+
+            {
+              echo "scan-required=true"
+              echo "log-opts=$log_opts"
+              echo "commits=$count"
+              echo "description=$description"
+            } >> "$GITHUB_OUTPUT"
+
+            {
+              echo "### Gitleaks scan scope"
+              echo "- Scope: $description"
+              echo "- Commits: $count"
+            } >> "$GITHUB_STEP_SUMMARY"
+          }
+
+          case "$EVENT_NAME" in
+            pull_request)
+              is_sha "$PR_BASE_SHA" || die "PR base SHA is missing or invalid."
+              is_sha "$PR_HEAD_SHA" || die "PR head SHA is missing or invalid."
+              verify_commit "$PR_BASE_SHA"
+              verify_commit "$PR_HEAD_SHA"
+              set_scope "${PR_BASE_SHA}..${PR_HEAD_SHA}" "pull request commit range"
+              ;;
+
+            push)
+              is_sha "$AFTER_SHA" || die "Push after SHA is missing or invalid."
+              if is_zero_sha "$AFTER_SHA"; then
+                echo "scan-required=false" >> "$GITHUB_OUTPUT"
+                echo "description=branch deletion (no scan required)" >> "$GITHUB_OUTPUT"
+                echo "### Gitleaks scan scope" >> "$GITHUB_STEP_SUMMARY"
+                echo "- Scope: branch deletion; scan skipped" >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
+
+              verify_commit "$AFTER_SHA"
+              is_sha "$BEFORE_SHA" || die "Push before SHA is missing or invalid."
+
+              if is_zero_sha "$BEFORE_SHA"; then
+                set_scope "--all" "new branch full reachable-history scan"
+              else
+                # A force-push may reference an old commit not present in the checkout.
+                if ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+                  git fetch --no-tags --no-recurse-submodules origin "$BEFORE_SHA" \
+                    || die "Previous push commit is unavailable; cannot audit this push completely."
+                fi
+                verify_commit "$BEFORE_SHA"
+
+                if git merge-base --is-ancestor "$BEFORE_SHA" "$AFTER_SHA"; then
+                  set_scope "${BEFORE_SHA}..${AFTER_SHA}" "push commit range"
+                else
+                  set_scope "--all ${BEFORE_SHA} ${AFTER_SHA}" "force-push audit of reachable refs and both endpoints"
+                fi
+              fi
+              ;;
+
+            merge_group)
+              is_sha "$MERGE_GROUP_SHA" || die "Merge-group head SHA is missing or invalid."
+              verify_commit "$MERGE_GROUP_SHA"
+              parent="$(git rev-parse "${MERGE_GROUP_SHA}^1" 2>/dev/null)" \
+                || die "Merge-group commit has no first parent."
+              verify_commit "$parent"
+              set_scope "${parent}..${MERGE_GROUP_SHA}" "merge-group first-parent range"
+              ;;
+
+            schedule|workflow_dispatch)
+              set_scope "--all" "full reachable-history audit"
+              ;;
+
+            *)
+              die "Unsupported event for Gitleaks scope: $EVENT_NAME"
+              ;;
+          esac
+
+      - name: Prepare Gitleaks report and policy directories
+        id: gitleaks-dirs
+        if: always() && steps.checkout.outcome == 'success'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          report_dir="${RUNNER_TEMP}/gitleaks-report"
+          policy_dir="${RUNNER_TEMP}/gitleaks-policy"
+          rm -rf "$report_dir" "$policy_dir"
+          mkdir -p "$report_dir" "$policy_dir"
+          echo "report-dir=$report_dir" >> "$GITHUB_OUTPUT"
+          echo "policy-dir=$policy_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Run Gitleaks
+        id: gitleaks
+        if: always() && steps.gitleaks-scope.outcome == 'success' && steps.gitleaks-scope.outputs.scan-required == 'true' && steps.gitleaks-dirs.outcome == 'success'
+        shell: bash
+        env:
+          SCAN_LOG_OPTS: ${{ steps.gitleaks-scope.outputs.log-opts }}
+          REPORT_DIR: ${{ steps.gitleaks-dirs.outputs.report-dir }}
+          POLICY_DIR: ${{ steps.gitleaks-dirs.outputs.policy-dir }}
+        run: |
+          set -Eeuo pipefail
+          report_path="${REPORT_DIR}/results.sarif"
+
+          # The config extends Gitleaks' built-in rules; policy and ignore paths
+          # are runner-created and empty, not loaded from the PR checkout.
+          set +e
+          docker run --rm \
+            --network none \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --pids-limit 128 \
+            --memory 2g \
+            --user "$(id -u):$(id -g)" \
+            --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            -e GITLEAKS_CONFIG_TOML=$'[extend]\nuseDefault=true' \
+            -v "${GITHUB_WORKSPACE}:/repo:ro" \
+            -v "${REPORT_DIR}:/out:rw" \
+            -v "${POLICY_DIR}:/policy:ro" \
+            zricethezav/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb \
+            git \
+              --log-opts="${SCAN_LOG_OPTS}" \
+              --gitleaks-ignore-path=/policy \
+              --ignore-gitleaks-allow \
+              --redact=100 \
+              --exit-code=2 \
+              --report-format=sarif \
+              --report-path=/out/results.sarif \
+              --timeout=600 \
+              --no-banner \
+              --no-color \
+              /repo
+          scan_exit=$?
+          set -e
+
+          case "$scan_exit" in
+            0)
+              echo "result=clean" >> "$GITHUB_OUTPUT"
+              echo "Gitleaks completed: no findings." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            2)
+              echo "result=findings" >> "$GITHUB_OUTPUT"
+              echo "::error::Gitleaks detected potential secrets. Review the SARIF artifact."
+              echo "Gitleaks completed: findings detected; SARIF report generated." >> "$GITHUB_STEP_SUMMARY"
+              exit 2
+              ;;
+            *)
+              echo "result=error" >> "$GITHUB_OUTPUT"
+              echo "::error::Gitleaks scanner failed with exit code ${scan_exit}."
+              echo "Gitleaks scanner error (exit ${scan_exit})." >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+              ;;
+          esac
+
+      - name: Summarize Gitleaks SARIF findings
+        if: always() && steps.gitleaks.outputs.result == 'findings'
+        shell: bash
+        env:
+          SARIF_PATH: ${{ steps.gitleaks-dirs.outputs.report-dir }}/results.sarif
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path(os.environ["SARIF_PATH"])
+          data = json.loads(path.read_text(encoding="utf-8"))
+          results = []
+          for run in data.get("runs", []):
+              for item in run.get("results", []):
+                  locations = item.get("locations", [])
+                  uri = "unknown"
+                  if locations:
+                      physical = locations[0].get("physicalLocation", {})
+                      artifact = physical.get("artifactLocation", {})
+                      uri = artifact.get("uri", "unknown")
+                  results.append((item.get("ruleId", "unknown"), uri))
+
+          print(f"SARIF findings: {len(results)}")
+          for rule_id, uri in results[:100]:
+              # JSON encoding safely quotes paths and prevents terminal/log injection.
+              print(f"- rule={json.dumps(rule_id)} path={json.dumps(uri)}")
+          if len(results) > 100:
+              print(f"- ... {len(results) - 100} additional findings")
+          PY
+
+      - name: Upload Gitleaks SARIF artifact
+        if: always() && steps.gitleaks.outputs.result == 'findings'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gitleaks-sarif
+          path: ${{ steps.gitleaks-dirs.outputs.report-dir }}/results.sarif
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Final analysis summary
+        if: always()
+        shell: bash
+        env:
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          CODEQL_INIT_OUTCOME: ${{ steps.codeql-init.outcome }}
+          CODEQL_ANALYZE_OUTCOME: ${{ steps.codeql-analyze.outcome }}
+          GITLEAKS_SCOPE_OUTCOME: ${{ steps.gitleaks-scope.outcome }}
+          GITLEAKS_OUTCOME: ${{ steps.gitleaks.outcome }}
+          GITLEAKS_RESULT: ${{ steps.gitleaks.outputs.result }}
+        run: |
+          {
+            echo '### Code Analysis verdict'
+            echo "- Checkout: ${CHECKOUT_OUTCOME:-not run}"
+            echo "- CodeQL initialization: ${CODEQL_INIT_OUTCOME:-not run}"
+            echo "- CodeQL analysis: ${CODEQL_ANALYZE_OUTCOME:-not run}"
+            echo "- Gitleaks scope resolution: ${GITLEAKS_SCOPE_OUTCOME:-not run}"
+            echo "- Gitleaks scan: ${GITLEAKS_RESULT:-${GITLEAKS_OUTCOME:-not run}}"
+          } >> "$GITHUB_STEP_SUMMARY"

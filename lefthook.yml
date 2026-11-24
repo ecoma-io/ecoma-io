@@ -1,0 +1,57 @@
+commit-msg:
+  commands:
+    'lint commit message':
+      run: pnpm exec commitlint --edit {1}
+
+pre-commit:
+  commands:
+    'format':
+      glob: '*.{js,jsx,mjs,cjs,ts,tsx,mts,cts,vue,json,jsonc,css,scss,html,md,yml,yaml}'
+      exclude: '.agents/skills/**/*'
+      run: npx oxfmt --write --no-error-on-unmatched-pattern {staged_files}
+      stage_fixed: true
+    'js/ts/vuelint':
+      glob: '*.{js,jsx,ts,tsx,mts,cts,mjs,cjs,vue}'
+      exclude: '.agents/skills/**/*'
+      run: npx oxlint --fix --no-error-on-unmatched-pattern {staged_files}
+      stage_fixed: true
+    'markdown lint':
+      glob: '*.{md,markdown}'
+      exclude: '.agents/skills/**/*'
+      run: npx markdownlint-cli2 --no-globs {staged_files}
+    'gitkeep lint':
+      glob: '**/.gitkeep'
+      run: npx tsx tools/gitkeep-lint {staged_files}
+
+post-commit:
+  commands:
+    # `post-commit` KHÔNG chặn được các commit chưa ký. Commit đã được tạo, exit
+    # 1 vẫn để nó tồn tại và `git commit` vẫn trả 0. Nó chỉ để báo ngay tại chỗ;
+    # `pre-push` mới là gate chặn.
+    'commit signing':
+      run: npx tsx tools/commit-signing head
+
+pre-push:
+  parallel: true
+  commands:
+    'commit signing':
+      run: npx tsx tools/commit-signing push
+    'secret leaks scan':
+      run: |
+        unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY
+        root=$(git rev-parse --show-toplevel)
+        docker run --rm \
+          --volume "$root:/repo" \
+          --workdir /repo \
+          $([ -e "$root/.git" ] && printf -- '--volume %s:/repo/.git' "$root/.git") \
+          'zricethezav/gitleaks:v8.30.1@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb' \
+          dir --config gitleaks.toml --no-banner --redact --verbose --exit-code 1
+    verify:
+      run: npx nx affected --target=lint --target=test --base=origin/main
+    'markdown lint':
+      glob: '*.{md,markdown}'
+      exclude: '.agents/skills/**/*'
+      run: npx markdownlint-cli2 --no-globs {staged_files}
+    'gitkeep lint':
+      glob: '**/.gitkeep'
+      run: npx tsx tools/gitkeep-lint {staged_files}

@@ -1,0 +1,102 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "import", "vue", "unicorn", "promise", "node", "vitest"],
+  "env": { "node": true },
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error",
+    "restriction": "off",
+    "style": "off",
+    "pedantic": "off",
+    "nursery": "off"
+  },
+  "options": {
+    "denyWarnings": true,
+    "reportUnusedDisableDirectives": "error"
+  },
+  "jsPlugins": [
+    "@nx/oxlint/boundaries-plugin",
+    "oxlint-plugin-oxfmt",
+    {
+      "name": "nuxt",
+      "specifier": "@nuxt/eslint-plugin"
+    }
+  ],
+  "rules": {
+    "oxfmt/format": "error",
+    "@nx/enforce-module-boundaries": [
+      2,
+      {
+        "enforceBuildableLibDependency": true,
+        "allow": [],
+        "depConstraints": [
+          {
+            "sourceTag": "kind:domain",
+            "allowedExternalImports": ["vitest", "vitest/config"],
+            "onlyDependOnLibsWithTags": ["kind:domain"]
+          },
+          {
+            "sourceTag": "kind:usecase",
+            "onlyDependOnLibsWithTags": ["kind:domain", "kind:usecase"]
+          },
+          { "sourceTag": "kind:tooling", "onlyDependOnLibsWithTags": [] },
+          {
+            "sourceTag": "scope:account",
+            "onlyDependOnLibsWithTags": ["scope:account", "scope:kernel"]
+          },
+          { "sourceTag": "scope:auth", "onlyDependOnLibsWithTags": ["scope:auth", "scope:kernel"] },
+          {
+            "sourceTag": "scope:staff-access",
+            "onlyDependOnLibsWithTags": ["scope:staff-access", "scope:kernel"]
+          },
+          {
+            "sourceTag": "scope:transactional-mail",
+            "onlyDependOnLibsWithTags": ["scope:transactional-mail", "scope:kernel"]
+          },
+          {
+            "sourceTag": "scope:llm-consumer-routing",
+            "onlyDependOnLibsWithTags": ["scope:llm-consumer-routing", "scope:kernel"]
+          },
+          {
+            "sourceTag": "scope:llm-consumer-tenant",
+            "onlyDependOnLibsWithTags": ["scope:llm-consumer-tenant", "scope:kernel"]
+          },
+          {
+            "sourceTag": "scope:llm-financial",
+            "onlyDependOnLibsWithTags": ["scope:llm-financial", "scope:kernel"]
+          },
+          {
+            "sourceTag": "scope:llm-inference",
+            "onlyDependOnLibsWithTags": ["scope:llm-inference", "scope:kernel"]
+          },
+          {
+            "sourceTag": "scope:llm-marketplace",
+            "onlyDependOnLibsWithTags": ["scope:llm-marketplace", "scope:kernel"]
+          },
+          {
+            "sourceTag": "scope:llm-seller",
+            "onlyDependOnLibsWithTags": ["scope:llm-seller", "scope:kernel"]
+          },
+          {
+            "sourceTag": "scope:llm-serving",
+            "onlyDependOnLibsWithTags": ["scope:llm-serving", "scope:kernel"]
+          },
+          {
+            "sourceTag": "scope:llm-usage",
+            "onlyDependOnLibsWithTags": ["scope:llm-usage", "scope:kernel"]
+          },
+          { "sourceTag": "scope:kernel", "onlyDependOnLibsWithTags": ["scope:kernel"] }
+        ]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["tools/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}"],
+      "rules": {
+        "no-console": "off"
+      }
+    }
+  ]
+}
